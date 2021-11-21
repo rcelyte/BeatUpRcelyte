@@ -52,7 +52,7 @@ Open `settings.cfg`, located under `%AppData%\..\Hyperbolic Magnetism\Beat Saber
 Search for "useCustomServerEnvironment".
 
 Set `useCustomServerEnvironment` to `true`, and `customServerHostName` to your server's hostname. The file should look something like this:
-```json
+```
 ...ₒₜh":4.0,"useCustomServerEnvironment":false,"customServerHostName":"my.server.com","voₗᵤ...
 ```
 
