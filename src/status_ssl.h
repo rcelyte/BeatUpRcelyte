@@ -28,7 +28,7 @@ static _Bool sslstatus_init(mbedtls_x509_crt srvcert, mbedtls_pk_context pkey) {
 		return 1;
 	}
 	mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
-	mbedtls_ssl_conf_ca_chain(&conf, srvcert.next, NULL);
+	mbedtls_ssl_conf_ca_chain(&conf, srvcert.MBEDTLS_PRIVATE(next), NULL);
 	if((ret = mbedtls_ssl_conf_own_cert(&conf, &srvcert, &pkey)) != 0) {
 		fprintf(stderr, "mbedtls_ssl_conf_own_cert() returned %d\n", ret);
 		return 1;

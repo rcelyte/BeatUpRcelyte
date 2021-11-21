@@ -5,7 +5,22 @@
 #include <stdio.h>
 #include <string.h>
 
-_Bool master_run() {
+#define lengthof(x) (sizeof(x)/sizeof(*x))
+
+_Bool master_run(mbedtls_x509_crt *cert) {
+	{
+		uint_fast8_t count = 0;
+		for(mbedtls_x509_crt *it = cert; it; it = it->MBEDTLS_PRIVATE(next), ++count) {
+			if(it->MBEDTLS_PRIVATE(raw).MBEDTLS_PRIVATE(len) > 4096) {
+				fprintf(stderr, "Host certificate too large\n");
+				return 1;
+			}
+		}
+		if(count > lengthof(((struct ServerCertificateRequest*)NULL)->certificateList)) {
+			fprintf(stderr, "Host certificate chain too long\n");
+			return 1;
+		}
+	}
 	uint32_t len;
 	struct MasterServerSession *session;
 	PacketProperty property;
@@ -89,7 +104,11 @@ _Bool master_run() {
 						r_cert.base.requestId = 1; // net_getNextRequestId(session);
 						r_cert.base.responseId = req.certificateResponseId;
 						r_cert.certificateCount = 0;
-						// r_cert.certificateList[0] = cert;
+						for(mbedtls_x509_crt *it = cert; it; it = it->MBEDTLS_PRIVATE(next)) {
+							r_cert.certificateList[r_cert.certificateCount].length = it->MBEDTLS_PRIVATE(raw).MBEDTLS_PRIVATE(len);
+							memcpy(r_cert.certificateList[r_cert.certificateCount].data, it->MBEDTLS_PRIVATE(raw).MBEDTLS_PRIVATE(p), r_cert.certificateList[r_cert.certificateCount].length);
+							++r_cert.certificateCount;
+						}
 						resp = pkt;
 						SERIALIZE(&resp, message, HandshakeMessage, ServerCertificateRequest, ServerCertificateRequest, r_cert);
 						net_send(session, PacketProperty_UnconnectedMessage, pkt, resp - pkt);
@@ -99,7 +118,7 @@ _Bool master_run() {
 						r_hello.base.responseId = req.base.requestId;
 						memcpy(r_hello.random, session->serverRandom, sizeof(r_hello.random));
 						size_t keylen = 0;
-						if(mbedtls_ecp_point_write_binary(&session->key.grp, &session->key.Q, MBEDTLS_ECP_PF_UNCOMPRESSED, &keylen, r_hello.publicKey.data, 256) != 0) {
+						if(mbedtls_ecp_point_write_binary(&session->key.MBEDTLS_PRIVATE(grp), &session->key.MBEDTLS_PRIVATE(Q), MBEDTLS_ECP_PF_UNCOMPRESSED, &keylen, r_hello.publicKey.data, sizeof(r_hello.publicKey.data)) != 0) {
 							fprintf(stderr, "mbedtls_ecp_point_write_binary() failed\n");
 							break;
 						}

@@ -3,8 +3,12 @@
 #include "status.h"
 #include "status_ssl.h"
 #include "serial.h"
+
+#ifdef WINDOWS
+#else
 #include <netdb.h>
 #include <fcntl.h>
+#endif
 #include <mbedtls/entropy.h>
 #include <mbedtls/ctr_drbg.h>
 #include <stdio.h>
@@ -71,8 +75,9 @@ uint8_t addrs_are_equal(struct SS *a0, struct SS *a1) {
 	return 0;
 }
 
+static mbedtls_ctr_drbg_context ctr_drbg;
+static mbedtls_entropy_context entropy;
 static int32_t sockfd;
-static int32_t rfd;
 _Bool net_init(mbedtls_x509_crt srvcert, mbedtls_pk_context pkey) {
 	struct addrinfo hints = {
 		.ai_flags = AI_PASSIVE,
@@ -97,18 +102,19 @@ _Bool net_init(mbedtls_x509_crt srvcert, mbedtls_pk_context pkey) {
 	freeaddrinfo(res);
 	/*int32_t prop = 1;
 	if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (void*)&prop, sizeof(int32_t))) {fprintf(stderr, "setsockopt(SO_REUSEADDR) failed\n"); close(sockfd); return -1;}*/
-	rfd = open("/dev/urandom", O_RDONLY);
-	if(rfd == -1) {
-		printf("Failed to open /dev/urandom\n");
+	mbedtls_ctr_drbg_init(&ctr_drbg);
+	mbedtls_entropy_init(&entropy);
+	if(mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, (const uint8_t*)u8"M@$73RS€RV3R", 14) != 0) {
+		fprintf(stderr, "mbedtls_ctr_drbg_seed() failed\n");
 		return 1;
 	}
 	return status_init() /*|| sslstatus_init(srvcert, pkey)*/;
 }
 void net_cleanup() {
 	// sslstatus_cleanup();
+	mbedtls_entropy_free(&entropy);
+	mbedtls_ctr_drbg_free(&ctr_drbg);
 	status_cleanup();
-	if(rfd >= 0)
-		close(rfd);
 	if(sockfd >= 0)
 		close(sockfd);
 }
@@ -119,7 +125,11 @@ struct SessionList {
 static uint8_t pkt[8192];
 uint32_t net_recv(struct MasterServerSession **session, PacketProperty *property, uint8_t **buf) {
 	struct SS addr;
+	#ifdef WINSOCK_VERSION
+	ssize_t size = recvfrom(sockfd, (char*)pkt, sizeof(pkt), 0, &addr.sa, &addr.len);
+	#else
 	ssize_t size = recvfrom(sockfd, pkt, sizeof(pkt), 0, &addr.sa, &addr.len);
+	#endif
 	if(addr.sa.sa_family == AF_UNSPEC) {
 		fprintf(stderr, "UNSPEC\n");
 		return net_recv(session, property, buf);
@@ -151,26 +161,11 @@ uint32_t net_recv(struct MasterServerSession **session, PacketProperty *property
 		net_cookie(sptr->data.cookie);
 		net_cookie(sptr->data.serverRandom);
 
-		mbedtls_ctr_drbg_context ctr_drbg;
-		mbedtls_ctr_drbg_init(&ctr_drbg);
-		mbedtls_entropy_context entropy;
-		mbedtls_entropy_init(&entropy);
-		if(mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, (const uint8_t*)u8"M@$73RS€RV3R", 14) != 0) {
-			fprintf(stderr, "mbedtls_ctr_drbg_seed() failed\n");
-			return 0;
-		}
-		mbedtls_entropy_free(&entropy);
-
 		mbedtls_ecp_keypair_init(&sptr->data.key);
-		if(mbedtls_ecp_group_load(&sptr->data.key.grp, MBEDTLS_ECP_DP_SECP384R1) != 0) {
-			fprintf(stderr, "mbedtls_ecp_group_load() failed\n");
+		if(mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP384R1, &sptr->data.key, mbedtls_ctr_drbg_random, &ctr_drbg) != 0) {
+			fprintf(stderr, "mbedtls_ecp_gen_key() failed\n");
 			return 0;
 		}
-		if(mbedtls_ecp_gen_keypair(&sptr->data.key.grp, &sptr->data.key.d, &sptr->data.key.Q, mbedtls_ctr_drbg_random, &ctr_drbg) != 0) {
-			fprintf(stderr, "mbedtls_ecp_gen_keypair() failed\n");
-			return 0;
-		}
-		mbedtls_ctr_drbg_free(&ctr_drbg);
 
 		*session = &sptr->data;
 		fprintf(stderr, "NEW SESSION: %s\n", ipStr(&addr));
@@ -212,7 +207,11 @@ static void _send(struct MasterServerSession *session, PacketProperty property, 
 		.fragmentsTotal = 0,
 	});
 	pkt_writeBytes(&data, buf, len);
+	#ifdef WINSOCK_VERSION
+	sendto(sockfd, (char*)pkt, data - pkt, 0, &session->addr.sa, session->addr.len);
+	#else
 	sendto(sockfd, pkt, data - pkt, 0, &session->addr.sa, session->addr.len);
+	#endif
 	fprintf(stderr, "send: %zu\n", data - pkt);
 }
 void net_send(struct MasterServerSession *session, PacketProperty property, uint8_t *buf, uint32_t len) {
@@ -270,7 +269,7 @@ void net_send(struct MasterServerSession *session, PacketProperty property, uint
 }
 #endif
 void net_cookie(uint8_t *out) {
-	read(rfd, out, 32);
+	mbedtls_ctr_drbg_random(&ctr_drbg, out, 32);
 }
 uint32_t net_getNextRequestId(struct MasterServerSession *session) {
 	++session->lastSentRequestId;

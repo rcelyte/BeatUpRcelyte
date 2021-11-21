@@ -2,6 +2,8 @@
 
 #include "master.h"
 #include "net.h"
+#include <mbedtls/entropy.h>
+#include <mbedtls/ctr_drbg.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
@@ -103,9 +105,8 @@ int main(int argc, char const *argv[]) {
 	mbedtls_x509_crt host_cert, status_cert;
 	mbedtls_pk_context host_key, status_key;
 	#ifdef SELF_SIGNED
-	mbedtls_x509_crt_init(&host_cert);
-	mbedtls_x509_crt_parse(&host_cert,
-		(uint8_t*)"-----BEGIN CERTIFICATE-----\n"
+	const char *cert_pem =
+		"-----BEGIN CERTIFICATE-----\n"
 		"MIIFYDCCA0igAwIBAgIJAOQjJ14if2NJMA0GCSqGSIb3DQEBCwUAMEUxCzAJBgNV\n"
 		"BAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBX\n"
 		"aWRnaXRzIFB0eSBMdGQwHhcNMjExMTIwMDc1MDUzWhcNMjIxMTIwMDc1MDUzWjBF\n"
@@ -135,10 +136,9 @@ int main(int argc, char const *argv[]) {
 		"XlrKP/r9wVfytTS/2mYPPYOnZVnWj5gYGa0dkokYoSuYUwAD8ELFw80vnHw4YuXv\n"
 		"moo40s/h4rr3lfoLAXUSzTyS1v2OIz2/D/FIkhHpSAgNCynNQ0PsHiXCbS4dk2YC\n"
 		"dJco+wPzVhhc9jxACoLrEhRO4DWOvcKrpFErT4odVJCUC58i\n"
-		"-----END CERTIFICATE-----\n", 1923);
-	mbedtls_pk_init(&host_key);
-	mbedtls_pk_parse_key(&host_key,
-		(uint8_t*)"-----BEGIN PRIVATE KEY-----\n"
+		"-----END CERTIFICATE-----\n";
+	const char *key_pem =
+		"-----BEGIN PRIVATE KEY-----\n"
 		"MIIJRAIBADANBgkqhkiG9w0BAQEFAASCCS4wggkqAgEAAoICAQDNSY8tIlVSVzJV\n"
 		"ohLZGWMKYqYmsCnRTnKrFA+wxsWnRRNsDGrE3uYo0v2MpEdezz8+ywvgsjcbEV/2\n"
 		"qn+MI2CYqX4pHOk1lVOB+5G1+vfFsoEsnZwSgXtwzmx5uZuT3P3RPDyjKG0liUr3\n"
@@ -189,7 +189,18 @@ int main(int argc, char const *argv[]) {
 		"/NSIb8r9gUTwdAoRfzvczuh/OJG9ZTULMv5msC79Nd0wtZBvVdhEdUPo5RC/LqxT\n"
 		"UNc7l95ug76OdKc6VXTiXkcw5+H6kV74vyFlm9EP/4RmxMLw9ktZD2gRzeZkxn/W\n"
 		"PNpM4ToKUvBvz1nhXu1qeT2gvDrVDd4V\n"
-		"-----END PRIVATE KEY-----\n", 3272, NULL, 0);
+		"-----END PRIVATE KEY-----\n";
+	mbedtls_x509_crt_init(&host_cert);
+	mbedtls_x509_crt_parse(&host_cert, (const uint8_t*)cert_pem, 1923);
+	mbedtls_pk_init(&host_key);
+	#if MBEDTLS_VERSION_NUMBER < 0x03000000
+	mbedtls_pk_parse_key(&host_key, (const uint8_t*)key_pem, 3272, NULL, 0);
+	#else
+	mbedtls_entropy_context entropy;
+	mbedtls_ctr_drbg_context ctr_drbg;
+	mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, (const uint8_t*)"plsnohax", 8);
+	mbedtls_pk_parse_key(&host_key, (const uint8_t*)key_pem, 3272, NULL, 0, mbedtls_ctr_drbg_random, &ctr_drbg);
+	#endif
 	status_cert = host_cert;
 	status_key = host_key;
 	#else
@@ -268,7 +279,7 @@ int main(int argc, char const *argv[]) {
 
 	if(net_init(status_cert, status_key))
 		return -1;
-	_Bool ret = master_run();
+	_Bool ret = master_run(&host_cert);
 	net_cleanup();
 	return ret ? -1 : 0;
 }

@@ -1,4 +1,8 @@
+#ifdef WINDOWS
+#include <processthreadsapi.h>
+#else
 #include <pthread.h>
+#endif
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
@@ -17,7 +21,12 @@
 	enum MHD_Result ret = MHD_queue_response(connection, MHD_HTTP_NOT_FOUND, response);
 	MHD_destroy_response(response);
 }*/
-static void *status_handler(void *listenfd) {
+#ifdef WINDOWS
+static DWORD WINAPI
+#else
+static void*
+#endif
+status_handler(void *listenfd) {
 	struct SS addr;
 	int32_t csock;
 	while((csock = accept((intptr_t)listenfd, &addr.sa, &addr.len))) {
@@ -65,9 +74,17 @@ static void *status_handler(void *listenfd) {
 		send(csock, resp, strlen(resp), 0);
 		close(csock);
 	}
+	#ifdef WINDOWS
+	return 0;
+	#else
 	return NULL;
+	#endif
 }
+#ifdef WINDOWS
+static HANDLE status_thread;
+#else
 static pthread_t status_thread;
+#endif
 static int32_t listenfd = -1;
 static _Bool status_init() {
 	listenfd = socket(AF_INET6, SOCK_STREAM, 0);
@@ -93,7 +110,12 @@ static _Bool status_init() {
 		listenfd = -1;
 		return 1;
 	}
+	#ifdef WINDOWS
+	status_thread = CreateThread(NULL, 0, status_handler, NULL, 0, NULL);
+	return !status_thread;
+	#else
 	return pthread_create(&status_thread, NULL, (void*)&status_handler, (void*)(intptr_t)listenfd) != 0;
+	#endif
 }
 static void status_cleanup() {
 	if(listenfd >= 0)

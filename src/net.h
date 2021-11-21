@@ -1,7 +1,14 @@
 #include "packets.h"
-#include <arpa/inet.h>
 #include <mbedtls/x509_crt.h>
 #include <mbedtls/pk.h>
+
+#ifdef WINDOWS
+#include <winsock2.h>
+#include <ws2tcpip.h>
+typedef int socklen_t;
+#else
+#include <arpa/inet.h>
+#endif
 
 struct SS {
 	socklen_t len;

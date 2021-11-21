@@ -29,7 +29,7 @@ static uint64_t pkt_readUint64(uint8_t **pkt) {
 	return value | byte << shift;
 }*/
 static uint64_t pkt_readVarUint64(uint8_t **pkt) {
-	uint64_t value = 0, byte;
+	uint64_t byte, value = 0;
 	uint8_t shift = 0;
 	do {
 		byte = pkt_readUint8(pkt);

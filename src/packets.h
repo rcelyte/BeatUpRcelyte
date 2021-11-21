@@ -143,7 +143,7 @@ struct PacketEncryptionLayer {
 };
 struct ByteArrayNetSerializable {
 	uint32_t length;
-	uint8_t data[32768];
+	uint8_t data[4096];
 };
 /*struct String {
 	uint32_t length;

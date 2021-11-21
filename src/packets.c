@@ -59,7 +59,7 @@ struct SerializeHeader pkt_readSerializeHeader(uint8_t **pkt) {
 	out.length = pkt_readVarUint32(pkt);
 	if(out.length > sizeof(out.data))
 		out.length = 0;
-	pkt_readBytesTo(pkt, out.data, out.length);
+	pkt_readBytes(pkt, out.data, out.length);
 	return out;
 }*/
 /*struct String pkt_readString(uint8_t **pkt) {
