@@ -196,8 +196,10 @@ int main(int argc, char const *argv[]) {
 	#if MBEDTLS_VERSION_NUMBER < 0x03000000
 	mbedtls_pk_parse_key(&host_key, (const uint8_t*)key_pem, 3272, NULL, 0);
 	#else
-	mbedtls_entropy_context entropy;
 	mbedtls_ctr_drbg_context ctr_drbg;
+	mbedtls_entropy_context entropy;
+	mbedtls_ctr_drbg_init(&ctr_drbg);
+	mbedtls_entropy_init(&entropy);
 	mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, (const uint8_t*)"plsnohax", 8);
 	mbedtls_pk_parse_key(&host_key, (const uint8_t*)key_pem, 3272, NULL, 0, mbedtls_ctr_drbg_random, &ctr_drbg);
 	#endif
