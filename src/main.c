@@ -3,6 +3,7 @@
 #include "net.h"
 #include <mbedtls/entropy.h>
 #include <mbedtls/ctr_drbg.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
@@ -101,6 +102,10 @@ static _Bool load_key(struct Host *in, mbedtls_pk_context *out) {
 #endif
 
 int main(int argc, char const *argv[]) {
+	if(!isatty(0)) {
+		fprintf(stderr, "Not running in an interactive terminal\n");
+		return -1;
+	}
 	mbedtls_x509_crt host_cert, status_cert;
 	mbedtls_pk_context host_key, status_key;
 	#ifdef SELF_SIGNED
@@ -281,15 +286,19 @@ int main(int argc, char const *argv[]) {
 	// TODO: use domain specific self-signed cert instead of generic one
 	if(status_init())
 		return -1;
+	fprintf(stderr, "HTTP status started\n");
 	if(status_ssl_init(status_cert, status_key))
 		return -1;
+	fprintf(stderr, "HTTPS status started\n");
 	if(master_init(&host_cert))
 		return -1;
-	fprintf(stderr, "started\n");
+	fprintf(stderr, "Master server started\nPress [enter] to exit\n");
 	getchar();
-	fprintf(stderr, "stopping\n");
+	fprintf(stderr, "Stopping master server\n");
 	master_cleanup();
+	fprintf(stderr, "Stopping HTTPS status\n");
 	status_ssl_cleanup();
+	fprintf(stderr, "Stopping HTTP status\n");
 	status_cleanup();
 	mbedtls_entropy_free(&entropy);
 	mbedtls_ctr_drbg_free(&ctr_drbg);

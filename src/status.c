@@ -1,6 +1,7 @@
 #include "net.h"
 #ifdef WINDOWS
 #include <processthreadsapi.h>
+#define SHUT_RD SD_RECEIVE
 #else
 #include <pthread.h>
 #endif
@@ -108,7 +109,7 @@ _Bool status_init() {
 		return 1;
 	}
 	#ifdef WINDOWS
-	status_thread = CreateThread(NULL, 0, status_handler, &listenfd, 0, NULL);
+	status_thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)status_handler, &listenfd, 0, NULL);
 	return !status_thread;
 	#else
 	return pthread_create(&status_thread, NULL, (void*)&status_handler, &listenfd) != 0;

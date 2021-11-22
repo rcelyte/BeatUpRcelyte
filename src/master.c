@@ -197,7 +197,7 @@ _Bool master_init(mbedtls_x509_crt *cert) {
 		return 1;
 	}
 	#ifdef WINDOWS
-	master_thread = CreateThread(NULL, 0, master_handler, &ctx, 0, NULL);
+	master_thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)master_handler, &ctx, 0, NULL);
 	return !master_thread;
 	#else
 	return pthread_create(&master_thread, NULL, (void*)&master_handler, &ctx) != 0;

@@ -3,6 +3,7 @@
 #include "serial.h"
 
 #ifdef WINDOWS
+#define SHUT_RD SD_RECEIVE
 #else
 #include <netdb.h>
 #include <fcntl.h>
@@ -45,10 +46,10 @@ int findandconn(struct addrinfo *res, int family) {
 					sockfd = -1;
 					fprintf(stderr, "Error while binding socket\n");
 				} else {
-					printf("Bound %s\n", net_tostr((struct SS[]){{
+					/*printf("Bound %s\n", net_tostr((struct SS[]){{
 						.len = rp->ai_addrlen,
 						.sa = *rp->ai_addr,
-					}}));
+					}}));*/
 					break;
 				}
 			} else

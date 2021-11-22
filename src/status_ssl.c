@@ -119,7 +119,7 @@ _Bool status_ssl_init(mbedtls_x509_crt srvcert, mbedtls_pk_context pkey) {
 		return 1;
 	}
 	#ifdef WINDOWS
-	status_thread = CreateThread(NULL, 0, status_ssl_handler, &data, 0, NULL);
+	status_thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)status_ssl_handler, &data, 0, NULL);
 	return !status_thread;
 	#else
 	return pthread_create(&status_thread, NULL, (void*)&status_ssl_handler, &data) != 0;
