@@ -1,7 +1,5 @@
 #include "enum_reflection.h"
 #include "net.h"
-#include "status.h"
-#include "status_ssl.h"
 #include "serial.h"
 
 #ifdef WINDOWS
@@ -9,17 +7,14 @@
 #include <netdb.h>
 #include <fcntl.h>
 #endif
-#include <mbedtls/entropy.h>
-#include <mbedtls/ctr_drbg.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <time.h>
-#include <stdio.h>
-#include <string.h>
 
-static const char *ipStr(struct SS *a) {
+const char *net_tostr(struct SS *a) {
 	static char out[INET6_ADDRSTRLEN + 8];
 	char ipStr[INET6_ADDRSTRLEN];
 	switch(a->ss.ss_family) {
@@ -50,7 +45,7 @@ int findandconn(struct addrinfo *res, int family) {
 					sockfd = -1;
 					fprintf(stderr, "Error while binding socket\n");
 				} else {
-					printf("Bound %s\n", ipStr((struct SS[]){{
+					printf("Bound %s\n", net_tostr((struct SS[]){{
 						.len = rp->ai_addrlen,
 						.sa = *rp->ai_addr,
 					}}));
@@ -75,10 +70,7 @@ uint8_t addrs_are_equal(struct SS *a0, struct SS *a1) {
 	return 0;
 }
 
-static mbedtls_ctr_drbg_context ctr_drbg;
-static mbedtls_entropy_context entropy;
-static int32_t sockfd;
-_Bool net_init(mbedtls_x509_crt srvcert, mbedtls_pk_context pkey) {
+int32_t net_init() {
 	struct addrinfo hints = {
 		.ai_flags = AI_PASSIVE,
 		.ai_family = AF_UNSPEC,
@@ -98,49 +90,46 @@ _Bool net_init(mbedtls_x509_crt srvcert, mbedtls_pk_context pkey) {
 		fprintf(stderr, "Found no host address to use\n");
 		return 1;
 	}
-	sockfd = findandconn(res, AF_INET6);
+	int32_t sockfd = findandconn(res, AF_INET6);
+	// sockfd = findandconn(res, AF_INET);
 	freeaddrinfo(res);
 	/*int32_t prop = 1;
 	if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (void*)&prop, sizeof(int32_t))) {fprintf(stderr, "setsockopt(SO_REUSEADDR) failed\n"); close(sockfd); return -1;}*/
-	mbedtls_ctr_drbg_init(&ctr_drbg);
-	mbedtls_entropy_init(&entropy);
-	if(mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, (const uint8_t*)u8"M@$73RS€RV3R", 14) != 0) {
-		fprintf(stderr, "mbedtls_ctr_drbg_seed() failed\n");
-		return 1;
-	}
-	return status_init() /*|| sslstatus_init(srvcert, pkey)*/;
+	return sockfd;
 }
-void net_cleanup() {
-	// sslstatus_cleanup();
-	mbedtls_entropy_free(&entropy);
-	mbedtls_ctr_drbg_free(&ctr_drbg);
-	status_cleanup();
-	if(sockfd >= 0)
+
+void net_cleanup(int32_t sockfd) {
+	if(sockfd != -1) {
+		shutdown(sockfd, SHUT_RD);
 		close(sockfd);
+	}
 }
+
+static void net_cookie(mbedtls_ctr_drbg_context *ctr_drbg, uint8_t *out) {
+	mbedtls_ctr_drbg_random(ctr_drbg, out, 32);
+}
+
 struct SessionList {
 	struct SessionList *next;
 	struct MasterServerSession data;
 } static *sessionList = NULL;
 static uint8_t pkt[8192];
-uint32_t net_recv(struct MasterServerSession **session, PacketProperty *property, uint8_t **buf) {
-	struct SS addr;
+uint32_t net_recv(int32_t sockfd, mbedtls_ctr_drbg_context *ctr_drbg, struct MasterServerSession **session, PacketProperty *property, uint8_t **buf) {
+	struct SS addr = {sizeof(struct sockaddr_storage)};
 	#ifdef WINSOCK_VERSION
 	ssize_t size = recvfrom(sockfd, (char*)pkt, sizeof(pkt), 0, &addr.sa, &addr.len);
 	#else
 	ssize_t size = recvfrom(sockfd, pkt, sizeof(pkt), 0, &addr.sa, &addr.len);
 	#endif
+	if(size <= 0)
+		return 0;
 	if(addr.sa.sa_family == AF_UNSPEC) {
 		fprintf(stderr, "UNSPEC\n");
-		return net_recv(session, property, buf);
+		return net_recv(sockfd, ctr_drbg, session, property, buf);
 	}
-	if(size == 0)
-		return 0;
-	if(size < 0)
-		return net_recv(session, property, buf);
 	if(pkt[0] > 1) {
 		fprintf(stderr, "testval: %hhu\n", pkt[0]);
-		return net_recv(session, property, buf);
+		return net_recv(sockfd, ctr_drbg, session, property, buf);
 	}
 	struct SessionList *it = sessionList;
 	for(; it; it = it->next) {
@@ -158,19 +147,19 @@ uint32_t net_recv(struct MasterServerSession **session, PacketProperty *property
 		sptr->data.lastSentRequestId = 0;
 		sptr->data.state = MasterServerSessionState_None;
 		sptr->data.lastKeepAlive = time(NULL);
-		net_cookie(sptr->data.cookie);
-		net_cookie(sptr->data.serverRandom);
+		net_cookie(ctr_drbg, sptr->data.cookie);
+		net_cookie(ctr_drbg, sptr->data.serverRandom);
 
 		mbedtls_ecp_keypair_init(&sptr->data.key);
-		if(mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP384R1, &sptr->data.key, mbedtls_ctr_drbg_random, &ctr_drbg) != 0) {
+		if(mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP384R1, &sptr->data.key, mbedtls_ctr_drbg_random, ctr_drbg) != 0) {
 			fprintf(stderr, "mbedtls_ecp_gen_key() failed\n");
 			return 0;
 		}
 
 		*session = &sptr->data;
-		fprintf(stderr, "NEW SESSION: %s\n", ipStr(&addr));
+		fprintf(stderr, "NEW SESSION: %s\n", net_tostr(&addr));
 	}
-	fprintf(stderr, "recv: %zi\n", size);
+	fprintf(stderr, "recvfrom(%s): %zi\n", net_tostr(&addr), size);
 	*buf = pkt;
 	struct PacketEncryptionLayer layer = pkt_readPacketEncryptionLayer(buf);
 	// fprintf(stderr, "\t[to %zu]layer.encrypted=%hhu\n", *buf - pkt, layer.encrypted);
@@ -191,7 +180,7 @@ uint32_t net_recv(struct MasterServerSession **session, PacketProperty *property
 	return &pkt[size] - *buf;
 }
 #if 1
-static void _send(struct MasterServerSession *session, PacketProperty property, void *buf, uint32_t len) {
+static void _send(int32_t sockfd, struct MasterServerSession *session, PacketProperty property, void *buf, uint32_t len) {
 	uint8_t *data = pkt;
 	pkt_writePacketEncryptionLayer(&data, (struct PacketEncryptionLayer){
 		.encrypted = 0,
@@ -212,11 +201,11 @@ static void _send(struct MasterServerSession *session, PacketProperty property, 
 	#else
 	sendto(sockfd, pkt, data - pkt, 0, &session->addr.sa, session->addr.len);
 	#endif
-	fprintf(stderr, "send: %zu\n", data - pkt);
+	fprintf(stderr, "sendto(%s): %zu\n", net_tostr(&session->addr), data - pkt);
 }
-void net_send(struct MasterServerSession *session, PacketProperty property, uint8_t *buf, uint32_t len) {
+void net_send(int32_t sockfd, struct MasterServerSession *session, PacketProperty property, uint8_t *buf, uint32_t len) {
 	if(len <= 384)
-		return _send(session, property, buf, len);
+		return _send(sockfd, session, property, buf, len);
 	uint8_t *data = buf;
 	struct MessageHeader message = pkt_readMessageHeader(&data);
 	struct SerializeHeader serial = pkt_readSerializeHeader(&data);
@@ -250,7 +239,7 @@ void net_send(struct MasterServerSession *session, PacketProperty property, uint
 		serial.length = end + 1 - resp;
 		pkt_writeSerializeHeader(&resp, serial);
 		pkt_writeBaseMasterServerMultipartMessage(&resp, mp);
-		_send(session, property, mpbuf, resp - mpbuf);
+		_send(sockfd, session, property, mpbuf, resp - mpbuf);
 		mp.offset += 384;
 	} while(mp.offset < len);
 }
@@ -268,9 +257,6 @@ void net_send(struct MasterServerSession *session, PacketProperty property, uint
 	// something something LiteNetLib
 }
 #endif
-void net_cookie(uint8_t *out) {
-	mbedtls_ctr_drbg_random(&ctr_drbg, out, 32);
-}
 uint32_t net_getNextRequestId(struct MasterServerSession *session) {
 	++session->lastSentRequestId;
 	return (session->lastSentRequestId & 63) | session->epoch;

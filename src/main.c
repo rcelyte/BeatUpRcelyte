@@ -1,6 +1,5 @@
 #define SELF_SIGNED
 
-#include "master.h"
 #include "net.h"
 #include <mbedtls/entropy.h>
 #include <mbedtls/ctr_drbg.h>
@@ -279,9 +278,20 @@ int main(int argc, char const *argv[]) {
 	}
 	#endif
 
-	if(net_init(status_cert, status_key))
+	// TODO: use domain specific self-signed cert instead of generic one
+	if(status_init())
 		return -1;
-	_Bool ret = master_run(&host_cert);
-	net_cleanup();
-	return ret ? -1 : 0;
+	if(status_ssl_init(status_cert, status_key))
+		return -1;
+	if(master_init(&host_cert))
+		return -1;
+	fprintf(stderr, "started\n");
+	getchar();
+	fprintf(stderr, "stopping\n");
+	master_cleanup();
+	status_ssl_cleanup();
+	status_cleanup();
+	mbedtls_entropy_free(&entropy);
+	mbedtls_ctr_drbg_free(&ctr_drbg);
+	return 0;
 }

@@ -1,3 +1,4 @@
+#include "net.h"
 #ifdef WINDOWS
 #include <processthreadsapi.h>
 #else
@@ -26,10 +27,10 @@ static DWORD WINAPI
 #else
 static void*
 #endif
-status_handler(void *listenfd) {
-	struct SS addr;
+status_handler(int32_t *listenfd) {
+	struct SS addr = {sizeof(struct sockaddr_storage)};
 	int32_t csock;
-	while((csock = accept((intptr_t)listenfd, &addr.sa, &addr.len))) {
+	while((csock = accept(*listenfd, &addr.sa, &addr.len)) != -1) {
 		char buf[81920];
 		ssize_t size = recv(csock, buf, sizeof(buf), 0);
 		if(size < 0) {
@@ -38,7 +39,7 @@ status_handler(void *listenfd) {
 		}
 		const char *resp;
 		if(size >= 6 && memcmp(buf, "GET / ", 6) == 0) {
-			fprintf(stderr, "[HTTP] GET /\n");
+			fprintf(stderr, "{%s}[HTTP] GET /\n", net_tostr(&addr));
 			resp =
 				"HTTP/1.1 200 OK\r\n"
 				"Connection: close\r\n"
@@ -74,11 +75,7 @@ status_handler(void *listenfd) {
 		send(csock, resp, strlen(resp), 0);
 		close(csock);
 	}
-	#ifdef WINDOWS
 	return 0;
-	#else
-	return NULL;
-	#endif
 }
 #ifdef WINDOWS
 static HANDLE status_thread;
@@ -86,7 +83,7 @@ static HANDLE status_thread;
 static pthread_t status_thread;
 #endif
 static int32_t listenfd = -1;
-static _Bool status_init() {
+_Bool status_init() {
 	listenfd = socket(AF_INET6, SOCK_STREAM, 0);
 	{
 		int32_t iSetOption = 1;
@@ -111,13 +108,21 @@ static _Bool status_init() {
 		return 1;
 	}
 	#ifdef WINDOWS
-	status_thread = CreateThread(NULL, 0, status_handler, NULL, 0, NULL);
+	status_thread = CreateThread(NULL, 0, status_handler, &listenfd, 0, NULL);
 	return !status_thread;
 	#else
-	return pthread_create(&status_thread, NULL, (void*)&status_handler, (void*)(intptr_t)listenfd) != 0;
+	return pthread_create(&status_thread, NULL, (void*)&status_handler, &listenfd) != 0;
 	#endif
 }
-static void status_cleanup() {
-	if(listenfd >= 0)
+void status_cleanup() {
+	if(listenfd != -1) {
+		shutdown(listenfd, SHUT_RD);
 		close(listenfd);
+		listenfd = -1;
+		#ifdef WINDOWS
+		WaitForSingleObject(status_thread, INFINITE);
+		#else
+		pthread_join(status_thread, NULL);
+		#endif
+	}
 }
