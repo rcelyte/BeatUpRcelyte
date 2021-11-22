@@ -11,14 +11,17 @@ EXT ?= $(shell uname -m)
 LIBS := libmbedtls.a libmbedx509.a libmbedcrypto.a
 OBJS += $(LIBS:%=$(OBJDIR)/%)
 
-CFLAGS := -std=gnu11 -Imbedtls/include -Wall -Wno-unused-function -Werror
-LDFLAGS := -Wl,--gc-sections,--fatal-warnings
+CFLAGS += -std=gnu11 -Imbedtls/include -Wall -Wno-unused-function -Werror
+LDFLAGS += -Wl,--gc-sections,--fatal-warnings
+
+# CFLAGS += -DENABLE_GUI
+# LDFLAGS += -lxcb
 
 server.$(EXT): $(OBJS)
 	@echo "[linking $@]"
 	$(CC) $(OBJS) $(LDFLAGS) -o "$@"
 
-$(OBJDIR)/%.c.o: %.c
+$(OBJDIR)/%.c.o: %.c mbedtls/.git
 	@echo "[compiling $(notdir $<)]"
 	@mkdir -p "$(@D)"
 	$(CC) $(CFLAGS) -c "$<" -o "$@" -MMD -MP
