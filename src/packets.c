@@ -144,12 +144,6 @@ void pkt_writeBaseMasterServerAcknowledgeMessage(uint8_t **pkt, struct BaseMaste
 	pkt_writeBaseMasterServerResponse(pkt, in.base);
 	pkt_writeUint8(pkt, in.messageHandled);
 }
-void pkt_writeHandshakeMessageReceivedAcknowledge(uint8_t **pkt, struct HandshakeMessageReceivedAcknowledge in) {
-	pkt_writeBaseMasterServerAcknowledgeMessage(pkt, in.base);
-}
-void pkt_writeDedicatedServerMessageReceivedAcknowledge(uint8_t **pkt, struct DedicatedServerMessageReceivedAcknowledge in) {
-	pkt_writeBaseMasterServerAcknowledgeMessage(pkt, in.base);
-}
 void pkt_writeBaseMasterServerMultipartMessage(uint8_t **pkt, struct BaseMasterServerMultipartMessage in) {
 	pkt_writeBaseMasterServerReliableRequest(pkt, in.base);
 	pkt_writeUint32(pkt, in.multipartMessageId);

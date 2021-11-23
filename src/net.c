@@ -71,7 +71,7 @@ uint8_t addrs_are_equal(struct SS *a0, struct SS *a1) {
 	return 0;
 }
 
-int32_t net_init() {
+int32_t net_init(uint16_t port) {
 	struct addrinfo hints = {
 		.ai_flags = AI_PASSIVE,
 		.ai_family = AF_UNSPEC,
@@ -82,7 +82,9 @@ int32_t net_init() {
 		.ai_canonname = NULL,
 		.ai_next = NULL,
 	}, *res;
-	int32_t gAddRes = getaddrinfo(NULL, "2328", &hints, &res);
+	char service[8];
+	sprintf(service, "%hu", port);
+	int32_t gAddRes = getaddrinfo(NULL, service, &hints, &res);
 	if(gAddRes != 0) {
 		fprintf(stderr, "%s\n", gai_strerror(gAddRes));
 		return 1;
@@ -110,6 +112,7 @@ static void net_cookie(mbedtls_ctr_drbg_context *ctr_drbg, uint8_t *out) {
 	mbedtls_ctr_drbg_random(ctr_drbg, out, 32);
 }
 
+// Temporary; to be replaced with sparse array once instance servers are implemented
 struct SessionList {
 	struct SessionList *next;
 	struct MasterServerSession data;
@@ -152,7 +155,7 @@ uint32_t net_recv(int32_t sockfd, mbedtls_ctr_drbg_context *ctr_drbg, struct Mas
 		net_cookie(ctr_drbg, sptr->data.serverRandom);
 
 		mbedtls_ecp_keypair_init(&sptr->data.key);
-		if(mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP384R1, &sptr->data.key, mbedtls_ctr_drbg_random, ctr_drbg) != 0) {
+		if(mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP384R1, &sptr->data.key, mbedtls_ctr_drbg_random, ctr_drbg) != 0) { // valgrind warning: Source and destination overlap in memcpy()
 			fprintf(stderr, "mbedtls_ecp_gen_key() failed\n");
 			return 0;
 		}
@@ -160,7 +163,7 @@ uint32_t net_recv(int32_t sockfd, mbedtls_ctr_drbg_context *ctr_drbg, struct Mas
 		*session = &sptr->data;
 		fprintf(stderr, "NEW SESSION: %s\n", net_tostr(&addr));
 	}
-	fprintf(stderr, "recvfrom(%s): %zi\n", net_tostr(&addr), size);
+	fprintf(stderr, "[NET] recvfrom[%zi]\n", size);
 	*buf = pkt;
 	struct PacketEncryptionLayer layer = pkt_readPacketEncryptionLayer(buf);
 	// fprintf(stderr, "\t[to %zu]layer.encrypted=%hhu\n", *buf - pkt, layer.encrypted);
@@ -202,7 +205,7 @@ static void _send(int32_t sockfd, struct MasterServerSession *session, PacketPro
 	#else
 	sendto(sockfd, pkt, data - pkt, 0, &session->addr.sa, session->addr.len);
 	#endif
-	fprintf(stderr, "sendto(%s): %zu\n", net_tostr(&session->addr), data - pkt);
+	fprintf(stderr, "[NET] sendto[%zu]\n", data - pkt);
 }
 void net_send(int32_t sockfd, struct MasterServerSession *session, PacketProperty property, uint8_t *buf, uint32_t len) {
 	if(len <= 384)

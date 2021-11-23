@@ -40,7 +40,7 @@ status_handler(int32_t *listenfd) {
 		}
 		const char *resp;
 		if(size >= 6 && memcmp(buf, "GET / ", 6) == 0) {
-			fprintf(stderr, "{%s}[HTTP] GET /\n", net_tostr(&addr));
+			fprintf(stderr, "[HTTP] GET /\n");
 			resp =
 				"HTTP/1.1 200 OK\r\n"
 				"Connection: close\r\n"

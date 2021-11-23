@@ -19,6 +19,15 @@ struct Context {
 	mbedtls_entropy_context entropy;
 };
 
+static void ack(struct Context *ctx, struct MasterServerSession *session, uint8_t *pkt, struct MessageHeader message, struct BaseMasterServerReliableRequest req) {
+	struct BaseMasterServerAcknowledgeMessage r_ack;
+	r_ack.base.responseId = req.requestId;
+	r_ack.messageHandled = 1;
+	uint8_t *resp = pkt;
+	SERIALIZE(&resp, message, HandshakeMessage, MessageReceivedAcknowledge, BaseMasterServerAcknowledgeMessage, r_ack);
+	net_send(ctx->sockfd, session, PacketProperty_UnconnectedMessage, pkt, resp - pkt);
+}
+
 #ifdef WINDOWS
 static DWORD WINAPI
 #else
@@ -93,16 +102,11 @@ master_handler(struct Context *ctx) {
 					case HandshakeMessageType_HelloVerifyRequest: fprintf(stderr, "BAD TYPE: HandshakeMessageType_HelloVerifyRequest\n"); break;
 					case HandshakeMessageType_ClientHelloWithCookieRequest: {
 						struct ClientHelloWithCookieRequest req = pkt_readClientHelloWithCookieRequest(&data);
+						ack(ctx, session, pkt, message, req.base);
 						if(memcmp(req.cookie, session->cookie, sizeof(session->cookie)) != 0)
 							break;
 						if(memcmp(req.random, session->clientRandom, sizeof(session->clientRandom)) != 0)
 							break;
-						struct HandshakeMessageReceivedAcknowledge r_ack;
-						r_ack.base.base.responseId = req.base.requestId;
-						r_ack.base.messageHandled = 1;
-						uint8_t *resp = pkt;
-						SERIALIZE(&resp, message, HandshakeMessage, MessageReceivedAcknowledge, HandshakeMessageReceivedAcknowledge, r_ack);
-						net_send(ctx->sockfd, session, PacketProperty_UnconnectedMessage, pkt, resp - pkt);
 
 						struct ServerCertificateRequest r_cert;
 						r_cert.base.requestId = 1; // net_getNextRequestId(session);
@@ -113,7 +117,7 @@ master_handler(struct Context *ctx) {
 							memcpy(r_cert.certificateList[r_cert.certificateCount].data, it->MBEDTLS_PRIVATE(raw).MBEDTLS_PRIVATE(p), r_cert.certificateList[r_cert.certificateCount].length);
 							++r_cert.certificateCount;
 						}
-						resp = pkt;
+						uint8_t *resp = pkt;
 						SERIALIZE(&resp, message, HandshakeMessage, ServerCertificateRequest, ServerCertificateRequest, r_cert);
 						net_send(ctx->sockfd, session, PacketProperty_UnconnectedMessage, pkt, resp - pkt);
 
@@ -170,7 +174,7 @@ static HANDLE master_thread;
 static pthread_t master_thread;
 #endif
 static struct Context ctx = {NULL, -1};
-_Bool master_init(mbedtls_x509_crt *cert) {
+_Bool master_init(mbedtls_x509_crt *cert, uint16_t port) {
 	{
 		uint_fast8_t count = 0;
 		for(mbedtls_x509_crt *it = cert; it; it = it->MBEDTLS_PRIVATE(next), ++count) {
@@ -185,7 +189,7 @@ _Bool master_init(mbedtls_x509_crt *cert) {
 		}
 	}
 	ctx.cert = cert;
-	ctx.sockfd = net_init();
+	ctx.sockfd = net_init(port);
 	if(ctx.sockfd == -1) {
 		fprintf(stderr, "net_init() failed\n");
 		return 1;

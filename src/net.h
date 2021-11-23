@@ -46,7 +46,7 @@ struct MasterServerSession {
 };
 
 const char *net_tostr(struct SS *a);
-int32_t net_init();
+int32_t net_init(uint16_t port);
 void net_cleanup();
 uint32_t net_recv(int32_t sockfd, mbedtls_ctr_drbg_context *ctr_drbg, struct MasterServerSession **session, PacketProperty *property, uint8_t **buf);
 void net_send(int32_t sockfd, struct MasterServerSession *session, PacketProperty property, uint8_t *buf, uint32_t len);
@@ -55,8 +55,8 @@ uint32_t net_getNextRequestId(struct MasterServerSession *session);
 _Bool status_init();
 void status_cleanup();
 
-_Bool status_ssl_init(mbedtls_x509_crt srvcert, mbedtls_pk_context pkey);
+_Bool status_ssl_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, uint16_t port);
 void status_ssl_cleanup();
 
-_Bool master_init(mbedtls_x509_crt *cert);
+_Bool master_init(mbedtls_x509_crt *cert, uint16_t port);
 void master_cleanup();

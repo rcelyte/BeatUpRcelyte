@@ -30,40 +30,40 @@ ENUM(uint32_t, MessageType, {
 ENUM(uint8_t, HandshakeMessageType, {
 	HandshakeMessageType_ClientHelloRequest = 0,
 	HandshakeMessageType_HelloVerifyRequest = 1,
-	HandshakeMessageType_ClientHelloWithCookieRequest = 2,
-	HandshakeMessageType_ServerHelloRequest = 3,
-	HandshakeMessageType_ServerCertificateRequest = 4,
+	HandshakeMessageType_ClientHelloWithCookieRequest = 2, // recv reliable
+	HandshakeMessageType_ServerHelloRequest = 3, // send reliable
+	HandshakeMessageType_ServerCertificateRequest = 4, // send reliable
 	HandshakeMessageType_ServerCertificateResponse = 5,
-	HandshakeMessageType_ClientKeyExchangeRequest = 6,
-	HandshakeMessageType_ChangeCipherSpecRequest = 7,
+	HandshakeMessageType_ClientKeyExchangeRequest = 6, // send reliable
+	HandshakeMessageType_ChangeCipherSpecRequest = 7, // send reliable
 	HandshakeMessageType_MessageReceivedAcknowledge = 8,
-	HandshakeMessageType_MultipartMessage = 9,
+	HandshakeMessageType_MultipartMessage = 9, // send/recv reliable
 })
 ENUM(uint8_t, UserMessageType, {
-	UserMessageType_AuthenticateUserRequest,
-	UserMessageType_AuthenticateUserResponse,
-	UserMessageType_ConnectToServerResponse = 8,
-	UserMessageType_ConnectToServerRequest,
+	UserMessageType_AuthenticateUserRequest, // reliable
+	UserMessageType_AuthenticateUserResponse, // reliable
+	UserMessageType_ConnectToServerResponse = 8, // reliable
+	UserMessageType_ConnectToServerRequest, // reliable
 	UserMessageType_MessageReceivedAcknowledge = 13,
-	UserMessageType_MultipartMessage,
+	UserMessageType_MultipartMessage, // send/recv reliable
 	UserMessageType_SessionKeepaliveMessage,
-	UserMessageType_GetPublicServersRequest,
-	UserMessageType_GetPublicServersResponse,
+	UserMessageType_GetPublicServersRequest, // reliable
+	UserMessageType_GetPublicServersResponse, // reliable
 })
 ENUM(uint8_t, DedicatedServerMessageType, {
-	DedicatedServerMessageType_AuthenticateDedicatedServerRequest,
-	DedicatedServerMessageType_AuthenticateDedicatedServerResponse,
-	DedicatedServerMessageType_CreateDedicatedServerInstanceRequest = 4,
-	DedicatedServerMessageType_CreateDedicatedServerInstanceResponse,
-	DedicatedServerMessageType_DedicatedServerInstanceNoLongerAvailableRequest,
+	DedicatedServerMessageType_AuthenticateDedicatedServerRequest, // reliable
+	DedicatedServerMessageType_AuthenticateDedicatedServerResponse, // reliable
+	DedicatedServerMessageType_CreateDedicatedServerInstanceRequest = 4, // reliable
+	DedicatedServerMessageType_CreateDedicatedServerInstanceResponse, // reliable
+	DedicatedServerMessageType_DedicatedServerInstanceNoLongerAvailableRequest, // reliable
 	DedicatedServerMessageType_DedicatedServerHeartbeatRequest,
 	DedicatedServerMessageType_DedicatedServerHeartbeatResponse,
-	DedicatedServerMessageType_DedicatedServerInstanceStatusUpdateRequest = 10,
+	DedicatedServerMessageType_DedicatedServerInstanceStatusUpdateRequest = 10, // reliable
 	DedicatedServerMessageType_DedicatedServerShutDownRequest,
-	DedicatedServerMessageType_DedicatedServerPrepareForConnectionRequest,
+	DedicatedServerMessageType_DedicatedServerPrepareForConnectionRequest, // reliable
 	DedicatedServerMessageType_MessageReceivedAcknowledge,
-	DedicatedServerMessageType_MultipartMessage,
-	DedicatedServerMessageType_DedicatedServerPrepareForConnectionResponse,
+	DedicatedServerMessageType_MultipartMessage, // send/recv reliable
+	DedicatedServerMessageType_DedicatedServerPrepareForConnectionResponse, // reliable
 })
 /*ENUM(uint8_t, DiscoveryPolicy, {
 	DiscoveryPolicy_Hidden = 0,
@@ -181,7 +181,6 @@ struct ServerHelloRequest {
 	struct ByteArrayNetSerializable publicKey;
 	struct ByteArrayNetSerializable signature;
 };
-// struct ServerCertificateRequest;
 // struct ClientKeyExchangeRequest;
 // struct ChangeCipherSpecRequest;
 struct BaseMasterServerResponse {
@@ -190,12 +189,6 @@ struct BaseMasterServerResponse {
 struct BaseMasterServerAcknowledgeMessage {
 	struct BaseMasterServerResponse base;
 	bool messageHandled;
-};
-struct HandshakeMessageReceivedAcknowledge {
-	struct BaseMasterServerAcknowledgeMessage base;
-};
-struct DedicatedServerMessageReceivedAcknowledge {
-	struct BaseMasterServerAcknowledgeMessage base;
 };
 struct BaseMasterServerMultipartMessage {
 	struct BaseMasterServerReliableRequest base;
@@ -254,8 +247,6 @@ void pkt_writeServerCertificateRequest(uint8_t **pkt, struct ServerCertificateRe
 void pkt_writeServerHelloRequest(uint8_t **pkt, struct ServerHelloRequest in);
 void pkt_writeBaseMasterServerResponse(uint8_t **pkt, struct BaseMasterServerResponse in);
 void pkt_writeBaseMasterServerAcknowledgeMessage(uint8_t **pkt, struct BaseMasterServerAcknowledgeMessage in);
-void pkt_writeHandshakeMessageReceivedAcknowledge(uint8_t **pkt, struct HandshakeMessageReceivedAcknowledge in);
-void pkt_writeDedicatedServerMessageReceivedAcknowledge(uint8_t **pkt, struct DedicatedServerMessageReceivedAcknowledge in);
 void pkt_writeBaseMasterServerMultipartMessage(uint8_t **pkt, struct BaseMasterServerMultipartMessage in);
 #define SERIALIZE_HEAD(pkt, msg, mtype) { \
 	struct MessageHeader _message = (msg); \
