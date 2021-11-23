@@ -49,7 +49,7 @@ You should now be able to select your server in the multiplayer menu.
 
 That's right, you can use custom servers *without* mods!
 
-Open `settings.cfg`, located under `%AppData%\..\Hyperbolic Magnetism\Beat Saber` on Windows, or `~/.steam/steam/steamapps/compatdata/620980/pfx/drive_c/users/steamuser/AppData/LocalLow/Hyperbolic Magnetism/Beat Saber` on Linux.
+Open `settings.cfg`, located under `%AppData%\..\LocalLow\Hyperbolic Magnetism\Beat Saber` on Windows, or `~/.steam/steam/steamapps/compatdata/620980/pfx/drive_c/users/steamuser/AppData/LocalLow/Hyperbolic Magnetism/Beat Saber` on Linux.
 
 Search for "useCustomServerEnvironment".
 
