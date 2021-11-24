@@ -1,27 +1,29 @@
- DANGEROUS CLASSES (contain ByteArrayNetSerializable):
-     ClientHelloWithCookieRequest
-     ServerCertificateRequest
-     AuthenticateDedicatedServerRequest
-     CreateDedicatedServerInstanceResponse
-     DedicatedServerPrepareForConnectionRequest
-     HelloVerifyRequest
-     BaseConnectToServerRequest
-     ServerHelloRequest
-     ClientKeyExchangeRequest
-     CreateDedicatedServerInstanceRequest
-     ConnectToServerResponse
+/* DANGEROUS CLASSES (contain ByteArrayNetSerializable):
+ *     ClientHelloWithCookieRequest
+ *     ServerCertificateRequest
+ *     AuthenticateDedicatedServerRequest
+ *     CreateDedicatedServerInstanceResponse
+ *     DedicatedServerPrepareForConnectionRequest
+ *     HelloVerifyRequest
+ *     BaseConnectToServerRequest
+ *     ServerHelloRequest
+ *     ClientKeyExchangeRequest
+ *     CreateDedicatedServerInstanceRequest
+ *     ConnectToServerResponse
+ */
 
- Unreliable packets:
-     HandshakeMessageType_ClientHelloRequest
-     HandshakeMessageType_HelloVerifyRequest
-     HandshakeMessageType_ServerCertificateResponse
-     HandshakeMessageType_MessageReceivedAcknowledge
-     UserMessageType_MessageReceivedAcknowledge
-     UserMessageType_SessionKeepaliveMessage
-     DedicatedServerMessageType_DedicatedServerHeartbeatRequest
-     DedicatedServerMessageType_DedicatedServerHeartbeatResponse
-     DedicatedServerMessageType_DedicatedServerShutDownRequest
-     DedicatedServerMessageType_MessageReceivedAcknowledge
+/* Unreliable packets:
+ *     HandshakeMessageType_ClientHelloRequest
+ *     HandshakeMessageType_HelloVerifyRequest
+ *     HandshakeMessageType_ServerCertificateResponse
+ *     HandshakeMessageType_MessageReceivedAcknowledge
+ *     UserMessageType_MessageReceivedAcknowledge
+ *     UserMessageType_SessionKeepaliveMessage
+ *     DedicatedServerMessageType_DedicatedServerHeartbeatRequest
+ *     DedicatedServerMessageType_DedicatedServerHeartbeatResponse
+ *     DedicatedServerMessageType_DedicatedServerShutDownRequest
+ *     DedicatedServerMessageType_MessageReceivedAcknowledge
+ */
 
 u8 Packet
 	z Unreliable
@@ -72,7 +74,7 @@ d ByteArrayNetSerializable
 	u8[length,4096] data
 r String
 	u32 length
-	u8[length,4096] data
+	c[length,4096] data
 r AuthenticationToken
 	u8 platform
 	String userId
@@ -85,6 +87,27 @@ s BaseMasterServerMultipartMessage
 	vu32 length
 	vu32 totalLength
 	u8[length,384] data
+r BitMask128
+	u64 _d0
+	u64 _d1
+r SongPackMask
+	BitMask128 _bloomFilter
+r BeatmapLevelSelectionMask
+	u8 difficulties
+	u32 modifiers
+	SongPackMask songPacks
+r GameplayServerConfiguration
+	vi32 maxPlayerCount
+	vi32 discoveryPolicy
+	vi32 invitePolicy
+	vi32 gameplayServerMode
+	vi32 songSelectionMode
+	vi32 gameplayServerControlSettings
+// Using `char[8]` here instead of `struct String` to save on memory
+s PublicServerInfo
+	u32 code_length
+	c[code_length,8] code
+	vi32 currentPlayerCount
 u32 Message 0
 	u8 UserMessage 0
 		r AuthenticateUserRequest
@@ -99,8 +122,20 @@ u32 Message 0
 		s UserMultipartMessage
 			BaseMasterServerMultipartMessage base
 		d SessionKeepaliveMessage
-		d GetPublicServersRequest
-		d GetPublicServersResponse
+		r GetPublicServersRequest
+			BaseMasterServerReliableRequest base
+			String userId
+			String userName
+			vi32 offset
+			vi32 count
+			BeatmapLevelSelectionMask selectionMask
+			GameplayServerConfiguration configuration
+		s GetPublicServersResponse
+			BaseMasterServerReliableResponse base
+			u8 result
+			if(result == 0)
+				vu32 publicServerCount
+				PublicServerInfo[publicServerCount,16384] publicServers
 	u8 DedicatedServerMessage 1
 		d AuthenticateDedicatedServerRequest
 		d AuthenticateDedicatedServerResponse

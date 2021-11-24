@@ -59,7 +59,7 @@ const char *header_base =
 	"\tuint16_t fragmentPart;\n"
 	"\tuint16_t fragmentsTotal;\n"
 	"};\n"
-	"void pkt_writeBytes(uint8_t **pkt, uint8_t *in, uint32_t count);"
+	"void pkt_writeUint8Array(uint8_t **pkt, uint8_t *in, uint32_t count);"
 	"struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(uint8_t **pkt);\n"
 	"void pkt_writePacketEncryptionLayer(uint8_t **pkt, struct PacketEncryptionLayer in);\n"
 	"struct NetPacketHeader pkt_readNetPacketHeader(uint8_t **pkt);\n"
@@ -124,7 +124,8 @@ const char *code_init =
 	"static int32_t pkt_readVarInt32(uint8_t **pkt) {\n"
 	"\treturn (int32_t)pkt_readVarInt64(pkt);\n"
 	"}\n"
-	"static void pkt_readBytes(uint8_t **pkt, uint8_t *out, uint32_t count) {\n"
+	"#define pkt_readInt8Array(pkt, out, count) pkt_readUint8Array(pkt, (uint8_t*)out, count)\n"
+	"static void pkt_readUint8Array(uint8_t **pkt, uint8_t *out, uint32_t count) {\n"
 	"\tmemcpy(out, *pkt, count);\n"
 	"\t*pkt += count;\n"
 	"}\n"
@@ -164,10 +165,19 @@ const char *code_init =
 	"\t\tpkt_writeUint8(pkt, byte);\n"
 	"\t} while(v);\n"
 	"}\n"
+	"static void pkt_writeVarInt64(uint8_t **pkt, int64_t v) {\n"
+	"\tif(v < 0)\n"
+	"\t\treturn pkt_writeVarUint64(pkt, (-(v + 1L) << 1) + 1L);\n"
+	"\tpkt_writeVarUint64(pkt, v << 1);\n"
+	"}\n"
 	"static void pkt_writeVarUint32(uint8_t **pkt, uint32_t v) {\n"
 	"\tpkt_writeVarUint64(pkt, v);\n"
 	"}\n"
-	"void pkt_writeBytes(uint8_t **pkt, uint8_t *in, uint32_t count) {\n"
+	"static void pkt_writeVarInt32(uint8_t **pkt, int32_t v) {\n"
+	"\tpkt_writeVarInt64(pkt, v);\n"
+	"}\n"
+	"#define pkt_writeInt8Array(pkt, out, count) pkt_writeUint8Array(pkt, (uint8_t*)out, count)\n"
+	"void pkt_writeUint8Array(uint8_t **pkt, uint8_t *in, uint32_t count) {\n"
 	"\tmemcpy(*pkt, in, count);\n"
 	"\t*pkt += count;\n"
 	"}\n"
@@ -227,7 +237,7 @@ void trywrite(FILE *f, const char *name, const char *start, const char *end) {
 	exit(-1);
 }
 _Bool alpha(char c) {
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
 }
 _Bool numeric(char c) {
 	return c >= '0' && c <= '9';
@@ -254,10 +264,10 @@ uint32_t count_tabs(const char *s) {
 char *skip_char(char *s, char c) {
 	if(*s == c)
 		return s+1;
-	uint32_t line = 1, column = 0;
+	uint32_t line = 1, column = 1;
 	for(char *it = desc_buf; it < s; ++it) {
 		if(*it == '\n')
-			++line, column = 0;
+			++line, column = 1;
 		else
 			++column;
 	}
@@ -281,14 +291,16 @@ void typename(char *in, char *out, uint32_t lim, const char *de) {
 		}
 		return;
 	}
-	if(type == 'u') {
-		sprintf(out, "uint%u_t", size);
+	if(type == 'b') {
+		sprintf(out, "_Bool");
+	} else if(type == 'c') {
+		sprintf(out, "char");
 	} else if(type == 'i') {
 		sprintf(out, "int%u_t", size);
-	} else if(type == 'b') {
-		sprintf(out, "_Bool", size);
+	} else if(type == 'u') {
+		sprintf(out, "uint%u_t", size);
 	} else if(type == 'z') {
-		sprintf(out, "void", size);
+		sprintf(out, "void");
 	} else {
 		if(de) {
 			sprintf(out, "%s", de);
@@ -307,18 +319,20 @@ _Bool fnname(char *in, char *out, uint32_t lim) {
 	uint32_t size = atoll(tin);
 	for(uint8_t i = 0; numeric(*tin) && i < 2; ++i)
 		++tin;
-	if(type == 'u') {
-		sprintf(out, "%sUint%u", (*in == 'v') ? "Var" : "", size);
+	if(type == 'b') {
+		sprintf(out, "Uint8");
+	} else if(type == 'c') {
+		sprintf(out, "Int8");
 	} else if(type == 'i') {
 		sprintf(out, "%sInt%u", (*in == 'v') ? "Var" : "", size);
-	} else if(type == 'b') {
-		sprintf(out, "Uint8");
+	} else if(type == 'u') {
+		sprintf(out, "%sUint%u", (*in == 'v') ? "Var" : "", size);
 	} else {
 		read_word(in, out, lim);
 		return 0;
 	}
 	if(!*tin)
-		return type == 'u' && size == 8;
+		return type == 'c' || (type == 'u' && size == 8);
 	read_word(in, out, lim);
 	return 0;
 }
@@ -369,6 +383,77 @@ char dec_buf[524288], *dec_it = dec_buf;
 char des_buf[524288], *des_it = des_buf;
 char ser_buf[524288], *ser_it = ser_buf;
 char struct_buf[524288], *struct_it = struct_buf;
+static const char *tabs = "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t";
+char *parse_struct_entries(char *s, uint32_t indent, uint32_t outdent, _Bool des, _Bool ser) {
+	while(count_tabs(s) == indent) {
+		s += indent;
+		if(strncmp(s, "if(", 3) == 0) {
+			s += 3;
+			char *cond = s;
+			while(*s && *s != ')' && *s != '\n')
+				++s;
+			uint32_t len = s - cond;
+			s = skip_char(s, ')');
+			s = skip_char(s, '\n');
+			if(des)
+				des_it += sprintf(des_it, "%.*sif(out.%.*s) {\n", outdent, tabs, len, cond);
+			if(ser)
+				ser_it += sprintf(ser_it, "%.*sif(in.%.*s) {\n", outdent, tabs, len, cond);
+			s = parse_struct_entries(s, indent+1, outdent+1, des, ser);
+			if(des)
+				des_it += sprintf(des_it, "%.*s}\n", outdent, tabs);
+			if(ser)
+				ser_it += sprintf(ser_it, "%.*s}\n", outdent, tabs);
+		} else {
+			uint32_t count = 0;
+			char type[1024], name[1024], length[1024] = {0};
+			s = read_word(s, type, sizeof(type));
+			if(*s == '[') {
+				++s; // [
+				if(alpha(*s)) {
+					s = read_word(s, length, sizeof(length));
+					s = skip_char(s, ',');
+				}
+				count = atoll(s);
+				while(numeric(*s))
+					++s;
+				if(!*length)
+					sprintf(length, "%u", count);
+				s = skip_char(s, ']');
+			}
+			s = skip_char(s, ' ');
+			s = read_word(s, name, sizeof(name));
+			s = skip_char(s, '\n');
+
+			char stype[1024], ftype[1024];
+			typename(type, stype, sizeof(stype), NULL);
+			_Bool isU8Array = fnname(type, ftype, sizeof(ftype));
+			if(count)
+				struct_it += sprintf(struct_it, "\t%s %s[%u];\n", stype, name, count);
+			else
+				struct_it += sprintf(struct_it, "\t%s %s;\n", stype, name);
+			if(des) {
+				if(count && isU8Array) {
+					des_it += sprintf(des_it, "%.*spkt_read%sArray(pkt, out.%s, %s%s);\n", outdent, tabs, ftype, name, alpha(*length) ? "out." : "", length);
+				} else {
+					if(count)
+						des_it += sprintf(des_it, "%.*sif(%s%s <= %u)\n\t%.*sfor(uint32_t i = 0; i < %s%s; ++i)\n\t\t", outdent, tabs, alpha(*length) ? "out." : "", length, count, outdent, tabs, alpha(*length) ? "out." : "", length);
+					des_it += sprintf(des_it, "%.*sout.%s%s = pkt_read%s(pkt);\n", outdent, tabs, name, count ? "[i]" : "", ftype);
+				}
+			}
+			if(ser) {
+				if(count && isU8Array) {
+					ser_it += sprintf(ser_it, "%.*spkt_write%sArray(pkt, in.%s, %s%s);\n", outdent, tabs, ftype, name, alpha(*length) ? "in." : "", length);
+				} else {
+					if(count)
+						ser_it += sprintf(ser_it, "%.*sfor(uint32_t i = 0; i < %s%s; ++i)\n\t", outdent, tabs, alpha(*length) ? "in." : "", length);
+					ser_it += sprintf(ser_it, "%.*spkt_write%s(pkt, in.%s%s);\n", outdent, tabs, ftype, name, count ? "[i]" : "");
+				}
+			}
+		}
+	}
+	return s;
+}
 char *parse_struct(char *s, uint32_t indent) {
 	_Bool des = (*s != 's');
 	_Bool ser = (*s != 'r');
@@ -396,54 +481,7 @@ char *parse_struct(char *s, uint32_t indent) {
 		}
 	}
 
-	while(count_tabs(s) == indent) {
-		s += indent;
-		uint32_t count = 0;
-		char type[1024], name[1024], length[1024] = {0};
-		s = read_word(s, type, sizeof(type));
-		if(*s == '[') {
-			++s; // [
-			if(alpha(*s)) {
-				s = read_word(s, length, sizeof(length));
-				s = skip_char(s, ',');
-			}
-			count = atoll(s);
-			while(numeric(*s))
-				++s;
-			if(!*length)
-				sprintf(length, "%u", count);
-			s = skip_char(s, ']');
-		}
-		s = skip_char(s, ' ');
-		s = read_word(s, name, sizeof(name));
-		s = skip_char(s, '\n');
-
-		char stype[1024], ftype[1024];
-		typename(type, stype, sizeof(stype), NULL);
-		_Bool isU8Array = fnname(type, ftype, sizeof(ftype));
-		if(count)
-			struct_it += sprintf(struct_it, "\t%s %s[%u];\n", stype, name, count);
-		else
-			struct_it += sprintf(struct_it, "\t%s %s;\n", stype, name);
-		if(des) {
-			if(count && isU8Array) {
-				des_it += sprintf(des_it, "\tpkt_readBytes(pkt, out.%s, %s%s);\n", name, alpha(*length) ? "out." : "", length);
-			} else {
-				if(count)
-					des_it += sprintf(des_it, "\tif(%s%s <= %u)\n\t\tfor(uint32_t i = 0; i < %s%s; ++i)\n\t\t", alpha(*length) ? "out." : "", length, count, alpha(*length) ? "out." : "", length);
-				des_it += sprintf(des_it, "\tout.%s%s = pkt_read%s(pkt);\n", name, count ? "[i]" : "", ftype);
-			}
-		}
-		if(ser) {
-			if(count && isU8Array) {
-				ser_it += sprintf(ser_it, "\tpkt_writeBytes(pkt, in.%s, %s%s);\n", name, alpha(*length) ? "in." : "", length);
-			} else {
-				if(count)
-					ser_it += sprintf(ser_it, "\tfor(uint32_t i = 0; i < %s%s; ++i)\n\t", alpha(*length) ? "in." : "", length, count, alpha(*length) ? "in." : "", length);
-				ser_it += sprintf(ser_it, "\tpkt_write%s(pkt, in.%s%s);\n", ftype, name, count ? "[i]" : "");
-			}
-		}
-	}
+	s = parse_struct_entries(s, indent, 1, des, ser);
 
 	struct_it += sprintf(struct_it, "};\n");
 	if(des)

@@ -107,7 +107,7 @@ struct ByteArrayNetSerializable {
 };
 struct String {
 	uint32_t length;
-	uint8_t data[4096];
+	char data[4096];
 };
 struct AuthenticationToken {
 	uint8_t platform;
@@ -122,6 +122,31 @@ struct BaseMasterServerMultipartMessage {
 	uint32_t length;
 	uint32_t totalLength;
 	uint8_t data[384];
+};
+struct BitMask128 {
+	uint64_t _d0;
+	uint64_t _d1;
+};
+struct SongPackMask {
+	struct BitMask128 _bloomFilter;
+};
+struct BeatmapLevelSelectionMask {
+	uint8_t difficulties;
+	uint32_t modifiers;
+	struct SongPackMask songPacks;
+};
+struct GameplayServerConfiguration {
+	int32_t maxPlayerCount;
+	int32_t discoveryPolicy;
+	int32_t invitePolicy;
+	int32_t gameplayServerMode;
+	int32_t songSelectionMode;
+	int32_t gameplayServerControlSettings;
+};
+struct PublicServerInfo {
+	uint32_t code_length;
+	char code[8];
+	int32_t currentPlayerCount;
 };
 struct AuthenticateUserRequest {
 	struct BaseMasterServerReliableResponse base;
@@ -143,8 +168,19 @@ struct UserMultipartMessage {
 struct SessionKeepaliveMessage {
 };
 struct GetPublicServersRequest {
+	struct BaseMasterServerReliableRequest base;
+	struct String userId;
+	struct String userName;
+	int32_t offset;
+	int32_t count;
+	struct BeatmapLevelSelectionMask selectionMask;
+	struct GameplayServerConfiguration configuration;
 };
 struct GetPublicServersResponse {
+	struct BaseMasterServerReliableResponse base;
+	uint8_t result;
+	uint32_t publicServerCount;
+	struct PublicServerInfo publicServers[16384];
 };
 struct AuthenticateDedicatedServerRequest {
 };
@@ -226,6 +262,11 @@ void pkt_writeByteArrayNetSerializable(uint8_t **pkt, struct ByteArrayNetSeriali
 struct String pkt_readString(uint8_t **pkt);
 struct AuthenticationToken pkt_readAuthenticationToken(uint8_t **pkt);
 void pkt_writeBaseMasterServerMultipartMessage(uint8_t **pkt, struct BaseMasterServerMultipartMessage in);
+struct BitMask128 pkt_readBitMask128(uint8_t **pkt);
+struct SongPackMask pkt_readSongPackMask(uint8_t **pkt);
+struct BeatmapLevelSelectionMask pkt_readBeatmapLevelSelectionMask(uint8_t **pkt);
+struct GameplayServerConfiguration pkt_readGameplayServerConfiguration(uint8_t **pkt);
+void pkt_writePublicServerInfo(uint8_t **pkt, struct PublicServerInfo in);
 struct AuthenticateUserRequest pkt_readAuthenticateUserRequest(uint8_t **pkt);
 void pkt_writeAuthenticateUserResponse(uint8_t **pkt, struct AuthenticateUserResponse in);
 struct ConnectToServerResponse pkt_readConnectToServerResponse(uint8_t **pkt);
@@ -238,8 +279,6 @@ void pkt_writeUserMultipartMessage(uint8_t **pkt, struct UserMultipartMessage in
 struct SessionKeepaliveMessage pkt_readSessionKeepaliveMessage(uint8_t **pkt);
 void pkt_writeSessionKeepaliveMessage(uint8_t **pkt, struct SessionKeepaliveMessage in);
 struct GetPublicServersRequest pkt_readGetPublicServersRequest(uint8_t **pkt);
-void pkt_writeGetPublicServersRequest(uint8_t **pkt, struct GetPublicServersRequest in);
-struct GetPublicServersResponse pkt_readGetPublicServersResponse(uint8_t **pkt);
 void pkt_writeGetPublicServersResponse(uint8_t **pkt, struct GetPublicServersResponse in);
 struct AuthenticateDedicatedServerRequest pkt_readAuthenticateDedicatedServerRequest(uint8_t **pkt);
 void pkt_writeAuthenticateDedicatedServerRequest(uint8_t **pkt, struct AuthenticateDedicatedServerRequest in);
@@ -321,7 +360,7 @@ struct NetPacketHeader {
 	uint16_t fragmentPart;
 	uint16_t fragmentsTotal;
 };
-void pkt_writeBytes(uint8_t **pkt, uint8_t *in, uint32_t count);struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(uint8_t **pkt);
+void pkt_writeUint8Array(uint8_t **pkt, uint8_t *in, uint32_t count);struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(uint8_t **pkt);
 void pkt_writePacketEncryptionLayer(uint8_t **pkt, struct PacketEncryptionLayer in);
 struct NetPacketHeader pkt_readNetPacketHeader(uint8_t **pkt);
 void pkt_writeNetPacketHeader(uint8_t **pkt, struct NetPacketHeader in);

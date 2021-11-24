@@ -278,7 +278,7 @@ static void _send(int32_t sockfd, struct MasterServerSession *session, PacketTyp
 		.fragmentPart = 0,
 		.fragmentsTotal = 0,
 	});
-	pkt_writeBytes(&data, buf, len);
+	pkt_writeUint8Array(&data, buf, len);
 	#ifdef WINSOCK_VERSION
 	sendto(sockfd, (char*)pkt, data - pkt, 0, &session->addr.sa, session->addr.len);
 	#else
