@@ -33,23 +33,21 @@ ENUM(uint8_t, Platform, {
 	Steam,
 	PS4,
 })
-struct MasterServerSession {
-	struct SS addr;
-	uint32_t epoch;
-	uint32_t lastSentRequestId;
-	MasterServerSessionState state;
-	mbedtls_ecp_keypair key;
-	uint8_t cookie[32];
-	uint8_t clientRandom[32];
-	uint8_t serverRandom[32];
-	time_t lastKeepAlive;
-};
+
+struct MasterServerSession;
+uint8_t *MasterServerSession_get_clientRandom(struct MasterServerSession *session);
+uint8_t *MasterServerSession_get_serverRandom(struct MasterServerSession *session);
+uint8_t *MasterServerSession_get_cookie(struct MasterServerSession *session);
+_Bool MasterServerSession_write_key(struct MasterServerSession *session, struct ByteArrayNetSerializable *out);
+void MasterServerSession_set_epoch(struct MasterServerSession *session, uint32_t epoch);
+void MasterServerSession_set_state(struct MasterServerSession *session, MasterServerSessionState state);
 
 const char *net_tostr(struct SS *a);
 int32_t net_init(uint16_t port);
 void net_cleanup();
-uint32_t net_recv(int32_t sockfd, mbedtls_ctr_drbg_context *ctr_drbg, struct MasterServerSession **session, PacketProperty *property, uint8_t **buf);
-void net_send(int32_t sockfd, struct MasterServerSession *session, PacketProperty property, uint8_t *buf, uint32_t len);
+uint32_t net_recv(int32_t sockfd, mbedtls_ctr_drbg_context *ctr_drbg, struct MasterServerSession **session, PacketType *property, uint8_t **buf);
+void net_send(int32_t sockfd, struct MasterServerSession *session, PacketType property, uint8_t *buf, uint32_t len, _Bool reliable);
+uint8_t *net_handle_ack(struct MasterServerSession *session, uint32_t requestId);
 uint32_t net_getNextRequestId(struct MasterServerSession *session);
 
 _Bool status_init();

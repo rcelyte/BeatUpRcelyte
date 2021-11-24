@@ -1,6 +1,7 @@
 #include "enum_reflection.h"
 #include "net.h"
-#include "serial.h"
+
+#define RESEND_BUFFER 32
 
 #ifdef WINDOWS
 #define SHUT_RD SD_RECEIVE
@@ -14,6 +15,54 @@
 #include <string.h>
 #include <errno.h>
 #include <time.h>
+
+struct ResendPacket {
+	uint32_t len;
+	uint8_t data[512];
+};
+struct ResendSparsePtr {
+	uint32_t requestId;
+	uint32_t data;
+};
+struct MasterServerSession {
+	uint8_t clientRandom[32];
+	uint8_t serverRandom[32];
+	uint8_t cookie[32];
+	mbedtls_ecp_keypair key;
+	uint32_t epoch;
+	MasterServerSessionState state;
+	struct SS addr;
+	uint32_t lastSentRequestId;
+	time_t lastKeepAlive;
+	uint32_t resend_count;
+	struct ResendSparsePtr resend[RESEND_BUFFER];
+	struct ResendPacket resend_data[RESEND_BUFFER];
+};
+
+uint8_t *MasterServerSession_get_clientRandom(struct MasterServerSession *session) {
+	return session->clientRandom;
+}
+uint8_t *MasterServerSession_get_serverRandom(struct MasterServerSession *session) {
+	return session->serverRandom;
+}
+uint8_t *MasterServerSession_get_cookie(struct MasterServerSession *session) {
+	return session->cookie;
+}
+_Bool MasterServerSession_write_key(struct MasterServerSession *session, struct ByteArrayNetSerializable *out) {
+	size_t keylen = 0;
+	if(mbedtls_ecp_point_write_binary(&session->key.MBEDTLS_PRIVATE(grp), &session->key.MBEDTLS_PRIVATE(Q), MBEDTLS_ECP_PF_UNCOMPRESSED, &keylen, out->data, sizeof(out->data)) != 0) {
+		fprintf(stderr, "mbedtls_ecp_point_write_binary() failed\n");
+		return 1;
+	}
+	out->length = keylen;
+	return 0;
+}
+void MasterServerSession_set_epoch(struct MasterServerSession *session, uint32_t epoch) {
+	session->epoch = epoch;
+}
+void MasterServerSession_set_state(struct MasterServerSession *session, MasterServerSessionState state) {
+	session->state = state;
+}
 
 const char *net_tostr(struct SS *a) {
 	static char out[INET6_ADDRSTRLEN + 8];
@@ -118,7 +167,7 @@ struct SessionList {
 	struct MasterServerSession data;
 } static *sessionList = NULL;
 static uint8_t pkt[8192];
-uint32_t net_recv(int32_t sockfd, mbedtls_ctr_drbg_context *ctr_drbg, struct MasterServerSession **session, PacketProperty *property, uint8_t **buf) {
+uint32_t net_recv(int32_t sockfd, mbedtls_ctr_drbg_context *ctr_drbg, struct MasterServerSession **session, PacketType *property, uint8_t **buf) {
 	struct SS addr = {sizeof(struct sockaddr_storage)};
 	#ifdef WINSOCK_VERSION
 	ssize_t size = recvfrom(sockfd, (char*)pkt, sizeof(pkt), 0, &addr.sa, &addr.len);
@@ -147,12 +196,15 @@ uint32_t net_recv(int32_t sockfd, mbedtls_ctr_drbg_context *ctr_drbg, struct Mas
 		sptr->next = sessionList;
 		sessionList = sptr;
 		memset(&sptr->data, 0, sizeof(sptr->data));
-		sptr->data.addr = addr;
-		sptr->data.lastSentRequestId = 0;
 		sptr->data.state = MasterServerSessionState_None;
-		sptr->data.lastKeepAlive = time(NULL);
 		net_cookie(ctr_drbg, sptr->data.cookie);
 		net_cookie(ctr_drbg, sptr->data.serverRandom);
+		sptr->data.addr = addr;
+		sptr->data.lastSentRequestId = 0;
+		sptr->data.lastKeepAlive = time(NULL);
+		sptr->data.resend_count = 0;
+		for(uint32_t i = 0; i < RESEND_BUFFER; ++i)
+			sptr->data.resend[i].data = i;
 
 		mbedtls_ecp_keypair_init(&sptr->data.key);
 		if(mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP384R1, &sptr->data.key, mbedtls_ctr_drbg_random, ctr_drbg) != 0) { // valgrind warning: Source and destination overlap in memcpy()
@@ -173,7 +225,7 @@ uint32_t net_recv(int32_t sockfd, mbedtls_ctr_drbg_context *ctr_drbg, struct Mas
 	}
 	struct NetPacketHeader packet = pkt_readNetPacketHeader(buf);
 	*property = packet.property;
-	// fprintf(stderr, "\t[to %zu]packet.property=%s\n", *buf - pkt, reflect(PacketProperty, packet.property));
+	// fprintf(stderr, "\t[to %zu]packet.property=%s\n", *buf - pkt, reflect(PacketType, packet.property));
 	// fprintf(stderr, "\t[to %zu]packet.connectionNumber=%u\n", *buf - pkt, packet.connectionNumber);
 	// fprintf(stderr, "\t[to %zu]packet.isFragmented=%u\n", *buf - pkt, packet.isFragmented);
 	/*if(NetPacketHeaderSize[packet.Property] >= 3) fprintf(stderr, "\tSequence=%u\n", packet.Sequence);
@@ -184,7 +236,34 @@ uint32_t net_recv(int32_t sockfd, mbedtls_ctr_drbg_context *ctr_drbg, struct Mas
 	return &pkt[size] - *buf;
 }
 #if 1
-static void _send(int32_t sockfd, struct MasterServerSession *session, PacketProperty property, void *buf, uint32_t len) {
+static uint32_t _get_requestId(uint8_t *msg) {
+	pkt_readMessageHeader(&msg);
+	pkt_readSerializeHeader(&msg);
+	return pkt_readBaseMasterServerReliableRequest(&msg).requestId;
+}
+uint8_t *net_handle_ack(struct MasterServerSession *session, uint32_t requestId) {
+	for(uint32_t i = 0; i < session->resend_count; ++i) {
+		if(requestId == session->resend[i].requestId) {
+			--session->resend_count;
+			uint32_t data = session->resend[i].data;
+			session->resend[i] = session->resend[session->resend_count];
+			session->resend[session->resend_count].data = data;
+			return session->resend_data[data].data;
+		}
+	}
+	return NULL;
+}
+static void _send(int32_t sockfd, struct MasterServerSession *session, PacketType property, uint8_t *buf, uint32_t len, _Bool reliable) {
+	if(reliable) {
+		if(session->resend_count < RESEND_BUFFER) {
+			struct ResendSparsePtr *p = &session->resend[session->resend_count++];
+			p->requestId = _get_requestId(buf);
+			session->resend_data[p->data].len = len;
+			memcpy(session->resend_data[p->data].data, buf, len);
+		} else {
+			fprintf(stderr, "RESEND BUFFER FULL\n");
+		}
+	}
 	uint8_t *data = pkt;
 	pkt_writePacketEncryptionLayer(&data, (struct PacketEncryptionLayer){
 		.encrypted = 0,
@@ -207,27 +286,27 @@ static void _send(int32_t sockfd, struct MasterServerSession *session, PacketPro
 	#endif
 	fprintf(stderr, "[NET] sendto[%zu]\n", data - pkt);
 }
-void net_send(int32_t sockfd, struct MasterServerSession *session, PacketProperty property, uint8_t *buf, uint32_t len) {
+void net_send(int32_t sockfd, struct MasterServerSession *session, PacketType property, uint8_t *buf, uint32_t len, _Bool reliable) {
 	if(len <= 384)
-		return _send(sockfd, session, property, buf, len);
+		return _send(sockfd, session, property, buf, len, reliable);
 	uint8_t *data = buf;
 	struct MessageHeader message = pkt_readMessageHeader(&data);
 	struct SerializeHeader serial = pkt_readSerializeHeader(&data);
 	if(message.type == MessageType_UserMessage) {
-		fprintf(stderr, "serialize UserMessageType_MultipartMessage (%s)\n", reflect(UserMessageType, serial.type));
-		serial.type = UserMessageType_MultipartMessage;
+		fprintf(stderr, "serialize UserMessageType_UserMultipartMessage (%s)\n", reflect(UserMessageType, serial.type));
+		serial.type = UserMessageType_UserMultipartMessage;
 	} else if(message.type == MessageType_DedicatedServerMessage) {
-		fprintf(stderr, "serialize DedicatedServerMessageType_MultipartMessage (%s)\n", reflect(DedicatedServerMessageType, serial.type));
-		serial.type = DedicatedServerMessageType_MultipartMessage;
+		fprintf(stderr, "serialize DedicatedServerMessageType_DedicatedServerMultipartMessage (%s)\n", reflect(DedicatedServerMessageType, serial.type));
+		serial.type = DedicatedServerMessageType_DedicatedServerMultipartMessage;
 	} else if(message.type == MessageType_HandshakeMessage) {
-		fprintf(stderr, "serialize HandshakeMessageType_MultipartMessage (%s)\n", reflect(HandshakeMessageType, serial.type));
-		serial.type = HandshakeMessageType_MultipartMessage;
+		fprintf(stderr, "serialize HandshakeMessageType_HandshakeMultipartMessage (%s)\n", reflect(HandshakeMessageType, serial.type));
+		serial.type = HandshakeMessageType_HandshakeMultipartMessage;
 	} else {
 		return;
 	}
 	struct BaseMasterServerMultipartMessage mp;
 	mp.base.requestId = net_getNextRequestId(session);
-	mp.multipartMessageId = pkt_readBaseMasterServerReliableRequest(&data).requestId;
+	mp.multipartMessageId = _get_requestId(buf);
 	mp.offset = 0;
 	mp.length = 384;
 	mp.totalLength = len;
@@ -243,7 +322,7 @@ void net_send(int32_t sockfd, struct MasterServerSession *session, PacketPropert
 		serial.length = end + 1 - resp;
 		pkt_writeSerializeHeader(&resp, serial);
 		pkt_writeBaseMasterServerMultipartMessage(&resp, mp);
-		_send(sockfd, session, property, mpbuf, resp - mpbuf);
+		_send(sockfd, session, property, mpbuf, resp - mpbuf, 1);
 		mp.offset += 384;
 	} while(mp.offset < len);
 }
@@ -257,7 +336,7 @@ void (*OnNetworkLatencyUpdate)(NetPeer peer, int latency);
 void (*OnConnectionRequest)(ConnectionRequest request);
 void (*OnDeliveryEvent)(NetPeer peer, object userData);
 void (*OnNtpResponseEvent)(NtpPacket packet);
-void net_send(struct MasterServerSession *session, PacketProperty property, uint8_t *buf, uint32_t len) {
+void net_send(struct MasterServerSession *session, PacketType property, uint8_t *buf, uint32_t len) {
 	// something something LiteNetLib
 }
 #endif

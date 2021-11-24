@@ -181,7 +181,7 @@ void config_free(struct Config *cfg) {
 	mbedtls_pk_free(&cfg->status_key);
 }
 
-struct Config config_default() {
+struct Config config_default() { // TODO: use domain specific self-signed cert instead of generic one
 	struct Config out;
 	const char *cert_pem =
 		"-----BEGIN CERTIFICATE-----\n"

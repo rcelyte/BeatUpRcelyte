@@ -29,6 +29,7 @@ static DWORD WINAPI
 static void*
 #endif
 status_handler(int32_t *listenfd) {
+	fprintf(stderr, "HTTP status started\n");
 	struct SS addr = {sizeof(struct sockaddr_storage)};
 	int32_t csock;
 	while((csock = accept(*listenfd, &addr.sa, &addr.len)) != -1) {
@@ -79,9 +80,9 @@ status_handler(int32_t *listenfd) {
 	return 0;
 }
 #ifdef WINDOWS
-static HANDLE status_thread;
+static HANDLE status_thread = NULL;
 #else
-static pthread_t status_thread;
+static pthread_t status_thread = 0;
 #endif
 static int32_t listenfd = -1;
 _Bool status_init() {
@@ -117,13 +118,17 @@ _Bool status_init() {
 }
 void status_cleanup() {
 	if(listenfd != -1) {
+		fprintf(stderr, "Stopping HTTP status\n");
 		shutdown(listenfd, SHUT_RD);
 		close(listenfd);
 		listenfd = -1;
-		#ifdef WINDOWS
-		WaitForSingleObject(status_thread, INFINITE);
-		#else
-		pthread_join(status_thread, NULL);
-		#endif
+		if(status_thread) {
+			#ifdef WINDOWS
+			WaitForSingleObject(status_thread, INFINITE);
+			#else
+			pthread_join(status_thread, NULL);
+			#endif
+			status_thread = 0;
+		}
 	}
 }

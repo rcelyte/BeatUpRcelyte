@@ -1,7 +1,5 @@
 #include "config.h"
 #include "net.h"
-#include <mbedtls/entropy.h>
-#include <mbedtls/ctr_drbg.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
@@ -35,23 +33,16 @@ int main(int argc, char const *argv[]) {
 			return -1;
 		}
 	}
-
-	// TODO: use domain specific self-signed cert instead of generic one
 	if(status_init())
 		return -1;
-	fprintf(stderr, "HTTP status started\n");
 	if(status_ssl_init(&cfg.status_cert, &cfg.status_key, cfg.status_port))
 		return -1;
-	fprintf(stderr, "HTTPS status started\n");
 	if(master_init(&cfg.master_cert, cfg.master_port))
 		return -1;
-	fprintf(stderr, "Master server started\nPress [enter] to exit\n");
+	fprintf(stderr, "Press [enter] to exit\n");
 	getchar();
-	fprintf(stderr, "Stopping master server\n");
 	master_cleanup();
-	fprintf(stderr, "Stopping HTTPS status\n");
 	status_ssl_cleanup();
-	fprintf(stderr, "Stopping HTTP status\n");
 	status_cleanup();
 	config_free(&cfg);
 	return 0;

@@ -1,0 +1,145 @@
+ DANGEROUS CLASSES (contain ByteArrayNetSerializable):
+     ClientHelloWithCookieRequest
+     ServerCertificateRequest
+     AuthenticateDedicatedServerRequest
+     CreateDedicatedServerInstanceResponse
+     DedicatedServerPrepareForConnectionRequest
+     HelloVerifyRequest
+     BaseConnectToServerRequest
+     ServerHelloRequest
+     ClientKeyExchangeRequest
+     CreateDedicatedServerInstanceRequest
+     ConnectToServerResponse
+
+ Unreliable packets:
+     HandshakeMessageType_ClientHelloRequest
+     HandshakeMessageType_HelloVerifyRequest
+     HandshakeMessageType_ServerCertificateResponse
+     HandshakeMessageType_MessageReceivedAcknowledge
+     UserMessageType_MessageReceivedAcknowledge
+     UserMessageType_SessionKeepaliveMessage
+     DedicatedServerMessageType_DedicatedServerHeartbeatRequest
+     DedicatedServerMessageType_DedicatedServerHeartbeatResponse
+     DedicatedServerMessageType_DedicatedServerShutDownRequest
+     DedicatedServerMessageType_MessageReceivedAcknowledge
+
+u8 Packet
+	z Unreliable
+	z Channeled
+	z Ack
+	z Ping
+	z Pong
+	z ConnectRequest
+	z ConnectAccept
+	z Disconnect
+	z UnconnectedMessage
+	z MtuCheck
+	z MtuOk
+	z Broadcast
+	z Merged
+	z ShutdownOk
+	z PeerNotFound
+	z InvalidProtocol
+	z NatMessage
+	z Empty
+u8 Platform
+	z Test
+	z OculusRift
+	z OculusQuest
+	z Steam
+	z PS4
+	z PS4Dev
+	z PS4Cert
+	z Oculus 1
+d MessageHeader
+	u32 type
+	vu32 protocolVersion
+d SerializeHeader
+	vu32 length
+	u8 type
+d BaseMasterServerReliableRequest
+	u32 requestId
+d BaseMasterServerResponse
+	u32 responseId
+d BaseMasterServerReliableResponse
+	u32 requestId
+	u32 responseId
+d BaseMasterServerAcknowledgeMessage
+	BaseMasterServerResponse base
+	b messageHandled
+d ByteArrayNetSerializable
+	vu32 length
+	u8[length,4096] data
+r String
+	u32 length
+	u8[length,4096] data
+r AuthenticationToken
+	u8 platform
+	String userId
+	String userName
+	ByteArrayNetSerializable sessionToken
+s BaseMasterServerMultipartMessage
+	BaseMasterServerReliableRequest base
+	u32 multipartMessageId
+	vu32 offset
+	vu32 length
+	vu32 totalLength
+	u8[length,384] data
+u32 Message 0
+	u8 UserMessage 0
+		r AuthenticateUserRequest
+			BaseMasterServerReliableResponse base
+			AuthenticationToken authenticationToken
+		s AuthenticateUserResponse
+			BaseMasterServerReliableResponse base
+			u8 result
+		d ConnectToServerResponse 8
+		d ConnectToServerRequest
+		d UserMessageReceivedAcknowledge 13
+		s UserMultipartMessage
+			BaseMasterServerMultipartMessage base
+		d SessionKeepaliveMessage
+		d GetPublicServersRequest
+		d GetPublicServersResponse
+	u8 DedicatedServerMessage 1
+		d AuthenticateDedicatedServerRequest
+		d AuthenticateDedicatedServerResponse
+		d CreateDedicatedServerInstanceRequest 4
+		d CreateDedicatedServerInstanceResponse
+		d DedicatedServerInstanceNoLongerAvailableRequest
+		d DedicatedServerHeartbeatRequest
+		d DedicatedServerHeartbeatResponse
+		d DedicatedServerInstanceStatusUpdateRequest 10
+		d DedicatedServerShutDownRequest
+		d DedicatedServerPrepareForConnectionRequest
+		d DedicatedServerMessageReceivedAcknowledge
+		s DedicatedServerMultipartMessage
+			BaseMasterServerMultipartMessage base
+		d DedicatedServerPrepareForConnectionResponse
+	u8 HandshakeMessage 3192347326
+		r ClientHelloRequest
+			BaseMasterServerReliableRequest base
+			u8[32] random
+		s HelloVerifyRequest
+			BaseMasterServerReliableResponse base
+			u8[32] cookie
+		r ClientHelloWithCookieRequest
+			BaseMasterServerReliableRequest base
+			u32 certificateResponseId
+			u8[32] random
+			u8[32] cookie
+		s ServerHelloRequest
+			BaseMasterServerReliableResponse base
+			u8[32] random
+			ByteArrayNetSerializable publicKey
+			ByteArrayNetSerializable signature
+		s ServerCertificateRequest
+			BaseMasterServerReliableResponse base
+			vu32 certificateCount
+			ByteArrayNetSerializable[certificateCount,10] certificateList
+		r ServerCertificateResponse
+		d ClientKeyExchangeRequest
+		d ChangeCipherSpecRequest
+		d HandshakeMessageReceivedAcknowledge
+		s HandshakeMultipartMessage
+			BaseMasterServerMultipartMessage base

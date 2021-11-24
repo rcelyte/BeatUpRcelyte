@@ -19,13 +19,18 @@ struct Context {
 	mbedtls_entropy_context entropy;
 };
 
-static void ack(struct Context *ctx, struct MasterServerSession *session, uint8_t *pkt, struct MessageHeader message, struct BaseMasterServerReliableRequest req) {
+static void send_ack(struct Context *ctx, struct MasterServerSession *session, uint8_t *pkt, struct MessageHeader message, struct BaseMasterServerReliableRequest req) {
 	struct BaseMasterServerAcknowledgeMessage r_ack;
 	r_ack.base.responseId = req.requestId;
 	r_ack.messageHandled = 1;
 	uint8_t *resp = pkt;
-	SERIALIZE(&resp, message, HandshakeMessage, MessageReceivedAcknowledge, BaseMasterServerAcknowledgeMessage, r_ack);
-	net_send(ctx->sockfd, session, PacketProperty_UnconnectedMessage, pkt, resp - pkt);
+	if(message.type == MessageType_UserMessage)
+		SERIALIZE(&resp, message, UserMessage, UserMessageReceivedAcknowledge, BaseMasterServerAcknowledgeMessage, r_ack)
+	else if(message.type == MessageType_DedicatedServerMessage)
+		SERIALIZE(&resp, message, DedicatedServerMessage, DedicatedServerMessageReceivedAcknowledge, BaseMasterServerAcknowledgeMessage, r_ack)
+	else if(message.type == MessageType_HandshakeMessage)
+		SERIALIZE(&resp, message, HandshakeMessage, HandshakeMessageReceivedAcknowledge, BaseMasterServerAcknowledgeMessage, r_ack)
+	net_send(ctx->sockfd, session, PacketType_UnconnectedMessage, pkt, resp - pkt, 0);
 }
 
 #ifdef WINDOWS
@@ -34,13 +39,14 @@ static DWORD WINAPI
 static void*
 #endif
 master_handler(struct Context *ctx) {
+	fprintf(stderr, "Master server started\n");
 	uint32_t len;
 	struct MasterServerSession *session;
-	PacketProperty property;
+	PacketType property;
 	uint8_t *pkt;
 	while((len = net_recv(ctx->sockfd, &ctx->ctr_drbg, &session, &property, &pkt)) > 0) {
 		uint8_t *data = pkt, *end = &pkt[len];
-		if(property == PacketProperty_UnconnectedMessage) {
+		if(property == PacketType_UnconnectedMessage) {
 			struct MessageHeader message = pkt_readMessageHeader(&data);
 			struct SerializeHeader serial = pkt_readSerializeHeader(&data);
 			#if 0
@@ -54,8 +60,8 @@ master_handler(struct Context *ctx) {
 					case UserMessageType_AuthenticateUserResponse: fprintf(stderr, "UserMessageType_AuthenticateUserResponse not implemented\n"); return 0;
 					case UserMessageType_ConnectToServerResponse: fprintf(stderr, "UserMessageType_ConnectToServerResponse not implemented\n"); return 0;
 					case UserMessageType_ConnectToServerRequest: fprintf(stderr, "UserMessageType_ConnectToServerRequest not implemented\n"); return 0;
-					case UserMessageType_MessageReceivedAcknowledge: fprintf(stderr, "UserMessageType_MessageReceivedAcknowledge not implemented\n"); return 0;
-					case UserMessageType_MultipartMessage: fprintf(stderr, "UserMessageType_MultipartMessage not implemented\n"); return 0;
+					case UserMessageType_UserMessageReceivedAcknowledge: fprintf(stderr, "UserMessageType_UserMessageReceivedAcknowledge not implemented\n"); return 0;
+					case UserMessageType_UserMultipartMessage: fprintf(stderr, "UserMessageType_UserMultipartMessage not implemented\n"); return 0;
 					case UserMessageType_SessionKeepaliveMessage: fprintf(stderr, "UserMessageType_SessionKeepaliveMessage not implemented\n"); return 0;
 					case UserMessageType_GetPublicServersRequest: fprintf(stderr, "UserMessageType_GetPublicServersRequest not implemented\n"); return 0;
 					case UserMessageType_GetPublicServersResponse: fprintf(stderr, "UserMessageType_GetPublicServersResponse not implemented\n"); return 0;
@@ -73,8 +79,8 @@ master_handler(struct Context *ctx) {
 					case DedicatedServerMessageType_DedicatedServerInstanceStatusUpdateRequest: fprintf(stderr, "DedicatedServerMessageType_DedicatedServerInstanceStatusUpdateRequest not implemented\n"); return 0;
 					case DedicatedServerMessageType_DedicatedServerShutDownRequest: fprintf(stderr, "DedicatedServerMessageType_DedicatedServerShutDownRequest not implemented\n"); return 0;
 					case DedicatedServerMessageType_DedicatedServerPrepareForConnectionRequest: fprintf(stderr, "DedicatedServerMessageType_DedicatedServerPrepareForConnectionRequest not implemented\n"); return 0;
-					case DedicatedServerMessageType_MessageReceivedAcknowledge: fprintf(stderr, "DedicatedServerMessageType_MessageReceivedAcknowledge not implemented\n"); return 0;
-					case DedicatedServerMessageType_MultipartMessage: fprintf(stderr, "DedicatedServerMessageType_MultipartMessage not implemented\n"); return 0;
+					case DedicatedServerMessageType_DedicatedServerMessageReceivedAcknowledge: fprintf(stderr, "DedicatedServerMessageType_DedicatedServerMessageReceivedAcknowledge not implemented\n"); return 0;
+					case DedicatedServerMessageType_DedicatedServerMultipartMessage: fprintf(stderr, "DedicatedServerMessageType_DedicatedServerMultipartMessage not implemented\n"); return 0;
 					case DedicatedServerMessageType_DedicatedServerPrepareForConnectionResponse: fprintf(stderr, "DedicatedServerMessageType_DedicatedServerPrepareForConnectionResponse not implemented\n"); return 0;
 					default: fprintf(stderr, "BAD TYPE\n");
 				}
@@ -82,13 +88,13 @@ master_handler(struct Context *ctx) {
 				switch(serial.type) {
 					case HandshakeMessageType_ClientHelloRequest: {
 						struct ClientHelloRequest req = pkt_readClientHelloRequest(&data);
-						session->epoch = req.base.requestId & 0xff000000;
-						session->state = MasterServerSessionState_New;
-						memcpy(session->clientRandom, req.random, sizeof(session->clientRandom));
+						MasterServerSession_set_epoch(session, req.base.requestId & 0xff000000);
+						MasterServerSession_set_state(session, MasterServerSessionState_New);
+						memcpy(MasterServerSession_get_clientRandom(session), req.random, 32);
 						struct HelloVerifyRequest r_hello;
 						r_hello.base.requestId = 0; // net_getNextRequestId(session);
 						r_hello.base.responseId = req.base.requestId;
-						memcpy(r_hello.cookie, session->cookie, sizeof(r_hello.cookie));
+						memcpy(r_hello.cookie, MasterServerSession_get_cookie(session), sizeof(r_hello.cookie));
 						uint8_t *resp = pkt;
 						#if 0
 						SERIALIZE(&resp, message, HandshakeMessage, HelloVerifyRequest, HelloVerifyRequest, r_hello);
@@ -96,16 +102,16 @@ master_handler(struct Context *ctx) {
 						SERIALIZE_HEAD(&resp, message, HandshakeMessage);
 						SERIALIZE_BODY(&resp, HandshakeMessageType_HelloVerifyRequest, HelloVerifyRequest, r_hello);
 						#endif
-						net_send(ctx->sockfd, session, PacketProperty_UnconnectedMessage, pkt, resp - pkt);
+						net_send(ctx->sockfd, session, PacketType_UnconnectedMessage, pkt, resp - pkt, 0);
 						break;
 					}
 					case HandshakeMessageType_HelloVerifyRequest: fprintf(stderr, "BAD TYPE: HandshakeMessageType_HelloVerifyRequest\n"); break;
 					case HandshakeMessageType_ClientHelloWithCookieRequest: {
 						struct ClientHelloWithCookieRequest req = pkt_readClientHelloWithCookieRequest(&data);
-						ack(ctx, session, pkt, message, req.base);
-						if(memcmp(req.cookie, session->cookie, sizeof(session->cookie)) != 0)
+						send_ack(ctx, session, pkt, message, req.base);
+						if(memcmp(req.cookie, MasterServerSession_get_cookie(session), 32) != 0)
 							break;
-						if(memcmp(req.random, session->clientRandom, sizeof(session->clientRandom)) != 0)
+						if(memcmp(req.random, MasterServerSession_get_clientRandom(session), 32) != 0)
 							break;
 
 						struct ServerCertificateRequest r_cert;
@@ -119,28 +125,24 @@ master_handler(struct Context *ctx) {
 						}
 						uint8_t *resp = pkt;
 						SERIALIZE(&resp, message, HandshakeMessage, ServerCertificateRequest, ServerCertificateRequest, r_cert);
-						net_send(ctx->sockfd, session, PacketProperty_UnconnectedMessage, pkt, resp - pkt);
+						net_send(ctx->sockfd, session, PacketType_UnconnectedMessage, pkt, resp - pkt, 1);
 
 						struct ServerHelloRequest r_hello;
 						r_hello.base.requestId = net_getNextRequestId(session);
 						r_hello.base.responseId = req.base.requestId;
-						memcpy(r_hello.random, session->serverRandom, sizeof(r_hello.random));
-						size_t keylen = 0;
-						if(mbedtls_ecp_point_write_binary(&session->key.MBEDTLS_PRIVATE(grp), &session->key.MBEDTLS_PRIVATE(Q), MBEDTLS_ECP_PF_UNCOMPRESSED, &keylen, r_hello.publicKey.data, sizeof(r_hello.publicKey.data)) != 0) {
-							fprintf(stderr, "mbedtls_ecp_point_write_binary() failed\n");
+						memcpy(r_hello.random, MasterServerSession_get_serverRandom(session), sizeof(r_hello.random));
+						if(MasterServerSession_write_key(session, &r_hello.publicKey))
 							break;
-						}
-						r_hello.publicKey.length = keylen;
 						r_hello.signature.length = 0;
-						memcpy(r_hello.signature.data, session->clientRandom, sizeof(session->clientRandom));
-						r_hello.signature.length += sizeof(session->clientRandom);
-						memcpy(&r_hello.signature.data[r_hello.signature.length], session->serverRandom, sizeof(session->serverRandom));
-						r_hello.signature.length += sizeof(session->serverRandom);
+						memcpy(r_hello.signature.data, MasterServerSession_get_clientRandom(session), 32);
+						r_hello.signature.length += 32;
+						memcpy(&r_hello.signature.data[r_hello.signature.length], MasterServerSession_get_serverRandom(session), 32);
+						r_hello.signature.length += 32;
 						memcpy(&r_hello.signature.data[r_hello.signature.length], r_hello.publicKey.data, r_hello.publicKey.length);
 						r_hello.signature.length += r_hello.publicKey.length;
 						resp = pkt;
 						SERIALIZE(&resp, message, HandshakeMessage, ServerHelloRequest, ServerHelloRequest, r_hello);
-						net_send(ctx->sockfd, session, PacketProperty_UnconnectedMessage, pkt, resp - pkt);
+						net_send(ctx->sockfd, session, PacketType_UnconnectedMessage, pkt, resp - pkt, 1);
 						break;
 					}
 					case HandshakeMessageType_ServerHelloRequest: fprintf(stderr, "BAD TYPE: HandshakeMessageType_ServerHelloRequest\n"); break;
@@ -152,15 +154,21 @@ master_handler(struct Context *ctx) {
 						// send HandshakeMessageType_ChangeCipherSpecRequest
 						break;
 					case HandshakeMessageType_ChangeCipherSpecRequest: fprintf(stderr, "BAD TYPE: HandshakeMessageType_ChangeCipherSpecRequest\n"); break;
-					case HandshakeMessageType_MessageReceivedAcknowledge: data = end; break; // ignore
-					case HandshakeMessageType_MultipartMessage: fprintf(stderr, "HandshakeMessageType_MultipartMessage not implemented\n"); return 0;
+					case HandshakeMessageType_HandshakeMessageReceivedAcknowledge: {
+						struct BaseMasterServerAcknowledgeMessage ack = pkt_readBaseMasterServerAcknowledgeMessage(&data);
+						uint8_t *resp = net_handle_ack(session, ack.base.responseId);
+						if(!resp) // expected in prodution; only error when testing on local network
+							fprintf(stderr, "UNMATCHED ACK: %u\n", ack.base.responseId);
+						break;
+					}
+					case HandshakeMessageType_HandshakeMultipartMessage: fprintf(stderr, "HandshakeMessageType_HandshakeMultipartMessage not implemented\n"); return 0;
 					default: fprintf(stderr, "BAD TYPE\n");
 				}
 			} else {
 				fprintf(stderr, "BAD TYPE\n");
 			}
 		} else {
-			fprintf(stderr, "Unsupported packet type: %s\n", reflect(PacketProperty, property));
+			fprintf(stderr, "Unsupported packet type: %s\n", reflect(PacketType, property));
 		}
 		if(data != end)
 			fprintf(stderr, "BAD PACKET LENGTH (expected %u, got %zu)\n", len, data - pkt);
@@ -210,6 +218,7 @@ _Bool master_init(mbedtls_x509_crt *cert, uint16_t port) {
 
 void master_cleanup() {
 	if(ctx.sockfd != -1) {
+		fprintf(stderr, "Stopping master server\n");
 		mbedtls_entropy_free(&ctx.entropy);
 		mbedtls_ctr_drbg_free(&ctx.ctr_drbg);
 		net_cleanup(ctx.sockfd);

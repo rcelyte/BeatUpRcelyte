@@ -23,6 +23,7 @@ static DWORD WINAPI
 static void*
 #endif
 status_ssl_handler(struct Context *ctx) {
+	fprintf(stderr, "HTTPS status started\n");
 	mbedtls_net_context clientfd;
 	while(mbedtls_net_accept(&ctx->listenfd, &clientfd, NULL, 0, NULL) == 0) {
 		mbedtls_ssl_set_bio(&ctx->ssl, &clientfd, mbedtls_net_send, mbedtls_net_recv, NULL);
@@ -82,9 +83,9 @@ status_ssl_handler(struct Context *ctx) {
 }
 
 #ifdef WINDOWS
-static HANDLE status_thread;
+static HANDLE status_thread = NULL;
 #else
-static pthread_t status_thread;
+static pthread_t status_thread = 0;
 #endif
 static struct Context ctx;
 _Bool status_ssl_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, uint16_t port) {
@@ -127,15 +128,19 @@ _Bool status_ssl_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, uint16_t 
 }
 void status_ssl_cleanup() {
 	if(ctx.listenfd.MBEDTLS_PRIVATE(fd) != -1) {
+		fprintf(stderr, "Stopping HTTPS status\n");
 		mbedtls_ctr_drbg_free(&ctx.ctr_drbg);
 		mbedtls_entropy_free(&ctx.entropy);
 		mbedtls_ssl_config_free(&ctx.conf);
 		mbedtls_ssl_free(&ctx.ssl);
 		mbedtls_net_free(&ctx.listenfd);
-		#ifdef WINDOWS
-		WaitForSingleObject(status_thread, INFINITE);
-		#else
-		pthread_join(status_thread, NULL);
-		#endif
+		if(status_thread) {
+			#ifdef WINDOWS
+			WaitForSingleObject(status_thread, INFINITE);
+			#else
+			pthread_join(status_thread, NULL);
+			#endif
+			status_thread = 0;
+		}
 	}
 }

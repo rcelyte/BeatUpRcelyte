@@ -14,14 +14,11 @@ OBJS += $(LIBS:%=$(OBJDIR)/%)
 CFLAGS += -std=gnu11 -Imbedtls/include -Wall -Wno-unused-function -Werror
 LDFLAGS += -Wl,--gc-sections,--fatal-warnings
 
-# CFLAGS += -DENABLE_GUI
-# LDFLAGS += -lxcb
-
 server.$(EXT): $(OBJS)
 	@echo "[linking $@]"
 	$(CC) $(OBJS) $(LDFLAGS) -o "$@"
 
-$(OBJDIR)/%.c.o: %.c mbedtls/.git
+$(OBJDIR)/%.c.o: %.c mbedtls/.git makefile
 	@echo "[compiling $(notdir $<)]"
 	@mkdir -p "$(@D)"
 	$(CC) $(CFLAGS) -c "$<" -o "$@" -MMD -MP
@@ -37,7 +34,7 @@ $(OBJDIR)/libmbed%.a: mbedtls/.git
 mbedtls/.git:
 	git submodule update --init
 
-$(OBJDIR)/libs.mk: libs.c
+$(OBJDIR)/libs.mk: libs.c makefile
 	@mkdir -p "$(@D)"
 	$(CC) -E libs.c -o "$@"
 
