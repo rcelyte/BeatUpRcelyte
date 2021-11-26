@@ -79,6 +79,56 @@ ENUM(uint32_t, MessageType, {
 	MessageType_DedicatedServerMessage = 1,
 	MessageType_HandshakeMessage = 3192347326,
 })
+#define SERIALIZE_HEAD(pkt, msg, mtype) { \
+	struct MessageHeader _message = (msg); \
+	_message.type = MessageType_##mtype; \
+	pkt_writeMessageHeader(pkt, _message); \
+}
+#define SERIALIZE_BODY(pkt, stype, dtype, data) { \
+	fprintf(stderr, "serialize " #stype "\n"); \
+	uint8_t *_end = *(pkt); \
+	pkt_write##dtype(&_end, data); \
+	struct SerializeHeader _serial; \
+	_serial.length = _end + 1 - *(pkt); \
+	_serial.type = stype; \
+	pkt_writeSerializeHeader(pkt, _serial); \
+	pkt_write##dtype(pkt, data); \
+}
+#define SERIALIZE(pkt, msg, mtype, stype, dtype, data) { \
+	fprintf(stderr, "serialize " #mtype "Type_" #stype "\n"); \
+	uint8_t *_end = *(pkt); \
+	pkt_write##dtype(&_end, data); \
+	struct MessageHeader _message = (msg); \
+	_message.type = MessageType_##mtype; \
+	struct SerializeHeader _serial; \
+	_serial.length = _end + 1 - *(pkt); \
+	_serial.type = mtype##Type_##stype; \
+	pkt_writeMessageHeader(pkt, _message); \
+	pkt_writeSerializeHeader(pkt, _serial); \
+	pkt_write##dtype(pkt, data); \
+}
+struct PacketEncryptionLayer {
+	_Bool encrypted;
+	uint32_t sequenceId;
+};
+struct NetPacketHeader {
+	PacketType property;
+	uint8_t connectionNumber;
+	_Bool isFragmented;
+	uint16_t sequence;
+	uint8_t channelId;
+	uint16_t fragmentId;
+	uint16_t fragmentPart;
+	uint16_t fragmentsTotal;
+};
+struct ServerCode {
+	uint32_t value; // 25 bit value
+};
+void pkt_writeUint8Array(uint8_t **pkt, uint8_t *in, uint32_t count);
+struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(uint8_t **pkt);
+void pkt_writePacketEncryptionLayer(uint8_t **pkt, struct PacketEncryptionLayer in);
+struct NetPacketHeader pkt_readNetPacketHeader(uint8_t **pkt);
+void pkt_writeNetPacketHeader(uint8_t **pkt, struct NetPacketHeader in);
 struct MessageHeader {
 	uint32_t type;
 	uint32_t protocolVersion;
@@ -144,8 +194,7 @@ struct GameplayServerConfiguration {
 	int32_t gameplayServerControlSettings;
 };
 struct PublicServerInfo {
-	uint32_t code_length;
-	char code[8];
+	struct ServerCode code;
 	int32_t currentPlayerCount;
 };
 struct AuthenticateUserRequest {
@@ -260,6 +309,7 @@ void pkt_writeBaseMasterServerAcknowledgeMessage(uint8_t **pkt, struct BaseMaste
 struct ByteArrayNetSerializable pkt_readByteArrayNetSerializable(uint8_t **pkt);
 void pkt_writeByteArrayNetSerializable(uint8_t **pkt, struct ByteArrayNetSerializable in);
 struct String pkt_readString(uint8_t **pkt);
+void pkt_writeString(uint8_t **pkt, struct String in);
 struct AuthenticationToken pkt_readAuthenticationToken(uint8_t **pkt);
 void pkt_writeBaseMasterServerMultipartMessage(uint8_t **pkt, struct BaseMasterServerMultipartMessage in);
 struct BitMask128 pkt_readBitMask128(uint8_t **pkt);
@@ -318,49 +368,3 @@ void pkt_writeChangeCipherSpecRequest(uint8_t **pkt, struct ChangeCipherSpecRequ
 struct HandshakeMessageReceivedAcknowledge pkt_readHandshakeMessageReceivedAcknowledge(uint8_t **pkt);
 void pkt_writeHandshakeMessageReceivedAcknowledge(uint8_t **pkt, struct HandshakeMessageReceivedAcknowledge in);
 void pkt_writeHandshakeMultipartMessage(uint8_t **pkt, struct HandshakeMultipartMessage in);
-#define SERIALIZE_HEAD(pkt, msg, mtype) { \
-	struct MessageHeader _message = (msg); \
-	_message.type = MessageType_##mtype; \
-	pkt_writeMessageHeader(pkt, _message); \
-}
-#define SERIALIZE_BODY(pkt, stype, dtype, data) { \
-	fprintf(stderr, "serialize " #stype "\n"); \
-	uint8_t *_end = *(pkt); \
-	pkt_write##dtype(&_end, data); \
-	struct SerializeHeader _serial; \
-	_serial.length = _end + 1 - *(pkt); \
-	_serial.type = stype; \
-	pkt_writeSerializeHeader(pkt, _serial); \
-	pkt_write##dtype(pkt, data); \
-}
-#define SERIALIZE(pkt, msg, mtype, stype, dtype, data) { \
-	fprintf(stderr, "serialize " #mtype "Type_" #stype "\n"); \
-	uint8_t *_end = *(pkt); \
-	pkt_write##dtype(&_end, data); \
-	struct MessageHeader _message = (msg); \
-	_message.type = MessageType_##mtype; \
-	struct SerializeHeader _serial; \
-	_serial.length = _end + 1 - *(pkt); \
-	_serial.type = mtype##Type_##stype; \
-	pkt_writeMessageHeader(pkt, _message); \
-	pkt_writeSerializeHeader(pkt, _serial); \
-	pkt_write##dtype(pkt, data); \
-}
-struct PacketEncryptionLayer {
-	_Bool encrypted;
-	uint32_t sequenceId;
-};
-struct NetPacketHeader {
-	PacketType property;
-	uint8_t connectionNumber;
-	_Bool isFragmented;
-	uint16_t sequence;
-	uint8_t channelId;
-	uint16_t fragmentId;
-	uint16_t fragmentPart;
-	uint16_t fragmentsTotal;
-};
-void pkt_writeUint8Array(uint8_t **pkt, uint8_t *in, uint32_t count);struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(uint8_t **pkt);
-void pkt_writePacketEncryptionLayer(uint8_t **pkt, struct PacketEncryptionLayer in);
-struct NetPacketHeader pkt_readNetPacketHeader(uint8_t **pkt);
-void pkt_writeNetPacketHeader(uint8_t **pkt, struct NetPacketHeader in);

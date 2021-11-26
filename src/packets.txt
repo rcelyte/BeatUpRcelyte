@@ -25,6 +25,215 @@
  *     DedicatedServerMessageType_MessageReceivedAcknowledge
  */
 
+head
+	#define SERIALIZE_HEAD(pkt, msg, mtype) { \
+		struct MessageHeader _message = (msg); \
+		_message.type = MessageType_##mtype; \
+		pkt_writeMessageHeader(pkt, _message); \
+	}
+	#define SERIALIZE_BODY(pkt, stype, dtype, data) { \
+		fprintf(stderr, "serialize " #stype "\n"); \
+		uint8_t *_end = *(pkt); \
+		pkt_write##dtype(&_end, data); \
+		struct SerializeHeader _serial; \
+		_serial.length = _end + 1 - *(pkt); \
+		_serial.type = stype; \
+		pkt_writeSerializeHeader(pkt, _serial); \
+		pkt_write##dtype(pkt, data); \
+	}
+	#define SERIALIZE(pkt, msg, mtype, stype, dtype, data) { \
+		fprintf(stderr, "serialize " #mtype "Type_" #stype "\n"); \
+		uint8_t *_end = *(pkt); \
+		pkt_write##dtype(&_end, data); \
+		struct MessageHeader _message = (msg); \
+		_message.type = MessageType_##mtype; \
+		struct SerializeHeader _serial; \
+		_serial.length = _end + 1 - *(pkt); \
+		_serial.type = mtype##Type_##stype; \
+		pkt_writeMessageHeader(pkt, _message); \
+		pkt_writeSerializeHeader(pkt, _serial); \
+		pkt_write##dtype(pkt, data); \
+	}
+	struct PacketEncryptionLayer {
+		_Bool encrypted;
+		uint32_t sequenceId;
+	};
+	struct NetPacketHeader {
+		PacketType property;
+		uint8_t connectionNumber;
+		_Bool isFragmented;
+		uint16_t sequence;
+		uint8_t channelId;
+		uint16_t fragmentId;
+		uint16_t fragmentPart;
+		uint16_t fragmentsTotal;
+	};
+	struct ServerCode {
+		uint32_t value; // 25 bit value
+	};
+	void pkt_writeUint8Array(uint8_t **pkt, uint8_t *in, uint32_t count);
+	struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(uint8_t **pkt);
+	void pkt_writePacketEncryptionLayer(uint8_t **pkt, struct PacketEncryptionLayer in);
+	struct NetPacketHeader pkt_readNetPacketHeader(uint8_t **pkt);
+	void pkt_writeNetPacketHeader(uint8_t **pkt, struct NetPacketHeader in);
+
+code
+	#include <stdio.h>
+	#include <stdlib.h>
+	#include <string.h>
+	static uint8_t pkt_readUint8(uint8_t **pkt) {
+		uint8_t v = (*pkt)[0];
+		*pkt += sizeof(v);
+		return v;
+	}
+	static uint16_t pkt_readUint16(uint8_t **pkt) {
+		uint16_t v = (*pkt)[0] | (*pkt)[1] << 8;
+		*pkt += sizeof(v);
+		return v;
+	}
+	static uint32_t pkt_readUint32(uint8_t **pkt) {
+		uint32_t v = (*pkt)[0] | (*pkt)[1] << 8 | (*pkt)[2] << 16 | (*pkt)[3] << 24;
+		*pkt += sizeof(v);
+		return v;
+	}
+	static uint64_t pkt_readUint64(uint8_t **pkt) {
+		uint64_t v = (uint64_t)(*pkt)[0] | (uint64_t)(*pkt)[1] << 8 | (uint64_t)(*pkt)[2] << 16 | (uint64_t)(*pkt)[3] << 24 | (uint64_t)(*pkt)[4] << 32 | (uint64_t)(*pkt)[5] << 40 | (uint64_t)(*pkt)[6] << 48 | (uint64_t)(*pkt)[7] << 56;
+		*pkt += sizeof(v);
+		return v;
+	}
+	/*static uint64_t pkt_readVarUint64(uint8_t **pkt) {
+		uint64_t byte, value = 0;
+		uint32_t shift = 0;
+		for(; (byte = (uint64_t)pkt_readUint8(pkt)) & 128; shift += 7)
+			value |= (byte & 127) << shift;
+		return value | byte << shift;
+	}*/
+	static uint64_t pkt_readVarUint64(uint8_t **pkt) {
+		uint64_t byte, value = 0;
+		uint8_t shift = 0;
+		do {
+			byte = pkt_readUint8(pkt);
+			value |= (byte & 127) << shift;
+			shift += 7;
+		} while(byte & 128);
+		return value;
+	}
+	static int64_t pkt_readVarInt64(uint8_t **pkt) {
+		int64_t varULong = (int64_t)pkt_readVarUint64(pkt);
+		if((varULong & 1L) != 1L)
+			return varULong >> 1;
+		return -(varULong >> 1) + 1L;
+	}
+	static uint32_t pkt_readVarUint32(uint8_t **pkt) {
+		return (uint32_t)pkt_readVarUint64(pkt);
+	}
+	static int32_t pkt_readVarInt32(uint8_t **pkt) {
+		return (int32_t)pkt_readVarInt64(pkt);
+	}
+	#define pkt_readInt8Array(pkt, out, count) pkt_readUint8Array(pkt, (uint8_t*)out, count)
+	static void pkt_readUint8Array(uint8_t **pkt, uint8_t *out, uint32_t count) {
+		memcpy(out, *pkt, count);
+		*pkt += count;
+	}
+	static void pkt_writeUint8(uint8_t **pkt, uint8_t v) {
+		(*pkt)[0] = v;
+		*pkt += sizeof(v);
+	}
+	static void pkt_writeUint16(uint8_t **pkt, uint16_t v) {
+		(*pkt)[0] = v & 255;
+		(*pkt)[1] = v >> 8 & 255;
+		*pkt += sizeof(v);
+	}
+	static void pkt_writeUint32(uint8_t **pkt, uint32_t v) {
+		(*pkt)[0] = v & 255;
+		(*pkt)[1] = v >> 8 & 255;
+		(*pkt)[2] = v >> 16 & 255;
+		(*pkt)[3] = v >> 24 & 255;
+		*pkt += sizeof(v);
+	}
+	static void pkt_writeUint64(uint8_t **pkt, uint64_t v) {
+		(*pkt)[0] = v & 255;
+		(*pkt)[1] = v >> 8 & 255;
+		(*pkt)[2] = v >> 16 & 255;
+		(*pkt)[3] = v >> 24 & 255;
+		(*pkt)[4] = v >> 32 & 255;
+		(*pkt)[5] = v >> 40 & 255;
+		(*pkt)[6] = v >> 48 & 255;
+		(*pkt)[7] = v >> 56 & 255;
+		*pkt += sizeof(v);
+	}
+	static void pkt_writeVarUint64(uint8_t **pkt, uint64_t v) {
+		do {
+			uint8_t byte = v & 127;
+			v >>= 7;
+			if(v)
+				byte |= 128;
+			pkt_writeUint8(pkt, byte);
+		} while(v);
+	}
+	static void pkt_writeVarInt64(uint8_t **pkt, int64_t v) {
+		if(v < 0)
+			return pkt_writeVarUint64(pkt, (-(v + 1L) << 1) + 1L);
+		pkt_writeVarUint64(pkt, v << 1);
+	}
+	static void pkt_writeVarUint32(uint8_t **pkt, uint32_t v) {
+		pkt_writeVarUint64(pkt, v);
+	}
+	static void pkt_writeVarInt32(uint8_t **pkt, int32_t v) {
+		pkt_writeVarInt64(pkt, v);
+	}
+	#define pkt_writeInt8Array(pkt, out, count) pkt_writeUint8Array(pkt, (uint8_t*)out, count)
+	void pkt_writeUint8Array(uint8_t **pkt, uint8_t *in, uint32_t count) {
+		memcpy(*pkt, in, count);
+		*pkt += count;
+	}
+	struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(uint8_t **pkt) {
+		struct PacketEncryptionLayer out;
+		out.encrypted = pkt_readUint8(pkt);
+		if(out.encrypted) {
+			fprintf(stderr, "READ ENCRYPTED PACKET\n");
+			abort();
+		}
+		return out;
+	}
+	void pkt_writePacketEncryptionLayer(uint8_t **pkt, struct PacketEncryptionLayer in) {
+		pkt_writeUint8(pkt, in.encrypted);
+		if(in.encrypted) {
+			fprintf(stderr, "WRITE ENCRYPTED PACKET\n");
+			abort();
+		}
+	}
+	static const uint8_t NetPacketHeaderSize[32] = {
+		1, 4, 4, 3, 11, 14, 11, 9, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	};
+	struct NetPacketHeader pkt_readNetPacketHeader(uint8_t **pkt) {
+		struct NetPacketHeader out;
+		uint8_t bits = pkt_readUint8(pkt);
+		out.property = bits & 31;
+		out.connectionNumber = bits >> 5 & 3;
+		out.isFragmented = bits >> 7 & 1;
+		out.sequence = (NetPacketHeaderSize[out.property] < 3) ? 0 : pkt_readUint16(pkt);
+		out.channelId = (NetPacketHeaderSize[out.property] < 4) ? 0 : pkt_readUint8(pkt);
+		out.fragmentId = (NetPacketHeaderSize[out.property] < 6) ? 0 : pkt_readUint16(pkt);
+		out.fragmentPart = (NetPacketHeaderSize[out.property] < 8) ? 0 : pkt_readUint16(pkt);
+		out.fragmentsTotal = (NetPacketHeaderSize[out.property] < 10) ? 0 : pkt_readUint16(pkt);
+		return out;
+	}
+	void pkt_writeNetPacketHeader(uint8_t **pkt, struct NetPacketHeader in) {
+		pkt_writeUint8(pkt, in.property | in.connectionNumber << 5 | in.isFragmented << 7);
+		if(NetPacketHeaderSize[in.property] >= 3) pkt_writeUint16(pkt, in.sequence);
+		if(NetPacketHeaderSize[in.property] >= 4) pkt_writeUint8(pkt, in.channelId);
+		if(NetPacketHeaderSize[in.property] >= 6) pkt_writeUint16(pkt, in.fragmentId);
+		if(NetPacketHeaderSize[in.property] >= 8) pkt_writeUint16(pkt, in.fragmentPart);
+		if(NetPacketHeaderSize[in.property] >= 10) pkt_writeUint16(pkt, in.fragmentsTotal);
+	}
+	static void pkt_writeServerCode(uint8_t **pkt, struct ServerCode in) {
+		struct String scode = {.length = 5};
+		for(uint32_t i = 0, code = in.value; i < 5; ++i, code >>= 5)
+			scode.data[i] = "ABCDEFGHJKLMNPQRSTUVWXYZ12345789"[code & 31];
+		pkt_writeString(pkt, scode);
+	}
+
 u8 Packet
 	z Unreliable
 	z Channeled
@@ -72,7 +281,7 @@ d BaseMasterServerAcknowledgeMessage
 d ByteArrayNetSerializable
 	vu32 length
 	u8[length,4096] data
-r String
+d String
 	u32 length
 	c[length,4096] data
 r AuthenticationToken
@@ -103,10 +312,8 @@ r GameplayServerConfiguration
 	vi32 gameplayServerMode
 	vi32 songSelectionMode
 	vi32 gameplayServerControlSettings
-// Using `char[8]` here instead of `struct String` to save on stack space
 s PublicServerInfo
-	u32 code_length
-	c[code_length,8] code
+	ServerCode code
 	vi32 currentPlayerCount
 u32 Message 0
 	u8 UserMessage 0

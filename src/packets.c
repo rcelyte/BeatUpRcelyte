@@ -8,7 +8,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
 static uint8_t pkt_readUint8(uint8_t **pkt) {
 	uint8_t v = (*pkt)[0];
 	*pkt += sizeof(v);
@@ -29,6 +28,13 @@ static uint64_t pkt_readUint64(uint8_t **pkt) {
 	*pkt += sizeof(v);
 	return v;
 }
+/*static uint64_t pkt_readVarUint64(uint8_t **pkt) {
+	uint64_t byte, value = 0;
+	uint32_t shift = 0;
+	for(; (byte = (uint64_t)pkt_readUint8(pkt)) & 128; shift += 7)
+		value |= (byte & 127) << shift;
+	return value | byte << shift;
+}*/
 static uint64_t pkt_readVarUint64(uint8_t **pkt) {
 	uint64_t byte, value = 0;
 	uint8_t shift = 0;
@@ -147,6 +153,12 @@ void pkt_writeNetPacketHeader(uint8_t **pkt, struct NetPacketHeader in) {
 	if(NetPacketHeaderSize[in.property] >= 6) pkt_writeUint16(pkt, in.fragmentId);
 	if(NetPacketHeaderSize[in.property] >= 8) pkt_writeUint16(pkt, in.fragmentPart);
 	if(NetPacketHeaderSize[in.property] >= 10) pkt_writeUint16(pkt, in.fragmentsTotal);
+}
+static void pkt_writeServerCode(uint8_t **pkt, struct ServerCode in) {
+	struct String scode = {.length = 5};
+	for(uint32_t i = 0, code = in.value; i < 5; ++i, code >>= 5)
+		scode.data[i] = "ABCDEFGHJKLMNPQRSTUVWXYZ12345789"[code & 31];
+	pkt_writeString(pkt, scode);
 }
 struct MessageHeader pkt_readMessageHeader(uint8_t **pkt) {
 	struct MessageHeader out;
@@ -367,6 +379,10 @@ void pkt_writeByteArrayNetSerializable(uint8_t **pkt, struct ByteArrayNetSeriali
 	pkt_writeVarUint32(pkt, in.length);
 	pkt_writeUint8Array(pkt, in.data, in.length);
 }
+void pkt_writeString(uint8_t **pkt, struct String in) {
+	pkt_writeUint32(pkt, in.length);
+	pkt_writeInt8Array(pkt, in.data, in.length);
+}
 void pkt_writeBaseMasterServerMultipartMessage(uint8_t **pkt, struct BaseMasterServerMultipartMessage in) {
 	pkt_writeBaseMasterServerReliableRequest(pkt, in.base);
 	pkt_writeUint32(pkt, in.multipartMessageId);
@@ -376,8 +392,7 @@ void pkt_writeBaseMasterServerMultipartMessage(uint8_t **pkt, struct BaseMasterS
 	pkt_writeUint8Array(pkt, in.data, in.length);
 }
 void pkt_writePublicServerInfo(uint8_t **pkt, struct PublicServerInfo in) {
-	pkt_writeUint32(pkt, in.code_length);
-	pkt_writeInt8Array(pkt, in.code, in.code_length);
+	pkt_writeServerCode(pkt, in.code);
 	pkt_writeVarInt32(pkt, in.currentPlayerCount);
 }
 void pkt_writeAuthenticateUserResponse(uint8_t **pkt, struct AuthenticateUserResponse in) {

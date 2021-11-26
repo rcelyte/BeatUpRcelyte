@@ -174,7 +174,7 @@ struct SessionList {
 	struct SessionList *next;
 	struct MasterServerSession data;
 } static *sessionList = NULL;
-static uint8_t pkt[393216];
+static uint8_t pkt[262144];
 
 static void _send(int32_t sockfd, struct MasterServerSession *session, PacketType property, uint8_t *buf, uint32_t len, _Bool reliable) {
 	if(reliable) {
