@@ -5,9 +5,12 @@
 #include <string.h>
 #include <errno.h>
 
+const _Bool log = 1;
+
 char *desc_buf;
 
 const char *header_init =
+	"#pragma once\n\n"
 	"/* \n"
 	" * AUTO GENERATED; DO NOT TOUCH\n"
 	" * AUTO GENERATED; DO NOT TOUCH\n"
@@ -181,6 +184,7 @@ char *parse_enum(char *s, uint32_t indent) {
 	}
 	return s;
 }
+char log_buf[524288], *log_it = log_buf;
 char dec_buf[524288], *dec_it = dec_buf;
 char des_buf[524288], *des_it = des_buf;
 char ser_buf[524288], *ser_it = ser_buf;
@@ -201,11 +205,15 @@ char *parse_struct_entries(char *s, uint32_t indent, uint32_t outdent, _Bool des
 				des_it += sprintf(des_it, "%.*sif(out.%.*s) {\n", outdent, tabs, len, cond);
 			if(ser)
 				ser_it += sprintf(ser_it, "%.*sif(in.%.*s) {\n", outdent, tabs, len, cond);
+			if(log)
+				log_it += sprintf(log_it, "%.*sif(in.%.*s) {\n", outdent, tabs, len, cond);
 			s = parse_struct_entries(s, indent+1, outdent+1, des, ser);
 			if(des)
 				des_it += sprintf(des_it, "%.*s}\n", outdent, tabs);
 			if(ser)
 				ser_it += sprintf(ser_it, "%.*s}\n", outdent, tabs);
+			if(log)
+				log_it += sprintf(log_it, "%.*s}\n", outdent, tabs);
 		} else {
 			uint32_t count = 0;
 			char type[1024], name[1024], length[1024] = {0};
@@ -252,12 +260,21 @@ char *parse_struct_entries(char *s, uint32_t indent, uint32_t outdent, _Bool des
 					ser_it += sprintf(ser_it, "%.*spkt_write%s(pkt, in.%s%s);\n", outdent, tabs, ftype, name, count ? "[i]" : "");
 				}
 			}
+			if(log) {
+				if(count && isU8Array) {
+					log_it += sprintf(log_it, "%.*spkt_log%sArray(\"%s\", buf, it, in.%s, %s%s);\n", outdent, tabs, ftype, name, name, alpha(*length) ? "in." : "", length);
+				} else {
+					if(count)
+						log_it += sprintf(log_it, "%.*sfor(uint32_t i = 0; i < %s%s; ++i)\n\t", outdent, tabs, alpha(*length) ? "in." : "", length);
+					log_it += sprintf(log_it, "%.*spkt_log%s(\"%s\", buf, it, in.%s%s);\n", outdent, tabs, ftype, name, name, count ? "[i]" : "");
+				}
+			}
 		}
 	}
 	return s;
 }
 char *parse_struct(char *s, uint32_t indent) {
-	_Bool des = (*s != 's');
+	_Bool des = (*s != 's') || log;
 	_Bool ser = (*s != 'r');
 	++indent, s += 2;
 	{
@@ -281,6 +298,10 @@ char *parse_struct(char *s, uint32_t indent) {
 			dec_it += sprintf(dec_it, "void pkt_write%s(uint8_t **pkt, struct %s in);\n", name, name);
 			ser_it += sprintf(ser_it, "void pkt_write%s(uint8_t **pkt, struct %s in) {\n", name, name);
 		}
+		if(log) {
+			dec_it += sprintf(dec_it, "void pkt_log%s(const char *name, char *buf, char *it, struct %s in);\n", name, name);
+			log_it += sprintf(log_it, "void pkt_log%s(const char *name, char *buf, char *it, struct %s in) {\n\tit += sprintf(it, \"%%s.\", name);\n", name, name, name);
+		}
 	}
 
 	s = parse_struct_entries(s, indent, 1, des, ser);
@@ -290,6 +311,8 @@ char *parse_struct(char *s, uint32_t indent) {
 		des_it += sprintf(des_it, "\treturn out;\n}\n");
 	if(ser)
 		ser_it += sprintf(ser_it, "}\n");
+	if(log)
+		log_it += sprintf(log_it, "}\n");
 	return s;
 }
 
@@ -345,6 +368,7 @@ int main(int argc, char const *argv[]) {
 	trywrite(code, "src/packets.c", code_buf, code_it);
 	trywrite(code, "src/packets.c", des_buf, des_it);
 	trywrite(code, "src/packets.c", ser_buf, ser_it);
+	trywrite(code, "src/packets.c", log_buf, log_it);
 	fprintf(stderr, "done\n");
 	return 0;
 }

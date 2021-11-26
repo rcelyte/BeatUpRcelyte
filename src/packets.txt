@@ -81,6 +81,7 @@ code
 	#include <stdio.h>
 	#include <stdlib.h>
 	#include <string.h>
+	#include <inttypes.h>
 	static uint8_t pkt_readUint8(uint8_t **pkt) {
 		uint8_t v = (*pkt)[0];
 		*pkt += sizeof(v);
@@ -187,6 +188,27 @@ code
 		memcpy(*pkt, in, count);
 		*pkt += count;
 	}
+	#define pkt_logUint8(name, buf, it, v) pkt_logUint64(name, buf, it, (uint64_t)v)
+	#define pkt_logUint16(name, buf, it, v) pkt_logUint64(name, buf, it, (uint64_t)v)
+	#define pkt_logUint32(name, buf, it, v) pkt_logUint64(name, buf, it, (uint64_t)v)
+	#define pkt_logInt32(name, buf, it, v) pkt_logInt64(name, buf, it, (int64_t)v)
+	#define pkt_logVarUint64 pkt_logUint64
+	#define pkt_logVarInt64 pkt_logInt64
+	#define pkt_logVarUint32 pkt_logUint32
+	#define pkt_logVarInt32 pkt_logInt32
+	static void pkt_logUint64(const char *name, char *buf, char *it, uint64_t v) {
+		fprintf(stderr, "%s%s=%" PRIu64 "\n", buf, name, v);
+	}
+	static void pkt_logInt64(const char *name, char *buf, char *it, int64_t v) {
+		fprintf(stderr, "%s%s=%" PRId64 "\n", buf, name, v);
+	}
+	#define pkt_logInt8Array(name, buf, it, in, count) pkt_logUint8Array(name, buf, it, (uint8_t*)in, count)
+	static void pkt_logUint8Array(const char *name, char *buf, char *it, uint8_t *in, uint32_t count) {
+		fprintf(stderr, "%s%s=", buf, name);
+		for(uint32_t i = 0; i < count; ++i)
+			fprintf(stderr, "%hhx", in[i]);
+		fprintf(stderr, "\n");
+	}
 	struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(uint8_t **pkt) {
 		struct PacketEncryptionLayer out;
 		out.encrypted = pkt_readUint8(pkt);
@@ -227,11 +249,27 @@ code
 		if(NetPacketHeaderSize[in.property] >= 8) pkt_writeUint16(pkt, in.fragmentPart);
 		if(NetPacketHeaderSize[in.property] >= 10) pkt_writeUint16(pkt, in.fragmentsTotal);
 	}
+	static struct ServerCode pkt_readServerCode(uint8_t **pkt) {
+		static const uint8_t table[128] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,24,25,26,27,28,0,29,30,31,0,0,0,0,0,0,0,0,1,2,3,4,5,6,7,0,8,9,10,11,12,0,13,14,15,16,17,18,19,20,21,22,23,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+		struct ServerCode out = {0};
+		struct String scode = pkt_readString(pkt);
+		for(uint32_t i = 0; i < 5; ++i, out.value <<= 5)
+			out.value |= table[scode.data[i] & 127];
+		if(scode.length != 5)
+			out.value = 0xffffffff;
+		return out;
+	}
 	static void pkt_writeServerCode(uint8_t **pkt, struct ServerCode in) {
 		struct String scode = {.length = 5};
 		for(uint32_t i = 0, code = in.value; i < 5; ++i, code >>= 5)
 			scode.data[i] = "ABCDEFGHJKLMNPQRSTUVWXYZ12345789"[code & 31];
 		pkt_writeString(pkt, scode);
+	}
+	static void pkt_logServerCode(const char *name, char *buf, char *it, struct ServerCode in) {
+		fprintf(stderr, "%s%s=\"", buf, name);
+		for(uint32_t i = 0, code = in.value; i < 5; ++i, code >>= 5)
+			fprintf(stderr, "%c", "ABCDEFGHJKLMNPQRSTUVWXYZ12345789"[code & 31]);
+		fprintf(stderr, "\"\n");
 	}
 
 u8 Packet
