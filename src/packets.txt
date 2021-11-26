@@ -103,7 +103,7 @@ r GameplayServerConfiguration
 	vi32 gameplayServerMode
 	vi32 songSelectionMode
 	vi32 gameplayServerControlSettings
-// Using `char[8]` here instead of `struct String` to save on memory
+// Using `char[8]` here instead of `struct String` to save on stack space
 s PublicServerInfo
 	u32 code_length
 	c[code_length,8] code

@@ -17,10 +17,12 @@
 #include <time.h>
 
 struct ResendPacket {
+	PacketType property;
 	uint32_t len;
 	uint8_t data[512];
 };
 struct ResendSparsePtr {
+	clock_t lastSend;
 	uint32_t requestId;
 	uint32_t data;
 };
@@ -161,13 +163,79 @@ static void net_cookie(mbedtls_ctr_drbg_context *ctr_drbg, uint8_t *out) {
 	mbedtls_ctr_drbg_random(ctr_drbg, out, 32);
 }
 
+static uint32_t _get_requestId(uint8_t *msg) {
+	pkt_readMessageHeader(&msg);
+	pkt_readSerializeHeader(&msg);
+	return pkt_readBaseMasterServerReliableRequest(&msg).requestId;
+}
+
 // Temporary; to be replaced with sparse array once instance servers are implemented
 struct SessionList {
 	struct SessionList *next;
 	struct MasterServerSession data;
 } static *sessionList = NULL;
-static uint8_t pkt[8192];
+static uint8_t pkt[393216];
+
+static void _send(int32_t sockfd, struct MasterServerSession *session, PacketType property, uint8_t *buf, uint32_t len, _Bool reliable) {
+	if(reliable) {
+		if(session->resend_count < RESEND_BUFFER) {
+			struct ResendSparsePtr *p = &session->resend[session->resend_count++];
+			p->lastSend = clock();
+			p->requestId = _get_requestId(buf);
+			session->resend_data[p->data].property = property;
+			session->resend_data[p->data].len = len;
+			memcpy(session->resend_data[p->data].data, buf, len);
+		} else {
+			fprintf(stderr, "RESEND BUFFER FULL\n");
+		}
+	}
+	uint8_t *data = pkt;
+	pkt_writePacketEncryptionLayer(&data, (struct PacketEncryptionLayer){
+		.encrypted = 0,
+	});
+	pkt_writeNetPacketHeader(&data, (struct NetPacketHeader){
+		.property = property,
+		.connectionNumber = 0,
+		.isFragmented = 0,
+		.sequence = 0,
+		.channelId = 0,
+		.fragmentId = 0,
+		.fragmentPart = 0,
+		.fragmentsTotal = 0,
+	});
+	pkt_writeUint8Array(&data, buf, len);
+	#ifdef WINSOCK_VERSION
+	sendto(sockfd, (char*)pkt, data - pkt, 0, &session->addr.sa, session->addr.len);
+	#else
+	sendto(sockfd, pkt, data - pkt, 0, &session->addr.sa, session->addr.len);
+	#endif
+	fprintf(stderr, "[NET] sendto[%zu]\n", data - pkt);
+}
+
 uint32_t net_recv(int32_t sockfd, mbedtls_ctr_drbg_context *ctr_drbg, struct MasterServerSession **session, PacketType *property, uint8_t **buf) {
+	int32_t res;
+	do {
+		clock_t time = clock();
+		for(struct SessionList *s = sessionList; s; s = s->next) {
+			for(struct ResendSparsePtr *p = s->data.resend; p < &s->data.resend[s->data.resend_count]; ++p) {
+				if(time - p->lastSend >= CLOCKS_PER_SEC / 10) {
+					_send(sockfd, &s->data, s->data.resend_data[p->data].property, s->data.resend_data[p->data].data, s->data.resend_data[p->data].len, 0);
+					p->lastSend += CLOCKS_PER_SEC / 10;
+				}
+			}
+		}
+		fd_set fds;
+		FD_ZERO(&fds);
+		FD_SET(sockfd, &fds);
+		struct timeval timeout = {
+			.tv_sec = 0,
+			.tv_usec = 100000,
+		};
+		res = select(sockfd+1, &fds, NULL, NULL, &timeout);
+	} while(res == 0);
+	if(res == -1)
+		return 0;
+
 	struct SS addr = {sizeof(struct sockaddr_storage)};
 	#ifdef WINSOCK_VERSION
 	ssize_t size = recvfrom(sockfd, (char*)pkt, sizeof(pkt), 0, &addr.sa, &addr.len);
@@ -236,11 +304,6 @@ uint32_t net_recv(int32_t sockfd, mbedtls_ctr_drbg_context *ctr_drbg, struct Mas
 	return &pkt[size] - *buf;
 }
 #if 1
-static uint32_t _get_requestId(uint8_t *msg) {
-	pkt_readMessageHeader(&msg);
-	pkt_readSerializeHeader(&msg);
-	return pkt_readBaseMasterServerReliableRequest(&msg).requestId;
-}
 uint8_t *net_handle_ack(struct MasterServerSession *session, uint32_t requestId) {
 	for(uint32_t i = 0; i < session->resend_count; ++i) {
 		if(requestId == session->resend[i].requestId) {
@@ -252,39 +315,6 @@ uint8_t *net_handle_ack(struct MasterServerSession *session, uint32_t requestId)
 		}
 	}
 	return NULL;
-}
-static void _send(int32_t sockfd, struct MasterServerSession *session, PacketType property, uint8_t *buf, uint32_t len, _Bool reliable) {
-	if(reliable) {
-		if(session->resend_count < RESEND_BUFFER) {
-			struct ResendSparsePtr *p = &session->resend[session->resend_count++];
-			p->requestId = _get_requestId(buf);
-			session->resend_data[p->data].len = len;
-			memcpy(session->resend_data[p->data].data, buf, len);
-		} else {
-			fprintf(stderr, "RESEND BUFFER FULL\n");
-		}
-	}
-	uint8_t *data = pkt;
-	pkt_writePacketEncryptionLayer(&data, (struct PacketEncryptionLayer){
-		.encrypted = 0,
-	});
-	pkt_writeNetPacketHeader(&data, (struct NetPacketHeader){
-		.property = property,
-		.connectionNumber = 0,
-		.isFragmented = 0,
-		.sequence = 0,
-		.channelId = 0,
-		.fragmentId = 0,
-		.fragmentPart = 0,
-		.fragmentsTotal = 0,
-	});
-	pkt_writeUint8Array(&data, buf, len);
-	#ifdef WINSOCK_VERSION
-	sendto(sockfd, (char*)pkt, data - pkt, 0, &session->addr.sa, session->addr.len);
-	#else
-	sendto(sockfd, pkt, data - pkt, 0, &session->addr.sa, session->addr.len);
-	#endif
-	fprintf(stderr, "[NET] sendto[%zu]\n", data - pkt);
 }
 void net_send(int32_t sockfd, struct MasterServerSession *session, PacketType property, uint8_t *buf, uint32_t len, _Bool reliable) {
 	if(len <= 384)

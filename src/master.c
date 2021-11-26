@@ -44,7 +44,7 @@ master_handler(struct Context *ctx) {
 	struct MasterServerSession *session;
 	PacketType property;
 	uint8_t *pkt;
-	while((len = net_recv(ctx->sockfd, &ctx->ctr_drbg, &session, &property, &pkt)) > 0) {
+	while((len = net_recv(ctx->sockfd, &ctx->ctr_drbg, &session, &property, &pkt))) {
 		uint8_t *data = pkt, *end = &pkt[len];
 		if(property == PacketType_UnconnectedMessage) {
 			struct MessageHeader message = pkt_readMessageHeader(&data);
