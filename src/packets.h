@@ -8,35 +8,90 @@
 
 #include "enum.h"
 #include <stdint.h>
-ENUM(uint8_t, PacketType, {
-	PacketType_Unreliable,
-	PacketType_Channeled,
-	PacketType_Ack,
-	PacketType_Ping,
-	PacketType_Pong,
-	PacketType_ConnectRequest,
-	PacketType_ConnectAccept,
-	PacketType_Disconnect,
-	PacketType_UnconnectedMessage,
-	PacketType_MtuCheck,
-	PacketType_MtuOk,
-	PacketType_Broadcast,
-	PacketType_Merged,
-	PacketType_ShutdownOk,
-	PacketType_PeerNotFound,
-	PacketType_InvalidProtocol,
-	PacketType_NatMessage,
-	PacketType_Empty,
+ENUM(uint8_t, PacketProperty, {
+	PacketProperty_Unreliable,
+	PacketProperty_Channeled,
+	PacketProperty_Ack,
+	PacketProperty_Ping,
+	PacketProperty_Pong,
+	PacketProperty_ConnectRequest,
+	PacketProperty_ConnectAccept,
+	PacketProperty_Disconnect,
+	PacketProperty_UnconnectedMessage,
+	PacketProperty_MtuCheck,
+	PacketProperty_MtuOk,
+	PacketProperty_Broadcast,
+	PacketProperty_Merged,
+	PacketProperty_ShutdownOk,
+	PacketProperty_PeerNotFound,
+	PacketProperty_InvalidProtocol,
+	PacketProperty_NatMessage,
+	PacketProperty_Empty,
 })
-ENUM(uint8_t, PlatformType, {
-	PlatformType_Test,
-	PlatformType_OculusRift,
-	PlatformType_OculusQuest,
-	PlatformType_Steam,
-	PlatformType_PS4,
-	PlatformType_PS4Dev,
-	PlatformType_PS4Cert,
-	PlatformType_Oculus = 1,
+ENUM(uint8_t, Platform, {
+	Platform_Test,
+	Platform_OculusRift,
+	Platform_OculusQuest,
+	Platform_Steam,
+	Platform_PS4,
+	Platform_PS4Dev,
+	Platform_PS4Cert,
+	Platform_Oculus = 1,
+})
+ENUM(uint8_t, BeatmapDifficultyMask, {
+	BeatmapDifficultyMask_Easy = 1,
+	BeatmapDifficultyMask_Normal = 2,
+	BeatmapDifficultyMask_Hard = 4,
+	BeatmapDifficultyMask_Expert = 8,
+	BeatmapDifficultyMask_ExpertPlus = 16,
+	BeatmapDifficultyMask_All = 31,
+})
+ENUM(uint32_t, GameplayModifierMask, {
+	GameplayModifierMask_None = 0,
+	GameplayModifierMask_BatteryEnergy = 1,
+	GameplayModifierMask_NoFail = 2,
+	GameplayModifierMask_InstaFail = 4,
+	GameplayModifierMask_NoObstacles = 8,
+	GameplayModifierMask_NoBombs = 16,
+	GameplayModifierMask_FastNotes = 32,
+	GameplayModifierMask_StrictAngles = 64,
+	GameplayModifierMask_DisappearingArrows = 128,
+	GameplayModifierMask_FasterSong = 256,
+	GameplayModifierMask_SlowerSong = 512,
+	GameplayModifierMask_NoArrows = 1024,
+	GameplayModifierMask_GhostNotes = 2048,
+	GameplayModifierMask_SuperFastSong = 4096,
+	GameplayModifierMask_ProMode = 8192,
+	GameplayModifierMask_ZenMode = 16384,
+	GameplayModifierMask_SmallCubes = 32768,
+	GameplayModifierMask_All = 65535,
+})
+ENUM(uint8_t, DiscoveryPolicy, {
+	DiscoveryPolicy_Hidden,
+	DiscoveryPolicy_WithCode,
+	DiscoveryPolicy_Public,
+})
+ENUM(uint8_t, InvitePolicy, {
+	InvitePolicy_OnlyConnectionOwnerCanInvite,
+	InvitePolicy_AnyoneCanInvite,
+	InvitePolicy_NobodyCanInvite,
+})
+ENUM(uint8_t, GameplayServerMode, {
+	GameplayServerMode_Countdown,
+	GameplayServerMode_Managed,
+	GameplayServerMode_QuickStartOneSong,
+})
+ENUM(uint8_t, SongSelectionMode, {
+	SongSelectionMode_Vote,
+	SongSelectionMode_Random,
+	SongSelectionMode_OwnerPicks,
+	SongSelectionMode_RandomPlayerPicks,
+})
+ENUM(uint8_t, GameplayServerControlSettings, {
+	GameplayServerControlSettings_None = 0,
+	GameplayServerControlSettings_AllowModifierSelection = 1,
+	GameplayServerControlSettings_AllowSpectate = 2,
+	GameplayServerControlSettings_All = 3,
 })
 ENUM(uint8_t, UserMessageType, {
 	UserMessageType_AuthenticateUserRequest,
@@ -81,9 +136,10 @@ ENUM(uint32_t, MessageType, {
 	MessageType_DedicatedServerMessage = 1,
 	MessageType_HandshakeMessage = 3192347326,
 })
-#define SERIALIZE_HEAD(pkt, msg, mtype) { \
-	struct MessageHeader _message = (msg); \
+#define SERIALIZE_HEAD(pkt, mtype) { \
+	struct MessageHeader _message; \
 	_message.type = MessageType_##mtype; \
+	_message.protocolVersion = 5; \
 	pkt_writeMessageHeader(pkt, _message); \
 }
 #define SERIALIZE_BODY(pkt, stype, dtype, data) { \
@@ -96,25 +152,16 @@ ENUM(uint32_t, MessageType, {
 	pkt_writeSerializeHeader(pkt, _serial); \
 	pkt_write##dtype(pkt, data); \
 }
-#define SERIALIZE(pkt, msg, mtype, stype, dtype, data) { \
-	fprintf(stderr, "serialize " #mtype "Type_" #stype "\n"); \
-	uint8_t *_end = *(pkt); \
-	pkt_write##dtype(&_end, data); \
-	struct MessageHeader _message = (msg); \
-	_message.type = MessageType_##mtype; \
-	struct SerializeHeader _serial; \
-	_serial.length = _end + 1 - *(pkt); \
-	_serial.type = mtype##Type_##stype; \
-	pkt_writeMessageHeader(pkt, _message); \
-	pkt_writeSerializeHeader(pkt, _serial); \
-	pkt_write##dtype(pkt, data); \
+#define SERIALIZE(pkt, mtype, stype, dtype, data) { \
+	SERIALIZE_HEAD(pkt, mtype) \
+	SERIALIZE_BODY(pkt, mtype##Type_##stype, dtype, data) \
 }
 struct PacketEncryptionLayer {
 	_Bool encrypted;
 	uint32_t sequenceId;
 };
 struct NetPacketHeader {
-	PacketType property;
+	PacketProperty property;
 	uint8_t connectionNumber;
 	_Bool isFragmented;
 	uint16_t sequence;
@@ -132,7 +179,7 @@ void pkt_writePacketEncryptionLayer(uint8_t **pkt, struct PacketEncryptionLayer 
 struct NetPacketHeader pkt_readNetPacketHeader(uint8_t **pkt);
 void pkt_writeNetPacketHeader(uint8_t **pkt, struct NetPacketHeader in);
 struct MessageHeader {
-	uint32_t type;
+	MessageType type;
 	uint32_t protocolVersion;
 };
 struct SerializeHeader {
@@ -162,7 +209,7 @@ struct String {
 	char data[4096];
 };
 struct AuthenticationToken {
-	uint8_t platform;
+	Platform platform;
 	struct String userId;
 	struct String userName;
 	struct ByteArrayNetSerializable sessionToken;
@@ -183,17 +230,17 @@ struct SongPackMask {
 	struct BitMask128 _bloomFilter;
 };
 struct BeatmapLevelSelectionMask {
-	uint8_t difficulties;
-	uint32_t modifiers;
+	BeatmapDifficultyMask difficulties;
+	GameplayModifierMask modifiers;
 	struct SongPackMask songPacks;
 };
 struct GameplayServerConfiguration {
 	int32_t maxPlayerCount;
-	int32_t discoveryPolicy;
-	int32_t invitePolicy;
-	int32_t gameplayServerMode;
-	int32_t songSelectionMode;
-	int32_t gameplayServerControlSettings;
+	DiscoveryPolicy discoveryPolicy;
+	InvitePolicy invitePolicy;
+	GameplayServerMode gameplayServerMode;
+	SongSelectionMode songSelectionMode;
+	GameplayServerControlSettings gameplayServerControlSettings;
 };
 struct PublicServerInfo {
 	struct ServerCode code;
@@ -212,6 +259,7 @@ struct ConnectToServerResponse {
 struct ConnectToServerRequest {
 };
 struct UserMessageReceivedAcknowledge {
+	struct BaseMasterServerAcknowledgeMessage base;
 };
 struct UserMultipartMessage {
 	struct BaseMasterServerMultipartMessage base;
@@ -254,6 +302,7 @@ struct DedicatedServerShutDownRequest {
 struct DedicatedServerPrepareForConnectionRequest {
 };
 struct DedicatedServerMessageReceivedAcknowledge {
+	struct BaseMasterServerAcknowledgeMessage base;
 };
 struct DedicatedServerMultipartMessage {
 	struct BaseMasterServerMultipartMessage base;
@@ -288,10 +337,14 @@ struct ServerCertificateRequest {
 struct ServerCertificateResponse {
 };
 struct ClientKeyExchangeRequest {
+	struct BaseMasterServerReliableResponse base;
+	struct ByteArrayNetSerializable clientPublicKey;
 };
 struct ChangeCipherSpecRequest {
+	struct BaseMasterServerReliableResponse base;
 };
 struct HandshakeMessageReceivedAcknowledge {
+	struct BaseMasterServerAcknowledgeMessage base;
 };
 struct HandshakeMultipartMessage {
 	struct BaseMasterServerMultipartMessage base;
@@ -416,7 +469,6 @@ void pkt_logServerCertificateRequest(const char *name, char *buf, char *it, stru
 struct ServerCertificateResponse pkt_readServerCertificateResponse(uint8_t **pkt);
 void pkt_logServerCertificateResponse(const char *name, char *buf, char *it, struct ServerCertificateResponse in);
 struct ClientKeyExchangeRequest pkt_readClientKeyExchangeRequest(uint8_t **pkt);
-void pkt_writeClientKeyExchangeRequest(uint8_t **pkt, struct ClientKeyExchangeRequest in);
 void pkt_logClientKeyExchangeRequest(const char *name, char *buf, char *it, struct ClientKeyExchangeRequest in);
 struct ChangeCipherSpecRequest pkt_readChangeCipherSpecRequest(uint8_t **pkt);
 void pkt_writeChangeCipherSpecRequest(uint8_t **pkt, struct ChangeCipherSpecRequest in);

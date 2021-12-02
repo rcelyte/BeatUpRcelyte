@@ -1,4 +1,5 @@
 #include "packets.h"
+#include <stdio.h>
 
 void debug_logMessage(struct MessageHeader message, struct SerializeHeader serial) {
 	fprintf(stderr, "\tmessage.type=%s\n", reflect(MessageType, message.type));

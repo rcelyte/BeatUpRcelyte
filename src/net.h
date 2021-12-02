@@ -2,6 +2,7 @@
 #include <mbedtls/x509_crt.h>
 #include <mbedtls/pk.h>
 #include <mbedtls/ctr_drbg.h>
+#include <mbedtls/entropy.h>
 
 #ifdef WINDOWS
 #include <winsock2.h>
@@ -20,19 +21,6 @@ struct SS {
 		struct sockaddr_in6 in6;
 	};
 };
-ENUM(uint8_t, MasterServerSessionState, {
-	MasterServerSessionState_None,
-	MasterServerSessionState_New,
-	MasterServerSessionState_Established,
-	MasterServerSessionState_Authenticated,
-})
-ENUM(uint8_t, Platform, {
-	Test,
-	Oculus,
-	OculusQuest,
-	Steam,
-	PS4,
-})
 
 struct MasterServerSession;
 uint8_t *MasterServerSession_get_clientRandom(struct MasterServerSession *session);
@@ -40,14 +28,24 @@ uint8_t *MasterServerSession_get_serverRandom(struct MasterServerSession *sessio
 uint8_t *MasterServerSession_get_cookie(struct MasterServerSession *session);
 _Bool MasterServerSession_write_key(struct MasterServerSession *session, struct ByteArrayNetSerializable *out);
 void MasterServerSession_set_epoch(struct MasterServerSession *session, uint32_t epoch);
-void MasterServerSession_set_state(struct MasterServerSession *session, MasterServerSessionState state);
+_Bool MasterServerSession_set_state(struct MasterServerSession *session, HandshakeMessageType state);
+uint32_t *MasterServerSession_ClientHelloWithCookieRequest_requestId(struct MasterServerSession *session);
 
+struct NetContext {
+	int32_t sockfd;
+	mbedtls_ctr_drbg_context ctr_drbg;
+	mbedtls_entropy_context entropy;
+	struct SessionList *sessionList;
+	ssize_t prev_size;
+	uint8_t buf[262144];
+};
+_Bool net_init(struct NetContext *ctx, uint16_t port);
+void net_stop(struct NetContext *ctx);
+void net_cleanup(struct NetContext *ctx);
 const char *net_tostr(struct SS *a);
-int32_t net_init(uint16_t port);
-void net_cleanup();
-uint32_t net_recv(int32_t sockfd, mbedtls_ctr_drbg_context *ctr_drbg, struct MasterServerSession **session, PacketType *property, uint8_t **buf);
-void net_send(int32_t sockfd, struct MasterServerSession *session, PacketType property, uint8_t *buf, uint32_t len, _Bool reliable);
-uint8_t *net_handle_ack(struct MasterServerSession *session, uint32_t requestId);
+uint32_t net_recv(struct NetContext *ctx, struct MasterServerSession **session, PacketProperty *property, uint8_t **buf);
+void net_send(struct NetContext *ctx, struct MasterServerSession *session, PacketProperty property, uint8_t *buf, uint32_t len, _Bool reliable);
+_Bool net_handle_ack(struct MasterServerSession *session, struct MessageHeader *message_out, struct SerializeHeader *serial_out, uint32_t requestId);
 uint32_t net_getNextRequestId(struct MasterServerSession *session);
 
 _Bool status_init();

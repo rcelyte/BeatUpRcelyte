@@ -49,7 +49,7 @@ _Bool numeric(char c) {
 }
 char *read_word(char *s, char *out, uint32_t lim) {
 	--lim;
-	while(lim && (alpha(*s) || numeric(*s)))
+	while(lim && (alpha(*s) || numeric(*s) || *s == '.'))
 		--lim, *out++ = *s++;
 	*out = 0;
 	return s;
@@ -91,8 +91,12 @@ void typename(char *in, char *out, uint32_t lim, const char *de) {
 		if(de) {
 			sprintf(out, "%s", de);
 		} else {
-			out += sprintf(out, "struct ");
-			read_word(in, out, lim - 7);
+			if(*tin == '.') {
+				read_word(tin+1, out, lim);
+			} else {
+				out += sprintf(out, "struct ");
+				read_word(in, out, lim - 7);
+			}
 		}
 		return;
 	}
@@ -136,7 +140,7 @@ _Bool fnname(char *in, char *out, uint32_t lim) {
 		read_word(in, out, lim);
 		return 0;
 	}
-	if(!*tin)
+	if(!*tin || *tin == '.')
 		return type == 'c' || (type == 'u' && size == 8);
 	read_word(in, out, lim);
 	return 0;
@@ -155,11 +159,15 @@ void enum_write(const char *name, const char *ev) {
 char *parse_enum(char *s, uint32_t indent) {
 	++indent;
 	char buf[131072], *buf_it = buf;
-	char type[1024], name[1024];
+	char type[1024], name[1024], suffix[1024];
 	s = read_word(s, type, sizeof(type));
 	typename(type, type, sizeof(type), "uint32_t");
 	s = skip_char(s, ' ');
 	s = read_word(s, name, sizeof(name) - 4);
+	if(*s == ' ' && alpha(s[1]))
+		s = read_word(s+1, suffix, sizeof(suffix));
+	else
+		*suffix = 0;
 	if(*s == ' ') {
 		char ev[1024];
 		s = read_word(s+1, ev, sizeof(ev));
@@ -169,7 +177,7 @@ char *parse_enum(char *s, uint32_t indent) {
 	}
 	s = skip_char(s, '\n');
 
-	sprintf(&name[strlen(name)], "Type");
+	sprintf(&name[strlen(name)], suffix);
 	buf_it += sprintf(buf_it, "ENUM(%s, %s, {\n", type, name);
 	if(count_tabs(s) == indent) {
 		while(count_tabs(s) == indent) {

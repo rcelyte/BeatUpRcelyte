@@ -26,9 +26,10 @@
  */
 
 head
-	#define SERIALIZE_HEAD(pkt, msg, mtype) { \
-		struct MessageHeader _message = (msg); \
+	#define SERIALIZE_HEAD(pkt, mtype) { \
+		struct MessageHeader _message; \
 		_message.type = MessageType_##mtype; \
+		_message.protocolVersion = 5; \
 		pkt_writeMessageHeader(pkt, _message); \
 	}
 	#define SERIALIZE_BODY(pkt, stype, dtype, data) { \
@@ -41,25 +42,16 @@ head
 		pkt_writeSerializeHeader(pkt, _serial); \
 		pkt_write##dtype(pkt, data); \
 	}
-	#define SERIALIZE(pkt, msg, mtype, stype, dtype, data) { \
-		fprintf(stderr, "serialize " #mtype "Type_" #stype "\n"); \
-		uint8_t *_end = *(pkt); \
-		pkt_write##dtype(&_end, data); \
-		struct MessageHeader _message = (msg); \
-		_message.type = MessageType_##mtype; \
-		struct SerializeHeader _serial; \
-		_serial.length = _end + 1 - *(pkt); \
-		_serial.type = mtype##Type_##stype; \
-		pkt_writeMessageHeader(pkt, _message); \
-		pkt_writeSerializeHeader(pkt, _serial); \
-		pkt_write##dtype(pkt, data); \
+	#define SERIALIZE(pkt, mtype, stype, dtype, data) { \
+		SERIALIZE_HEAD(pkt, mtype) \
+		SERIALIZE_BODY(pkt, mtype##Type_##stype, dtype, data) \
 	}
 	struct PacketEncryptionLayer {
 		_Bool encrypted;
 		uint32_t sequenceId;
 	};
 	struct NetPacketHeader {
-		PacketType property;
+		PacketProperty property;
 		uint8_t connectionNumber;
 		_Bool isFragmented;
 		uint16_t sequence;
@@ -206,7 +198,7 @@ code
 	static void pkt_logUint8Array(const char *name, char *buf, char *it, uint8_t *in, uint32_t count) {
 		fprintf(stderr, "%s%s=", buf, name);
 		for(uint32_t i = 0; i < count; ++i)
-			fprintf(stderr, "%hhx", in[i]);
+			fprintf(stderr, "%02hhx", in[i]);
 		fprintf(stderr, "\n");
 	}
 	struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(uint8_t **pkt) {
@@ -272,7 +264,7 @@ code
 		fprintf(stderr, "\"\n");
 	}
 
-u8 Packet
+u8 PacketProperty
 	z Unreliable
 	z Channeled
 	z Ack
@@ -301,7 +293,7 @@ u8 Platform
 	z PS4Cert
 	z Oculus 1
 d MessageHeader
-	u32 type
+	u32.MessageType type
 	vu32 protocolVersion
 d SerializeHeader
 	vu32 length
@@ -323,7 +315,7 @@ d String
 	u32 length
 	c[length,4096] data
 r AuthenticationToken
-	u8 platform
+	u8.Platform platform
 	String userId
 	String userName
 	ByteArrayNetSerializable sessionToken
@@ -339,22 +331,70 @@ r BitMask128
 	u64 _d1
 r SongPackMask
 	BitMask128 _bloomFilter
+u8 BeatmapDifficultyMask
+	v Easy 1
+	v Normal 2
+	v Hard 4
+	v Expert 8
+	v ExpertPlus 16
+	v All 31
+u32 GameplayModifierMask
+	v None 0
+	v BatteryEnergy 1
+	v NoFail 2
+	v InstaFail 4
+	v NoObstacles 8
+	v NoBombs 16
+	v FastNotes 32
+	v StrictAngles 64
+	v DisappearingArrows 128
+	v FasterSong 256
+	v SlowerSong 512
+	v NoArrows 1024
+	v GhostNotes 2048
+	v SuperFastSong 4096
+	v ProMode 8192
+	v ZenMode 16384
+	v SmallCubes 32768
+	v All 65535
 r BeatmapLevelSelectionMask
-	u8 difficulties
-	u32 modifiers
+	u8.BeatmapDifficultyMask difficulties
+	u32.GameplayModifierMask modifiers
 	SongPackMask songPacks
+u8 DiscoveryPolicy
+	v Hidden
+	v WithCode
+	v Public
+u8 InvitePolicy
+	v OnlyConnectionOwnerCanInvite
+	v AnyoneCanInvite
+	v NobodyCanInvite
+u8 GameplayServerMode
+	v Countdown
+	v Managed
+	v QuickStartOneSong
+u8 SongSelectionMode
+	v Vote
+	v Random
+	v OwnerPicks
+	v RandomPlayerPicks
+u8 GameplayServerControlSettings
+	v None 0
+	v AllowModifierSelection 1
+	v AllowSpectate 2
+	v All 3
 r GameplayServerConfiguration
 	vi32 maxPlayerCount
-	vi32 discoveryPolicy
-	vi32 invitePolicy
-	vi32 gameplayServerMode
-	vi32 songSelectionMode
-	vi32 gameplayServerControlSettings
+	vi32.DiscoveryPolicy discoveryPolicy
+	vi32.InvitePolicy invitePolicy
+	vi32.GameplayServerMode gameplayServerMode
+	vi32.SongSelectionMode songSelectionMode
+	vi32.GameplayServerControlSettings gameplayServerControlSettings
 s PublicServerInfo
 	ServerCode code
 	vi32 currentPlayerCount
-u32 Message 0
-	u8 UserMessage 0
+u32 Message Type 0
+	u8 UserMessage Type 0
 		r AuthenticateUserRequest
 			BaseMasterServerReliableResponse base
 			AuthenticationToken authenticationToken
@@ -364,6 +404,7 @@ u32 Message 0
 		d ConnectToServerResponse 8
 		d ConnectToServerRequest
 		d UserMessageReceivedAcknowledge 13
+			BaseMasterServerAcknowledgeMessage base
 		s UserMultipartMessage
 			BaseMasterServerMultipartMessage base
 		d SessionKeepaliveMessage
@@ -381,7 +422,7 @@ u32 Message 0
 			if(result == 0)
 				vu32 publicServerCount
 				PublicServerInfo[publicServerCount,16384] publicServers
-	u8 DedicatedServerMessage 1
+	u8 DedicatedServerMessage Type 1
 		d AuthenticateDedicatedServerRequest
 		d AuthenticateDedicatedServerResponse
 		d CreateDedicatedServerInstanceRequest 4
@@ -393,10 +434,11 @@ u32 Message 0
 		d DedicatedServerShutDownRequest
 		d DedicatedServerPrepareForConnectionRequest
 		d DedicatedServerMessageReceivedAcknowledge
+			BaseMasterServerAcknowledgeMessage base
 		s DedicatedServerMultipartMessage
 			BaseMasterServerMultipartMessage base
 		d DedicatedServerPrepareForConnectionResponse
-	u8 HandshakeMessage 3192347326
+	u8 HandshakeMessage Type 3192347326
 		r ClientHelloRequest
 			BaseMasterServerReliableRequest base
 			u8[32] random
@@ -418,8 +460,12 @@ u32 Message 0
 			vu32 certificateCount
 			ByteArrayNetSerializable[certificateCount,10] certificateList
 		r ServerCertificateResponse
-		d ClientKeyExchangeRequest
-		d ChangeCipherSpecRequest
+		r ClientKeyExchangeRequest
+			BaseMasterServerReliableResponse base
+			ByteArrayNetSerializable clientPublicKey
+		s ChangeCipherSpecRequest
+			BaseMasterServerReliableResponse base
 		d HandshakeMessageReceivedAcknowledge
+			BaseMasterServerAcknowledgeMessage base
 		s HandshakeMultipartMessage
 			BaseMasterServerMultipartMessage base

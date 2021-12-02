@@ -133,7 +133,7 @@ static void pkt_logInt64(const char *name, char *buf, char *it, int64_t v) {
 static void pkt_logUint8Array(const char *name, char *buf, char *it, uint8_t *in, uint32_t count) {
 	fprintf(stderr, "%s%s=", buf, name);
 	for(uint32_t i = 0; i < count; ++i)
-		fprintf(stderr, "%hhx", in[i]);
+		fprintf(stderr, "%02hhx", in[i]);
 	fprintf(stderr, "\n");
 }
 struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(uint8_t **pkt) {
@@ -318,6 +318,7 @@ struct ConnectToServerRequest pkt_readConnectToServerRequest(uint8_t **pkt) {
 }
 struct UserMessageReceivedAcknowledge pkt_readUserMessageReceivedAcknowledge(uint8_t **pkt) {
 	struct UserMessageReceivedAcknowledge out;
+	out.base = pkt_readBaseMasterServerAcknowledgeMessage(pkt);
 	return out;
 }
 struct UserMultipartMessage pkt_readUserMultipartMessage(uint8_t **pkt) {
@@ -394,6 +395,7 @@ struct DedicatedServerPrepareForConnectionRequest pkt_readDedicatedServerPrepare
 }
 struct DedicatedServerMessageReceivedAcknowledge pkt_readDedicatedServerMessageReceivedAcknowledge(uint8_t **pkt) {
 	struct DedicatedServerMessageReceivedAcknowledge out;
+	out.base = pkt_readBaseMasterServerAcknowledgeMessage(pkt);
 	return out;
 }
 struct DedicatedServerMultipartMessage pkt_readDedicatedServerMultipartMessage(uint8_t **pkt) {
@@ -448,14 +450,18 @@ struct ServerCertificateResponse pkt_readServerCertificateResponse(uint8_t **pkt
 }
 struct ClientKeyExchangeRequest pkt_readClientKeyExchangeRequest(uint8_t **pkt) {
 	struct ClientKeyExchangeRequest out;
+	out.base = pkt_readBaseMasterServerReliableResponse(pkt);
+	out.clientPublicKey = pkt_readByteArrayNetSerializable(pkt);
 	return out;
 }
 struct ChangeCipherSpecRequest pkt_readChangeCipherSpecRequest(uint8_t **pkt) {
 	struct ChangeCipherSpecRequest out;
+	out.base = pkt_readBaseMasterServerReliableResponse(pkt);
 	return out;
 }
 struct HandshakeMessageReceivedAcknowledge pkt_readHandshakeMessageReceivedAcknowledge(uint8_t **pkt) {
 	struct HandshakeMessageReceivedAcknowledge out;
+	out.base = pkt_readBaseMasterServerAcknowledgeMessage(pkt);
 	return out;
 }
 struct HandshakeMultipartMessage pkt_readHandshakeMultipartMessage(uint8_t **pkt) {
@@ -514,6 +520,7 @@ void pkt_writeConnectToServerResponse(uint8_t **pkt, struct ConnectToServerRespo
 void pkt_writeConnectToServerRequest(uint8_t **pkt, struct ConnectToServerRequest in) {
 }
 void pkt_writeUserMessageReceivedAcknowledge(uint8_t **pkt, struct UserMessageReceivedAcknowledge in) {
+	pkt_writeBaseMasterServerAcknowledgeMessage(pkt, in.base);
 }
 void pkt_writeUserMultipartMessage(uint8_t **pkt, struct UserMultipartMessage in) {
 	pkt_writeBaseMasterServerMultipartMessage(pkt, in.base);
@@ -550,6 +557,7 @@ void pkt_writeDedicatedServerShutDownRequest(uint8_t **pkt, struct DedicatedServ
 void pkt_writeDedicatedServerPrepareForConnectionRequest(uint8_t **pkt, struct DedicatedServerPrepareForConnectionRequest in) {
 }
 void pkt_writeDedicatedServerMessageReceivedAcknowledge(uint8_t **pkt, struct DedicatedServerMessageReceivedAcknowledge in) {
+	pkt_writeBaseMasterServerAcknowledgeMessage(pkt, in.base);
 }
 void pkt_writeDedicatedServerMultipartMessage(uint8_t **pkt, struct DedicatedServerMultipartMessage in) {
 	pkt_writeBaseMasterServerMultipartMessage(pkt, in.base);
@@ -572,11 +580,11 @@ void pkt_writeServerCertificateRequest(uint8_t **pkt, struct ServerCertificateRe
 	for(uint32_t i = 0; i < in.certificateCount; ++i)
 		pkt_writeByteArrayNetSerializable(pkt, in.certificateList[i]);
 }
-void pkt_writeClientKeyExchangeRequest(uint8_t **pkt, struct ClientKeyExchangeRequest in) {
-}
 void pkt_writeChangeCipherSpecRequest(uint8_t **pkt, struct ChangeCipherSpecRequest in) {
+	pkt_writeBaseMasterServerReliableResponse(pkt, in.base);
 }
 void pkt_writeHandshakeMessageReceivedAcknowledge(uint8_t **pkt, struct HandshakeMessageReceivedAcknowledge in) {
+	pkt_writeBaseMasterServerAcknowledgeMessage(pkt, in.base);
 }
 void pkt_writeHandshakeMultipartMessage(uint8_t **pkt, struct HandshakeMultipartMessage in) {
 	pkt_writeBaseMasterServerMultipartMessage(pkt, in.base);
@@ -682,6 +690,7 @@ void pkt_logConnectToServerRequest(const char *name, char *buf, char *it, struct
 }
 void pkt_logUserMessageReceivedAcknowledge(const char *name, char *buf, char *it, struct UserMessageReceivedAcknowledge in) {
 	it += sprintf(it, "%s.", name);
+	pkt_logBaseMasterServerAcknowledgeMessage("base", buf, it, in.base);
 }
 void pkt_logUserMultipartMessage(const char *name, char *buf, char *it, struct UserMultipartMessage in) {
 	it += sprintf(it, "%s.", name);
@@ -742,6 +751,7 @@ void pkt_logDedicatedServerPrepareForConnectionRequest(const char *name, char *b
 }
 void pkt_logDedicatedServerMessageReceivedAcknowledge(const char *name, char *buf, char *it, struct DedicatedServerMessageReceivedAcknowledge in) {
 	it += sprintf(it, "%s.", name);
+	pkt_logBaseMasterServerAcknowledgeMessage("base", buf, it, in.base);
 }
 void pkt_logDedicatedServerMultipartMessage(const char *name, char *buf, char *it, struct DedicatedServerMultipartMessage in) {
 	it += sprintf(it, "%s.", name);
@@ -786,12 +796,16 @@ void pkt_logServerCertificateResponse(const char *name, char *buf, char *it, str
 }
 void pkt_logClientKeyExchangeRequest(const char *name, char *buf, char *it, struct ClientKeyExchangeRequest in) {
 	it += sprintf(it, "%s.", name);
+	pkt_logBaseMasterServerReliableResponse("base", buf, it, in.base);
+	pkt_logByteArrayNetSerializable("clientPublicKey", buf, it, in.clientPublicKey);
 }
 void pkt_logChangeCipherSpecRequest(const char *name, char *buf, char *it, struct ChangeCipherSpecRequest in) {
 	it += sprintf(it, "%s.", name);
+	pkt_logBaseMasterServerReliableResponse("base", buf, it, in.base);
 }
 void pkt_logHandshakeMessageReceivedAcknowledge(const char *name, char *buf, char *it, struct HandshakeMessageReceivedAcknowledge in) {
 	it += sprintf(it, "%s.", name);
+	pkt_logBaseMasterServerAcknowledgeMessage("base", buf, it, in.base);
 }
 void pkt_logHandshakeMultipartMessage(const char *name, char *buf, char *it, struct HandshakeMultipartMessage in) {
 	it += sprintf(it, "%s.", name);

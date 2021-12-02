@@ -6,7 +6,6 @@
 #include <pthread.h>
 #endif
 #include "debug.h"
-#include <mbedtls/entropy.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -14,23 +13,90 @@
 
 struct Context {
 	mbedtls_x509_crt *cert;
-	int32_t sockfd;
-	mbedtls_ctr_drbg_context ctr_drbg;
-	mbedtls_entropy_context entropy;
+	struct NetContext net;
 };
 
-static void send_ack(struct Context *ctx, struct MasterServerSession *session, uint8_t *pkt, struct MessageHeader message, struct BaseMasterServerReliableRequest req) {
+static void send_ack(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf, MessageType type, struct BaseMasterServerReliableRequest req) {
 	struct BaseMasterServerAcknowledgeMessage r_ack;
 	r_ack.base.responseId = req.requestId;
 	r_ack.messageHandled = 1;
-	uint8_t *resp = pkt;
-	if(message.type == MessageType_UserMessage)
-		SERIALIZE(&resp, message, UserMessage, UserMessageReceivedAcknowledge, BaseMasterServerAcknowledgeMessage, r_ack)
-	else if(message.type == MessageType_DedicatedServerMessage)
-		SERIALIZE(&resp, message, DedicatedServerMessage, DedicatedServerMessageReceivedAcknowledge, BaseMasterServerAcknowledgeMessage, r_ack)
-	else if(message.type == MessageType_HandshakeMessage)
-		SERIALIZE(&resp, message, HandshakeMessage, HandshakeMessageReceivedAcknowledge, BaseMasterServerAcknowledgeMessage, r_ack)
-	net_send(ctx->sockfd, session, PacketType_UnconnectedMessage, pkt, resp - pkt, 0);
+	uint8_t *resp = buf;
+	if(type == MessageType_UserMessage)
+		SERIALIZE(&resp, UserMessage, UserMessageReceivedAcknowledge, BaseMasterServerAcknowledgeMessage, r_ack)
+	else if(type == MessageType_DedicatedServerMessage)
+		SERIALIZE(&resp, DedicatedServerMessage, DedicatedServerMessageReceivedAcknowledge, BaseMasterServerAcknowledgeMessage, r_ack)
+	else if(type == MessageType_HandshakeMessage)
+		SERIALIZE(&resp, HandshakeMessage, HandshakeMessageReceivedAcknowledge, BaseMasterServerAcknowledgeMessage, r_ack)
+	net_send(&ctx->net, session, PacketProperty_UnconnectedMessage, buf, resp - buf, 0);
+}
+
+static void handle_ClientHelloRequest(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf, uint8_t **data) {
+	struct ClientHelloRequest req = pkt_readClientHelloRequest(data);
+	MasterServerSession_set_epoch(session, req.base.requestId & 0xff000000);
+	MasterServerSession_set_state(session, HandshakeMessageType_ClientHelloRequest);
+	memcpy(MasterServerSession_get_clientRandom(session), req.random, 32);
+	struct HelloVerifyRequest r_hello;
+	r_hello.base.requestId = 0;
+	r_hello.base.responseId = req.base.requestId;
+	memcpy(r_hello.cookie, MasterServerSession_get_cookie(session), sizeof(r_hello.cookie));
+	uint8_t *resp = buf;
+	#if 0
+	SERIALIZE(&resp, HandshakeMessage, HelloVerifyRequest, HelloVerifyRequest, r_hello);
+	#else
+	SERIALIZE_HEAD(&resp, HandshakeMessage);
+	SERIALIZE_BODY(&resp, HandshakeMessageType_HelloVerifyRequest, HelloVerifyRequest, r_hello);
+	#endif
+	net_send(&ctx->net, session, PacketProperty_UnconnectedMessage, buf, resp - buf, 0);
+}
+
+static void handle_ClientHelloWithCookieRequest(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf, uint8_t **data) {
+	struct ClientHelloWithCookieRequest req = pkt_readClientHelloWithCookieRequest(data);
+	send_ack(ctx, session, buf, MessageType_HandshakeMessage, req.base);
+	*MasterServerSession_ClientHelloWithCookieRequest_requestId(session) = req.base.requestId; // don't @ me   -rc
+	if(MasterServerSession_set_state(session, HandshakeMessageType_ClientHelloWithCookieRequest))
+		return;
+	if(memcmp(req.cookie, MasterServerSession_get_cookie(session), 32) != 0)
+		return;
+	if(memcmp(req.random, MasterServerSession_get_clientRandom(session), 32) != 0)
+		return;
+
+	struct ServerCertificateRequest r_cert;
+	r_cert.base.requestId = net_getNextRequestId(session);
+	r_cert.base.responseId = req.certificateResponseId;
+	r_cert.certificateCount = 0;
+	for(mbedtls_x509_crt *it = ctx->cert; it; it = it->MBEDTLS_PRIVATE(next)) {
+		r_cert.certificateList[r_cert.certificateCount].length = it->MBEDTLS_PRIVATE(raw).MBEDTLS_PRIVATE(len);
+		memcpy(r_cert.certificateList[r_cert.certificateCount].data, it->MBEDTLS_PRIVATE(raw).MBEDTLS_PRIVATE(p), r_cert.certificateList[r_cert.certificateCount].length);
+		++r_cert.certificateCount;
+	}
+	uint8_t *resp = buf;
+	SERIALIZE(&resp, HandshakeMessage, ServerCertificateRequest, ServerCertificateRequest, r_cert);
+	net_send(&ctx->net, session, PacketProperty_UnconnectedMessage, buf, resp - buf, 1);
+}
+
+static void handle_ServerCertificateRequest_ack(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf) {
+	struct ServerHelloRequest r_hello;
+	r_hello.base.requestId = net_getNextRequestId(session);
+	r_hello.base.responseId = *MasterServerSession_ClientHelloWithCookieRequest_requestId(session);
+	memcpy(r_hello.random, MasterServerSession_get_serverRandom(session), sizeof(r_hello.random));
+	if(MasterServerSession_write_key(session, &r_hello.publicKey))
+		return;
+	r_hello.signature.length = 0;
+	memcpy(r_hello.signature.data, MasterServerSession_get_clientRandom(session), 32);
+	r_hello.signature.length += 32;
+	memcpy(&r_hello.signature.data[r_hello.signature.length], MasterServerSession_get_serverRandom(session), 32);
+	r_hello.signature.length += 32;
+	memcpy(&r_hello.signature.data[r_hello.signature.length], r_hello.publicKey.data, r_hello.publicKey.length);
+	r_hello.signature.length += r_hello.publicKey.length;
+	uint8_t *resp = buf;
+	SERIALIZE(&resp, HandshakeMessage, ServerHelloRequest, ServerHelloRequest, r_hello);
+	net_send(&ctx->net, session, PacketProperty_UnconnectedMessage, buf, resp - buf, 1);
+}
+
+static void handle_ClientKeyExchangeRequest(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf, uint8_t **data) {
+	fprintf(stderr, "HandshakeMessageType_ClientKeyExchangeRequest not implemented\n");
+	// ACTIVATE ENCRYPTION HERE
+	// send HandshakeMessageType_ChangeCipherSpecRequest
 }
 
 #ifdef WINDOWS
@@ -42,11 +108,11 @@ master_handler(struct Context *ctx) {
 	fprintf(stderr, "Master server started\n");
 	uint32_t len;
 	struct MasterServerSession *session;
-	PacketType property;
+	PacketProperty property;
 	uint8_t *pkt;
-	while((len = net_recv(ctx->sockfd, &ctx->ctr_drbg, &session, &property, &pkt))) {
+	while((len = net_recv(&ctx->net, &session, &property, &pkt))) {
 		uint8_t *data = pkt, *end = &pkt[len];
-		if(property == PacketType_UnconnectedMessage) {
+		if(property == PacketProperty_UnconnectedMessage) {
 			struct MessageHeader message = pkt_readMessageHeader(&data);
 			struct SerializeHeader serial = pkt_readSerializeHeader(&data);
 			#if 0
@@ -86,79 +152,22 @@ master_handler(struct Context *ctx) {
 				}
 			} else if(message.type == MessageType_HandshakeMessage) {
 				switch(serial.type) {
-					case HandshakeMessageType_ClientHelloRequest: {
-						struct ClientHelloRequest req = pkt_readClientHelloRequest(&data);
-						MasterServerSession_set_epoch(session, req.base.requestId & 0xff000000);
-						MasterServerSession_set_state(session, MasterServerSessionState_New);
-						memcpy(MasterServerSession_get_clientRandom(session), req.random, 32);
-						struct HelloVerifyRequest r_hello;
-						r_hello.base.requestId = 0; // net_getNextRequestId(session);
-						r_hello.base.responseId = req.base.requestId;
-						memcpy(r_hello.cookie, MasterServerSession_get_cookie(session), sizeof(r_hello.cookie));
-						uint8_t *resp = pkt;
-						#if 0
-						SERIALIZE(&resp, message, HandshakeMessage, HelloVerifyRequest, HelloVerifyRequest, r_hello);
-						#else
-						SERIALIZE_HEAD(&resp, message, HandshakeMessage);
-						SERIALIZE_BODY(&resp, HandshakeMessageType_HelloVerifyRequest, HelloVerifyRequest, r_hello);
-						#endif
-						net_send(ctx->sockfd, session, PacketType_UnconnectedMessage, pkt, resp - pkt, 0);
-						break;
-					}
+					case HandshakeMessageType_ClientHelloRequest: handle_ClientHelloRequest(ctx, session, pkt, &data); break;
 					case HandshakeMessageType_HelloVerifyRequest: fprintf(stderr, "BAD TYPE: HandshakeMessageType_HelloVerifyRequest\n"); break;
-					case HandshakeMessageType_ClientHelloWithCookieRequest: {
-						struct ClientHelloWithCookieRequest req = pkt_readClientHelloWithCookieRequest(&data);
-						send_ack(ctx, session, pkt, message, req.base);
-						if(memcmp(req.cookie, MasterServerSession_get_cookie(session), 32) != 0)
-							break;
-						if(memcmp(req.random, MasterServerSession_get_clientRandom(session), 32) != 0)
-							break;
-
-						struct ServerCertificateRequest r_cert;
-						r_cert.base.requestId = 1; // net_getNextRequestId(session);
-						r_cert.base.responseId = req.certificateResponseId;
-						r_cert.certificateCount = 0;
-						for(mbedtls_x509_crt *it = ctx->cert; it; it = it->MBEDTLS_PRIVATE(next)) {
-							r_cert.certificateList[r_cert.certificateCount].length = it->MBEDTLS_PRIVATE(raw).MBEDTLS_PRIVATE(len);
-							memcpy(r_cert.certificateList[r_cert.certificateCount].data, it->MBEDTLS_PRIVATE(raw).MBEDTLS_PRIVATE(p), r_cert.certificateList[r_cert.certificateCount].length);
-							++r_cert.certificateCount;
-						}
-						uint8_t *resp = pkt;
-						SERIALIZE(&resp, message, HandshakeMessage, ServerCertificateRequest, ServerCertificateRequest, r_cert);
-						net_send(ctx->sockfd, session, PacketType_UnconnectedMessage, pkt, resp - pkt, 1);
-
-						struct ServerHelloRequest r_hello;
-						r_hello.base.requestId = net_getNextRequestId(session);
-						r_hello.base.responseId = req.base.requestId;
-						memcpy(r_hello.random, MasterServerSession_get_serverRandom(session), sizeof(r_hello.random));
-						if(MasterServerSession_write_key(session, &r_hello.publicKey))
-							break;
-						r_hello.signature.length = 0;
-						memcpy(r_hello.signature.data, MasterServerSession_get_clientRandom(session), 32);
-						r_hello.signature.length += 32;
-						memcpy(&r_hello.signature.data[r_hello.signature.length], MasterServerSession_get_serverRandom(session), 32);
-						r_hello.signature.length += 32;
-						memcpy(&r_hello.signature.data[r_hello.signature.length], r_hello.publicKey.data, r_hello.publicKey.length);
-						r_hello.signature.length += r_hello.publicKey.length;
-						resp = pkt;
-						SERIALIZE(&resp, message, HandshakeMessage, ServerHelloRequest, ServerHelloRequest, r_hello);
-						net_send(ctx->sockfd, session, PacketType_UnconnectedMessage, pkt, resp - pkt, 1);
-						break;
-					}
+					case HandshakeMessageType_ClientHelloWithCookieRequest: handle_ClientHelloWithCookieRequest(ctx, session, pkt, &data); break;
 					case HandshakeMessageType_ServerHelloRequest: fprintf(stderr, "BAD TYPE: HandshakeMessageType_ServerHelloRequest\n"); break;
 					case HandshakeMessageType_ServerCertificateRequest: fprintf(stderr, "BAD TYPE: HandshakeMessageType_ServerCertificateRequest\n"); break;
 					case HandshakeMessageType_ServerCertificateResponse: fprintf(stderr, "HandshakeMessageType_ServerCertificateResponse not implemented\n"); return 0;
-					case HandshakeMessageType_ClientKeyExchangeRequest:
-						fprintf(stderr, "HandshakeMessageType_ClientKeyExchangeRequest not implemented\n");
-						// ACTIVATE ENCRYPTION HERE
-						// send HandshakeMessageType_ChangeCipherSpecRequest
-						break;
+					case HandshakeMessageType_ClientKeyExchangeRequest: handle_ClientKeyExchangeRequest(ctx, session, pkt, &data); break;
 					case HandshakeMessageType_ChangeCipherSpecRequest: fprintf(stderr, "BAD TYPE: HandshakeMessageType_ChangeCipherSpecRequest\n"); break;
 					case HandshakeMessageType_HandshakeMessageReceivedAcknowledge: {
 						struct BaseMasterServerAcknowledgeMessage ack = pkt_readBaseMasterServerAcknowledgeMessage(&data);
-						uint8_t *resp = net_handle_ack(session, ack.base.responseId);
-						if(!resp) // expected in prodution; only error when testing on local network
-							fprintf(stderr, "UNMATCHED ACK: %u\n", ack.base.responseId);
+						if(net_handle_ack(session, &message, &serial, ack.base.responseId)) {
+							if(message.type == MessageType_HandshakeMessage && serial.type == HandshakeMessageType_ServerCertificateRequest)
+								handle_ServerCertificateRequest_ack(ctx, session, pkt);
+						} else {
+							fprintf(stderr, "UNMATCHED ACK: %u\n", ack.base.responseId); // expected in prodution; only error when testing on local network
+						}
 						break;
 					}
 					case HandshakeMessageType_HandshakeMultipartMessage: fprintf(stderr, "HandshakeMessageType_HandshakeMultipartMessage not implemented\n"); return 0;
@@ -168,7 +177,7 @@ master_handler(struct Context *ctx) {
 				fprintf(stderr, "BAD TYPE\n");
 			}
 		} else {
-			fprintf(stderr, "Unsupported packet type: %s\n", reflect(PacketType, property));
+			fprintf(stderr, "Unsupported packet type: %s\n", reflect(PacketProperty, property));
 		}
 		if(data != end)
 			fprintf(stderr, "BAD PACKET LENGTH (expected %u, got %zu)\n", len, data - pkt);
@@ -177,11 +186,11 @@ master_handler(struct Context *ctx) {
 }
 
 #ifdef WINDOWS
-static HANDLE master_thread;
+static HANDLE master_thread = NULL;
 #else
-static pthread_t master_thread;
+static pthread_t master_thread = 0;
 #endif
-static struct Context ctx = {NULL, -1};
+static struct Context ctx = {NULL, {-1}};
 _Bool master_init(mbedtls_x509_crt *cert, uint16_t port) {
 	{
 		uint_fast8_t count = 0;
@@ -197,15 +206,8 @@ _Bool master_init(mbedtls_x509_crt *cert, uint16_t port) {
 		}
 	}
 	ctx.cert = cert;
-	ctx.sockfd = net_init(port);
-	if(ctx.sockfd == -1) {
+	if(net_init(&ctx.net, port)) {
 		fprintf(stderr, "net_init() failed\n");
-		return 1;
-	}
-	mbedtls_ctr_drbg_init(&ctx.ctr_drbg);
-	mbedtls_entropy_init(&ctx.entropy);
-	if(mbedtls_ctr_drbg_seed(&ctx.ctr_drbg, mbedtls_entropy_func, &ctx.entropy, (const uint8_t*)u8"M@$73RS€RV3R", 14) != 0) {
-		fprintf(stderr, "mbedtls_ctr_drbg_seed() failed\n");
 		return 1;
 	}
 	#ifdef WINDOWS
@@ -217,16 +219,15 @@ _Bool master_init(mbedtls_x509_crt *cert, uint16_t port) {
 }
 
 void master_cleanup() {
-	if(ctx.sockfd != -1) {
+	if(master_thread) {
+		net_stop(&ctx.net);
 		fprintf(stderr, "Stopping master server\n");
-		mbedtls_entropy_free(&ctx.entropy);
-		mbedtls_ctr_drbg_free(&ctx.ctr_drbg);
-		net_cleanup(ctx.sockfd);
-		ctx.sockfd = -1;
 		#ifdef WINDOWS
 		WaitForSingleObject(master_thread, INFINITE);
 		#else
 		pthread_join(master_thread, NULL);
 		#endif
+		master_thread = 0;
 	}
+	net_cleanup(&ctx.net);
 }
