@@ -37,8 +37,9 @@ int main(int argc, char const *argv[]) {
 		return -1;
 	if(status_ssl_init(&cfg.status_cert, &cfg.status_key, cfg.status_port))
 		return -1;
-	if(master_init(&cfg.master_cert, cfg.master_port))
+	if(master_init(&cfg.master_cert, &cfg.master_key, cfg.master_port))
 		return -1;
+	usleep(10000); // Fixes out of order logs
 	fprintf(stderr, "Press [enter] to exit\n");
 	getchar();
 	master_cleanup();

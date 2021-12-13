@@ -1,4 +1,5 @@
 #include "net.h"
+#include "status.h"
 #ifdef WINDOWS
 #include <processthreadsapi.h>
 #else
@@ -31,37 +32,13 @@ status_ssl_handler(struct Context *ctx) {
 		while((ret = mbedtls_ssl_handshake(&ctx->ssl)) != 0)
 			if(ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE)
 				goto reset;
-		uint8_t buf[1024];
+		uint8_t buf[81920];
 		do {
 			memset(buf, 0, sizeof(buf));
 			ret = mbedtls_ssl_read(&ctx->ssl, buf, sizeof(buf) - 1);
 		} while(ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE);
-		if(ret >= 6 && strncmp((char*)buf, "GET /", 5) == 0) {
-			fprintf(stderr, "[HTTPS] GET /\n");
-			size_t len;
-			if(buf[5] == ' ') {
-				len = sprintf((char*)buf,
-					"HTTP/1.1 200 OK\r\n"
-					"Connection: close\r\n"
-					"Content-Length: 182\r\n"
-					"X-Frame-Options: DENY\r\n"
-					"X-Content-Type-Options: nosniff\r\n"
-					"Content-Type: application/json; charset=utf-8\r\n"
-					"X-DNS-Prefetch-Control: off\r\n"
-					"\r\n"
-					"{\"minimumAppVersion\":\"1.16.4\",\"status\":0,\"maintenanceStartTime\":0,\"maintenanceEndTime\":0,\"userMessage\":{\"localizedMessages\":[{\"language\":\"en\",\"message\":\"Test message from server\"}]}}");
-			} else {
-				len = sprintf((char*)buf,
-					"HTTP/1.1 404 Not Found\r\n"
-					"Connection: close\r\n"
-					"Content-Length: 39\r\n"
-					"X-Frame-Options: DENY\r\n"
-					"X-Content-Type-Options: nosniff\r\n"
-					"Content-Type: text/html; charset=utf-8\r\n"
-					"X-DNS-Prefetch-Control: off\r\n"
-					"\r\n"
-					"<html><body>404 not found</body></html>");
-			}
+		size_t len = status_resp("HTTPS", (char*)buf, ret);
+		if(len) {
 			while((ret = mbedtls_ssl_write(&ctx->ssl, buf, len)) <= 0) {
 				if(ret == MBEDTLS_ERR_NET_CONN_RESET)
 					goto reset;

@@ -1,4 +1,5 @@
 #include "net.h"
+#include "status.h"
 #ifdef WINDOWS
 #include <processthreadsapi.h>
 #define SHUT_RD SD_RECEIVE
@@ -39,42 +40,9 @@ status_handler(int32_t *listenfd) {
 			close(csock);
 			continue;
 		}
-		const char *resp;
-		if(size >= 6 && memcmp(buf, "GET / ", 6) == 0) {
-			fprintf(stderr, "[HTTP] GET /\n");
-			resp =
-				"HTTP/1.1 200 OK\r\n"
-				"Connection: close\r\n"
-				"Content-Length: 182\r\n"
-				"X-Frame-Options: DENY\r\n"
-				"X-Content-Type-Options: nosniff\r\n"
-				"Content-Type: application/json; charset=utf-8\r\n"
-				"X-DNS-Prefetch-Control: off\r\n"
-				"\r\n"
-				"{\"minimumAppVersion\":\"1.16.4\",\"status\":0,\"maintenanceStartTime\":0,\"maintenanceEndTime\":0,\"userMessage\":{\"localizedMessages\":[{\"language\":\"en\",\"message\":\"Test message from server\"}]}}";
-		/*} else if(size >= 32 && memcmp(buf, "GET /.well-known/acme-challenge/", 32) == 0) {
-			resp =
-				"HTTP/1.1 200 OK\r\n"
-				"Connection: close\r\n"
-				"Content-Length: 0\r\n"
-				"X-Frame-Options: DENY\r\n"
-				"X-Content-Type-Options: nosniff\r\n"
-				"Content-Type: text/plain; charset=utf-8\r\n"
-				"X-DNS-Prefetch-Control: off\r\n"
-				"\r\n";*/
-		} else {
-			resp =
-				"HTTP/1.1 404 Not Found\r\n"
-				"Connection: close\r\n"
-				"Content-Length: 39\r\n"
-				"X-Frame-Options: DENY\r\n"
-				"X-Content-Type-Options: nosniff\r\n"
-				"Content-Type: text/html; charset=utf-8\r\n"
-				"X-DNS-Prefetch-Control: off\r\n"
-				"\r\n"
-				"<html><body>404 not found</body></html>";
-		}
-		send(csock, resp, strlen(resp), 0);
+		size = status_resp("HTTP", buf, size);
+		if(size)
+			send(csock, buf, size, 0);
 		close(csock);
 	}
 	return 0;

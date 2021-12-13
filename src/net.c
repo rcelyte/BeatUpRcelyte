@@ -1,5 +1,6 @@
 #include "enum_reflection.h"
 #include "net.h"
+#include <mbedtls/error.h>
 
 #define RESEND_BUFFER 32
 
@@ -52,13 +53,35 @@ uint8_t *MasterServerSession_get_serverRandom(struct MasterServerSession *sessio
 uint8_t *MasterServerSession_get_cookie(struct MasterServerSession *session) {
 	return session->cookie;
 }
-_Bool MasterServerSession_write_key(struct MasterServerSession *session, struct ByteArrayNetSerializable *out) {
+_Bool MasterServerSession_write_key(struct MasterServerSession *session, uint8_t *out, uint32_t *out_len) {
 	size_t keylen = 0;
-	if(mbedtls_ecp_point_write_binary(&session->key.MBEDTLS_PRIVATE(grp), &session->key.MBEDTLS_PRIVATE(Q), MBEDTLS_ECP_PF_UNCOMPRESSED, &keylen, out->data, sizeof(out->data)) != 0) {
+	if(mbedtls_ecp_point_write_binary(&session->key.MBEDTLS_PRIVATE(grp), &session->key.MBEDTLS_PRIVATE(Q), MBEDTLS_ECP_PF_COMPRESSED, &keylen, out, *out_len) != 0) {
 		fprintf(stderr, "mbedtls_ecp_point_write_binary() failed\n");
+		*out_len = 0;
 		return 1;
 	}
-	out->length = keylen;
+	*out_len = keylen;
+	return 0;
+}
+_Bool MasterServerSession_signature(struct MasterServerSession *session, struct NetContext *ctx, mbedtls_pk_context *key, uint8_t *in, uint32_t in_len, struct ByteArrayNetSerializable *out) {
+	out->length = 0;
+	if(mbedtls_pk_get_type(key) != MBEDTLS_PK_RSA) {
+		fprintf(stderr, "Key should be RSA\n");
+		return 1;
+	}
+	mbedtls_rsa_context *rsa = key->MBEDTLS_PRIVATE(pk_ctx);
+	uint8_t hash[32];
+	int32_t err = mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), in, in_len, hash);
+	if(err != 0) {
+		fprintf(stderr, "mbedtls_md() failed: %s\n", mbedtls_high_level_strerr(err));
+		return 1;
+	}
+	err = mbedtls_rsa_pkcs1_sign(rsa, mbedtls_ctr_drbg_random, &ctx->ctr_drbg, MBEDTLS_MD_SHA256, 32, hash, out->data);
+	if(err != 0) {
+		fprintf(stderr, "mbedtls_rsa_pkcs1_sign() failed: %s\n", mbedtls_high_level_strerr(err));
+		return 1;
+	}
+	out->length = rsa->MBEDTLS_PRIVATE(len);
 	return 0;
 }
 void MasterServerSession_set_epoch(struct MasterServerSession *session, uint32_t epoch) {

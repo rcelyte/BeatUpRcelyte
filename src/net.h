@@ -22,15 +22,6 @@ struct SS {
 	};
 };
 
-struct MasterServerSession;
-uint8_t *MasterServerSession_get_clientRandom(struct MasterServerSession *session);
-uint8_t *MasterServerSession_get_serverRandom(struct MasterServerSession *session);
-uint8_t *MasterServerSession_get_cookie(struct MasterServerSession *session);
-_Bool MasterServerSession_write_key(struct MasterServerSession *session, struct ByteArrayNetSerializable *out);
-void MasterServerSession_set_epoch(struct MasterServerSession *session, uint32_t epoch);
-_Bool MasterServerSession_set_state(struct MasterServerSession *session, HandshakeMessageType state);
-uint32_t *MasterServerSession_ClientHelloWithCookieRequest_requestId(struct MasterServerSession *session);
-
 struct NetContext {
 	int32_t sockfd;
 	mbedtls_ctr_drbg_context ctr_drbg;
@@ -39,6 +30,18 @@ struct NetContext {
 	ssize_t prev_size;
 	uint8_t buf[262144];
 };
+
+struct MasterServerSession;
+
+uint8_t *MasterServerSession_get_clientRandom(struct MasterServerSession *session);
+uint8_t *MasterServerSession_get_serverRandom(struct MasterServerSession *session);
+uint8_t *MasterServerSession_get_cookie(struct MasterServerSession *session);
+_Bool MasterServerSession_write_key(struct MasterServerSession *session, uint8_t *out, uint32_t *out_len);
+_Bool MasterServerSession_signature(struct MasterServerSession *session, struct NetContext *ctx, mbedtls_pk_context *key, uint8_t *in, uint32_t in_len, struct ByteArrayNetSerializable *out);
+void MasterServerSession_set_epoch(struct MasterServerSession *session, uint32_t epoch);
+_Bool MasterServerSession_set_state(struct MasterServerSession *session, HandshakeMessageType state);
+uint32_t *MasterServerSession_ClientHelloWithCookieRequest_requestId(struct MasterServerSession *session);
+
 _Bool net_init(struct NetContext *ctx, uint16_t port);
 void net_stop(struct NetContext *ctx);
 void net_cleanup(struct NetContext *ctx);
@@ -54,5 +57,5 @@ void status_cleanup();
 _Bool status_ssl_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, uint16_t port);
 void status_ssl_cleanup();
 
-_Bool master_init(mbedtls_x509_crt *cert, uint16_t port);
+_Bool master_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, uint16_t port);
 void master_cleanup();

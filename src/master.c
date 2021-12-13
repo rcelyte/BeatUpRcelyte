@@ -13,6 +13,7 @@
 
 struct Context {
 	mbedtls_x509_crt *cert;
+	mbedtls_pk_context *key;
 	struct NetContext net;
 };
 
@@ -79,15 +80,17 @@ static void handle_ServerCertificateRequest_ack(struct Context *ctx, struct Mast
 	r_hello.base.requestId = net_getNextRequestId(session);
 	r_hello.base.responseId = *MasterServerSession_ClientHelloWithCookieRequest_requestId(session);
 	memcpy(r_hello.random, MasterServerSession_get_serverRandom(session), sizeof(r_hello.random));
-	if(MasterServerSession_write_key(session, &r_hello.publicKey))
+	r_hello.publicKey.length = sizeof(r_hello.publicKey.data);
+	if(MasterServerSession_write_key(session, r_hello.publicKey.data, &r_hello.publicKey.length))
 		return;
-	r_hello.signature.length = 0;
-	memcpy(r_hello.signature.data, MasterServerSession_get_clientRandom(session), 32);
-	r_hello.signature.length += 32;
-	memcpy(&r_hello.signature.data[r_hello.signature.length], MasterServerSession_get_serverRandom(session), 32);
-	r_hello.signature.length += 32;
-	memcpy(&r_hello.signature.data[r_hello.signature.length], r_hello.publicKey.data, r_hello.publicKey.length);
-	r_hello.signature.length += r_hello.publicKey.length;
+	{
+		uint8_t sig[r_hello.publicKey.length + 64];
+		memcpy(sig, MasterServerSession_get_clientRandom(session), 32);
+		memcpy(&sig[32], MasterServerSession_get_serverRandom(session), 32);
+		memcpy(&sig[64], r_hello.publicKey.data, r_hello.publicKey.length);
+		MasterServerSession_signature(session, &ctx->net, ctx->key, sig, sizeof(sig), &r_hello.signature);
+	}
+
 	uint8_t *resp = buf;
 	SERIALIZE(&resp, HandshakeMessage, ServerHelloRequest, ServerHelloRequest, r_hello);
 	net_send(&ctx->net, session, PacketProperty_UnconnectedMessage, buf, resp - buf, 1);
@@ -190,8 +193,8 @@ static HANDLE master_thread = NULL;
 #else
 static pthread_t master_thread = 0;
 #endif
-static struct Context ctx = {NULL, {-1}};
-_Bool master_init(mbedtls_x509_crt *cert, uint16_t port) {
+static struct Context ctx = {NULL, NULL, {-1}};
+_Bool master_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, uint16_t port) {
 	{
 		uint_fast8_t count = 0;
 		for(mbedtls_x509_crt *it = cert; it; it = it->MBEDTLS_PRIVATE(next), ++count) {
@@ -206,6 +209,7 @@ _Bool master_init(mbedtls_x509_crt *cert, uint16_t port) {
 		}
 	}
 	ctx.cert = cert;
+	ctx.key = key;
 	if(net_init(&ctx.net, port)) {
 		fprintf(stderr, "net_init() failed\n");
 		return 1;
