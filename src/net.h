@@ -38,6 +38,7 @@ uint8_t *MasterServerSession_get_serverRandom(struct MasterServerSession *sessio
 uint8_t *MasterServerSession_get_cookie(struct MasterServerSession *session);
 _Bool MasterServerSession_write_key(struct MasterServerSession *session, uint8_t *out, uint32_t *out_len);
 _Bool MasterServerSession_signature(struct MasterServerSession *session, struct NetContext *ctx, mbedtls_pk_context *key, uint8_t *in, uint32_t in_len, struct ByteArrayNetSerializable *out);
+_Bool MasterServerSession_set_clientPublicKey(struct MasterServerSession *session, struct ByteArrayNetSerializable *in);
 void MasterServerSession_set_epoch(struct MasterServerSession *session, uint32_t epoch);
 _Bool MasterServerSession_set_state(struct MasterServerSession *session, HandshakeMessageType state);
 uint32_t *MasterServerSession_ClientHelloWithCookieRequest_requestId(struct MasterServerSession *session);

@@ -32,7 +32,9 @@ struct MasterServerSession {
 	uint8_t clientRandom[32];
 	uint8_t serverRandom[32];
 	uint8_t cookie[32];
-	mbedtls_ecp_keypair key;
+	mbedtls_ecp_keypair serverKey;
+	// mbedtls_ecp_point clientPublicKey;
+	uint8_t clientPublicKey[256];
 	uint32_t epoch;
 	HandshakeMessageType state;
 	uint32_t ClientHelloWithCookieRequest_requestId;
@@ -55,7 +57,7 @@ uint8_t *MasterServerSession_get_cookie(struct MasterServerSession *session) {
 }
 _Bool MasterServerSession_write_key(struct MasterServerSession *session, uint8_t *out, uint32_t *out_len) {
 	size_t keylen = 0;
-	if(mbedtls_ecp_point_write_binary(&session->key.MBEDTLS_PRIVATE(grp), &session->key.MBEDTLS_PRIVATE(Q), MBEDTLS_ECP_PF_COMPRESSED, &keylen, out, *out_len) != 0) {
+	if(mbedtls_ecp_point_write_binary(&session->serverKey.MBEDTLS_PRIVATE(grp), &session->serverKey.MBEDTLS_PRIVATE(Q), MBEDTLS_ECP_PF_COMPRESSED, &keylen, out, *out_len) != 0) {
 		fprintf(stderr, "mbedtls_ecp_point_write_binary() failed\n");
 		*out_len = 0;
 		return 1;
@@ -82,6 +84,12 @@ _Bool MasterServerSession_signature(struct MasterServerSession *session, struct 
 		return 1;
 	}
 	out->length = rsa->MBEDTLS_PRIVATE(len);
+	return 0;
+}
+_Bool MasterServerSession_set_clientPublicKey(struct MasterServerSession *session, struct ByteArrayNetSerializable *in) {
+	if(in->length > sizeof(session->clientPublicKey))
+		return 1;
+	memcpy(session->clientPublicKey, in->data, in->length);
 	return 0;
 }
 void MasterServerSession_set_epoch(struct MasterServerSession *session, uint32_t epoch) {
@@ -365,8 +373,8 @@ uint32_t net_recv(struct NetContext *ctx, struct MasterServerSession **session, 
 		for(uint32_t i = 0; i < RESEND_BUFFER; ++i)
 			sptr->data.resend[i].data = i;
 
-		mbedtls_ecp_keypair_init(&sptr->data.key);
-		if(mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP384R1, &sptr->data.key, mbedtls_ctr_drbg_random, &ctx->ctr_drbg) != 0) { // valgrind warning: Source and destination overlap in memcpy()
+		mbedtls_ecp_keypair_init(&sptr->data.serverKey);
+		if(mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP384R1, &sptr->data.serverKey, mbedtls_ctr_drbg_random, &ctx->ctr_drbg) != 0) { // valgrind warning: Source and destination overlap in memcpy()
 			fprintf(stderr, "mbedtls_ecp_gen_key() failed\n");
 			free(sptr);
 			return 0;

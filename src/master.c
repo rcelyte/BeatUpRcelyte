@@ -17,9 +17,9 @@ struct Context {
 	struct NetContext net;
 };
 
-static void send_ack(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf, MessageType type, struct BaseMasterServerReliableRequest req) {
+static void send_ack(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf, MessageType type, uint32_t requestId) {
 	struct BaseMasterServerAcknowledgeMessage r_ack;
-	r_ack.base.responseId = req.requestId;
+	r_ack.base.responseId = requestId;
 	r_ack.messageHandled = 1;
 	uint8_t *resp = buf;
 	if(type == MessageType_UserMessage)
@@ -52,7 +52,7 @@ static void handle_ClientHelloRequest(struct Context *ctx, struct MasterServerSe
 
 static void handle_ClientHelloWithCookieRequest(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf, uint8_t **data) {
 	struct ClientHelloWithCookieRequest req = pkt_readClientHelloWithCookieRequest(data);
-	send_ack(ctx, session, buf, MessageType_HandshakeMessage, req.base);
+	send_ack(ctx, session, buf, MessageType_HandshakeMessage, req.base.requestId);
 	*MasterServerSession_ClientHelloWithCookieRequest_requestId(session) = req.base.requestId; // don't @ me   -rc
 	if(MasterServerSession_set_state(session, HandshakeMessageType_ClientHelloWithCookieRequest))
 		return;
@@ -97,9 +97,19 @@ static void handle_ServerCertificateRequest_ack(struct Context *ctx, struct Mast
 }
 
 static void handle_ClientKeyExchangeRequest(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf, uint8_t **data) {
-	fprintf(stderr, "HandshakeMessageType_ClientKeyExchangeRequest not implemented\n");
+	struct ClientKeyExchangeRequest req = pkt_readClientKeyExchangeRequest(data);
+	send_ack(ctx, session, buf, MessageType_HandshakeMessage, req.base.requestId);
+	if(MasterServerSession_set_state(session, HandshakeMessageType_ClientKeyExchangeRequest))
+		return;
+	if(MasterServerSession_set_clientPublicKey(session, &req.clientPublicKey))
+		return;
+	struct ChangeCipherSpecRequest r_spec;
+	r_spec.base.requestId = net_getNextRequestId(session);
+	r_spec.base.responseId = req.base.requestId;
+	uint8_t *resp = buf;
+	SERIALIZE(&resp, HandshakeMessage, ChangeCipherSpecRequest, ChangeCipherSpecRequest, r_spec);
+	net_send(&ctx->net, session, PacketProperty_UnconnectedMessage, buf, resp - buf, 1);
 	// ACTIVATE ENCRYPTION HERE
-	// send HandshakeMessageType_ChangeCipherSpecRequest
 }
 
 #ifdef WINDOWS
