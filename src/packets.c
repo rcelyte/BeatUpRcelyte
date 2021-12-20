@@ -310,10 +310,12 @@ struct AuthenticateUserResponse pkt_readAuthenticateUserResponse(uint8_t **pkt) 
 }
 struct ConnectToServerResponse pkt_readConnectToServerResponse(uint8_t **pkt) {
 	struct ConnectToServerResponse out;
+	out = (struct ConnectToServerResponse){};
 	return out;
 }
 struct ConnectToServerRequest pkt_readConnectToServerRequest(uint8_t **pkt) {
 	struct ConnectToServerRequest out;
+	out = (struct ConnectToServerRequest){};
 	return out;
 }
 struct UserMessageReceivedAcknowledge pkt_readUserMessageReceivedAcknowledge(uint8_t **pkt) {
@@ -328,6 +330,7 @@ struct UserMultipartMessage pkt_readUserMultipartMessage(uint8_t **pkt) {
 }
 struct SessionKeepaliveMessage pkt_readSessionKeepaliveMessage(uint8_t **pkt) {
 	struct SessionKeepaliveMessage out;
+	out = (struct SessionKeepaliveMessage){};
 	return out;
 }
 struct GetPublicServersRequest pkt_readGetPublicServersRequest(uint8_t **pkt) {
@@ -355,42 +358,52 @@ struct GetPublicServersResponse pkt_readGetPublicServersResponse(uint8_t **pkt) 
 }
 struct AuthenticateDedicatedServerRequest pkt_readAuthenticateDedicatedServerRequest(uint8_t **pkt) {
 	struct AuthenticateDedicatedServerRequest out;
+	out = (struct AuthenticateDedicatedServerRequest){};
 	return out;
 }
 struct AuthenticateDedicatedServerResponse pkt_readAuthenticateDedicatedServerResponse(uint8_t **pkt) {
 	struct AuthenticateDedicatedServerResponse out;
+	out = (struct AuthenticateDedicatedServerResponse){};
 	return out;
 }
 struct CreateDedicatedServerInstanceRequest pkt_readCreateDedicatedServerInstanceRequest(uint8_t **pkt) {
 	struct CreateDedicatedServerInstanceRequest out;
+	out = (struct CreateDedicatedServerInstanceRequest){};
 	return out;
 }
 struct CreateDedicatedServerInstanceResponse pkt_readCreateDedicatedServerInstanceResponse(uint8_t **pkt) {
 	struct CreateDedicatedServerInstanceResponse out;
+	out = (struct CreateDedicatedServerInstanceResponse){};
 	return out;
 }
 struct DedicatedServerInstanceNoLongerAvailableRequest pkt_readDedicatedServerInstanceNoLongerAvailableRequest(uint8_t **pkt) {
 	struct DedicatedServerInstanceNoLongerAvailableRequest out;
+	out = (struct DedicatedServerInstanceNoLongerAvailableRequest){};
 	return out;
 }
 struct DedicatedServerHeartbeatRequest pkt_readDedicatedServerHeartbeatRequest(uint8_t **pkt) {
 	struct DedicatedServerHeartbeatRequest out;
+	out = (struct DedicatedServerHeartbeatRequest){};
 	return out;
 }
 struct DedicatedServerHeartbeatResponse pkt_readDedicatedServerHeartbeatResponse(uint8_t **pkt) {
 	struct DedicatedServerHeartbeatResponse out;
+	out = (struct DedicatedServerHeartbeatResponse){};
 	return out;
 }
 struct DedicatedServerInstanceStatusUpdateRequest pkt_readDedicatedServerInstanceStatusUpdateRequest(uint8_t **pkt) {
 	struct DedicatedServerInstanceStatusUpdateRequest out;
+	out = (struct DedicatedServerInstanceStatusUpdateRequest){};
 	return out;
 }
 struct DedicatedServerShutDownRequest pkt_readDedicatedServerShutDownRequest(uint8_t **pkt) {
 	struct DedicatedServerShutDownRequest out;
+	out = (struct DedicatedServerShutDownRequest){};
 	return out;
 }
 struct DedicatedServerPrepareForConnectionRequest pkt_readDedicatedServerPrepareForConnectionRequest(uint8_t **pkt) {
 	struct DedicatedServerPrepareForConnectionRequest out;
+	out = (struct DedicatedServerPrepareForConnectionRequest){};
 	return out;
 }
 struct DedicatedServerMessageReceivedAcknowledge pkt_readDedicatedServerMessageReceivedAcknowledge(uint8_t **pkt) {
@@ -405,6 +418,7 @@ struct DedicatedServerMultipartMessage pkt_readDedicatedServerMultipartMessage(u
 }
 struct DedicatedServerPrepareForConnectionResponse pkt_readDedicatedServerPrepareForConnectionResponse(uint8_t **pkt) {
 	struct DedicatedServerPrepareForConnectionResponse out;
+	out = (struct DedicatedServerPrepareForConnectionResponse){};
 	return out;
 }
 struct ClientHelloRequest pkt_readClientHelloRequest(uint8_t **pkt) {
@@ -446,6 +460,7 @@ struct ServerCertificateRequest pkt_readServerCertificateRequest(uint8_t **pkt) 
 }
 struct ServerCertificateResponse pkt_readServerCertificateResponse(uint8_t **pkt) {
 	struct ServerCertificateResponse out;
+	out = (struct ServerCertificateResponse){};
 	return out;
 }
 struct ClientKeyExchangeRequest pkt_readClientKeyExchangeRequest(uint8_t **pkt) {

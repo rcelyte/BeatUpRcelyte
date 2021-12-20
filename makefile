@@ -11,8 +11,8 @@ EXT ?= $(shell uname -m)
 LIBS := libmbedtls.a libmbedx509.a libmbedcrypto.a
 OBJS += $(LIBS:%=$(OBJDIR)/%)
 
-CFLAGS += -std=gnu11 -Imbedtls/include -Wall -Wno-unused-function -Werror
-LDFLAGS += -Wl,--gc-sections,--fatal-warnings
+CFLAGS += -std=gnu11 -Imbedtls/include -Wall -Wno-unused-function -Werror -fsanitize=address
+LDFLAGS += -Wl,--gc-sections,--fatal-warnings -fsanitize=address
 
 server.$(EXT): $(OBJS)
 	@echo "[linking $@]"

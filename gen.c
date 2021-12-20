@@ -285,8 +285,8 @@ char *parse_struct(char *s, uint32_t indent) {
 	_Bool des = (*s != 's') || log;
 	_Bool ser = (*s != 'r');
 	++indent, s += 2;
+	char name[1024];
 	{
-		char name[1024];
 		s = read_word(s, name, sizeof(name));
 		if(*s == ' ') {
 			char ev[1024];
@@ -312,11 +312,15 @@ char *parse_struct(char *s, uint32_t indent) {
 		}
 	}
 
+	char *start = s;
 	s = parse_struct_entries(s, indent, 1, des, ser);
 
 	struct_it += sprintf(struct_it, "};\n");
-	if(des)
+	if(des) {
+		if(s == start)
+			des_it += sprintf(des_it, "\tout = (struct %s){};\n", name); // fixes -Wuninitialized in Clang
 		des_it += sprintf(des_it, "\treturn out;\n}\n");
+	}
 	if(ser)
 		ser_it += sprintf(ser_it, "}\n");
 	if(log)
