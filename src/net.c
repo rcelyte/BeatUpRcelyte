@@ -57,7 +57,7 @@ uint8_t *MasterServerSession_get_cookie(struct MasterServerSession *session) {
 }
 _Bool MasterServerSession_write_key(struct MasterServerSession *session, uint8_t *out, uint32_t *out_len) {
 	size_t keylen = 0;
-	if(mbedtls_ecp_point_write_binary(&session->serverKey.MBEDTLS_PRIVATE(grp), &session->serverKey.MBEDTLS_PRIVATE(Q), MBEDTLS_ECP_PF_COMPRESSED, &keylen, out, *out_len) != 0) {
+	if(mbedtls_ecp_point_write_binary(&session->serverKey.MBEDTLS_PRIVATE(grp), &session->serverKey.MBEDTLS_PRIVATE(Q), MBEDTLS_ECP_PF_UNCOMPRESSED, &keylen, out, *out_len) != 0) {
 		fprintf(stderr, "mbedtls_ecp_point_write_binary() failed\n");
 		*out_len = 0;
 		return 1;
