@@ -16,6 +16,7 @@ struct Context {
 	mbedtls_ssl_config conf;
 	mbedtls_entropy_context entropy;
 	mbedtls_ctr_drbg_context ctr_drbg;
+	const char *path;
 };
 
 #ifdef WINDOWS
@@ -37,7 +38,7 @@ status_ssl_handler(struct Context *ctx) {
 			memset(buf, 0, sizeof(buf));
 			ret = mbedtls_ssl_read(&ctx->ssl, buf, sizeof(buf) - 1);
 		} while(ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE);
-		size_t len = status_resp("HTTPS", (char*)buf, ret);
+		size_t len = status_resp("HTTPS", ctx->path, (char*)buf, ret);
 		if(len) {
 			while((ret = mbedtls_ssl_write(&ctx->ssl, buf, len)) <= 0) {
 				if(ret == MBEDTLS_ERR_NET_CONN_RESET)
@@ -65,7 +66,7 @@ static HANDLE status_thread = NULL;
 static pthread_t status_thread = 0;
 #endif
 static struct Context ctx;
-_Bool status_ssl_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, uint16_t port) {
+_Bool status_ssl_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, const char *path, uint16_t port) {
 	mbedtls_net_init(&ctx.listenfd);
 	mbedtls_ssl_init(&ctx.ssl);
 	mbedtls_ssl_config_init(&ctx.conf);
@@ -96,6 +97,7 @@ _Bool status_ssl_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, uint16_t 
 		fprintf(stderr, "mbedtls_ssl_setup() returned %d\n", ret);
 		return 1;
 	}
+	ctx.path = path;
 	#ifdef WINDOWS
 	status_thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)status_ssl_handler, &ctx, 0, NULL);
 	return !status_thread;

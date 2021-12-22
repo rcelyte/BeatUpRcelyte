@@ -2,17 +2,14 @@
 #include "json.h"
 #include <mbedtls/entropy.h>
 #include <mbedtls/ctr_drbg.h>
+#include <mbedtls/error.h>
 #include <stdlib.h>
 #include <errno.h>
 
 struct Host {
-	char *domain, *cert, *key;
-	uint32_t domain_len, cert_len, key_len;
-	uint16_t port;
-	_Bool renew;
 };
 
-static char *json_config_host(char *it, struct Host *res) {
+/*static char *json_config_host(char *it, struct Host *res) {
 	char *key;
 	uint32_t key_len;
 	while(json_iter_object(&it, &key, &key_len)) {
@@ -30,9 +27,6 @@ static char *json_config_host(char *it, struct Host *res) {
 				res->port = atoi(&res->domain[ps+1]);
 			}
 			// fprintf(stderr, "domain: %.*s\n", res->domain_len, res->domain);
-		} else if(key_len == 5 && memcmp(key, "renew", 5) == 0) {
-			it = json_get_bool(it, &res->renew);
-			// fprintf(stderr, "renew: %hhu\n", res->renew);
 		} else if(key_len == 4 && memcmp(key, "cert", 4) == 0) {
 			it = json_get_string(it, &res->cert, &res->cert_len);
 			// fprintf(stderr, "cert: %.*s\n", res->cert_len, res->cert);
@@ -44,122 +38,185 @@ static char *json_config_host(char *it, struct Host *res) {
 		}
 	}
 	return it;
-}
+}*/
 
-static _Bool load_cert(struct Host *in, mbedtls_x509_crt *out) {
+static _Bool load_cert(char *cert, uint32_t cert_len, mbedtls_x509_crt *out) {
 	mbedtls_x509_crt_init(out);
-	int32_t ret;
+	int32_t err;
 	char buf[4096];
-	if(in->cert_len > 52 && strncmp(in->cert, "-----BEGIN CERTIFICATE-----", 27) == 0) {
+	if(cert_len > 52 && strncmp(cert, "-----BEGIN CERTIFICATE-----", 27) == 0) {
 		sprintf(buf, "inline certificate");
-		ret = mbedtls_x509_crt_parse(out, (uint8_t*)in->cert, in->cert_len);
-	} else if(in->renew) {
-		fprintf(stderr, "AUTO RENEW NOT YET SUPPORTED\n");
-		return 1;
+		err = mbedtls_x509_crt_parse(out, (uint8_t*)cert, cert_len);
 	} else {
-		if(in->cert_len >= sizeof(buf))
-			ret = 1;
-		else {
-			sprintf(buf, "%.*s", in->cert_len, in->cert);
-			ret = mbedtls_x509_crt_parse_file(out, buf);
+		if(cert_len >= sizeof(buf)) {
+			fprintf(stderr, "Failed to load %.*s: Path too long\n", cert_len, cert);
+			return 1;
 		}
+		sprintf(buf, "%.*s", cert_len, cert);
+		err = mbedtls_x509_crt_parse_file(out, buf);
 	}
-	if(ret) {
-		fprintf(stderr, "failed to load %s\n", buf);
+	if(err) {
+		fprintf(stderr, "Failed to load %s: %s\n", buf, mbedtls_high_level_strerr(err));
 		return 1;
 	}
 	return 0;
 }
 
-static _Bool load_key(struct Host *in, mbedtls_pk_context *out) {
+static _Bool load_key(char *key, uint32_t key_len, mbedtls_pk_context *out) {
 	mbedtls_pk_init(out);
-	int32_t ret;
+	int32_t err;
 	char buf[4096];
 	mbedtls_ctr_drbg_context ctr_drbg;
 	mbedtls_entropy_context entropy;
 	mbedtls_ctr_drbg_init(&ctr_drbg);
 	mbedtls_entropy_init(&entropy);
-	if(in->key_len > 52 && strncmp(in->key, "-----BEGIN ", 11) == 0) {
+	if(key_len > 52 && strncmp(key, "-----BEGIN ", 11) == 0) {
 		sprintf(buf, "inline certificate");
-		ret = mbedtls_pk_parse_key(out, (uint8_t*)in->key, in->key_len, NULL, 0, mbedtls_ctr_drbg_random, &ctr_drbg);
+		err = mbedtls_pk_parse_key(out, (uint8_t*)key, key_len, NULL, 0, mbedtls_ctr_drbg_random, &ctr_drbg);
 	} else {
-		if(in->key_len >= sizeof(buf))
-			ret = 1;
-		else {
-			sprintf(buf, "%.*s", in->key_len, in->key);
-			ret = mbedtls_pk_parse_keyfile(out, buf, NULL, mbedtls_ctr_drbg_random, &ctr_drbg);
+		if(key_len >= sizeof(buf)) {
+			fprintf(stderr, "Failed to load %.*s: Path too long\n", key_len, key);
+			return 1;
 		}
+		sprintf(buf, "%.*s", key_len, key);
+		err = mbedtls_pk_parse_keyfile(out, buf, NULL, mbedtls_ctr_drbg_random, &ctr_drbg);
 	}
 	mbedtls_entropy_free(&entropy);
 	mbedtls_ctr_drbg_free(&ctr_drbg);
-	if(ret) {
-		fprintf(stderr, "failed to load %s\n", buf);
+	if(err) {
+		fprintf(stderr, "Failed to load %s: %s\n", buf, mbedtls_high_level_strerr(err));
 		return 1;
 	}
 	return 0;
 }
 
 _Bool config_load(struct Config *out, const char *path) {
-	struct Host master = {NULL, NULL, NULL, 0, 0, 0, 2328, 0}, status = {NULL, NULL, NULL, 0, 0, 0, 443, 0};
+	char *master_cert = NULL, *master_key = NULL, *status_cert = NULL, *status_key = NULL;
+	uint32_t master_cert_len = 0, master_key_len = 0, status_cert_len = 0, status_key_len = 0;
+
+	struct Config tmp = {
+		.master_port = 2328,
+		.status_port = 80,
+		.status_domain = "",
+		.status_path = "/",
+		.status_tls = 0,
+	};
+
 	char *config_json;
 	{
 		FILE *f = fopen(path, "r");
+		if(f == NULL && errno == ENOENT) {
+			FILE *def = fopen(path, "w");
+			if(!def) {
+				fprintf(stderr, "Failed to write default config to %s: %s\n", path, strerror(errno));
+				return 0;
+			}
+			fprintf(stderr, "Writing default config to %s\n", path);
+			#ifdef WINDOWS
+			fprintf(def, "{\r\n\t\"HostCert\": \"cert.pem\",\r\n\t\"HostKey\": \"key.pem\",\r\n\t\"StatusUri\": \"http://localhost/status\"\r\n}\r\n");
+			#else
+			fprintf(def, "{\n\t\"HostCert\": \"cert.pem\",\n\t\"HostKey\": \"key.pem\",\n\t\"StatusUri\": \"http://localhost/status\"\n}\n");
+			#endif
+			fclose(def);
+			f = fopen(path, "r");
+		}
 		if(!f) {
 			fprintf(stderr, "Failed to open %s: %s\n", path, strerror(errno));
 			return 1;
 		}
 		fseek(f, 0, SEEK_END);
 		size_t flen = ftell(f);
-		config_json = malloc(flen);
+		config_json = malloc(flen+1);
 		fseek(f, 0, SEEK_SET);
 		if(fread(config_json, 1, flen, f) != flen) {
 			fprintf(stderr, "Failed to read %s\n", path);
 			return 1;
 		}
+		config_json[flen] = 0;
 		fclose(f);
 		char *key, *it = config_json;
 		uint32_t key_len;
 		while(json_iter_object(&it, &key, &key_len)) {
-			if(key_len == 6 && memcmp(key, "master", 6) == 0)
+			/*if(key_len == 6 && memcmp(key, "master", 6) == 0)
 				it = json_config_host(it, &master);
 			else if(key_len == 6 && memcmp(key, "status", 6) == 0)
 				it = json_config_host(it, &status);
 			else
+				it = json_skip_value(it);*/
+			#define IFEQ(str) if(key_len == sizeof(str) - 1 && memcmp(key, str, sizeof(str) - 1) == 0)
+			IFEQ("HostCert") {
+				it = json_get_string(it, &master_cert, &master_cert_len);
+			} else IFEQ("HostKey") {
+				it = json_get_string(it, &master_key, &master_key_len);
+			} else IFEQ("Port") {
+				tmp.master_port = atoi(it);
 				it = json_skip_value(it);
+			} else IFEQ("StatusUri") {
+				char *uri;
+				uint32_t uri_len;
+				it = json_get_string(it, &uri, &uri_len);
+				if(uri_len >= 4096) {
+					fprintf(stderr, "Error parsing config value \"StatusUri\": URI too long\n");
+					continue;
+				}
+				if(uri_len > 8 && memcmp(uri, "https://", 8) == 0) {
+					tmp.status_tls = 1, tmp.status_port = 443;
+					uri += 8, uri_len -= 8;
+				} else if(uri_len > 7 && memcmp(uri, "http://", 7) == 0) {
+					tmp.status_tls = 0, tmp.status_port = 80;
+					uri += 7, uri_len -= 7;
+				} else {
+					fprintf(stderr, "Error parsing config value \"StatusUri\": URI must begin with http:// or https://\n");
+					continue;
+				}
+				uint32_t sub_len;
+				for(sub_len = 0; sub_len < uri_len; ++sub_len)
+					if(uri[sub_len] == ':' || uri[sub_len] == '/')
+						break;
+				sprintf(tmp.status_domain, "%.*s", sub_len, uri);
+				uri += sub_len, uri_len -= sub_len;
+				if(uri_len == 0)
+					continue;
+				if(*uri == ':') {
+					tmp.status_port = atoi(&uri[1]);
+					for(; uri_len; ++uri, --uri_len)
+						if(*uri == '/')
+							break;
+					if(uri_len == 0)
+						continue;
+				}
+				sprintf(tmp.status_path, "%.*s", uri_len, uri);
+				if(tmp.status_path[uri_len-1] == '/')
+					tmp.status_path[uri_len-1] = 0;
+			} else IFEQ("StatusCert") {
+				it = json_get_string(it, &status_cert, &status_cert_len);
+			} else IFEQ("StatusKey") {
+				it = json_get_string(it, &status_key, &status_key_len);
+			} else {
+				it = json_skip_value(it);
+			}
+			#undef IFEQ
 		}
 	}
-	if(!master.domain) {
-		fprintf(stderr, "Missing domain name\n");
+	if(master_cert_len == 0 && master_key_len == 0) {
+		fprintf(stderr, master_cert_len ? "Missing SSL key\n" : "Missing SSL certificate\n");
 		return 1;
 	}
-	if(!((master.cert_len && master.key_len) || master.renew)) {
-		fprintf(stderr, master.cert_len ? "Missing SSL key\n" : "Missing SSL certificate\n");
-		return 1;
+	if(!status_cert) {
+		status_cert = master_cert;
+		status_cert_len = master_cert_len;
 	}
-	if(!status.domain) {
-		status.domain = master.domain;
-		status.domain_len = master.domain_len;
-	}
-	if(master.renew && status.renew && master.domain_len == status.domain_len && memcmp(master.domain, status.domain, master.domain_len) == 0)
-		status.renew = 0; // Don't double renew
-	if(!status.cert) {
-		status.cert = master.cert;
-		status.cert_len = master.cert_len;
-	}
-	if(!status.key) {
-		status.key = master.key;
-		status.key_len = master.key_len;
+	if(!status_key) {
+		status_key = master_key;
+		status_key_len = master_key_len;
 	}
 
-	struct Config tmp;
-	if(!load_cert(&master, &tmp.master_cert)) {
-		if(!load_cert(&status, &tmp.status_cert)) {
-			if(!load_key(&master, &tmp.master_key)) {
-				if(!load_key(&status, &tmp.status_key)) {
+	if(!load_cert(master_cert, master_cert_len, &tmp.master_cert)) {
+		if(!load_cert(status_cert, status_cert_len, &tmp.status_cert)) {
+			if(!load_key(master_key, master_key_len, &tmp.master_key)) {
+				if(!load_key(status_key, status_key_len, &tmp.status_key)) {
 					config_free(out);
 					*out = tmp;
-					out->master_port = master.port;
-					out->status_port = status.port;
 					free(config_json);
 					return 0;
 				}
@@ -181,7 +238,7 @@ void config_free(struct Config *cfg) {
 	mbedtls_pk_free(&cfg->status_key);
 }
 
-struct Config config_default() { // TODO: use domain specific self-signed cert instead of generic one
+/*struct Config config_default() { // TODO: use domain specific self-signed cert instead of generic one
 	struct Config out;
 	const char *cert_pem =
 		"-----BEGIN CERTIFICATE-----\n"
@@ -284,4 +341,4 @@ struct Config config_default() { // TODO: use domain specific self-signed cert i
 	out.master_port = 2328;
 	out.status_port = 443;
 	return out;
-}
+}*/

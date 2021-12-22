@@ -52,10 +52,10 @@ void net_send(struct NetContext *ctx, struct MasterServerSession *session, Packe
 _Bool net_handle_ack(struct MasterServerSession *session, struct MessageHeader *message_out, struct SerializeHeader *serial_out, uint32_t requestId);
 uint32_t net_getNextRequestId(struct MasterServerSession *session);
 
-_Bool status_init();
+_Bool status_init(const char *path, uint16_t port);
 void status_cleanup();
 
-_Bool status_ssl_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, uint16_t port);
+_Bool status_ssl_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, const char *path, uint16_t port);
 void status_ssl_cleanup();
 
 _Bool master_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, uint16_t port);
