@@ -173,8 +173,27 @@ struct NetPacketHeader {
 struct ServerCode {
 	uint32_t value; // 25 bit value
 };
+uint8_t pkt_readUint8(uint8_t **pkt);
+uint16_t pkt_readUint16(uint8_t **pkt);
+uint32_t pkt_readUint32(uint8_t **pkt);
+uint64_t pkt_readUint64(uint8_t **pkt);
+uint64_t pkt_readVarUint64(uint8_t **pkt);
+uint64_t pkt_readVarUint64(uint8_t **pkt);
+int64_t pkt_readVarInt64(uint8_t **pkt);
+uint32_t pkt_readVarUint32(uint8_t **pkt);
+int32_t pkt_readVarInt32(uint8_t **pkt);
+void pkt_readUint8Array(uint8_t **pkt, uint8_t *out, uint32_t count);
+void pkt_writeUint8(uint8_t **pkt, uint8_t v);
+void pkt_writeUint16(uint8_t **pkt, uint16_t v);
+void pkt_writeUint32(uint8_t **pkt, uint32_t v);
+void pkt_writeUint64(uint8_t **pkt, uint64_t v);
+void pkt_writeVarUint64(uint8_t **pkt, uint64_t v);
+void pkt_writeVarInt64(uint8_t **pkt, int64_t v);
+void pkt_writeVarUint32(uint8_t **pkt, uint32_t v);
+void pkt_writeVarInt32(uint8_t **pkt, int32_t v);
+#define pkt_writeInt8Array(pkt, out, count) pkt_writeUint8Array(pkt, (uint8_t*)out, count)
 void pkt_writeUint8Array(uint8_t **pkt, uint8_t *in, uint32_t count);
-struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(uint8_t **pkt);
+struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(uint8_t **pkt, uint8_t *end, uint8_t serverRandom[32], uint8_t clientRandom[32]);
 void pkt_writePacketEncryptionLayer(uint8_t **pkt, struct PacketEncryptionLayer in);
 struct NetPacketHeader pkt_readNetPacketHeader(uint8_t **pkt);
 void pkt_writeNetPacketHeader(uint8_t **pkt, struct NetPacketHeader in);

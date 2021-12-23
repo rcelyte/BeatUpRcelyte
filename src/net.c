@@ -33,8 +33,8 @@ struct MasterServerSession {
 	uint8_t serverRandom[32];
 	uint8_t cookie[32];
 	mbedtls_ecp_keypair serverKey;
-	// mbedtls_ecp_point clientPublicKey;
-	uint8_t clientPublicKey[256];
+	mbedtls_ecp_point clientPublicKey;
+	// uint8_t preMasterSecret[];
 	uint32_t epoch;
 	HandshakeMessageType state;
 	uint32_t ClientHelloWithCookieRequest_requestId;
@@ -57,8 +57,9 @@ uint8_t *MasterServerSession_get_cookie(struct MasterServerSession *session) {
 }
 _Bool MasterServerSession_write_key(struct MasterServerSession *session, uint8_t *out, uint32_t *out_len) {
 	size_t keylen = 0;
-	if(mbedtls_ecp_point_write_binary(&session->serverKey.MBEDTLS_PRIVATE(grp), &session->serverKey.MBEDTLS_PRIVATE(Q), MBEDTLS_ECP_PF_UNCOMPRESSED, &keylen, out, *out_len) != 0) {
-		fprintf(stderr, "mbedtls_ecp_point_write_binary() failed\n");
+	int32_t err = mbedtls_ecp_tls_write_point(&session->serverKey.MBEDTLS_PRIVATE(grp), &session->serverKey.MBEDTLS_PRIVATE(Q), MBEDTLS_ECP_PF_UNCOMPRESSED, &keylen, out, *out_len);
+	if(err) {
+		fprintf(stderr, "mbedtls_ecp_tls_write_point() failed: %s\n", mbedtls_high_level_strerr(err));
 		*out_len = 0;
 		return 1;
 	}
@@ -87,10 +88,22 @@ _Bool MasterServerSession_signature(struct MasterServerSession *session, struct 
 	return 0;
 }
 _Bool MasterServerSession_set_clientPublicKey(struct MasterServerSession *session, struct ByteArrayNetSerializable *in) {
-	if(in->length > sizeof(session->clientPublicKey))
+	#if 1
+	const uint8_t *buf = in->data;
+	int32_t err = mbedtls_ecp_tls_read_point(&session->serverKey.MBEDTLS_PRIVATE(grp), &session->clientPublicKey, &buf, in->length);
+	if(err != 0) {
+		fprintf(stderr, "mbedtls_ecp_tls_read_point() failed: %s\n", mbedtls_high_level_strerr(err));
 		return 1;
-	memcpy(session->clientPublicKey, in->data, in->length);
+	}
 	return 0;
+	#else
+	int32_t err = mbedtls_ecdh_read_public(ctx, in->data, in->length);
+	if(err != 0) {
+		fprintf(stderr, "mbedtls_ecdh_read_public() failed: %s\n", mbedtls_high_level_strerr(err));
+		return 1;
+	}
+	return 0;
+	#endif
 }
 void MasterServerSession_set_epoch(struct MasterServerSession *session, uint32_t epoch) {
 	session->epoch = epoch;
@@ -310,6 +323,7 @@ void net_cleanup(struct NetContext *ctx) {
 }
 
 uint32_t net_recv(struct NetContext *ctx, struct MasterServerSession **session, PacketProperty *property, uint8_t **buf) {
+	retry:; // tail calls are theoretical but stack overflows are real
 	int32_t res;
 	do {
 		clock_t time = clock();
@@ -346,11 +360,11 @@ uint32_t net_recv(struct NetContext *ctx, struct MasterServerSession **session, 
 	ctx->prev_size = size;
 	if(addr.sa.sa_family == AF_UNSPEC) {
 		fprintf(stderr, "UNSPEC\n");
-		return net_recv(ctx, session, property, buf);
+		goto retry;
 	}
 	if(ctx->buf[0] > 1) {
 		fprintf(stderr, "testval: %hhu\n", ctx->buf[0]);
-		return net_recv(ctx, session, property, buf);
+		goto retry;
 	}
 	struct SessionList *it = ctx->sessionList;
 	for(; it; it = it->next) {
@@ -387,11 +401,11 @@ uint32_t net_recv(struct NetContext *ctx, struct MasterServerSession **session, 
 	}
 	fprintf(stderr, "[NET] recvfrom[%zi]\n", size);
 	*buf = ctx->buf;
-	struct PacketEncryptionLayer layer = pkt_readPacketEncryptionLayer(buf);
+	struct PacketEncryptionLayer layer = pkt_readPacketEncryptionLayer(buf, &ctx->buf[size], (*session)->serverRandom, (*session)->clientRandom);
 	// fprintf(stderr, "\t[to %zu]layer.encrypted=%hhu\n", *buf - ctx->buf, layer.encrypted);
 	if(layer.encrypted) {
-		fprintf(stderr, "ENCRYPTED PACKET\n");
-		exit(-1);
+		fprintf(stderr, "Packet decryption failed\n");
+		goto retry;
 	}
 	struct NetPacketHeader packet = pkt_readNetPacketHeader(buf);
 	*property = packet.property;

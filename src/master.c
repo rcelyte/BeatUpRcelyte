@@ -80,10 +80,9 @@ static void handle_ServerCertificateRequest_ack(struct Context *ctx, struct Mast
 	r_hello.base.requestId = net_getNextRequestId(session);
 	r_hello.base.responseId = *MasterServerSession_ClientHelloWithCookieRequest_requestId(session);
 	memcpy(r_hello.random, MasterServerSession_get_serverRandom(session), sizeof(r_hello.random));
-	r_hello.publicKey.length = sizeof(r_hello.publicKey.data) - 1;
-	if(MasterServerSession_write_key(session, &r_hello.publicKey.data[1], &r_hello.publicKey.length))
+	r_hello.publicKey.length = sizeof(r_hello.publicKey.data);
+	if(MasterServerSession_write_key(session, r_hello.publicKey.data, &r_hello.publicKey.length))
 		return;
-	r_hello.publicKey.data[0] = r_hello.publicKey.length++; // length to be read by Org.BouncyCastle.Crypto.Tls.TlsUtilities.ReadOpaque8()
 	{
 		uint8_t sig[r_hello.publicKey.length + 64];
 		memcpy(sig, MasterServerSession_get_clientRandom(session), 32);
