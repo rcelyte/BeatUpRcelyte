@@ -46,10 +46,6 @@ head
 		SERIALIZE_HEAD(pkt, mtype) \
 		SERIALIZE_BODY(pkt, mtype##Type_##stype, dtype, data) \
 	}
-	struct PacketEncryptionLayer {
-		_Bool encrypted;
-		uint32_t sequenceId;
-	};
 	struct NetPacketHeader {
 		PacketProperty property;
 		uint8_t connectionNumber;
@@ -83,8 +79,6 @@ head
 	void pkt_writeVarInt32(uint8_t **pkt, int32_t v);
 	#define pkt_writeInt8Array(pkt, out, count) pkt_writeUint8Array(pkt, (uint8_t*)out, count)
 	void pkt_writeUint8Array(uint8_t **pkt, uint8_t *in, uint32_t count);
-	struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(uint8_t **pkt, uint8_t *end, uint8_t serverRandom[32], uint8_t clientRandom[32]);
-	void pkt_writePacketEncryptionLayer(uint8_t **pkt, struct PacketEncryptionLayer in);
 	struct NetPacketHeader pkt_readNetPacketHeader(uint8_t **pkt);
 	void pkt_writeNetPacketHeader(uint8_t **pkt, struct NetPacketHeader in);
 
@@ -294,6 +288,11 @@ u8 Platform
 	z PS4Dev
 	z PS4Cert
 	z Oculus 1
+d PacketEncryptionLayer
+	b encrypted
+	if(encrypted == 1)
+		u32 sequenceId
+		u8[16] iv
 d MessageHeader
 	u32.MessageType type
 	vu32 protocolVersion
@@ -313,6 +312,10 @@ d BaseMasterServerAcknowledgeMessage
 d ByteArrayNetSerializable
 	vu32 length
 	u8[length,4096] data
+code
+	static void pkt_logString(const char *name, char *buf, char *it, struct String in) {
+		fprintf(stderr, "%s%s=\"%.*s\"\n", buf, name, in.length, in.data);
+	}
 d String
 	u32 length
 	c[length,4096] data
@@ -395,8 +398,11 @@ r GameplayServerConfiguration
 s PublicServerInfo
 	ServerCode code
 	vi32 currentPlayerCount
+r IPEndPoint
+	String address
+	u32 port
 u32 Message Type 0
-	u8 UserMessage Type 0
+	u8 UserMessage Type 1
 		r AuthenticateUserRequest
 			BaseMasterServerReliableResponse base
 			AuthenticationToken authenticationToken
@@ -424,10 +430,24 @@ u32 Message Type 0
 			if(result == 0)
 				vu32 publicServerCount
 				PublicServerInfo[publicServerCount,16384] publicServers
-	u8 DedicatedServerMessage Type 1
-		d AuthenticateDedicatedServerRequest
+	u8 DedicatedServerMessage Type 2
+		r AuthenticateDedicatedServerRequest
+			BaseMasterServerReliableResponse base
+			String dedicatedServerId
+			u8[16] nonce
+			u8[32] hash
+			u64 timestamp
 		d AuthenticateDedicatedServerResponse
-		d CreateDedicatedServerInstanceRequest 4
+		r CreateDedicatedServerInstanceRequest 4
+			BaseMasterServerReliableRequest base
+			String secret
+			BeatmapLevelSelectionMask selectionMask
+			String userId
+			String userName
+			IPEndPoint userEndPoint
+			u8[32] userRandom
+			ByteArrayNetSerializable userPublicKey
+			GameplayServerConfiguration configuration
 		d CreateDedicatedServerInstanceResponse
 		d DedicatedServerInstanceNoLongerAvailableRequest
 		d DedicatedServerHeartbeatRequest

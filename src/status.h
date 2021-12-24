@@ -19,15 +19,16 @@ static uint32_t status_resp(const char *source, const char *path, char *buf, uin
 	if(buf_len < rq_len || memcmp(buf, rq, rq_len))
 		return 0;
 	fprintf(stderr, "[%s] %.*s\n", source, (int32_t)((char*)memchr(&buf[4], ' ', buf_len) - buf), buf);
+	char *resp = buf;
 	buf += rq_len, buf_len -= rq_len;
 	if(buf_len && *buf == '/')
 		++buf, --buf_len;
 	if(buf_len && *buf == ' ')
-		return status_gen(buf, "200 OK", "application/json", "{\"minimumAppVersion\":\"1.16.4\",\"status\":0,\"maintenanceStartTime\":0,\"maintenanceEndTime\":0,\"userMessage\":{\"localizedMessages\":[{\"language\":\"en\",\"message\":\"Test message from server\"}]}}");
+		return status_gen(resp, "200 OK", "application/json", "{\"minimumAppVersion\":\"1.16.4\",\"status\":0,\"maintenanceStartTime\":0,\"maintenanceEndTime\":0,\"userMessage\":{\"localizedMessages\":[{\"language\":\"en\",\"message\":\"Test message from server\"}]}}");
 	else if(buf_len > 17 && memcmp(buf, "mp_override.json ", 17) == 0)
-		return status_gen(buf, "200 OK", "application/json", "{\"quickPlayAvailablePacksOverride\":{\"predefinedPackIds\":[{\"order\":0,\"packId\":\"ALL_LEVEL_PACKS\"},{\"order\":1,\"packId\":\"BUILT_IN_LEVEL_PACKS\"}],\"localizedCustomPacks\":[{\"serializedName\":\"customlevels\",\"order\":2,\"localizedNames\":[{\"language\":0,\"packName\":\"Custom\"}],\"packIds\":[\"custom_levelpack_CustomLevels\"]}]}}");
+		return status_gen(resp, "200 OK", "application/json", "{\"quickPlayAvailablePacksOverride\":{\"predefinedPackIds\":[{\"order\":0,\"packId\":\"ALL_LEVEL_PACKS\"},{\"order\":1,\"packId\":\"BUILT_IN_LEVEL_PACKS\"}],\"localizedCustomPacks\":[{\"serializedName\":\"customlevels\",\"order\":2,\"localizedNames\":[{\"language\":0,\"packName\":\"Custom\"}],\"packIds\":[\"custom_levelpack_CustomLevels\"]}]}}");
 	else if(buf_len > 11 && memcmp(buf, "robots.txt ", 11) == 0)
-		return status_gen(buf, "200 OK", "text/plain", "User-agent: *\nDisallow: /\n");
+		return status_gen(resp, "200 OK", "text/plain", "User-agent: *\nDisallow: /\n");
 	else
-		return status_gen(buf, "404 Not Found", "text/html", "<html><body>404 not found</body></html>");
+		return status_gen(resp, "404 Not Found", "text/html", "<html><body>404 not found</body></html>");
 }

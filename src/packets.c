@@ -4,6 +4,7 @@
  * AUTO GENERATED; DO NOT TOUCH
  */
 
+#include "enum_reflection.h"
 #include "packets.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -181,6 +182,18 @@ static void pkt_logServerCode(const char *name, char *buf, char *it, struct Serv
 		fprintf(stderr, "%c", "ABCDEFGHJKLMNPQRSTUVWXYZ12345789"[code & 31]);
 	fprintf(stderr, "\"\n");
 }
+static void pkt_logString(const char *name, char *buf, char *it, struct String in) {
+	fprintf(stderr, "%s%s=\"%.*s\"\n", buf, name, in.length, in.data);
+}
+struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(uint8_t **pkt) {
+	struct PacketEncryptionLayer out;
+	out.encrypted = pkt_readUint8(pkt);
+	if(out.encrypted == 1) {
+		out.sequenceId = pkt_readUint32(pkt);
+		pkt_readUint8Array(pkt, out.iv, 16);
+	}
+	return out;
+}
 struct MessageHeader pkt_readMessageHeader(uint8_t **pkt) {
 	struct MessageHeader out;
 	out.type = pkt_readUint32(pkt);
@@ -218,12 +231,20 @@ struct BaseMasterServerAcknowledgeMessage pkt_readBaseMasterServerAcknowledgeMes
 struct ByteArrayNetSerializable pkt_readByteArrayNetSerializable(uint8_t **pkt) {
 	struct ByteArrayNetSerializable out;
 	out.length = pkt_readVarUint32(pkt);
+	if(out.length > 4096) {
+		fprintf(stderr, "Buffer overflow in read of ByteArrayNetSerializable.data: %u > 4096\n", (uint32_t)out.length);
+		out.length = 0;
+	}
 	pkt_readUint8Array(pkt, out.data, out.length);
 	return out;
 }
 struct String pkt_readString(uint8_t **pkt) {
 	struct String out;
 	out.length = pkt_readUint32(pkt);
+	if(out.length > 4096) {
+		fprintf(stderr, "Buffer overflow in read of String.data: %u > 4096\n", (uint32_t)out.length);
+		out.length = 0;
+	}
 	pkt_readInt8Array(pkt, out.data, out.length);
 	return out;
 }
@@ -242,6 +263,10 @@ struct BaseMasterServerMultipartMessage pkt_readBaseMasterServerMultipartMessage
 	out.offset = pkt_readVarUint32(pkt);
 	out.length = pkt_readVarUint32(pkt);
 	out.totalLength = pkt_readVarUint32(pkt);
+	if(out.length > 384) {
+		fprintf(stderr, "Buffer overflow in read of BaseMasterServerMultipartMessage.data: %u > 384\n", (uint32_t)out.length);
+		out.length = 0;
+	}
 	pkt_readUint8Array(pkt, out.data, out.length);
 	return out;
 }
@@ -277,6 +302,12 @@ struct PublicServerInfo pkt_readPublicServerInfo(uint8_t **pkt) {
 	struct PublicServerInfo out;
 	out.code = pkt_readServerCode(pkt);
 	out.currentPlayerCount = pkt_readVarInt32(pkt);
+	return out;
+}
+struct IPEndPoint pkt_readIPEndPoint(uint8_t **pkt) {
+	struct IPEndPoint out;
+	out.address = pkt_readString(pkt);
+	out.port = pkt_readUint32(pkt);
 	return out;
 }
 struct AuthenticateUserRequest pkt_readAuthenticateUserRequest(uint8_t **pkt) {
@@ -333,15 +364,22 @@ struct GetPublicServersResponse pkt_readGetPublicServersResponse(uint8_t **pkt) 
 	out.result = pkt_readUint8(pkt);
 	if(out.result == 0) {
 		out.publicServerCount = pkt_readVarUint32(pkt);
-		if(out.publicServerCount <= 16384)
-			for(uint32_t i = 0; i < out.publicServerCount; ++i)
-				out.publicServers[i] = pkt_readPublicServerInfo(pkt);
+		if(out.publicServerCount > 16384) {
+			fprintf(stderr, "Buffer overflow in read of GetPublicServersResponse.publicServers: %u > 16384\n", (uint32_t)out.publicServerCount);
+			out.publicServerCount = 0;
+		}
+		for(uint32_t i = 0; i < out.publicServerCount; ++i)
+			out.publicServers[i] = pkt_readPublicServerInfo(pkt);
 	}
 	return out;
 }
 struct AuthenticateDedicatedServerRequest pkt_readAuthenticateDedicatedServerRequest(uint8_t **pkt) {
 	struct AuthenticateDedicatedServerRequest out;
-	out = (struct AuthenticateDedicatedServerRequest){};
+	out.base = pkt_readBaseMasterServerReliableResponse(pkt);
+	out.dedicatedServerId = pkt_readString(pkt);
+	pkt_readUint8Array(pkt, out.nonce, 16);
+	pkt_readUint8Array(pkt, out.hash, 32);
+	out.timestamp = pkt_readUint64(pkt);
 	return out;
 }
 struct AuthenticateDedicatedServerResponse pkt_readAuthenticateDedicatedServerResponse(uint8_t **pkt) {
@@ -351,7 +389,15 @@ struct AuthenticateDedicatedServerResponse pkt_readAuthenticateDedicatedServerRe
 }
 struct CreateDedicatedServerInstanceRequest pkt_readCreateDedicatedServerInstanceRequest(uint8_t **pkt) {
 	struct CreateDedicatedServerInstanceRequest out;
-	out = (struct CreateDedicatedServerInstanceRequest){};
+	out.base = pkt_readBaseMasterServerReliableRequest(pkt);
+	out.secret = pkt_readString(pkt);
+	out.selectionMask = pkt_readBeatmapLevelSelectionMask(pkt);
+	out.userId = pkt_readString(pkt);
+	out.userName = pkt_readString(pkt);
+	out.userEndPoint = pkt_readIPEndPoint(pkt);
+	pkt_readUint8Array(pkt, out.userRandom, 32);
+	out.userPublicKey = pkt_readByteArrayNetSerializable(pkt);
+	out.configuration = pkt_readGameplayServerConfiguration(pkt);
 	return out;
 }
 struct CreateDedicatedServerInstanceResponse pkt_readCreateDedicatedServerInstanceResponse(uint8_t **pkt) {
@@ -436,9 +482,12 @@ struct ServerCertificateRequest pkt_readServerCertificateRequest(uint8_t **pkt) 
 	struct ServerCertificateRequest out;
 	out.base = pkt_readBaseMasterServerReliableResponse(pkt);
 	out.certificateCount = pkt_readVarUint32(pkt);
-	if(out.certificateCount <= 10)
-		for(uint32_t i = 0; i < out.certificateCount; ++i)
-			out.certificateList[i] = pkt_readByteArrayNetSerializable(pkt);
+	if(out.certificateCount > 10) {
+		fprintf(stderr, "Buffer overflow in read of ServerCertificateRequest.certificateList: %u > 10\n", (uint32_t)out.certificateCount);
+		out.certificateCount = 0;
+	}
+	for(uint32_t i = 0; i < out.certificateCount; ++i)
+		out.certificateList[i] = pkt_readByteArrayNetSerializable(pkt);
 	return out;
 }
 struct ServerCertificateResponse pkt_readServerCertificateResponse(uint8_t **pkt) {
@@ -466,6 +515,13 @@ struct HandshakeMultipartMessage pkt_readHandshakeMultipartMessage(uint8_t **pkt
 	struct HandshakeMultipartMessage out;
 	out.base = pkt_readBaseMasterServerMultipartMessage(pkt);
 	return out;
+}
+void pkt_writePacketEncryptionLayer(uint8_t **pkt, struct PacketEncryptionLayer in) {
+	pkt_writeUint8(pkt, in.encrypted);
+	if(in.encrypted == 1) {
+		pkt_writeUint32(pkt, in.sequenceId);
+		pkt_writeUint8Array(pkt, in.iv, 16);
+	}
 }
 void pkt_writeMessageHeader(uint8_t **pkt, struct MessageHeader in) {
 	pkt_writeUint32(pkt, in.type);
@@ -534,11 +590,7 @@ void pkt_writeGetPublicServersResponse(uint8_t **pkt, struct GetPublicServersRes
 			pkt_writePublicServerInfo(pkt, in.publicServers[i]);
 	}
 }
-void pkt_writeAuthenticateDedicatedServerRequest(uint8_t **pkt, struct AuthenticateDedicatedServerRequest in) {
-}
 void pkt_writeAuthenticateDedicatedServerResponse(uint8_t **pkt, struct AuthenticateDedicatedServerResponse in) {
-}
-void pkt_writeCreateDedicatedServerInstanceRequest(uint8_t **pkt, struct CreateDedicatedServerInstanceRequest in) {
 }
 void pkt_writeCreateDedicatedServerInstanceResponse(uint8_t **pkt, struct CreateDedicatedServerInstanceResponse in) {
 }
@@ -587,9 +639,17 @@ void pkt_writeHandshakeMessageReceivedAcknowledge(uint8_t **pkt, struct Handshak
 void pkt_writeHandshakeMultipartMessage(uint8_t **pkt, struct HandshakeMultipartMessage in) {
 	pkt_writeBaseMasterServerMultipartMessage(pkt, in.base);
 }
+void pkt_logPacketEncryptionLayer(const char *name, char *buf, char *it, struct PacketEncryptionLayer in) {
+	it += sprintf(it, "%s.", name);
+	pkt_logUint8("encrypted", buf, it, in.encrypted);
+	if(in.encrypted == 1) {
+		pkt_logUint32("sequenceId", buf, it, in.sequenceId);
+		pkt_logUint8Array("iv", buf, it, in.iv, 16);
+	}
+}
 void pkt_logMessageHeader(const char *name, char *buf, char *it, struct MessageHeader in) {
 	it += sprintf(it, "%s.", name);
-	pkt_logUint32("type", buf, it, in.type);
+	fprintf(stderr, "%stype=%s\n", buf, reflect(MessageType, in.type));
 	pkt_logVarUint32("protocolVersion", buf, it, in.protocolVersion);
 }
 void pkt_logSerializeHeader(const char *name, char *buf, char *it, struct SerializeHeader in) {
@@ -620,14 +680,9 @@ void pkt_logByteArrayNetSerializable(const char *name, char *buf, char *it, stru
 	pkt_logVarUint32("length", buf, it, in.length);
 	pkt_logUint8Array("data", buf, it, in.data, in.length);
 }
-void pkt_logString(const char *name, char *buf, char *it, struct String in) {
-	it += sprintf(it, "%s.", name);
-	pkt_logUint32("length", buf, it, in.length);
-	pkt_logInt8Array("data", buf, it, in.data, in.length);
-}
 void pkt_logAuthenticationToken(const char *name, char *buf, char *it, struct AuthenticationToken in) {
 	it += sprintf(it, "%s.", name);
-	pkt_logUint8("platform", buf, it, in.platform);
+	fprintf(stderr, "%splatform=%s\n", buf, reflect(Platform, in.platform));
 	pkt_logString("userId", buf, it, in.userId);
 	pkt_logString("userName", buf, it, in.userName);
 	pkt_logByteArrayNetSerializable("sessionToken", buf, it, in.sessionToken);
@@ -652,23 +707,28 @@ void pkt_logSongPackMask(const char *name, char *buf, char *it, struct SongPackM
 }
 void pkt_logBeatmapLevelSelectionMask(const char *name, char *buf, char *it, struct BeatmapLevelSelectionMask in) {
 	it += sprintf(it, "%s.", name);
-	pkt_logUint8("difficulties", buf, it, in.difficulties);
-	pkt_logUint32("modifiers", buf, it, in.modifiers);
+	fprintf(stderr, "%sdifficulties=%s\n", buf, reflect(BeatmapDifficultyMask, in.difficulties));
+	fprintf(stderr, "%smodifiers=%s\n", buf, reflect(GameplayModifierMask, in.modifiers));
 	pkt_logSongPackMask("songPacks", buf, it, in.songPacks);
 }
 void pkt_logGameplayServerConfiguration(const char *name, char *buf, char *it, struct GameplayServerConfiguration in) {
 	it += sprintf(it, "%s.", name);
 	pkt_logVarInt32("maxPlayerCount", buf, it, in.maxPlayerCount);
-	pkt_logVarInt32("discoveryPolicy", buf, it, in.discoveryPolicy);
-	pkt_logVarInt32("invitePolicy", buf, it, in.invitePolicy);
-	pkt_logVarInt32("gameplayServerMode", buf, it, in.gameplayServerMode);
-	pkt_logVarInt32("songSelectionMode", buf, it, in.songSelectionMode);
-	pkt_logVarInt32("gameplayServerControlSettings", buf, it, in.gameplayServerControlSettings);
+	fprintf(stderr, "%sdiscoveryPolicy=%s\n", buf, reflect(DiscoveryPolicy, in.discoveryPolicy));
+	fprintf(stderr, "%sinvitePolicy=%s\n", buf, reflect(InvitePolicy, in.invitePolicy));
+	fprintf(stderr, "%sgameplayServerMode=%s\n", buf, reflect(GameplayServerMode, in.gameplayServerMode));
+	fprintf(stderr, "%ssongSelectionMode=%s\n", buf, reflect(SongSelectionMode, in.songSelectionMode));
+	fprintf(stderr, "%sgameplayServerControlSettings=%s\n", buf, reflect(GameplayServerControlSettings, in.gameplayServerControlSettings));
 }
 void pkt_logPublicServerInfo(const char *name, char *buf, char *it, struct PublicServerInfo in) {
 	it += sprintf(it, "%s.", name);
 	pkt_logServerCode("code", buf, it, in.code);
 	pkt_logVarInt32("currentPlayerCount", buf, it, in.currentPlayerCount);
+}
+void pkt_logIPEndPoint(const char *name, char *buf, char *it, struct IPEndPoint in) {
+	it += sprintf(it, "%s.", name);
+	pkt_logString("address", buf, it, in.address);
+	pkt_logUint32("port", buf, it, in.port);
 }
 void pkt_logAuthenticateUserRequest(const char *name, char *buf, char *it, struct AuthenticateUserRequest in) {
 	it += sprintf(it, "%s.", name);
@@ -719,12 +779,26 @@ void pkt_logGetPublicServersResponse(const char *name, char *buf, char *it, stru
 }
 void pkt_logAuthenticateDedicatedServerRequest(const char *name, char *buf, char *it, struct AuthenticateDedicatedServerRequest in) {
 	it += sprintf(it, "%s.", name);
+	pkt_logBaseMasterServerReliableResponse("base", buf, it, in.base);
+	pkt_logString("dedicatedServerId", buf, it, in.dedicatedServerId);
+	pkt_logUint8Array("nonce", buf, it, in.nonce, 16);
+	pkt_logUint8Array("hash", buf, it, in.hash, 32);
+	pkt_logUint64("timestamp", buf, it, in.timestamp);
 }
 void pkt_logAuthenticateDedicatedServerResponse(const char *name, char *buf, char *it, struct AuthenticateDedicatedServerResponse in) {
 	it += sprintf(it, "%s.", name);
 }
 void pkt_logCreateDedicatedServerInstanceRequest(const char *name, char *buf, char *it, struct CreateDedicatedServerInstanceRequest in) {
 	it += sprintf(it, "%s.", name);
+	pkt_logBaseMasterServerReliableRequest("base", buf, it, in.base);
+	pkt_logString("secret", buf, it, in.secret);
+	pkt_logBeatmapLevelSelectionMask("selectionMask", buf, it, in.selectionMask);
+	pkt_logString("userId", buf, it, in.userId);
+	pkt_logString("userName", buf, it, in.userName);
+	pkt_logIPEndPoint("userEndPoint", buf, it, in.userEndPoint);
+	pkt_logUint8Array("userRandom", buf, it, in.userRandom, 32);
+	pkt_logByteArrayNetSerializable("userPublicKey", buf, it, in.userPublicKey);
+	pkt_logGameplayServerConfiguration("configuration", buf, it, in.configuration);
 }
 void pkt_logCreateDedicatedServerInstanceResponse(const char *name, char *buf, char *it, struct CreateDedicatedServerInstanceResponse in) {
 	it += sprintf(it, "%s.", name);

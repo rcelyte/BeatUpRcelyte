@@ -101,7 +101,7 @@ static void handle_ClientKeyExchangeRequest(struct Context *ctx, struct MasterSe
 	send_ack(ctx, session, buf, MessageType_HandshakeMessage, req.base.requestId);
 	if(MasterServerSession_set_state(session, HandshakeMessageType_ClientKeyExchangeRequest))
 		return;
-	if(MasterServerSession_set_clientPublicKey(session, &req.clientPublicKey))
+	if(MasterServerSession_set_clientPublicKey(session, &ctx->net, &req.clientPublicKey))
 		return;
 	struct ChangeCipherSpecRequest r_spec;
 	r_spec.base.requestId = net_getNextRequestId(session);
@@ -110,6 +110,11 @@ static void handle_ClientKeyExchangeRequest(struct Context *ctx, struct MasterSe
 	SERIALIZE(&resp, HandshakeMessage, ChangeCipherSpecRequest, ChangeCipherSpecRequest, r_spec);
 	net_send(&ctx->net, session, PacketProperty_UnconnectedMessage, buf, resp - buf, 1);
 	// ACTIVATE ENCRYPTION HERE
+}
+
+static void handle_AuthenticateUserRequest(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf, uint8_t **data) {
+	char s[1024];
+	pkt_logAuthenticateUserRequest("\tAuthenticateUserRequest", s, s, pkt_readAuthenticateUserRequest(data));
 }
 
 #ifdef WINDOWS
@@ -135,7 +140,7 @@ master_handler(struct Context *ctx) {
 			#endif
 			if(message.type == MessageType_UserMessage) {
 				switch(serial.type) {
-					case UserMessageType_AuthenticateUserRequest: fprintf(stderr, "UserMessageType_AuthenticateUserRequest not implemented\n"); return 0;
+					case UserMessageType_AuthenticateUserRequest: handle_AuthenticateUserRequest(ctx, session, pkt, &data); break;
 					case UserMessageType_AuthenticateUserResponse: fprintf(stderr, "UserMessageType_AuthenticateUserResponse not implemented\n"); return 0;
 					case UserMessageType_ConnectToServerResponse: fprintf(stderr, "UserMessageType_ConnectToServerResponse not implemented\n"); return 0;
 					case UserMessageType_ConnectToServerRequest: fprintf(stderr, "UserMessageType_ConnectToServerRequest not implemented\n"); return 0;

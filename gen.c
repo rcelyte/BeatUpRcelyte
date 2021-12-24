@@ -8,22 +8,22 @@ const _Bool enableLog = 1;
 
 char *desc_buf;
 
-const char *header_init =
-	"#pragma once\n\n"
+const char *warning =
 	"/* \n"
 	" * AUTO GENERATED; DO NOT TOUCH\n"
 	" * AUTO GENERATED; DO NOT TOUCH\n"
 	" * AUTO GENERATED; DO NOT TOUCH\n"
-	" */\n\n"
+	" */\n\n";
+
+const char *header_init =
+	"#pragma once\n\n"
 	"#include \"enum.h\"\n"
 	"#include <stdint.h>\n";
 
+const char *code_loginit =
+	"#include \"enum_reflection.h\"\n";
+
 const char *code_init =
-	"/* \n"
-	" * AUTO GENERATED; DO NOT TOUCH\n"
-	" * AUTO GENERATED; DO NOT TOUCH\n"
-	" * AUTO GENERATED; DO NOT TOUCH\n"
-	" */\n\n"
 	"#include \"packets.h\"\n";
 
 FILE *tryopen(const char *path, const char *mode) {
@@ -78,7 +78,7 @@ const char *skip_char(const char *s, char c) {
 	fprintf(stderr, "src/packets.txt:%u:%u: expected '%c'\n", line, column, c);
 	exit(-1);
 }
-void typename(char *in, char *out, uint32_t lim, const char *de) {
+_Bool typename(char *in, char *out, uint32_t lim, const char *de) {
 	char *tin = in;
 	if(*tin == 'v')
 		++tin;
@@ -92,12 +92,13 @@ void typename(char *in, char *out, uint32_t lim, const char *de) {
 		} else {
 			if(*tin == '.') {
 				read_word(tin+1, out, lim);
+				return 1;
 			} else {
 				out += sprintf(out, "struct ");
 				read_word(in, out, lim - 7);
 			}
 		}
-		return;
+		return 0;
 	}
 	if(type == 'b') {
 		sprintf(out, "_Bool");
@@ -116,8 +117,8 @@ void typename(char *in, char *out, uint32_t lim, const char *de) {
 			out += sprintf(out, "struct ");
 			read_word(in, out, lim - 7);
 		}
-		return;
 	}
+	return 0;
 }
 _Bool fnname(char *in, char *out, uint32_t lim) {
 	char *tin = in;
@@ -144,7 +145,24 @@ _Bool fnname(char *in, char *out, uint32_t lim) {
 	read_word(in, out, lim);
 	return 0;
 }
+
 const char *parse_block(const char *s, uint32_t indent);
+
+char head_buf[524288], *head_it = head_buf;
+char code_buf[524288], *code_it = code_buf;
+const char *parse_custom(const char *s) {
+	char **it = (*s == 'h') ? &head_it : &code_it;
+	s += 5;
+	while(*s == '\t') {
+		++s;
+		while(*s && *s != '\n')
+			*(*it)++ = *s++;
+		*(*it)++ = '\n';
+		s = skip_char(s, '\n');
+	}
+	return s;
+}
+
 char enum_buf[524288], *enum_it = enum_buf;
 char *currentEnum = NULL, **currentEnum_it = NULL;
 void enum_write(const char *name, const char *ev) {
@@ -197,7 +215,7 @@ char des_buf[524288], *des_it = des_buf;
 char ser_buf[524288], *ser_it = ser_buf;
 char struct_buf[524288], *struct_it = struct_buf;
 static const char *tabs = "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t";
-const char *parse_struct_entries(const char *s, uint32_t indent, uint32_t outdent, _Bool des, _Bool ser) {
+const char *parse_struct_entries(const char *s, const char *structName, uint32_t indent, uint32_t outdent, _Bool des, _Bool ser, _Bool log) {
 	while(count_tabs(s) == indent) {
 		s += indent;
 		if(strncmp(s, "if(", 3) == 0) {
@@ -212,22 +230,24 @@ const char *parse_struct_entries(const char *s, uint32_t indent, uint32_t outden
 				des_it += sprintf(des_it, "%.*sif(out.%.*s) {\n", outdent, tabs, len, cond);
 			if(ser)
 				ser_it += sprintf(ser_it, "%.*sif(in.%.*s) {\n", outdent, tabs, len, cond);
-			if(enableLog)
+			if(log)
 				log_it += sprintf(log_it, "%.*sif(in.%.*s) {\n", outdent, tabs, len, cond);
-			s = parse_struct_entries(s, indent+1, outdent+1, des, ser);
+			s = parse_struct_entries(s, structName, indent+1, outdent+1, des, ser, log);
 			if(des)
 				des_it += sprintf(des_it, "%.*s}\n", outdent, tabs);
 			if(ser)
 				ser_it += sprintf(ser_it, "%.*s}\n", outdent, tabs);
-			if(enableLog)
+			if(log)
 				log_it += sprintf(log_it, "%.*s}\n", outdent, tabs);
 		} else {
 			uint32_t count = 0;
 			char type[1024], name[1024], length[1024] = {0};
+			_Bool rangecheck = 0;
 			s = read_word(s, type, sizeof(type));
 			if(*s == '[') {
 				++s; // [
 				if(alpha(*s)) {
+					rangecheck = 1;
 					s = read_word(s, length, sizeof(length));
 					s = skip_char(s, ',');
 				}
@@ -243,18 +263,24 @@ const char *parse_struct_entries(const char *s, uint32_t indent, uint32_t outden
 			s = skip_char(s, '\n');
 
 			char stype[1024], ftype[1024];
-			typename(type, stype, sizeof(stype), NULL);
+			_Bool isEnum = typename(type, stype, sizeof(stype), NULL);
 			_Bool isU8Array = fnname(type, ftype, sizeof(ftype));
 			if(count)
 				struct_it += sprintf(struct_it, "\t%s %s[%u];\n", stype, name, count);
 			else
 				struct_it += sprintf(struct_it, "\t%s %s;\n", stype, name);
 			if(des) {
+				if(rangecheck) {
+					des_it += sprintf(des_it, "%.*sif(out.%s > %u) {\n", outdent, tabs, length, count);
+					des_it += sprintf(des_it, "\t%.*sfprintf(stderr, \"Buffer overflow in read of %s.%s: %%u > %u\\n\", (uint32_t)out.%s);\n", outdent, tabs, structName, name, count, length);
+					des_it += sprintf(des_it, "\t%.*sout.%s = 0;\n", outdent, tabs, length);
+					des_it += sprintf(des_it, "%.*s}\n", outdent, tabs);
+				}
 				if(count && isU8Array) {
 					des_it += sprintf(des_it, "%.*spkt_read%sArray(pkt, out.%s, %s%s);\n", outdent, tabs, ftype, name, alpha(*length) ? "out." : "", length);
 				} else {
 					if(count)
-						des_it += sprintf(des_it, "%.*sif(%s%s <= %u)\n\t%.*sfor(uint32_t i = 0; i < %s%s; ++i)\n\t\t", outdent, tabs, alpha(*length) ? "out." : "", length, count, outdent, tabs, alpha(*length) ? "out." : "", length);
+						des_it += sprintf(des_it, "%.*sfor(uint32_t i = 0; i < %s%s; ++i)\n\t", outdent, tabs, alpha(*length) ? "out." : "", length);
 					des_it += sprintf(des_it, "%.*sout.%s%s = pkt_read%s(pkt);\n", outdent, tabs, name, count ? "[i]" : "", ftype);
 				}
 			}
@@ -267,13 +293,16 @@ const char *parse_struct_entries(const char *s, uint32_t indent, uint32_t outden
 					ser_it += sprintf(ser_it, "%.*spkt_write%s(pkt, in.%s%s);\n", outdent, tabs, ftype, name, count ? "[i]" : "");
 				}
 			}
-			if(enableLog) {
+			if(log) {
 				if(count && isU8Array) {
 					log_it += sprintf(log_it, "%.*spkt_log%sArray(\"%s\", buf, it, in.%s, %s%s);\n", outdent, tabs, ftype, name, name, alpha(*length) ? "in." : "", length);
 				} else {
 					if(count)
 						log_it += sprintf(log_it, "%.*sfor(uint32_t i = 0; i < %s%s; ++i)\n\t", outdent, tabs, alpha(*length) ? "in." : "", length);
-					log_it += sprintf(log_it, "%.*spkt_log%s(\"%s\", buf, it, in.%s%s);\n", outdent, tabs, ftype, name, name, count ? "[i]" : "");
+					if(isEnum)
+						log_it += sprintf(log_it, "%.*sfprintf(stderr, \"%%s%s=%%s\\n\", buf, reflect(%s, in.%s%s));\n", outdent, tabs, name, stype, name, count ? "[i]" : "");
+					else
+						log_it += sprintf(log_it, "%.*spkt_log%s(\"%s\", buf, it, in.%s%s);\n", outdent, tabs, ftype, name, name, count ? "[i]" : "");
 				}
 			}
 		}
@@ -283,6 +312,7 @@ const char *parse_struct_entries(const char *s, uint32_t indent, uint32_t outden
 const char *parse_struct(const char *s, uint32_t indent) {
 	_Bool des = (*s != 's') || enableLog;
 	_Bool ser = (*s != 'r');
+	_Bool log = enableLog;
 	++indent, s += 2;
 	char name[1024];
 	{
@@ -296,6 +326,14 @@ const char *parse_struct(const char *s, uint32_t indent) {
 		}
 		s = skip_char(s, '\n');
 
+		if(log) {
+			char fn[1024];
+			sprintf(fn, "void pkt_log%s", name);
+			*code_it = 0;
+			if(strstr(code_buf, fn))
+				log = 0;
+		}
+
 		struct_it += sprintf(struct_it, "struct %s {\n", name);
 		if(des) {
 			dec_it += sprintf(dec_it, "struct %s pkt_read%s(uint8_t **pkt);\n", name, name);
@@ -305,14 +343,14 @@ const char *parse_struct(const char *s, uint32_t indent) {
 			dec_it += sprintf(dec_it, "void pkt_write%s(uint8_t **pkt, struct %s in);\n", name, name);
 			ser_it += sprintf(ser_it, "void pkt_write%s(uint8_t **pkt, struct %s in) {\n", name, name);
 		}
-		if(enableLog) {
+		if(log) {
 			dec_it += sprintf(dec_it, "void pkt_log%s(const char *name, char *buf, char *it, struct %s in);\n", name, name);
 			log_it += sprintf(log_it, "void pkt_log%s(const char *name, char *buf, char *it, struct %s in) {\n\tit += sprintf(it, \"%%s.\", name);\n", name, name);
 		}
 	}
 
 	const char *start = s;
-	s = parse_struct_entries(s, indent, 1, des, ser);
+	s = parse_struct_entries(s, name, indent, 1, des, ser, log);
 
 	struct_it += sprintf(struct_it, "};\n");
 	if(des) {
@@ -322,23 +360,8 @@ const char *parse_struct(const char *s, uint32_t indent) {
 	}
 	if(ser)
 		ser_it += sprintf(ser_it, "}\n");
-	if(enableLog)
+	if(log)
 		log_it += sprintf(log_it, "}\n");
-	return s;
-}
-
-char head_buf[524288], *head_it = head_buf;
-char code_buf[524288], *code_it = code_buf;
-const char *parse_custom(const char *s) {
-	char **it = (*s == 'h') ? &head_it : &code_it;
-	s += 5;
-	while(*s == '\t') {
-		++s;
-		while(*s && *s != '\n')
-			*(*it)++ = *s++;
-		*(*it)++ = '\n';
-		s = skip_char(s, '\n');
-	}
 	return s;
 }
 
@@ -378,12 +401,16 @@ int main(int argc, char const *argv[]) {
 
 	FILE *out = tryopen(argv[2], "w");
 	if(argv[2][strlen(argv[2])-1] == 'h') {
+		trywrite(out, argv[2], warning, &warning[strlen(warning)]);
 		trywrite(out, argv[2], header_init, &header_init[strlen(header_init)]);
 		trywrite(out, argv[2], enum_buf, enum_it);
 		trywrite(out, argv[2], head_buf, head_it);
 		trywrite(out, argv[2], struct_buf, struct_it);
 		trywrite(out, argv[2], dec_buf, dec_it);
 	} else {
+		trywrite(out, argv[2], warning, &warning[strlen(warning)]);
+		if(enableLog)
+			trywrite(out, argv[2], code_loginit, &code_loginit[strlen(code_loginit)]);
 		trywrite(out, argv[2], code_init, &code_init[strlen(code_init)]);
 		trywrite(out, argv[2], code_buf, code_it);
 		trywrite(out, argv[2], des_buf, des_it);

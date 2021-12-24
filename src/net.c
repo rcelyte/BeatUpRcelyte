@@ -1,5 +1,7 @@
 #include "enum_reflection.h"
 #include "net.h"
+#include "encryption.h"
+#include <mbedtls/ecdh.h>
 #include <mbedtls/error.h>
 
 #define RESEND_BUFFER 32
@@ -34,7 +36,8 @@ struct MasterServerSession {
 	uint8_t cookie[32];
 	mbedtls_ecp_keypair serverKey;
 	mbedtls_ecp_point clientPublicKey;
-	// uint8_t preMasterSecret[];
+	mbedtls_mpi preMasterSecret;
+	struct EncryptionState encryptionState;
 	uint32_t epoch;
 	HandshakeMessageType state;
 	uint32_t ClientHelloWithCookieRequest_requestId;
@@ -87,7 +90,7 @@ _Bool MasterServerSession_signature(struct MasterServerSession *session, struct 
 	out->length = rsa->MBEDTLS_PRIVATE(len);
 	return 0;
 }
-_Bool MasterServerSession_set_clientPublicKey(struct MasterServerSession *session, struct ByteArrayNetSerializable *in) {
+_Bool MasterServerSession_set_clientPublicKey(struct MasterServerSession *session, struct NetContext *ctx, struct ByteArrayNetSerializable *in) {
 	#if 1
 	const uint8_t *buf = in->data;
 	int32_t err = mbedtls_ecp_tls_read_point(&session->serverKey.MBEDTLS_PRIVATE(grp), &session->clientPublicKey, &buf, in->length);
@@ -95,6 +98,12 @@ _Bool MasterServerSession_set_clientPublicKey(struct MasterServerSession *sessio
 		fprintf(stderr, "mbedtls_ecp_tls_read_point() failed: %s\n", mbedtls_high_level_strerr(err));
 		return 1;
 	}
+	err = mbedtls_ecdh_compute_shared(&session->serverKey.MBEDTLS_PRIVATE(grp), &session->preMasterSecret, &session->clientPublicKey, &session->serverKey.MBEDTLS_PRIVATE(d), mbedtls_ctr_drbg_random, &ctx->ctr_drbg);
+	if(err != 0) {
+		fprintf(stderr, "mbedtls_ecdh_compute_shared() failed: %s\n", mbedtls_high_level_strerr(err));
+		return 1;
+	}
+	EncryptionState_init(&session->encryptionState, &session->preMasterSecret, session->serverRandom, session->clientRandom, 0);
 	return 0;
 	#else
 	int32_t err = mbedtls_ecdh_read_public(ctx, in->data, in->length);
@@ -137,30 +146,6 @@ const char *net_tostr(struct SS *a) {
 			sprintf(out, "???");
 	}
 	return out;
-}
-
-static int findandconn(struct addrinfo *res, int family) {
-	int sockfd = -1;
-	for(struct addrinfo *rp = res; rp; rp = rp->ai_next) {
-		if(rp->ai_family == family) {
-			sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-			if(sockfd >= 0) {
-				if(bind(sockfd, rp->ai_addr, rp->ai_addrlen) < 0) {
-					close(sockfd);
-					sockfd = -1;
-					fprintf(stderr, "Error while binding socket\n");
-				} else {
-					/*printf("Bound %s\n", net_tostr((struct SS[]){{
-						.len = rp->ai_addrlen,
-						.sa = *rp->ai_addr,
-					}}));*/
-					break;
-				}
-			} else
-				fprintf(stderr, "%s", strerror(errno));
-		}
-	}
-	return sockfd;
 }
 
 static uint8_t addrs_are_equal(struct SS *a0, struct SS *a1) {
@@ -266,32 +251,23 @@ static void _send(struct NetContext *ctx, struct MasterServerSession *session, P
 }
 
 _Bool net_init(struct NetContext *ctx, uint16_t port) {
-	struct addrinfo hints = {
-		.ai_flags = AI_PASSIVE,
-		.ai_family = AF_UNSPEC,
-		.ai_socktype = SOCK_DGRAM,
-		.ai_protocol = 0,
-		.ai_addrlen = 0,
-		.ai_addr = NULL,
-		.ai_canonname = NULL,
-		.ai_next = NULL,
-	}, *res;
-	char service[8];
-	sprintf(service, "%hu", port);
-	int32_t gAddRes = getaddrinfo(NULL, service, &hints, &res);
-	if(gAddRes != 0) {
-		fprintf(stderr, "%s\n", gai_strerror(gAddRes));
-		return 1;
+	ctx->sockfd = socket(AF_INET6, SOCK_DGRAM, 0);
+	if(ctx->sockfd >= 0) {
+		const struct sockaddr_in6 addr = {
+			.sin6_family = AF_INET6,
+			.sin6_port = htons(port),
+			.sin6_flowinfo = 0,
+			.sin6_addr = IN6ADDR_ANY_INIT,
+			.sin6_scope_id = 0,
+		};
+		if(bind(ctx->sockfd, (const struct sockaddr*)&addr, sizeof(addr)) < 0) {
+			close(ctx->sockfd);
+			ctx->sockfd = -1;
+			fprintf(stderr, "Error while binding socket\n");
+		}
 	}
-	if(!res) {
-		fprintf(stderr, "Found no host address to use\n");
-		return 1;
-	}
-	ctx->sockfd = findandconn(res, AF_INET6);
-	// sockfd = findandconn(res, AF_INET);
-	freeaddrinfo(res);
 	/*int32_t prop = 1;
-	if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (void*)&prop, sizeof(int32_t))) {fprintf(stderr, "setsockopt(SO_REUSEADDR) failed\n"); close(sockfd); return -1;}*/
+	if(setsockopt(ctx->sockfd, SOL_SOCKET, SO_REUSEADDR, (void*)&prop, sizeof(int32_t))) {fprintf(stderr, "setsockopt(SO_REUSEADDR) failed\n"); close(sockfd); return -1;}*/
 	mbedtls_ctr_drbg_init(&ctx->ctr_drbg);
 	mbedtls_entropy_init(&ctx->entropy);
 	if(mbedtls_ctr_drbg_seed(&ctx->ctr_drbg, mbedtls_entropy_func, &ctx->entropy, (const uint8_t*)u8"M@$73RS€RV3R", 14) != 0) {
@@ -401,10 +377,17 @@ uint32_t net_recv(struct NetContext *ctx, struct MasterServerSession **session, 
 	}
 	fprintf(stderr, "[NET] recvfrom[%zi]\n", size);
 	*buf = ctx->buf;
-	struct PacketEncryptionLayer layer = pkt_readPacketEncryptionLayer(buf, &ctx->buf[size], (*session)->serverRandom, (*session)->clientRandom);
+	struct PacketEncryptionLayer layer = pkt_readPacketEncryptionLayer(buf);
 	// fprintf(stderr, "\t[to %zu]layer.encrypted=%hhu\n", *buf - ctx->buf, layer.encrypted);
-	if(layer.encrypted) {
-		fprintf(stderr, "Packet decryption failed\n");
+	if(layer.encrypted == 1) {
+		uint32_t length = &ctx->buf[size] - *buf;
+		if(EncryptionState_decrypt(&(*session)->encryptionState, layer, *buf, &length)) {
+			fprintf(stderr, "Packet decryption failed\n");
+			goto retry;
+		}
+		size = length + (*buf - ctx->buf);
+	} else if(layer.encrypted) {
+		fprintf(stderr, "Invalid packet\n");
 		goto retry;
 	}
 	struct NetPacketHeader packet = pkt_readNetPacketHeader(buf);
