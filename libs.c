@@ -2,5 +2,6 @@
 CFLAGS += -DWINDOWS
 LDFLAGS += -lws2_32 -lwinmm -lgdi32
 #else
-LDFLAGS += -pthread
+CFLAGS += -fsanitize=address
+LDFLAGS += -pthread -fsanitize=address
 #endif

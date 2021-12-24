@@ -1,0 +1,27 @@
+pkgname=beatupserver
+_pkgnm=BeatUpServer
+pkgver=0.0.1
+pkgrel=1
+pkgdesc="A lightweight modded Beat Saber multiplayer server for self-hosting"
+arch=('i686' 'x86_64' 'armv7h' 'aarch64' 'armv6h' 'arm')
+url="https://github.com/rcelyte/BeatUpRcelyte"
+license=('Unlicense')
+depends=('glibc')
+makedepends=()
+source=("git+https://github.com/rcelyte/BeatUpRcelyte.git")
+sha256sums=('SKIP')
+
+pkgver() {
+	cd "${srcdir}/BeatUpRcelyte"
+	echo $(git rev-list --count HEAD).$(git rev-parse --short HEAD)
+}
+
+build() {
+	cd "${srcdir}/BeatUpRcelyte"
+	make
+}
+
+package() {
+	cd "${srcdir}/BeatUpRcelyte"
+	make DESTDIR="$pkgdir/usr" install
+}

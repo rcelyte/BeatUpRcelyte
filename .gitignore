@@ -1,6 +1,9 @@
 *.sublime-project
 *.sublime-workspace
 /.obj
-/test
-/server.*
+/beatupserver*
 /build.sh
+/pkg/BeatUpRcelyte
+/pkg/pkg
+/pkg/src
+/test
