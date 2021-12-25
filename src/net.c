@@ -4,7 +4,7 @@
 #include <mbedtls/ecdh.h>
 #include <mbedtls/error.h>
 
-#define RESEND_BUFFER 32
+#define RESEND_BUFFER 48
 
 #ifdef WINDOWS
 #define SHUT_RD SD_RECEIVE
@@ -52,13 +52,13 @@ struct MasterServerSession {
 uint8_t *MasterServerSession_get_clientRandom(struct MasterServerSession *session) {
 	return session->clientRandom;
 }
-uint8_t *MasterServerSession_get_serverRandom(struct MasterServerSession *session) {
+const uint8_t *MasterServerSession_get_serverRandom(const struct MasterServerSession *session) {
 	return session->serverRandom;
 }
-uint8_t *MasterServerSession_get_cookie(struct MasterServerSession *session) {
+const uint8_t *MasterServerSession_get_cookie(const struct MasterServerSession *session) {
 	return session->cookie;
 }
-_Bool MasterServerSession_write_key(struct MasterServerSession *session, uint8_t *out, uint32_t *out_len) {
+_Bool MasterServerSession_write_key(const struct MasterServerSession *session, uint8_t *out, uint32_t *out_len) {
 	size_t keylen = 0;
 	int32_t err = mbedtls_ecp_tls_write_point(&session->serverKey.MBEDTLS_PRIVATE(grp), &session->serverKey.MBEDTLS_PRIVATE(Q), MBEDTLS_ECP_PF_UNCOMPRESSED, &keylen, out, *out_len);
 	if(err) {
@@ -69,7 +69,7 @@ _Bool MasterServerSession_write_key(struct MasterServerSession *session, uint8_t
 	*out_len = keylen;
 	return 0;
 }
-_Bool MasterServerSession_signature(struct MasterServerSession *session, struct NetContext *ctx, mbedtls_pk_context *key, uint8_t *in, uint32_t in_len, struct ByteArrayNetSerializable *out) {
+_Bool MasterServerSession_signature(const struct MasterServerSession *session, struct NetContext *ctx, const mbedtls_pk_context *key, const uint8_t *in, uint32_t in_len, struct ByteArrayNetSerializable *out) {
 	out->length = 0;
 	if(mbedtls_pk_get_type(key) != MBEDTLS_PK_RSA) {
 		fprintf(stderr, "Key should be RSA\n");
@@ -90,8 +90,7 @@ _Bool MasterServerSession_signature(struct MasterServerSession *session, struct 
 	out->length = rsa->MBEDTLS_PRIVATE(len);
 	return 0;
 }
-_Bool MasterServerSession_set_clientPublicKey(struct MasterServerSession *session, struct NetContext *ctx, struct ByteArrayNetSerializable *in) {
-	#if 1
+_Bool MasterServerSession_set_clientPublicKey(struct MasterServerSession *session, struct NetContext *ctx, const struct ByteArrayNetSerializable *in) {
 	const uint8_t *buf = in->data;
 	int32_t err = mbedtls_ecp_tls_read_point(&session->serverKey.MBEDTLS_PRIVATE(grp), &session->clientPublicKey, &buf, in->length);
 	if(err != 0) {
@@ -105,14 +104,6 @@ _Bool MasterServerSession_set_clientPublicKey(struct MasterServerSession *sessio
 	}
 	EncryptionState_init(&session->encryptionState, &session->preMasterSecret, session->serverRandom, session->clientRandom, 0);
 	return 0;
-	#else
-	int32_t err = mbedtls_ecdh_read_public(ctx, in->data, in->length);
-	if(err != 0) {
-		fprintf(stderr, "mbedtls_ecdh_read_public() failed: %s\n", mbedtls_high_level_strerr(err));
-		return 1;
-	}
-	return 0;
-	#endif
 }
 void MasterServerSession_set_epoch(struct MasterServerSession *session, uint32_t epoch) {
 	session->epoch = epoch;
@@ -128,8 +119,7 @@ uint32_t *MasterServerSession_ClientHelloWithCookieRequest_requestId(struct Mast
 	return &session->ClientHelloWithCookieRequest_requestId;
 }
 
-const char *net_tostr(struct SS *a) {
-	static char out[INET6_ADDRSTRLEN + 8];
+static void net_tostr(const struct SS *a, char *out) {
 	char ipStr[INET6_ADDRSTRLEN];
 	switch(a->ss.ss_family) {
 		case AF_UNSPEC:
@@ -145,10 +135,9 @@ const char *net_tostr(struct SS *a) {
 		default:
 			sprintf(out, "???");
 	}
-	return out;
 }
 
-static uint8_t addrs_are_equal(struct SS *a0, struct SS *a1) {
+static uint8_t addrs_are_equal(const struct SS *a0, const struct SS *a1) {
 	if(a0->ss.ss_family == AF_INET && a1->ss.ss_family == AF_INET) {
 		return a0->in.sin_addr.s_addr == a1->in.sin_addr.s_addr && a0->in.sin_port == a1->in.sin_port;
 	} else if(a0->ss.ss_family == AF_INET6 && a1->ss.ss_family == AF_INET6) {
@@ -168,12 +157,6 @@ struct SessionList {
 
 static void net_cookie(mbedtls_ctr_drbg_context *ctr_drbg, uint8_t *out) {
 	mbedtls_ctr_drbg_random(ctr_drbg, out, 32);
-}
-
-static uint32_t get_requestId(const uint8_t *msg) {
-	pkt_readMessageHeader(&msg);
-	pkt_readSerializeHeader(&msg);
-	return pkt_readBaseMasterServerReliableRequest(&msg).requestId;
 }
 
 static struct ResendPacket *add_resend(struct MasterServerSession *session, PacketProperty property, uint32_t requestId, _Bool shouldResend) {
@@ -387,7 +370,9 @@ uint32_t net_recv(struct NetContext *ctx, struct MasterServerSession **session, 
 		sptr->next = ctx->sessionList;
 		ctx->sessionList = sptr;
 		*session = &sptr->data;
-		fprintf(stderr, "NEW SESSION: %s\n", net_tostr(&addr));
+		char addrstr[INET6_ADDRSTRLEN + 8];
+		net_tostr(&addr, addrstr);
+		fprintf(stderr, "NEW SESSION: %s\n", addrstr);
 	}
 	fprintf(stderr, "[NET] recvfrom[%zi]\n", size);
 	*buf = ctx->buf;

@@ -34,11 +34,11 @@ struct NetContext {
 struct MasterServerSession;
 
 uint8_t *MasterServerSession_get_clientRandom(struct MasterServerSession *session);
-uint8_t *MasterServerSession_get_serverRandom(struct MasterServerSession *session);
-uint8_t *MasterServerSession_get_cookie(struct MasterServerSession *session);
-_Bool MasterServerSession_write_key(struct MasterServerSession *session, uint8_t *out, uint32_t *out_len);
-_Bool MasterServerSession_signature(struct MasterServerSession *session, struct NetContext *ctx, mbedtls_pk_context *key, uint8_t *in, uint32_t in_len, struct ByteArrayNetSerializable *out);
-_Bool MasterServerSession_set_clientPublicKey(struct MasterServerSession *session, struct NetContext *ctx, struct ByteArrayNetSerializable *in);
+const uint8_t *MasterServerSession_get_serverRandom(const struct MasterServerSession *session);
+const uint8_t *MasterServerSession_get_cookie(const struct MasterServerSession *session);
+_Bool MasterServerSession_write_key(const struct MasterServerSession *session, uint8_t *out, uint32_t *out_len);
+_Bool MasterServerSession_signature(const struct MasterServerSession *session, struct NetContext *ctx, const mbedtls_pk_context *key, const uint8_t *in, uint32_t in_len, struct ByteArrayNetSerializable *out);
+_Bool MasterServerSession_set_clientPublicKey(struct MasterServerSession *session, struct NetContext *ctx, const struct ByteArrayNetSerializable *in);
 void MasterServerSession_set_epoch(struct MasterServerSession *session, uint32_t epoch);
 _Bool MasterServerSession_set_state(struct MasterServerSession *session, HandshakeMessageType state);
 uint32_t *MasterServerSession_ClientHelloWithCookieRequest_requestId(struct MasterServerSession *session);
@@ -46,7 +46,6 @@ uint32_t *MasterServerSession_ClientHelloWithCookieRequest_requestId(struct Mast
 _Bool net_init(struct NetContext *ctx, uint16_t port);
 void net_stop(struct NetContext *ctx);
 void net_cleanup(struct NetContext *ctx);
-const char *net_tostr(struct SS *a);
 uint32_t net_recv(struct NetContext *ctx, struct MasterServerSession **session, PacketProperty *property, uint8_t **buf);
 void net_send(struct NetContext *ctx, struct MasterServerSession *session, PacketProperty property, const uint8_t *buf, uint32_t len, _Bool reliable);
 _Bool net_handle_ack(struct MasterServerSession *session, struct MessageHeader *message_out, struct SerializeHeader *serial_out, uint32_t requestId);
