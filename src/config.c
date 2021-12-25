@@ -94,110 +94,112 @@ _Bool config_load(struct Config *out, const char *path) {
 	char *master_cert = NULL, *master_key = NULL, *status_cert = NULL, *status_key = NULL;
 	uint32_t master_cert_len = 0, master_key_len = 0, status_cert_len = 0, status_key_len = 0;
 
-	struct Config tmp = {
-		.master_port = 2328,
-		.status_port = 80,
-		.status_domain = "",
-		.status_path = "/",
-		.status_tls = 0,
-	};
-
-	char *config_json;
-	{
-		FILE *f = fopen(path, "r");
-		if(f == NULL && errno == ENOENT) {
-			FILE *def = fopen(path, "w");
-			if(!def) {
-				fprintf(stderr, "Failed to write default config to %s: %s\n", path, strerror(errno));
-				return 0;
-			}
-			fprintf(stderr, "Writing default config to %s\n", path);
-			#ifdef WINDOWS
-			fprintf(def, "{\r\n\t\"HostCert\": \"cert.pem\",\r\n\t\"HostKey\": \"key.pem\",\r\n\t\"StatusUri\": \"http://localhost/status\"\r\n}\r\n");
-			#else
-			fprintf(def, "{\n\t\"HostCert\": \"cert.pem\",\n\t\"HostKey\": \"key.pem\",\n\t\"StatusUri\": \"http://localhost/status\"\n}\n");
-			#endif
-			fclose(def);
-			f = fopen(path, "r");
+	char config_json[524288];
+	FILE *f = fopen(path, "r");
+	if(f == NULL && errno == ENOENT) {
+		FILE *def = fopen(path, "w");
+		if(!def) {
+			fprintf(stderr, "Failed to write default config to %s: %s\n", path, strerror(errno));
+			return 0;
 		}
-		if(!f) {
-			fprintf(stderr, "Failed to open %s: %s\n", path, strerror(errno));
-			return 1;
-		}
-		fseek(f, 0, SEEK_END);
-		size_t flen = ftell(f);
-		config_json = malloc(flen+1);
-		fseek(f, 0, SEEK_SET);
-		if(fread(config_json, 1, flen, f) != flen) {
-			fprintf(stderr, "Failed to read %s\n", path);
-			return 1;
-		}
-		config_json[flen] = 0;
+		fprintf(stderr, "Writing default config to %s\n", path);
+		#ifdef WINDOWS
+		fprintf(def, "{\r\n\t\"HostCert\": \"cert.pem\",\r\n\t\"HostKey\": \"key.pem\",\r\n\t\"StatusUri\": \"http://localhost/status\"\r\n}\r\n");
+		#else
+		fprintf(def, "{\n\t\"HostCert\": \"cert.pem\",\n\t\"HostKey\": \"key.pem\",\n\t\"StatusUri\": \"http://localhost/status\"\n}\n");
+		#endif
+		fclose(def);
+		f = fopen(path, "r");
+	}
+	if(!f) {
+		fprintf(stderr, "Failed to open %s: %s\n", path, strerror(errno));
+		return 1;
+	}
+	fseek(f, 0, SEEK_END);
+	size_t flen = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	if(flen >= sizeof(config_json)) {
+		fprintf(stderr, "Failed to read %s: File too large\n", path);
 		fclose(f);
-		char *key, *it = config_json;
-		uint32_t key_len;
-		while(json_iter_object(&it, &key, &key_len)) {
-			/*if(key_len == 6 && memcmp(key, "master", 6) == 0)
-				it = json_config_host(it, &master);
-			else if(key_len == 6 && memcmp(key, "status", 6) == 0)
-				it = json_config_host(it, &status);
-			else
-				it = json_skip_value(it);*/
-			#define IFEQ(str) if(key_len == sizeof(str) - 1 && memcmp(key, str, sizeof(str) - 1) == 0)
-			IFEQ("HostCert") {
-				it = json_get_string(it, &master_cert, &master_cert_len);
-			} else IFEQ("HostKey") {
-				it = json_get_string(it, &master_key, &master_key_len);
-			} else IFEQ("Port") {
-				tmp.master_port = atoi(it);
-				it = json_skip_value(it);
-			} else IFEQ("StatusUri") {
-				char *uri;
-				uint32_t uri_len;
-				it = json_get_string(it, &uri, &uri_len);
-				if(uri_len >= 4096) {
-					fprintf(stderr, "Error parsing config value \"StatusUri\": URI too long\n");
-					continue;
-				}
-				if(uri_len > 8 && memcmp(uri, "https://", 8) == 0) {
-					tmp.status_tls = 1, tmp.status_port = 443;
-					uri += 8, uri_len -= 8;
-				} else if(uri_len > 7 && memcmp(uri, "http://", 7) == 0) {
-					tmp.status_tls = 0, tmp.status_port = 80;
-					uri += 7, uri_len -= 7;
-				} else {
-					fprintf(stderr, "Error parsing config value \"StatusUri\": URI must begin with http:// or https://\n");
-					continue;
-				}
-				uint32_t sub_len;
-				for(sub_len = 0; sub_len < uri_len; ++sub_len)
-					if(uri[sub_len] == ':' || uri[sub_len] == '/')
+		return 1;
+	}
+	if(fread(config_json, 1, flen, f) != flen) {
+		fprintf(stderr, "Failed to read %s\n", path);
+		return 1;
+	}
+	config_json[flen] = 0;
+	fclose(f);
+
+	out->master_port = 2328;
+	out->status_port = 80;
+	*out->status_domain = 0;
+	sprintf(out->status_path, "/");
+	out->status_tls = 0;
+
+	char *key, *it = config_json;
+	uint32_t key_len;
+	while(json_iter_object(&it, &key, &key_len)) {
+		/*if(key_len == 6 && memcmp(key, "master", 6) == 0)
+			it = json_config_host(it, &master);
+		else if(key_len == 6 && memcmp(key, "status", 6) == 0)
+			it = json_config_host(it, &status);
+		else
+			it = json_skip_value(it);*/
+		#define IFEQ(str) if(key_len == sizeof(str) - 1 && memcmp(key, str, sizeof(str) - 1) == 0)
+		IFEQ("HostCert") {
+			it = json_get_string(it, &master_cert, &master_cert_len);
+		} else IFEQ("HostKey") {
+			it = json_get_string(it, &master_key, &master_key_len);
+		} else IFEQ("Port") {
+			out->master_port = atoi(it);
+			it = json_skip_value(it);
+		} else IFEQ("StatusUri") {
+			char *uri;
+			uint32_t uri_len;
+			it = json_get_string(it, &uri, &uri_len);
+			if(uri_len >= 4096) {
+				fprintf(stderr, "Error parsing config value \"StatusUri\": URI too long\n");
+				continue;
+			}
+			if(uri_len > 8 && memcmp(uri, "https://", 8) == 0) {
+				out->status_tls = 1, out->status_port = 443;
+				uri += 8, uri_len -= 8;
+			} else if(uri_len > 7 && memcmp(uri, "http://", 7) == 0) {
+				out->status_tls = 0, out->status_port = 80;
+				uri += 7, uri_len -= 7;
+			} else {
+				fprintf(stderr, "Error parsing config value \"StatusUri\": URI must begin with http:// or https://\n");
+				continue;
+			}
+			uint32_t sub_len;
+			for(sub_len = 0; sub_len < uri_len; ++sub_len)
+				if(uri[sub_len] == ':' || uri[sub_len] == '/')
+					break;
+			sprintf(out->status_domain, "%.*s", sub_len, uri);
+			uri += sub_len, uri_len -= sub_len;
+			if(uri_len == 0)
+				continue;
+			if(*uri == ':') {
+				out->status_port = atoi(&uri[1]);
+				for(; uri_len; ++uri, --uri_len)
+					if(*uri == '/')
 						break;
-				sprintf(tmp.status_domain, "%.*s", sub_len, uri);
-				uri += sub_len, uri_len -= sub_len;
 				if(uri_len == 0)
 					continue;
-				if(*uri == ':') {
-					tmp.status_port = atoi(&uri[1]);
-					for(; uri_len; ++uri, --uri_len)
-						if(*uri == '/')
-							break;
-					if(uri_len == 0)
-						continue;
-				}
-				sprintf(tmp.status_path, "%.*s", uri_len, uri);
-				if(tmp.status_path[uri_len-1] == '/')
-					tmp.status_path[uri_len-1] = 0;
-			} else IFEQ("StatusCert") {
-				it = json_get_string(it, &status_cert, &status_cert_len);
-			} else IFEQ("StatusKey") {
-				it = json_get_string(it, &status_key, &status_key_len);
-			} else {
-				it = json_skip_value(it);
 			}
-			#undef IFEQ
+			sprintf(out->status_path, "%.*s", uri_len, uri);
+			if(out->status_path[uri_len-1] == '/')
+				out->status_path[uri_len-1] = 0;
+		} else IFEQ("StatusCert") {
+			it = json_get_string(it, &status_cert, &status_cert_len);
+		} else IFEQ("StatusKey") {
+			it = json_get_string(it, &status_key, &status_key_len);
+		} else {
+			it = json_skip_value(it);
 		}
+		#undef IFEQ
 	}
+
 	if(master_cert_len == 0 && master_key_len == 0) {
 		fprintf(stderr, master_cert_len ? "Missing SSL key\n" : "Missing SSL certificate\n");
 		return 1;
@@ -211,23 +213,19 @@ _Bool config_load(struct Config *out, const char *path) {
 		status_key_len = master_key_len;
 	}
 
-	if(!load_cert(master_cert, master_cert_len, &tmp.master_cert)) {
-		if(!load_cert(status_cert, status_cert_len, &tmp.status_cert)) {
-			if(!load_key(master_key, master_key_len, &tmp.master_key)) {
-				if(!load_key(status_key, status_key_len, &tmp.status_key)) {
-					config_free(out);
-					*out = tmp;
-					free(config_json);
+	if(!load_cert(master_cert, master_cert_len, &out->master_cert)) {
+		if(!load_cert(status_cert, status_cert_len, &out->status_cert)) {
+			if(!load_key(master_key, master_key_len, &out->master_key)) {
+				if(!load_key(status_key, status_key_len, &out->status_key)) {
 					return 0;
 				}
-				mbedtls_pk_free(&tmp.status_key);
+				mbedtls_pk_free(&out->status_key);
 			}
-			mbedtls_pk_free(&tmp.master_key);
+			mbedtls_pk_free(&out->master_key);
 		}
-		mbedtls_x509_crt_free(&tmp.status_cert);
+		mbedtls_x509_crt_free(&out->status_cert);
 	}
-	mbedtls_x509_crt_free(&tmp.master_cert);
-	free(config_json);
+	mbedtls_x509_crt_free(&out->master_cert);
 	return 1;
 }
 

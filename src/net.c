@@ -170,7 +170,7 @@ static void net_cookie(mbedtls_ctr_drbg_context *ctr_drbg, uint8_t *out) {
 	mbedtls_ctr_drbg_random(ctr_drbg, out, 32);
 }
 
-static uint32_t get_requestId(uint8_t *msg) {
+static uint32_t get_requestId(const uint8_t *msg) {
 	pkt_readMessageHeader(&msg);
 	pkt_readSerializeHeader(&msg);
 	return pkt_readBaseMasterServerReliableRequest(&msg).requestId;
@@ -189,29 +189,41 @@ static struct ResendPacket *add_resend(struct MasterServerSession *session, Pack
 	return NULL;
 }
 
-static void _send(struct NetContext *ctx, struct MasterServerSession *session, PacketProperty property, uint8_t *buf, uint32_t len, _Bool reliable) {
+static void _send(struct NetContext *ctx, struct MasterServerSession *session, PacketProperty property, const uint8_t *buf, uint32_t len, _Bool reliable) {
+	const uint8_t *buf_read = buf;
+	struct MessageHeader message = pkt_readMessageHeader(&buf_read);
 	if(reliable) {
-		struct ResendPacket *p = add_resend(session, property, get_requestId(buf), 1);
+		pkt_readSerializeHeader(&buf_read);
+		struct ResendPacket *p = add_resend(session, property, pkt_readBaseMasterServerReliableRequest(&buf_read).requestId, 1);
 		if(p) {
 			p->len = len;
 			memcpy(p->data, buf, len);
 		}
 	}
-	uint8_t head[512];
+	struct PacketEncryptionLayer layer;
+	struct NetPacketHeader packet;
+	layer.encrypted = 0;
+	packet.property = property;
+	packet.connectionNumber = 0;
+	packet.isFragmented = 0;
+	packet.sequence = 0;
+	packet.channelId = 0;
+	packet.fragmentId = 0;
+	packet.fragmentPart = 0;
+	packet.fragmentsTotal = 0;
+	
+	uint8_t head[512], body[512];
 	uint8_t *head_end = head;
-	pkt_writePacketEncryptionLayer(&head_end, (struct PacketEncryptionLayer){
-		.encrypted = 0,
-	});
-	pkt_writeNetPacketHeader(&head_end, (struct NetPacketHeader){
-		.property = property,
-		.connectionNumber = 0,
-		.isFragmented = 0,
-		.sequence = 0,
-		.channelId = 0,
-		.fragmentId = 0,
-		.fragmentPart = 0,
-		.fragmentsTotal = 0,
-	});
+	if(session->encryptionState.initialized && message.type != MessageType_HandshakeMessage) {
+		uint8_t *pkt_end = head;
+		pkt_writeNetPacketHeader(&pkt_end, packet);
+		EncryptionState_encrypt(&session->encryptionState, &layer, &ctx->ctr_drbg, (const uint8_t*[]){head, buf, NULL}, (const uint32_t[]){pkt_end - head, len}, body, &len);
+		pkt_writePacketEncryptionLayer(&head_end, layer);
+	} else {
+		pkt_writePacketEncryptionLayer(&head_end, layer);
+		pkt_writeNetPacketHeader(&head_end, packet);
+		memcpy(body, buf, len); // const correctness ._.
+	}
 	#ifdef WINSOCK_VERSION
 	WSABUF iov[] = {
 		{.len = head_end - head, .buf = (char*)head},
@@ -234,7 +246,7 @@ static void _send(struct NetContext *ctx, struct MasterServerSession *session, P
 	#else
 	struct iovec iov[] = {
 		{.iov_base = head, .iov_len = head_end - head},
-		{.iov_base = buf, .iov_len = len},
+		{.iov_base = body, .iov_len = len},
 	};
 	struct msghdr msg = {
 		.msg_name = &session->addr.sa,
@@ -291,6 +303,7 @@ void net_cleanup(struct NetContext *ctx) {
 	while(ctx->sessionList) {
 		struct SessionList *e = ctx->sessionList;
 		ctx->sessionList = ctx->sessionList->next;
+		EncryptionState_free(&e->data.encryptionState);
 		free(e);
 	}
 	mbedtls_entropy_free(&ctx->entropy);
@@ -354,6 +367,7 @@ uint32_t net_recv(struct NetContext *ctx, struct MasterServerSession **session, 
 		memset(&sptr->data, 0, sizeof(sptr->data));
 		net_cookie(&ctx->ctr_drbg, sptr->data.serverRandom);
 		net_cookie(&ctx->ctr_drbg, sptr->data.cookie);
+		sptr->data.encryptionState.initialized = 0;
 		sptr->data.state = 255;
 		sptr->data.ClientHelloWithCookieRequest_requestId = 0;
 		sptr->data.addr = addr;
@@ -364,7 +378,7 @@ uint32_t net_recv(struct NetContext *ctx, struct MasterServerSession **session, 
 			sptr->data.resend[i].data = i;
 
 		mbedtls_ecp_keypair_init(&sptr->data.serverKey);
-		if(mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP384R1, &sptr->data.serverKey, mbedtls_ctr_drbg_random, &ctx->ctr_drbg) != 0) { // valgrind warning: Source and destination overlap in memcpy()
+		if(mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP384R1, &sptr->data.serverKey, mbedtls_ctr_drbg_random, &ctx->ctr_drbg) != 0) {
 			fprintf(stderr, "mbedtls_ecp_gen_key() failed\n");
 			free(sptr);
 			return 0;
@@ -377,7 +391,7 @@ uint32_t net_recv(struct NetContext *ctx, struct MasterServerSession **session, 
 	}
 	fprintf(stderr, "[NET] recvfrom[%zi]\n", size);
 	*buf = ctx->buf;
-	struct PacketEncryptionLayer layer = pkt_readPacketEncryptionLayer(buf);
+	struct PacketEncryptionLayer layer = pkt_readPacketEncryptionLayer((const uint8_t**)buf);
 	// fprintf(stderr, "\t[to %zu]layer.encrypted=%hhu\n", *buf - ctx->buf, layer.encrypted);
 	if(layer.encrypted == 1) {
 		uint32_t length = &ctx->buf[size] - *buf;
@@ -390,7 +404,7 @@ uint32_t net_recv(struct NetContext *ctx, struct MasterServerSession **session, 
 		fprintf(stderr, "Invalid packet\n");
 		goto retry;
 	}
-	struct NetPacketHeader packet = pkt_readNetPacketHeader(buf);
+	struct NetPacketHeader packet = pkt_readNetPacketHeader((const uint8_t**)buf);
 	*property = packet.property;
 	// fprintf(stderr, "\t[to %zu]packet.property=%s\n", *buf - ctx->buf, reflect(PacketProperty, packet.property));
 	// fprintf(stderr, "\t[to %zu]packet.connectionNumber=%u\n", *buf - ctx->buf, packet.connectionNumber);
@@ -410,7 +424,7 @@ _Bool net_handle_ack(struct MasterServerSession *session, struct MessageHeader *
 			uint32_t data = session->resend[i].data;
 			session->resend[i] = session->resend[session->resend_count];
 			session->resend[session->resend_count].data = data;
-			uint8_t *msg = session->resend_data[data].data;
+			const uint8_t *msg = session->resend_data[data].data;
 			*message_out = pkt_readMessageHeader(&msg);
 			*serial_out = pkt_readSerializeHeader(&msg);
 			return 1;
@@ -418,13 +432,13 @@ _Bool net_handle_ack(struct MasterServerSession *session, struct MessageHeader *
 	}
 	return 0;
 }
-void net_send(struct NetContext *ctx, struct MasterServerSession *session, PacketProperty property, uint8_t *buf, uint32_t len, _Bool reliable) {
+void net_send(struct NetContext *ctx, struct MasterServerSession *session, PacketProperty property, const uint8_t *buf, uint32_t len, _Bool reliable) {
 	if(buf >= ctx->buf && buf < &ctx->buf[sizeof(ctx->buf)])
 		if(&buf[len] - ctx->buf > ctx->prev_size)
 			ctx->prev_size = &buf[len] - ctx->buf;
 	if(len <= 414)
 		return _send(ctx, session, property, buf, len, reliable);
-	uint8_t *data = buf;
+	const uint8_t *data = buf;
 	struct MessageHeader message = pkt_readMessageHeader(&data);
 	struct SerializeHeader serial = pkt_readSerializeHeader(&data);
 	if(message.type == MessageType_UserMessage) {
@@ -440,7 +454,8 @@ void net_send(struct NetContext *ctx, struct MasterServerSession *session, Packe
 		return;
 	}
 	struct BaseMasterServerMultipartMessage mp;
-	mp.multipartMessageId = get_requestId(buf);
+	const uint8_t *data2 = data;
+	mp.multipartMessageId = pkt_readBaseMasterServerReliableRequest(&data2).requestId;
 	mp.offset = 0;
 	mp.length = 384;
 	mp.totalLength = len;
@@ -460,7 +475,7 @@ void net_send(struct NetContext *ctx, struct MasterServerSession *session, Packe
 		_send(ctx, session, property, mpbuf, mpbuf_end - mpbuf, 1);
 		mp.offset += 384;
 	} while(mp.offset < len);
-	struct ResendPacket *p = add_resend(session, property, get_requestId(buf), 0);
+	struct ResendPacket *p = add_resend(session, property, mp.multipartMessageId, 0);
 	if(p) {
 		p->len = data - buf;
 		memcpy(p->data, buf, data - buf);

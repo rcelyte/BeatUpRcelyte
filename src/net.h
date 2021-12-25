@@ -48,7 +48,7 @@ void net_stop(struct NetContext *ctx);
 void net_cleanup(struct NetContext *ctx);
 const char *net_tostr(struct SS *a);
 uint32_t net_recv(struct NetContext *ctx, struct MasterServerSession **session, PacketProperty *property, uint8_t **buf);
-void net_send(struct NetContext *ctx, struct MasterServerSession *session, PacketProperty property, uint8_t *buf, uint32_t len, _Bool reliable);
+void net_send(struct NetContext *ctx, struct MasterServerSession *session, PacketProperty property, const uint8_t *buf, uint32_t len, _Bool reliable);
 _Bool net_handle_ack(struct MasterServerSession *session, struct MessageHeader *message_out, struct SerializeHeader *serial_out, uint32_t requestId);
 uint32_t net_getNextRequestId(struct MasterServerSession *session);
 

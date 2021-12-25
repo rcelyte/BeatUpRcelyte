@@ -31,7 +31,7 @@ static void send_ack(struct Context *ctx, struct MasterServerSession *session, u
 	net_send(&ctx->net, session, PacketProperty_UnconnectedMessage, buf, resp - buf, 0);
 }
 
-static void handle_ClientHelloRequest(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf, uint8_t **data) {
+static void handle_ClientHelloRequest(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf, const uint8_t **data) {
 	struct ClientHelloRequest req = pkt_readClientHelloRequest(data);
 	MasterServerSession_set_epoch(session, req.base.requestId & 0xff000000);
 	MasterServerSession_set_state(session, HandshakeMessageType_ClientHelloRequest);
@@ -50,7 +50,7 @@ static void handle_ClientHelloRequest(struct Context *ctx, struct MasterServerSe
 	net_send(&ctx->net, session, PacketProperty_UnconnectedMessage, buf, resp - buf, 0);
 }
 
-static void handle_ClientHelloWithCookieRequest(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf, uint8_t **data) {
+static void handle_ClientHelloWithCookieRequest(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf, const uint8_t **data) {
 	struct ClientHelloWithCookieRequest req = pkt_readClientHelloWithCookieRequest(data);
 	send_ack(ctx, session, buf, MessageType_HandshakeMessage, req.base.requestId);
 	*MasterServerSession_ClientHelloWithCookieRequest_requestId(session) = req.base.requestId; // don't @ me   -rc
@@ -96,7 +96,7 @@ static void handle_ServerCertificateRequest_ack(struct Context *ctx, struct Mast
 	net_send(&ctx->net, session, PacketProperty_UnconnectedMessage, buf, resp - buf, 1);
 }
 
-static void handle_ClientKeyExchangeRequest(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf, uint8_t **data) {
+static void handle_ClientKeyExchangeRequest(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf, const uint8_t **data) {
 	struct ClientKeyExchangeRequest req = pkt_readClientKeyExchangeRequest(data);
 	send_ack(ctx, session, buf, MessageType_HandshakeMessage, req.base.requestId);
 	if(MasterServerSession_set_state(session, HandshakeMessageType_ClientKeyExchangeRequest))
@@ -112,9 +112,16 @@ static void handle_ClientKeyExchangeRequest(struct Context *ctx, struct MasterSe
 	// ACTIVATE ENCRYPTION HERE
 }
 
-static void handle_AuthenticateUserRequest(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf, uint8_t **data) {
-	char s[1024];
-	pkt_logAuthenticateUserRequest("\tAuthenticateUserRequest", s, s, pkt_readAuthenticateUserRequest(data));
+static void handle_AuthenticateUserRequest(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf, const uint8_t **data) {
+	struct AuthenticateUserRequest req = pkt_readAuthenticateUserRequest(data);
+	send_ack(ctx, session, buf, MessageType_UserMessage, req.base.requestId);
+	struct AuthenticateUserResponse r_auth;
+	r_auth.base.requestId = net_getNextRequestId(session);
+	r_auth.base.responseId = req.base.requestId;
+	r_auth.result = AuthenticateUserResponse_Result_Success;
+	uint8_t *resp = buf;
+	SERIALIZE(&resp, UserMessage, AuthenticateUserResponse, AuthenticateUserResponse, r_auth);
+	net_send(&ctx->net, session, PacketProperty_UnconnectedMessage, buf, resp - buf, 1);
 }
 
 #ifdef WINDOWS
@@ -129,7 +136,7 @@ master_handler(struct Context *ctx) {
 	PacketProperty property;
 	uint8_t *pkt;
 	while((len = net_recv(&ctx->net, &session, &property, &pkt))) {
-		uint8_t *data = pkt, *end = &pkt[len];
+		const uint8_t *data = pkt, *end = &pkt[len];
 		if(property == PacketProperty_UnconnectedMessage) {
 			struct MessageHeader message = pkt_readMessageHeader(&data);
 			struct SerializeHeader serial = pkt_readSerializeHeader(&data);
@@ -144,7 +151,12 @@ master_handler(struct Context *ctx) {
 					case UserMessageType_AuthenticateUserResponse: fprintf(stderr, "UserMessageType_AuthenticateUserResponse not implemented\n"); return 0;
 					case UserMessageType_ConnectToServerResponse: fprintf(stderr, "UserMessageType_ConnectToServerResponse not implemented\n"); return 0;
 					case UserMessageType_ConnectToServerRequest: fprintf(stderr, "UserMessageType_ConnectToServerRequest not implemented\n"); return 0;
-					case UserMessageType_UserMessageReceivedAcknowledge: fprintf(stderr, "UserMessageType_UserMessageReceivedAcknowledge not implemented\n"); return 0;
+					case UserMessageType_UserMessageReceivedAcknowledge: {
+						struct BaseMasterServerAcknowledgeMessage ack = pkt_readBaseMasterServerAcknowledgeMessage(&data);
+						if(net_handle_ack(session, &message, &serial, ack.base.responseId)) {
+						}
+						break;
+					}
 					case UserMessageType_UserMultipartMessage: fprintf(stderr, "UserMessageType_UserMultipartMessage not implemented\n"); return 0;
 					case UserMessageType_SessionKeepaliveMessage: fprintf(stderr, "UserMessageType_SessionKeepaliveMessage not implemented\n"); return 0;
 					case UserMessageType_GetPublicServersRequest: fprintf(stderr, "UserMessageType_GetPublicServersRequest not implemented\n"); return 0;
@@ -183,8 +195,6 @@ master_handler(struct Context *ctx) {
 						if(net_handle_ack(session, &message, &serial, ack.base.responseId)) {
 							if(message.type == MessageType_HandshakeMessage && serial.type == HandshakeMessageType_ServerCertificateRequest)
 								handle_ServerCertificateRequest_ack(ctx, session, pkt);
-						} else {
-							fprintf(stderr, "UNMATCHED ACK: %u\n", ack.base.responseId); // expected in prodution; only error when testing on local network
 						}
 						break;
 					}

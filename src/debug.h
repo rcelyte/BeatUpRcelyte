@@ -22,7 +22,7 @@ void debug_logType(struct MessageHeader message, struct SerializeHeader serial) 
 		fprintf(stderr, "recieve HandshakeMessageType_%s\n", reflect(HandshakeMessageType, serial.type));
 }
 
-void debug_logPacket(uint8_t *data) {
+void debug_logPacket(const uint8_t *data) {
 	struct MessageHeader message = pkt_readMessageHeader(&data);
 	struct SerializeHeader serial = pkt_readSerializeHeader(&data);
 	debug_logMessage(message, serial);

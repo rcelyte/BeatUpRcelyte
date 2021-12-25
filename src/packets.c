@@ -10,34 +10,34 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
-uint8_t pkt_readUint8(uint8_t **pkt) {
+uint8_t pkt_readUint8(const uint8_t **pkt) {
 	uint8_t v = (*pkt)[0];
 	*pkt += sizeof(v);
 	return v;
 }
-uint16_t pkt_readUint16(uint8_t **pkt) {
+uint16_t pkt_readUint16(const uint8_t **pkt) {
 	uint16_t v = (*pkt)[0] | (*pkt)[1] << 8;
 	*pkt += sizeof(v);
 	return v;
 }
-uint32_t pkt_readUint32(uint8_t **pkt) {
+uint32_t pkt_readUint32(const uint8_t **pkt) {
 	uint32_t v = (*pkt)[0] | (*pkt)[1] << 8 | (*pkt)[2] << 16 | (*pkt)[3] << 24;
 	*pkt += sizeof(v);
 	return v;
 }
-uint64_t pkt_readUint64(uint8_t **pkt) {
+uint64_t pkt_readUint64(const uint8_t **pkt) {
 	uint64_t v = (uint64_t)(*pkt)[0] | (uint64_t)(*pkt)[1] << 8 | (uint64_t)(*pkt)[2] << 16 | (uint64_t)(*pkt)[3] << 24 | (uint64_t)(*pkt)[4] << 32 | (uint64_t)(*pkt)[5] << 40 | (uint64_t)(*pkt)[6] << 48 | (uint64_t)(*pkt)[7] << 56;
 	*pkt += sizeof(v);
 	return v;
 }
-/*uint64_t pkt_readVarUint64(uint8_t **pkt) {
+/*uint64_t pkt_readVarUint64(const uint8_t **pkt) {
 	uint64_t byte, value = 0;
 	uint32_t shift = 0;
 	for(; (byte = (uint64_t)pkt_readUint8(pkt)) & 128; shift += 7)
 		value |= (byte & 127) << shift;
 	return value | byte << shift;
 }*/
-uint64_t pkt_readVarUint64(uint8_t **pkt) {
+uint64_t pkt_readVarUint64(const uint8_t **pkt) {
 	uint64_t byte, value = 0;
 	uint8_t shift = 0;
 	do {
@@ -47,20 +47,20 @@ uint64_t pkt_readVarUint64(uint8_t **pkt) {
 	} while(byte & 128);
 	return value;
 }
-int64_t pkt_readVarInt64(uint8_t **pkt) {
+int64_t pkt_readVarInt64(const uint8_t **pkt) {
 	int64_t varULong = (int64_t)pkt_readVarUint64(pkt);
 	if((varULong & 1L) != 1L)
 		return varULong >> 1;
 	return -(varULong >> 1) + 1L;
 }
-uint32_t pkt_readVarUint32(uint8_t **pkt) {
+uint32_t pkt_readVarUint32(const uint8_t **pkt) {
 	return (uint32_t)pkt_readVarUint64(pkt);
 }
-int32_t pkt_readVarInt32(uint8_t **pkt) {
+int32_t pkt_readVarInt32(const uint8_t **pkt) {
 	return (int32_t)pkt_readVarInt64(pkt);
 }
 #define pkt_readInt8Array(pkt, out, count) pkt_readUint8Array(pkt, (uint8_t*)out, count)
-void pkt_readUint8Array(uint8_t **pkt, uint8_t *out, uint32_t count) {
+void pkt_readUint8Array(const uint8_t **pkt, uint8_t *out, uint32_t count) {
 	memcpy(out, *pkt, count);
 	*pkt += count;
 }
@@ -124,14 +124,14 @@ void pkt_writeUint8Array(uint8_t **pkt, uint8_t *in, uint32_t count) {
 #define pkt_logVarUint32 pkt_logUint32
 #define pkt_logVarInt32 pkt_logInt32
 static void pkt_logUint64(const char *name, char *buf, char *it, uint64_t v) {
-	fprintf(stderr, "%s%s=%" PRIu64 "\n", buf, name, v);
+	fprintf(stderr, "%.*s%s=%" PRIu64 "\n", (uint32_t)(it - buf), buf, name, v);
 }
 static void pkt_logInt64(const char *name, char *buf, char *it, int64_t v) {
-	fprintf(stderr, "%s%s=%" PRId64 "\n", buf, name, v);
+	fprintf(stderr, "%.*s%s=%" PRId64 "\n", (uint32_t)(it - buf), buf, name, v);
 }
 #define pkt_logInt8Array(name, buf, it, in, count) pkt_logUint8Array(name, buf, it, (uint8_t*)in, count)
 static void pkt_logUint8Array(const char *name, char *buf, char *it, uint8_t *in, uint32_t count) {
-	fprintf(stderr, "%s%s=", buf, name);
+	fprintf(stderr, "%.*s%s=", (uint32_t)(it - buf), buf, name);
 	for(uint32_t i = 0; i < count; ++i)
 		fprintf(stderr, "%02hhx", in[i]);
 	fprintf(stderr, "\n");
@@ -139,7 +139,7 @@ static void pkt_logUint8Array(const char *name, char *buf, char *it, uint8_t *in
 static const uint8_t NetPacketHeaderSize[32] = {
 	1, 4, 4, 3, 11, 14, 11, 9, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 };
-struct NetPacketHeader pkt_readNetPacketHeader(uint8_t **pkt) {
+struct NetPacketHeader pkt_readNetPacketHeader(const uint8_t **pkt) {
 	struct NetPacketHeader out;
 	uint8_t bits = pkt_readUint8(pkt);
 	out.property = bits & 31;
@@ -160,7 +160,7 @@ void pkt_writeNetPacketHeader(uint8_t **pkt, struct NetPacketHeader in) {
 	if(NetPacketHeaderSize[in.property] >= 8) pkt_writeUint16(pkt, in.fragmentPart);
 	if(NetPacketHeaderSize[in.property] >= 10) pkt_writeUint16(pkt, in.fragmentsTotal);
 }
-static struct ServerCode pkt_readServerCode(uint8_t **pkt) {
+static struct ServerCode pkt_readServerCode(const uint8_t **pkt) {
 	static const uint8_t table[128] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,24,25,26,27,28,0,29,30,31,0,0,0,0,0,0,0,0,1,2,3,4,5,6,7,0,8,9,10,11,12,0,13,14,15,16,17,18,19,20,21,22,23,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 	struct ServerCode out = {0};
 	struct String scode = pkt_readString(pkt);
@@ -177,15 +177,15 @@ static void pkt_writeServerCode(uint8_t **pkt, struct ServerCode in) {
 	pkt_writeString(pkt, scode);
 }
 static void pkt_logServerCode(const char *name, char *buf, char *it, struct ServerCode in) {
-	fprintf(stderr, "%s%s=\"", buf, name);
+	fprintf(stderr, "%.*s%s=\"", (uint32_t)(it - buf), buf, name);
 	for(uint32_t i = 0, code = in.value; i < 5; ++i, code >>= 5)
 		fprintf(stderr, "%c", "ABCDEFGHJKLMNPQRSTUVWXYZ12345789"[code & 31]);
 	fprintf(stderr, "\"\n");
 }
 static void pkt_logString(const char *name, char *buf, char *it, struct String in) {
-	fprintf(stderr, "%s%s=\"%.*s\"\n", buf, name, in.length, in.data);
+	fprintf(stderr, "%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
 }
-struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(uint8_t **pkt) {
+struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(const uint8_t **pkt) {
 	struct PacketEncryptionLayer out;
 	out.encrypted = pkt_readUint8(pkt);
 	if(out.encrypted == 1) {
@@ -194,41 +194,41 @@ struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(uint8_t **pkt) {
 	}
 	return out;
 }
-struct MessageHeader pkt_readMessageHeader(uint8_t **pkt) {
+struct MessageHeader pkt_readMessageHeader(const uint8_t **pkt) {
 	struct MessageHeader out;
 	out.type = pkt_readUint32(pkt);
 	out.protocolVersion = pkt_readVarUint32(pkt);
 	return out;
 }
-struct SerializeHeader pkt_readSerializeHeader(uint8_t **pkt) {
+struct SerializeHeader pkt_readSerializeHeader(const uint8_t **pkt) {
 	struct SerializeHeader out;
 	out.length = pkt_readVarUint32(pkt);
 	out.type = pkt_readUint8(pkt);
 	return out;
 }
-struct BaseMasterServerReliableRequest pkt_readBaseMasterServerReliableRequest(uint8_t **pkt) {
+struct BaseMasterServerReliableRequest pkt_readBaseMasterServerReliableRequest(const uint8_t **pkt) {
 	struct BaseMasterServerReliableRequest out;
 	out.requestId = pkt_readUint32(pkt);
 	return out;
 }
-struct BaseMasterServerResponse pkt_readBaseMasterServerResponse(uint8_t **pkt) {
+struct BaseMasterServerResponse pkt_readBaseMasterServerResponse(const uint8_t **pkt) {
 	struct BaseMasterServerResponse out;
 	out.responseId = pkt_readUint32(pkt);
 	return out;
 }
-struct BaseMasterServerReliableResponse pkt_readBaseMasterServerReliableResponse(uint8_t **pkt) {
+struct BaseMasterServerReliableResponse pkt_readBaseMasterServerReliableResponse(const uint8_t **pkt) {
 	struct BaseMasterServerReliableResponse out;
 	out.requestId = pkt_readUint32(pkt);
 	out.responseId = pkt_readUint32(pkt);
 	return out;
 }
-struct BaseMasterServerAcknowledgeMessage pkt_readBaseMasterServerAcknowledgeMessage(uint8_t **pkt) {
+struct BaseMasterServerAcknowledgeMessage pkt_readBaseMasterServerAcknowledgeMessage(const uint8_t **pkt) {
 	struct BaseMasterServerAcknowledgeMessage out;
 	out.base = pkt_readBaseMasterServerResponse(pkt);
 	out.messageHandled = pkt_readUint8(pkt);
 	return out;
 }
-struct ByteArrayNetSerializable pkt_readByteArrayNetSerializable(uint8_t **pkt) {
+struct ByteArrayNetSerializable pkt_readByteArrayNetSerializable(const uint8_t **pkt) {
 	struct ByteArrayNetSerializable out;
 	out.length = pkt_readVarUint32(pkt);
 	if(out.length > 4096) {
@@ -238,7 +238,7 @@ struct ByteArrayNetSerializable pkt_readByteArrayNetSerializable(uint8_t **pkt) 
 	pkt_readUint8Array(pkt, out.data, out.length);
 	return out;
 }
-struct String pkt_readString(uint8_t **pkt) {
+struct String pkt_readString(const uint8_t **pkt) {
 	struct String out;
 	out.length = pkt_readUint32(pkt);
 	if(out.length > 4096) {
@@ -248,7 +248,7 @@ struct String pkt_readString(uint8_t **pkt) {
 	pkt_readInt8Array(pkt, out.data, out.length);
 	return out;
 }
-struct AuthenticationToken pkt_readAuthenticationToken(uint8_t **pkt) {
+struct AuthenticationToken pkt_readAuthenticationToken(const uint8_t **pkt) {
 	struct AuthenticationToken out;
 	out.platform = pkt_readUint8(pkt);
 	out.userId = pkt_readString(pkt);
@@ -256,7 +256,7 @@ struct AuthenticationToken pkt_readAuthenticationToken(uint8_t **pkt) {
 	out.sessionToken = pkt_readByteArrayNetSerializable(pkt);
 	return out;
 }
-struct BaseMasterServerMultipartMessage pkt_readBaseMasterServerMultipartMessage(uint8_t **pkt) {
+struct BaseMasterServerMultipartMessage pkt_readBaseMasterServerMultipartMessage(const uint8_t **pkt) {
 	struct BaseMasterServerMultipartMessage out;
 	out.base = pkt_readBaseMasterServerReliableRequest(pkt);
 	out.multipartMessageId = pkt_readUint32(pkt);
@@ -270,25 +270,25 @@ struct BaseMasterServerMultipartMessage pkt_readBaseMasterServerMultipartMessage
 	pkt_readUint8Array(pkt, out.data, out.length);
 	return out;
 }
-struct BitMask128 pkt_readBitMask128(uint8_t **pkt) {
+struct BitMask128 pkt_readBitMask128(const uint8_t **pkt) {
 	struct BitMask128 out;
 	out._d0 = pkt_readUint64(pkt);
 	out._d1 = pkt_readUint64(pkt);
 	return out;
 }
-struct SongPackMask pkt_readSongPackMask(uint8_t **pkt) {
+struct SongPackMask pkt_readSongPackMask(const uint8_t **pkt) {
 	struct SongPackMask out;
 	out._bloomFilter = pkt_readBitMask128(pkt);
 	return out;
 }
-struct BeatmapLevelSelectionMask pkt_readBeatmapLevelSelectionMask(uint8_t **pkt) {
+struct BeatmapLevelSelectionMask pkt_readBeatmapLevelSelectionMask(const uint8_t **pkt) {
 	struct BeatmapLevelSelectionMask out;
 	out.difficulties = pkt_readUint8(pkt);
 	out.modifiers = pkt_readUint32(pkt);
 	out.songPacks = pkt_readSongPackMask(pkt);
 	return out;
 }
-struct GameplayServerConfiguration pkt_readGameplayServerConfiguration(uint8_t **pkt) {
+struct GameplayServerConfiguration pkt_readGameplayServerConfiguration(const uint8_t **pkt) {
 	struct GameplayServerConfiguration out;
 	out.maxPlayerCount = pkt_readVarInt32(pkt);
 	out.discoveryPolicy = pkt_readVarInt32(pkt);
@@ -298,56 +298,70 @@ struct GameplayServerConfiguration pkt_readGameplayServerConfiguration(uint8_t *
 	out.gameplayServerControlSettings = pkt_readVarInt32(pkt);
 	return out;
 }
-struct PublicServerInfo pkt_readPublicServerInfo(uint8_t **pkt) {
+struct PublicServerInfo pkt_readPublicServerInfo(const uint8_t **pkt) {
 	struct PublicServerInfo out;
 	out.code = pkt_readServerCode(pkt);
 	out.currentPlayerCount = pkt_readVarInt32(pkt);
 	return out;
 }
-struct IPEndPoint pkt_readIPEndPoint(uint8_t **pkt) {
+struct IPEndPoint pkt_readIPEndPoint(const uint8_t **pkt) {
 	struct IPEndPoint out;
 	out.address = pkt_readString(pkt);
 	out.port = pkt_readUint32(pkt);
 	return out;
 }
-struct AuthenticateUserRequest pkt_readAuthenticateUserRequest(uint8_t **pkt) {
+struct AuthenticateUserRequest pkt_readAuthenticateUserRequest(const uint8_t **pkt) {
 	struct AuthenticateUserRequest out;
 	out.base = pkt_readBaseMasterServerReliableResponse(pkt);
 	out.authenticationToken = pkt_readAuthenticationToken(pkt);
 	return out;
 }
-struct AuthenticateUserResponse pkt_readAuthenticateUserResponse(uint8_t **pkt) {
+struct AuthenticateUserResponse pkt_readAuthenticateUserResponse(const uint8_t **pkt) {
 	struct AuthenticateUserResponse out;
 	out.base = pkt_readBaseMasterServerReliableResponse(pkt);
 	out.result = pkt_readUint8(pkt);
 	return out;
 }
-struct ConnectToServerResponse pkt_readConnectToServerResponse(uint8_t **pkt) {
+struct ConnectToServerResponse pkt_readConnectToServerResponse(const uint8_t **pkt) {
 	struct ConnectToServerResponse out;
-	out = (struct ConnectToServerResponse){};
+	out.base = pkt_readBaseMasterServerReliableResponse(pkt);
+	out.result = pkt_readUint8(pkt);
+	if(out.result == GetPublicServersResponse_Result_Success) {
+		out.userId = pkt_readString(pkt);
+		out.userName = pkt_readString(pkt);
+		out.secret = pkt_readString(pkt);
+		out.selectionMask = pkt_readBeatmapLevelSelectionMask(pkt);
+		out.flags = pkt_readUint8(pkt);
+		out.remoteEndPoint = pkt_readIPEndPoint(pkt);
+		pkt_readUint8Array(pkt, out.random, 32);
+		out.publicKey = pkt_readByteArrayNetSerializable(pkt);
+		out.code = pkt_readString(pkt);
+		out.configuration = pkt_readGameplayServerConfiguration(pkt);
+		out.managerId = pkt_readString(pkt);
+	}
 	return out;
 }
-struct ConnectToServerRequest pkt_readConnectToServerRequest(uint8_t **pkt) {
+struct ConnectToServerRequest pkt_readConnectToServerRequest(const uint8_t **pkt) {
 	struct ConnectToServerRequest out;
 	out = (struct ConnectToServerRequest){};
 	return out;
 }
-struct UserMessageReceivedAcknowledge pkt_readUserMessageReceivedAcknowledge(uint8_t **pkt) {
+struct UserMessageReceivedAcknowledge pkt_readUserMessageReceivedAcknowledge(const uint8_t **pkt) {
 	struct UserMessageReceivedAcknowledge out;
 	out.base = pkt_readBaseMasterServerAcknowledgeMessage(pkt);
 	return out;
 }
-struct UserMultipartMessage pkt_readUserMultipartMessage(uint8_t **pkt) {
+struct UserMultipartMessage pkt_readUserMultipartMessage(const uint8_t **pkt) {
 	struct UserMultipartMessage out;
 	out.base = pkt_readBaseMasterServerMultipartMessage(pkt);
 	return out;
 }
-struct SessionKeepaliveMessage pkt_readSessionKeepaliveMessage(uint8_t **pkt) {
+struct SessionKeepaliveMessage pkt_readSessionKeepaliveMessage(const uint8_t **pkt) {
 	struct SessionKeepaliveMessage out;
 	out = (struct SessionKeepaliveMessage){};
 	return out;
 }
-struct GetPublicServersRequest pkt_readGetPublicServersRequest(uint8_t **pkt) {
+struct GetPublicServersRequest pkt_readGetPublicServersRequest(const uint8_t **pkt) {
 	struct GetPublicServersRequest out;
 	out.base = pkt_readBaseMasterServerReliableRequest(pkt);
 	out.userId = pkt_readString(pkt);
@@ -358,11 +372,11 @@ struct GetPublicServersRequest pkt_readGetPublicServersRequest(uint8_t **pkt) {
 	out.configuration = pkt_readGameplayServerConfiguration(pkt);
 	return out;
 }
-struct GetPublicServersResponse pkt_readGetPublicServersResponse(uint8_t **pkt) {
+struct GetPublicServersResponse pkt_readGetPublicServersResponse(const uint8_t **pkt) {
 	struct GetPublicServersResponse out;
 	out.base = pkt_readBaseMasterServerReliableResponse(pkt);
 	out.result = pkt_readUint8(pkt);
-	if(out.result == 0) {
+	if(out.result == GetPublicServersResponse_Result_Success) {
 		out.publicServerCount = pkt_readVarUint32(pkt);
 		if(out.publicServerCount > 16384) {
 			fprintf(stderr, "Buffer overflow in read of GetPublicServersResponse.publicServers: %u > 16384\n", (uint32_t)out.publicServerCount);
@@ -373,7 +387,7 @@ struct GetPublicServersResponse pkt_readGetPublicServersResponse(uint8_t **pkt) 
 	}
 	return out;
 }
-struct AuthenticateDedicatedServerRequest pkt_readAuthenticateDedicatedServerRequest(uint8_t **pkt) {
+struct AuthenticateDedicatedServerRequest pkt_readAuthenticateDedicatedServerRequest(const uint8_t **pkt) {
 	struct AuthenticateDedicatedServerRequest out;
 	out.base = pkt_readBaseMasterServerReliableResponse(pkt);
 	out.dedicatedServerId = pkt_readString(pkt);
@@ -382,12 +396,12 @@ struct AuthenticateDedicatedServerRequest pkt_readAuthenticateDedicatedServerReq
 	out.timestamp = pkt_readUint64(pkt);
 	return out;
 }
-struct AuthenticateDedicatedServerResponse pkt_readAuthenticateDedicatedServerResponse(uint8_t **pkt) {
+struct AuthenticateDedicatedServerResponse pkt_readAuthenticateDedicatedServerResponse(const uint8_t **pkt) {
 	struct AuthenticateDedicatedServerResponse out;
 	out = (struct AuthenticateDedicatedServerResponse){};
 	return out;
 }
-struct CreateDedicatedServerInstanceRequest pkt_readCreateDedicatedServerInstanceRequest(uint8_t **pkt) {
+struct CreateDedicatedServerInstanceRequest pkt_readCreateDedicatedServerInstanceRequest(const uint8_t **pkt) {
 	struct CreateDedicatedServerInstanceRequest out;
 	out.base = pkt_readBaseMasterServerReliableRequest(pkt);
 	out.secret = pkt_readString(pkt);
@@ -400,69 +414,69 @@ struct CreateDedicatedServerInstanceRequest pkt_readCreateDedicatedServerInstanc
 	out.configuration = pkt_readGameplayServerConfiguration(pkt);
 	return out;
 }
-struct CreateDedicatedServerInstanceResponse pkt_readCreateDedicatedServerInstanceResponse(uint8_t **pkt) {
+struct CreateDedicatedServerInstanceResponse pkt_readCreateDedicatedServerInstanceResponse(const uint8_t **pkt) {
 	struct CreateDedicatedServerInstanceResponse out;
 	out = (struct CreateDedicatedServerInstanceResponse){};
 	return out;
 }
-struct DedicatedServerInstanceNoLongerAvailableRequest pkt_readDedicatedServerInstanceNoLongerAvailableRequest(uint8_t **pkt) {
+struct DedicatedServerInstanceNoLongerAvailableRequest pkt_readDedicatedServerInstanceNoLongerAvailableRequest(const uint8_t **pkt) {
 	struct DedicatedServerInstanceNoLongerAvailableRequest out;
 	out = (struct DedicatedServerInstanceNoLongerAvailableRequest){};
 	return out;
 }
-struct DedicatedServerHeartbeatRequest pkt_readDedicatedServerHeartbeatRequest(uint8_t **pkt) {
+struct DedicatedServerHeartbeatRequest pkt_readDedicatedServerHeartbeatRequest(const uint8_t **pkt) {
 	struct DedicatedServerHeartbeatRequest out;
 	out = (struct DedicatedServerHeartbeatRequest){};
 	return out;
 }
-struct DedicatedServerHeartbeatResponse pkt_readDedicatedServerHeartbeatResponse(uint8_t **pkt) {
+struct DedicatedServerHeartbeatResponse pkt_readDedicatedServerHeartbeatResponse(const uint8_t **pkt) {
 	struct DedicatedServerHeartbeatResponse out;
 	out = (struct DedicatedServerHeartbeatResponse){};
 	return out;
 }
-struct DedicatedServerInstanceStatusUpdateRequest pkt_readDedicatedServerInstanceStatusUpdateRequest(uint8_t **pkt) {
+struct DedicatedServerInstanceStatusUpdateRequest pkt_readDedicatedServerInstanceStatusUpdateRequest(const uint8_t **pkt) {
 	struct DedicatedServerInstanceStatusUpdateRequest out;
 	out = (struct DedicatedServerInstanceStatusUpdateRequest){};
 	return out;
 }
-struct DedicatedServerShutDownRequest pkt_readDedicatedServerShutDownRequest(uint8_t **pkt) {
+struct DedicatedServerShutDownRequest pkt_readDedicatedServerShutDownRequest(const uint8_t **pkt) {
 	struct DedicatedServerShutDownRequest out;
 	out = (struct DedicatedServerShutDownRequest){};
 	return out;
 }
-struct DedicatedServerPrepareForConnectionRequest pkt_readDedicatedServerPrepareForConnectionRequest(uint8_t **pkt) {
+struct DedicatedServerPrepareForConnectionRequest pkt_readDedicatedServerPrepareForConnectionRequest(const uint8_t **pkt) {
 	struct DedicatedServerPrepareForConnectionRequest out;
 	out = (struct DedicatedServerPrepareForConnectionRequest){};
 	return out;
 }
-struct DedicatedServerMessageReceivedAcknowledge pkt_readDedicatedServerMessageReceivedAcknowledge(uint8_t **pkt) {
+struct DedicatedServerMessageReceivedAcknowledge pkt_readDedicatedServerMessageReceivedAcknowledge(const uint8_t **pkt) {
 	struct DedicatedServerMessageReceivedAcknowledge out;
 	out.base = pkt_readBaseMasterServerAcknowledgeMessage(pkt);
 	return out;
 }
-struct DedicatedServerMultipartMessage pkt_readDedicatedServerMultipartMessage(uint8_t **pkt) {
+struct DedicatedServerMultipartMessage pkt_readDedicatedServerMultipartMessage(const uint8_t **pkt) {
 	struct DedicatedServerMultipartMessage out;
 	out.base = pkt_readBaseMasterServerMultipartMessage(pkt);
 	return out;
 }
-struct DedicatedServerPrepareForConnectionResponse pkt_readDedicatedServerPrepareForConnectionResponse(uint8_t **pkt) {
+struct DedicatedServerPrepareForConnectionResponse pkt_readDedicatedServerPrepareForConnectionResponse(const uint8_t **pkt) {
 	struct DedicatedServerPrepareForConnectionResponse out;
 	out = (struct DedicatedServerPrepareForConnectionResponse){};
 	return out;
 }
-struct ClientHelloRequest pkt_readClientHelloRequest(uint8_t **pkt) {
+struct ClientHelloRequest pkt_readClientHelloRequest(const uint8_t **pkt) {
 	struct ClientHelloRequest out;
 	out.base = pkt_readBaseMasterServerReliableRequest(pkt);
 	pkt_readUint8Array(pkt, out.random, 32);
 	return out;
 }
-struct HelloVerifyRequest pkt_readHelloVerifyRequest(uint8_t **pkt) {
+struct HelloVerifyRequest pkt_readHelloVerifyRequest(const uint8_t **pkt) {
 	struct HelloVerifyRequest out;
 	out.base = pkt_readBaseMasterServerReliableResponse(pkt);
 	pkt_readUint8Array(pkt, out.cookie, 32);
 	return out;
 }
-struct ClientHelloWithCookieRequest pkt_readClientHelloWithCookieRequest(uint8_t **pkt) {
+struct ClientHelloWithCookieRequest pkt_readClientHelloWithCookieRequest(const uint8_t **pkt) {
 	struct ClientHelloWithCookieRequest out;
 	out.base = pkt_readBaseMasterServerReliableRequest(pkt);
 	out.certificateResponseId = pkt_readUint32(pkt);
@@ -470,7 +484,7 @@ struct ClientHelloWithCookieRequest pkt_readClientHelloWithCookieRequest(uint8_t
 	pkt_readUint8Array(pkt, out.cookie, 32);
 	return out;
 }
-struct ServerHelloRequest pkt_readServerHelloRequest(uint8_t **pkt) {
+struct ServerHelloRequest pkt_readServerHelloRequest(const uint8_t **pkt) {
 	struct ServerHelloRequest out;
 	out.base = pkt_readBaseMasterServerReliableResponse(pkt);
 	pkt_readUint8Array(pkt, out.random, 32);
@@ -478,7 +492,7 @@ struct ServerHelloRequest pkt_readServerHelloRequest(uint8_t **pkt) {
 	out.signature = pkt_readByteArrayNetSerializable(pkt);
 	return out;
 }
-struct ServerCertificateRequest pkt_readServerCertificateRequest(uint8_t **pkt) {
+struct ServerCertificateRequest pkt_readServerCertificateRequest(const uint8_t **pkt) {
 	struct ServerCertificateRequest out;
 	out.base = pkt_readBaseMasterServerReliableResponse(pkt);
 	out.certificateCount = pkt_readVarUint32(pkt);
@@ -490,28 +504,28 @@ struct ServerCertificateRequest pkt_readServerCertificateRequest(uint8_t **pkt) 
 		out.certificateList[i] = pkt_readByteArrayNetSerializable(pkt);
 	return out;
 }
-struct ServerCertificateResponse pkt_readServerCertificateResponse(uint8_t **pkt) {
+struct ServerCertificateResponse pkt_readServerCertificateResponse(const uint8_t **pkt) {
 	struct ServerCertificateResponse out;
 	out = (struct ServerCertificateResponse){};
 	return out;
 }
-struct ClientKeyExchangeRequest pkt_readClientKeyExchangeRequest(uint8_t **pkt) {
+struct ClientKeyExchangeRequest pkt_readClientKeyExchangeRequest(const uint8_t **pkt) {
 	struct ClientKeyExchangeRequest out;
 	out.base = pkt_readBaseMasterServerReliableResponse(pkt);
 	out.clientPublicKey = pkt_readByteArrayNetSerializable(pkt);
 	return out;
 }
-struct ChangeCipherSpecRequest pkt_readChangeCipherSpecRequest(uint8_t **pkt) {
+struct ChangeCipherSpecRequest pkt_readChangeCipherSpecRequest(const uint8_t **pkt) {
 	struct ChangeCipherSpecRequest out;
 	out.base = pkt_readBaseMasterServerReliableResponse(pkt);
 	return out;
 }
-struct HandshakeMessageReceivedAcknowledge pkt_readHandshakeMessageReceivedAcknowledge(uint8_t **pkt) {
+struct HandshakeMessageReceivedAcknowledge pkt_readHandshakeMessageReceivedAcknowledge(const uint8_t **pkt) {
 	struct HandshakeMessageReceivedAcknowledge out;
 	out.base = pkt_readBaseMasterServerAcknowledgeMessage(pkt);
 	return out;
 }
-struct HandshakeMultipartMessage pkt_readHandshakeMultipartMessage(uint8_t **pkt) {
+struct HandshakeMultipartMessage pkt_readHandshakeMultipartMessage(const uint8_t **pkt) {
 	struct HandshakeMultipartMessage out;
 	out.base = pkt_readBaseMasterServerMultipartMessage(pkt);
 	return out;
@@ -561,15 +575,54 @@ void pkt_writeBaseMasterServerMultipartMessage(uint8_t **pkt, struct BaseMasterS
 	pkt_writeVarUint32(pkt, in.totalLength);
 	pkt_writeUint8Array(pkt, in.data, in.length);
 }
+void pkt_writeBitMask128(uint8_t **pkt, struct BitMask128 in) {
+	pkt_writeUint64(pkt, in._d0);
+	pkt_writeUint64(pkt, in._d1);
+}
+void pkt_writeSongPackMask(uint8_t **pkt, struct SongPackMask in) {
+	pkt_writeBitMask128(pkt, in._bloomFilter);
+}
+void pkt_writeBeatmapLevelSelectionMask(uint8_t **pkt, struct BeatmapLevelSelectionMask in) {
+	pkt_writeUint8(pkt, in.difficulties);
+	pkt_writeUint32(pkt, in.modifiers);
+	pkt_writeSongPackMask(pkt, in.songPacks);
+}
+void pkt_writeGameplayServerConfiguration(uint8_t **pkt, struct GameplayServerConfiguration in) {
+	pkt_writeVarInt32(pkt, in.maxPlayerCount);
+	pkt_writeVarInt32(pkt, in.discoveryPolicy);
+	pkt_writeVarInt32(pkt, in.invitePolicy);
+	pkt_writeVarInt32(pkt, in.gameplayServerMode);
+	pkt_writeVarInt32(pkt, in.songSelectionMode);
+	pkt_writeVarInt32(pkt, in.gameplayServerControlSettings);
+}
 void pkt_writePublicServerInfo(uint8_t **pkt, struct PublicServerInfo in) {
 	pkt_writeServerCode(pkt, in.code);
 	pkt_writeVarInt32(pkt, in.currentPlayerCount);
+}
+void pkt_writeIPEndPoint(uint8_t **pkt, struct IPEndPoint in) {
+	pkt_writeString(pkt, in.address);
+	pkt_writeUint32(pkt, in.port);
 }
 void pkt_writeAuthenticateUserResponse(uint8_t **pkt, struct AuthenticateUserResponse in) {
 	pkt_writeBaseMasterServerReliableResponse(pkt, in.base);
 	pkt_writeUint8(pkt, in.result);
 }
 void pkt_writeConnectToServerResponse(uint8_t **pkt, struct ConnectToServerResponse in) {
+	pkt_writeBaseMasterServerReliableResponse(pkt, in.base);
+	pkt_writeUint8(pkt, in.result);
+	if(in.result == GetPublicServersResponse_Result_Success) {
+		pkt_writeString(pkt, in.userId);
+		pkt_writeString(pkt, in.userName);
+		pkt_writeString(pkt, in.secret);
+		pkt_writeBeatmapLevelSelectionMask(pkt, in.selectionMask);
+		pkt_writeUint8(pkt, in.flags);
+		pkt_writeIPEndPoint(pkt, in.remoteEndPoint);
+		pkt_writeUint8Array(pkt, in.random, 32);
+		pkt_writeByteArrayNetSerializable(pkt, in.publicKey);
+		pkt_writeString(pkt, in.code);
+		pkt_writeGameplayServerConfiguration(pkt, in.configuration);
+		pkt_writeString(pkt, in.managerId);
+	}
 }
 void pkt_writeConnectToServerRequest(uint8_t **pkt, struct ConnectToServerRequest in) {
 }
@@ -584,7 +637,7 @@ void pkt_writeSessionKeepaliveMessage(uint8_t **pkt, struct SessionKeepaliveMess
 void pkt_writeGetPublicServersResponse(uint8_t **pkt, struct GetPublicServersResponse in) {
 	pkt_writeBaseMasterServerReliableResponse(pkt, in.base);
 	pkt_writeUint8(pkt, in.result);
-	if(in.result == 0) {
+	if(in.result == GetPublicServersResponse_Result_Success) {
 		pkt_writeVarUint32(pkt, in.publicServerCount);
 		for(uint32_t i = 0; i < in.publicServerCount; ++i)
 			pkt_writePublicServerInfo(pkt, in.publicServers[i]);
@@ -738,10 +791,25 @@ void pkt_logAuthenticateUserRequest(const char *name, char *buf, char *it, struc
 void pkt_logAuthenticateUserResponse(const char *name, char *buf, char *it, struct AuthenticateUserResponse in) {
 	it += sprintf(it, "%s.", name);
 	pkt_logBaseMasterServerReliableResponse("base", buf, it, in.base);
-	pkt_logUint8("result", buf, it, in.result);
+	fprintf(stderr, "%sresult=%s\n", buf, reflect(AuthenticateUserResponse_Result, in.result));
 }
 void pkt_logConnectToServerResponse(const char *name, char *buf, char *it, struct ConnectToServerResponse in) {
 	it += sprintf(it, "%s.", name);
+	pkt_logBaseMasterServerReliableResponse("base", buf, it, in.base);
+	fprintf(stderr, "%sresult=%s\n", buf, reflect(ConnectToServerResponse_Result, in.result));
+	if(in.result == GetPublicServersResponse_Result_Success) {
+		pkt_logString("userId", buf, it, in.userId);
+		pkt_logString("userName", buf, it, in.userName);
+		pkt_logString("secret", buf, it, in.secret);
+		pkt_logBeatmapLevelSelectionMask("selectionMask", buf, it, in.selectionMask);
+		pkt_logUint8("flags", buf, it, in.flags);
+		pkt_logIPEndPoint("remoteEndPoint", buf, it, in.remoteEndPoint);
+		pkt_logUint8Array("random", buf, it, in.random, 32);
+		pkt_logByteArrayNetSerializable("publicKey", buf, it, in.publicKey);
+		pkt_logString("code", buf, it, in.code);
+		pkt_logGameplayServerConfiguration("configuration", buf, it, in.configuration);
+		pkt_logString("managerId", buf, it, in.managerId);
+	}
 }
 void pkt_logConnectToServerRequest(const char *name, char *buf, char *it, struct ConnectToServerRequest in) {
 	it += sprintf(it, "%s.", name);
@@ -770,8 +838,8 @@ void pkt_logGetPublicServersRequest(const char *name, char *buf, char *it, struc
 void pkt_logGetPublicServersResponse(const char *name, char *buf, char *it, struct GetPublicServersResponse in) {
 	it += sprintf(it, "%s.", name);
 	pkt_logBaseMasterServerReliableResponse("base", buf, it, in.base);
-	pkt_logUint8("result", buf, it, in.result);
-	if(in.result == 0) {
+	fprintf(stderr, "%sresult=%s\n", buf, reflect(GetPublicServersResponse_Result, in.result));
+	if(in.result == GetPublicServersResponse_Result_Success) {
 		pkt_logVarUint32("publicServerCount", buf, it, in.publicServerCount);
 		for(uint32_t i = 0; i < in.publicServerCount; ++i)
 			pkt_logPublicServerInfo("publicServers", buf, it, in.publicServers[i]);

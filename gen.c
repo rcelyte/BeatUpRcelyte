@@ -336,8 +336,8 @@ const char *parse_struct(const char *s, uint32_t indent) {
 
 		struct_it += sprintf(struct_it, "struct %s {\n", name);
 		if(des) {
-			dec_it += sprintf(dec_it, "struct %s pkt_read%s(uint8_t **pkt);\n", name, name);
-			des_it += sprintf(des_it, "struct %s pkt_read%s(uint8_t **pkt) {\n\tstruct %s out;\n", name, name, name);
+			dec_it += sprintf(dec_it, "struct %s pkt_read%s(const uint8_t **pkt);\n", name, name);
+			des_it += sprintf(des_it, "struct %s pkt_read%s(const uint8_t **pkt) {\n\tstruct %s out;\n", name, name, name);
 		}
 		if(ser) {
 			dec_it += sprintf(dec_it, "void pkt_write%s(uint8_t **pkt, struct %s in);\n", name, name);

@@ -14,7 +14,7 @@ LIBS := libmbedtls.a libmbedx509.a libmbedcrypto.a
 OBJS += $(LIBS:%=$(OBJDIR)/%)
 
 CFLAGS := -std=gnu11 -Imbedtls/include -Wall -Wno-unused-function -Werror
-LDFLAGS := -Wl,--gc-sections,--fatal-warnings
+LDFLAGS := -s -O2 -no-pie -Wl,--gc-sections,--fatal-warnings
 
 default: beatupserver
 
@@ -26,7 +26,7 @@ beatupserver.%: $(OBJS)
 	@echo "[cc $@]"
 	$(CC) $(OBJS) $(LDFLAGS) -o "$@"
 
-$(OBJDIR)/%.c.o: %.c mbedtls/.git makefile
+$(OBJDIR)/%.c.o: %.c $(OBJDIR)/libs.mk mbedtls/.git makefile
 	@echo "[cc $(notdir $@)]"
 	@mkdir -p "$(@D)"
 	$(CC) $(CFLAGS) -c "$<" -o "$@" -MMD -MP
