@@ -27,7 +27,7 @@ struct ResendPacket {
 };
 struct ResendSparsePtr {
 	_Bool shouldResend;
-	clock_t lastSend;
+	uint32_t lastSend;
 	uint32_t requestId;
 	uint32_t data;
 };
@@ -45,7 +45,7 @@ struct MasterServerSession {
 	struct SS addr;
 	uint32_t lastSentRequestId;
 	char gameId[22];
-	clock_t lastKeepAlive;
+	uint32_t lastKeepAlive;
 	uint32_t resend_count;
 	struct ResendSparsePtr resend[RESEND_BUFFER];
 	struct ResendPacket resend_data[RESEND_BUFFER];
@@ -114,20 +114,24 @@ _Bool MasterServerSession_set_clientPublicKey(struct MasterServerSession *sessio
 void MasterServerSession_set_epoch(struct MasterServerSession *session, uint32_t epoch) {
 	session->epoch = epoch;
 }
-_Bool MasterServerSession_set_state(struct MasterServerSession *session, HandshakeMessageType state) {
-	if(session->state != state) {
-		session->state = state;
-		return 0;
-	}
-	return 1;
+_Bool MasterServerSession_change_state(struct MasterServerSession *session, HandshakeMessageType old, HandshakeMessageType new) {
+	if(session->state != old)
+		return 1;
+	session->state = new;
+	return 0;
+}
+void MasterServerSession_set_state(struct MasterServerSession *session, HandshakeMessageType state) {
+	session->state = state;
 }
 char *MasterServerSession_get_gameId(struct MasterServerSession *session) {
 	return session->gameId;
 }
+uint32_t MasterServerSession_get_lastKeepAlive(struct MasterServerSession *session) {
+	return session->lastKeepAlive;
+}
 uint32_t *MasterServerSession_ClientHelloWithCookieRequest_requestId(struct MasterServerSession *session) {
 	return &session->ClientHelloWithCookieRequest_requestId;
 }
-
 struct SS MasterServerSession_get_addr(struct MasterServerSession *session) {
 	return session->addr;
 }
@@ -178,11 +182,18 @@ static void net_cookie(mbedtls_ctr_drbg_context *ctr_drbg, uint8_t *out) {
 	mbedtls_ctr_drbg_random(ctr_drbg, out, 32);
 }
 
+uint32_t net_time() {
+	struct timespec now;
+	if(clock_gettime(CLOCK_MONOTONIC, &now))
+		return 0;
+	return now.tv_sec * 1000 + now.tv_nsec / 1000000;
+}
+
 static struct ResendPacket *add_resend(struct MasterServerSession *session, PacketProperty property, uint32_t requestId, _Bool shouldResend) {
 	if(session->resend_count < RESEND_BUFFER) {
 		struct ResendSparsePtr *p = &session->resend[session->resend_count++];
 		p->shouldResend = shouldResend;
-		p->lastSend = clock();
+		p->lastSend = net_time();
 		p->requestId = requestId;
 		session->resend_data[p->data].property = property;
 		return &session->resend_data[p->data];
@@ -268,34 +279,46 @@ static struct MasterServerSession *onConnect_default(struct NetContext *ctx, str
 
 _Bool net_init(struct NetContext *ctx, uint16_t port, struct MasterServerSession *(*onConnect)(struct NetContext *ctx, struct SS addr)) {
 	ctx->sockfd = socket(AF_INET6, SOCK_DGRAM, 0);
-	if(ctx->sockfd >= 0) {
-		const struct sockaddr_in6 addr = {
-			.sin6_family = AF_INET6,
-			.sin6_port = htons(port),
-			.sin6_flowinfo = 0,
-			.sin6_addr = IN6ADDR_ANY_INIT,
-			.sin6_scope_id = 0,
-		};
-		if(bind(ctx->sockfd, (const struct sockaddr*)&addr, sizeof(addr)) < 0) {
-			close(ctx->sockfd);
-			ctx->sockfd = -1;
-			fprintf(stderr, "Error while binding socket\n");
-		}
-		struct SS realAddr = {sizeof(struct sockaddr_storage)};
-		getsockname(ctx->sockfd, &realAddr.sa, &realAddr.len);
-		char namestr[INET6_ADDRSTRLEN + 8];
-		net_tostr(&realAddr, namestr);
-		fprintf(stderr, "[NET] Bound %s\n", namestr);
-	}
-	/*int32_t prop = 1;
-	if(setsockopt(ctx->sockfd, SOL_SOCKET, SO_REUSEADDR, (void*)&prop, sizeof(int32_t))) {fprintf(stderr, "setsockopt(SO_REUSEADDR) failed\n"); close(sockfd); return -1;}*/
 	mbedtls_ctr_drbg_init(&ctx->ctr_drbg);
 	mbedtls_entropy_init(&ctx->entropy);
+	mbedtls_ecp_group_init(&ctx->grp);
+	if(ctx->sockfd == -1) {
+		fprintf(stderr, "Socket creation failed\n");
+		return -1;
+	}
+	const struct sockaddr_in6 addr = {
+		.sin6_family = AF_INET6,
+		.sin6_port = htons(port),
+		.sin6_flowinfo = 0,
+		.sin6_addr = IN6ADDR_ANY_INIT,
+		.sin6_scope_id = 0,
+	};
+	if(bind(ctx->sockfd, (const struct sockaddr*)&addr, sizeof(addr)) < 0) {
+		close(ctx->sockfd);
+		ctx->sockfd = -1;
+		fprintf(stderr, "Socket binding failed\n");
+		return 1;
+	}
+	/*struct timeval timeout;
+	timeout.tv_sec = 0;
+	timeout.tv_usec = 100000;
+	if(setsockopt(ctx->sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+		close(ctx->sockfd);
+		ctx->sockfd = -1;
+		fprintf(stderr, "setsockopt(SO_RCVTIMEO) failed\n");
+		return 1;
+	}*/
+	/*int32_t prop = 1;
+	if(setsockopt(ctx->sockfd, SOL_SOCKET, SO_REUSEADDR, (void*)&prop, sizeof(int32_t))) {fprintf(stderr, "setsockopt(SO_REUSEADDR) failed\n"); close(sockfd); return -1;}*/
+	struct SS realAddr = {sizeof(struct sockaddr_storage)};
+	getsockname(ctx->sockfd, &realAddr.sa, &realAddr.len);
+	char namestr[INET6_ADDRSTRLEN + 8];
+	net_tostr(&realAddr, namestr);
+	fprintf(stderr, "[NET] Bound %s\n", namestr);
 	if(mbedtls_ctr_drbg_seed(&ctx->ctr_drbg, mbedtls_entropy_func, &ctx->entropy, (const uint8_t*)u8"M@$73RS€RV3R", 14) != 0) {
 		fprintf(stderr, "mbedtls_ctr_drbg_seed() failed\n");
 		return 1;
 	}
-	mbedtls_ecp_group_init(&ctx->grp);
 	if(mbedtls_ecp_group_load(&ctx->grp, MBEDTLS_ECP_DP_SECP384R1)) {
 		fprintf(stderr, "mbedtls_ecp_group_load() failed\n");
 		return 1;
@@ -303,7 +326,13 @@ _Bool net_init(struct NetContext *ctx, uint16_t port, struct MasterServerSession
 	ctx->sessionList = NULL;
 	ctx->onConnect = onConnect ? onConnect : onConnect_default;
 	ctx->dirt = NULL;
-	return ctx->sockfd == -1;
+	return 0;
+}
+
+static void net_free_session(struct MasterServerSession *session) {
+	EncryptionState_free(&session->encryptionState);
+	mbedtls_mpi_free(&session->serverSecret);
+	mbedtls_ecp_point_free(&session->serverPublic);
 }
 
 static struct MasterServerSession *net_delete_session(struct MasterServerSession *session) {
@@ -311,7 +340,7 @@ static struct MasterServerSession *net_delete_session(struct MasterServerSession
 	char addrstr[INET6_ADDRSTRLEN + 8];
 	net_tostr(&session->addr, addrstr);
 	fprintf(stderr, "[NET] disconnect %s\n", addrstr);
-	EncryptionState_free(&session->encryptionState);
+	net_free_session(session);
 	free(session);
 	return next;
 }
@@ -332,6 +361,9 @@ struct MasterServerSession *net_create_session(struct NetContext *ctx, struct SS
 	}
 	session->next = ctx->sessionList;
 	session->addr = addr;
+	session->encryptionState.initialized = 0;
+	mbedtls_mpi_init(&session->serverSecret);
+	mbedtls_ecp_point_init(&session->serverPublic);
 	if(net_reset_session(ctx, session)) {
 		free(session);
 		return NULL;
@@ -347,21 +379,17 @@ struct MasterServerSession *net_create_session(struct NetContext *ctx, struct SS
 _Bool net_reset_session(struct NetContext *ctx, struct MasterServerSession *session) {
 	struct MasterServerSession *next = session->next;
 	struct SS addr = session->addr;
+	net_free_session(session);
 	memset(session, 0, sizeof(*session));
 	session->next = next;
 	net_cookie(&ctx->ctr_drbg, session->serverRandom);
 	net_cookie(&ctx->ctr_drbg, session->cookie);
-	session->encryptionState.initialized = 0;
 	session->state = 255;
-	session->ClientHelloWithCookieRequest_requestId = 0;
 	session->addr = addr;
-	session->lastSentRequestId = 0;
-	session->resend_count = 0;
+	session->lastKeepAlive = net_time();
 	for(uint32_t i = 0; i < RESEND_BUFFER; ++i)
 		session->resend[i].data = i;
 
-	mbedtls_mpi_init(&session->serverSecret);
-	mbedtls_ecp_point_init(&session->serverPublic);
 	if(mbedtls_ecp_gen_keypair(&ctx->grp, &session->serverSecret, &session->serverPublic, mbedtls_ctr_drbg_random, &ctx->ctr_drbg)) {
 		fprintf(stderr, "mbedtls_ecp_gen_keypair() failed\n");
 		return 1;
@@ -385,52 +413,44 @@ void net_cleanup(struct NetContext *ctx) {
 	ctx->sockfd = -1;
 }
 
-static uint32_t millis() {
-    struct timespec now;
-    if(clock_gettime(CLOCK_MONOTONIC, &now))
-    	return 0;
-    return now.tv_sec * 1000 + now.tv_nsec / 1000000;
-}
-
 uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct MasterServerSession **session, PacketProperty *property, uint8_t **pkt) {
 	retry:; // tail calls are theoretical but stack overflows are real
-	int32_t res;
-	do {
-		uint32_t currentTime = millis();
-		for(struct MasterServerSession **sp = &ctx->sessionList; *sp;) {
-			if(currentTime - (*sp)->lastKeepAlive > 180000) { // this filters the RFC-1149 user
-				*sp = net_delete_session(*sp);
-			} else {
-				struct MasterServerSession *s = *sp;
-				for(struct ResendSparsePtr *p = s->resend; p < &s->resend[s->resend_count]; ++p) {
-					if(currentTime - p->lastSend >= CLOCKS_PER_SEC / 10) {
-						_send(ctx, s, s->resend_data[p->data].property, s->resend_data[p->data].data, s->resend_data[p->data].len, 0);
-						p->lastSend += CLOCKS_PER_SEC / 10;
-					}
+	uint32_t currentTime = net_time(), longestIdle = 0, hasResends = 0;
+	for(struct MasterServerSession **sp = &ctx->sessionList; *sp;) {
+		uint32_t idleTime = currentTime - (*sp)->lastKeepAlive;
+		if(idleTime > 180000) { // this filters the RFC-1149 user
+			*sp = net_delete_session(*sp);
+		} else {
+			if(idleTime > longestIdle)
+				longestIdle = idleTime;
+			hasResends |= (*sp)->resend_count;
+			for(struct ResendSparsePtr *p = (*sp)->resend; p < &(*sp)->resend[(*sp)->resend_count]; ++p) {
+				if(currentTime - p->lastSend >= 100) {
+					_send(ctx, *sp, (*sp)->resend_data[p->data].property, (*sp)->resend_data[p->data].data, (*sp)->resend_data[p->data].len, 0);
+					p->lastSend += 100;
 				}
-				sp = &(*sp)->next;
 			}
+			sp = &(*sp)->next;
 		}
-		fd_set fds;
-		FD_ZERO(&fds);
-		FD_SET(ctx->sockfd, &fds);
-		struct timeval timeout = {
-			.tv_sec = 0,
-			.tv_usec = 100000,
-		};
-		res = select(ctx->sockfd+1, &fds, NULL, NULL, &timeout);
-	} while(res == 0);
-	if(res == -1)
+	}
+	struct timeval timeout;
+	timeout.tv_sec = hasResends ? 0 : (180000 - longestIdle) / 1000; // Don't loop if there's nothing to do
+	timeout.tv_usec = 100000;
+	if(setsockopt(ctx->sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+		fprintf(stderr, "setsockopt(SO_RCVTIMEO) failed\n");
 		return 0;
-
+	}
 	struct SS addr = {sizeof(struct sockaddr_storage)};
 	#ifdef WINSOCK_VERSION
 	ssize_t size = recvfrom(ctx->sockfd, (char*)buf, buf_len, 0, &addr.sa, &addr.len);
 	#else
 	ssize_t size = recvfrom(ctx->sockfd, buf, buf_len, 0, &addr.sa, &addr.len);
 	#endif
-	if(size <= 0)
+	if(size <= 0) {
+		if(errno == EAGAIN || errno == EWOULDBLOCK)
+			goto retry;
 		return 0;
+	}
 	if(&buf[buf_len] < ctx->dirt) {
 		fprintf(stderr, "BAD BUFFER CONTENTS\n");
 		abort();
@@ -452,17 +472,17 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct
 		if(!*session)
 			goto retry;
 	}
-	(*session)->lastKeepAlive = millis();
 	// fprintf(stderr, "[NET] recvfrom[%zi]\n", size);
 	*pkt = buf;
 	struct PacketEncryptionLayer layer = pkt_readPacketEncryptionLayer((const uint8_t**)pkt);
-	if(layer.encrypted == 1) {
+	if(layer.encrypted == 1) { // TODO: filter unencrypted?
 		uint32_t length = &buf[size] - *pkt;
 		if(EncryptionState_decrypt(&(*session)->encryptionState, layer, *pkt, &length)) {
 			fprintf(stderr, "Packet decryption failed\n");
 			goto retry;
 		}
 		size = length + (*pkt - buf);
+		(*session)->lastKeepAlive = net_time();
 	} else if(layer.encrypted) {
 		fprintf(stderr, "Invalid packet\n");
 		goto retry;

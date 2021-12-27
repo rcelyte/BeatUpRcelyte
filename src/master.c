@@ -33,34 +33,34 @@ static void send_ack(struct Context *ctx, struct MasterServerSession *session, u
 }
 
 static void handle_ClientHelloRequest(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf, const uint8_t **data) {
+	if(MasterServerSession_change_state(session, 255, HandshakeMessageType_ClientHelloRequest)) {
+		if(net_time() - MasterServerSession_get_lastKeepAlive(session) < 5000) // 5 second timeout to prevent clients from getting "locked out" if their previous session hasn't closed or timed out yet
+			return;
+		net_reset_session(&ctx->net, session); // security or something idk
+		MasterServerSession_set_state(session, HandshakeMessageType_ClientHelloRequest);
+	}
 	struct ClientHelloRequest req = pkt_readClientHelloRequest(data);
 	MasterServerSession_set_epoch(session, req.base.requestId & 0xff000000);
-	MasterServerSession_set_state(session, HandshakeMessageType_ClientHelloRequest);
 	memcpy(MasterServerSession_get_clientRandom(session), req.random, 32);
 	struct HelloVerifyRequest r_hello;
 	r_hello.base.requestId = 0;
 	r_hello.base.responseId = req.base.requestId;
 	memcpy(r_hello.cookie, MasterServerSession_get_cookie(session), sizeof(r_hello.cookie));
 	uint8_t *resp = buf;
-	#if 0
 	SERIALIZE(&resp, HandshakeMessage, HelloVerifyRequest, HelloVerifyRequest, r_hello);
-	#else
-	SERIALIZE_HEAD(&resp, HandshakeMessage);
-	SERIALIZE_BODY(&resp, HandshakeMessageType_HelloVerifyRequest, HelloVerifyRequest, r_hello);
-	#endif
 	net_send(&ctx->net, session, PacketProperty_UnconnectedMessage, buf, resp - buf, 0);
 }
 
 static void handle_ClientHelloWithCookieRequest(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf, const uint8_t **data) {
 	struct ClientHelloWithCookieRequest req = pkt_readClientHelloWithCookieRequest(data);
 	send_ack(ctx, session, buf, MessageType_HandshakeMessage, req.base.requestId);
-	*MasterServerSession_ClientHelloWithCookieRequest_requestId(session) = req.base.requestId; // don't @ me   -rc
-	if(MasterServerSession_set_state(session, HandshakeMessageType_ClientHelloWithCookieRequest))
+	if(MasterServerSession_change_state(session, HandshakeMessageType_ClientHelloRequest, HandshakeMessageType_ClientHelloWithCookieRequest))
 		return;
 	if(memcmp(req.cookie, MasterServerSession_get_cookie(session), 32) != 0)
 		return;
 	if(memcmp(req.random, MasterServerSession_get_clientRandom(session), 32) != 0)
 		return;
+	*MasterServerSession_ClientHelloWithCookieRequest_requestId(session) = req.base.requestId; // don't @ me   -rc
 
 	struct ServerCertificateRequest r_cert;
 	r_cert.base.requestId = net_getNextRequestId(session);
@@ -77,6 +77,8 @@ static void handle_ClientHelloWithCookieRequest(struct Context *ctx, struct Mast
 }
 
 static void handle_ServerCertificateRequest_ack(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf) {
+	if(MasterServerSession_change_state(session, HandshakeMessageType_ClientHelloWithCookieRequest, HandshakeMessageType_ServerCertificateRequest))
+		return;
 	struct ServerHelloRequest r_hello;
 	r_hello.base.requestId = net_getNextRequestId(session);
 	r_hello.base.responseId = *MasterServerSession_ClientHelloWithCookieRequest_requestId(session);
@@ -100,7 +102,7 @@ static void handle_ServerCertificateRequest_ack(struct Context *ctx, struct Mast
 static void handle_ClientKeyExchangeRequest(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf, const uint8_t **data) {
 	struct ClientKeyExchangeRequest req = pkt_readClientKeyExchangeRequest(data);
 	send_ack(ctx, session, buf, MessageType_HandshakeMessage, req.base.requestId);
-	if(MasterServerSession_set_state(session, HandshakeMessageType_ClientKeyExchangeRequest))
+	if(MasterServerSession_change_state(session, HandshakeMessageType_ServerCertificateRequest, HandshakeMessageType_ClientKeyExchangeRequest))
 		return;
 	if(MasterServerSession_set_clientPublicKey(session, &ctx->net, &req.clientPublicKey))
 		return;
@@ -128,8 +130,7 @@ static void handle_AuthenticateUserRequest(struct Context *ctx, struct MasterSer
 static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf, const uint8_t **data) {
 	struct ConnectToServerRequest req = pkt_readConnectToServerRequest(data);
 	send_ack(ctx, session, buf, MessageType_UserMessage, req.base.base.requestId);
-	if(MasterServerSession_set_state(session, UserMessageType_ConnectToServerRequest))
-		return;
+	// TODO: deduplicate this request
 	struct ConnectToServerResponse r_conn;
 	r_conn.base.requestId = net_getNextRequestId(session);
 	r_conn.base.responseId = req.base.base.requestId;

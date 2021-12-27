@@ -45,8 +45,10 @@ _Bool MasterServerSession_write_key(const struct MasterServerSession *session, s
 _Bool MasterServerSession_signature(const struct MasterServerSession *session, struct NetContext *ctx, const mbedtls_pk_context *key, const uint8_t *in, uint32_t in_len, struct ByteArrayNetSerializable *out);
 _Bool MasterServerSession_set_clientPublicKey(struct MasterServerSession *session, struct NetContext *ctx, const struct ByteArrayNetSerializable *in);
 void MasterServerSession_set_epoch(struct MasterServerSession *session, uint32_t epoch);
-_Bool MasterServerSession_set_state(struct MasterServerSession *session, HandshakeMessageType state);
+_Bool MasterServerSession_change_state(struct MasterServerSession *session, HandshakeMessageType old, HandshakeMessageType new);
+void MasterServerSession_set_state(struct MasterServerSession *session, HandshakeMessageType state);
 char *MasterServerSession_get_gameId(struct MasterServerSession *session);
+uint32_t MasterServerSession_get_lastKeepAlive(struct MasterServerSession *session);
 uint32_t *MasterServerSession_ClientHelloWithCookieRequest_requestId(struct MasterServerSession *session);
 struct SS MasterServerSession_get_addr(struct MasterServerSession *session);
 
@@ -62,6 +64,8 @@ _Bool net_handle_ack(struct MasterServerSession *session, struct MessageHeader *
 uint32_t net_getNextRequestId(struct MasterServerSession *session);
 int32_t net_get_sockfd(struct NetContext *ctx);
 mbedtls_ctr_drbg_context *net_get_ctr_drbg(struct NetContext *ctx);
+
+uint32_t net_time();
 
 _Bool status_init(const char *path, uint16_t port);
 void status_cleanup();
