@@ -29,7 +29,7 @@ head
 	#define SERIALIZE_HEAD(pkt, mtype) { \
 		struct MessageHeader _message; \
 		_message.type = MessageType_##mtype; \
-		_message.protocolVersion = 5; \
+		_message.protocolVersion = 6; \
 		pkt_writeMessageHeader(pkt, _message); \
 	}
 	#define SERIALIZE_BODY(pkt, stype, dtype, data) { \
@@ -56,9 +56,7 @@ head
 		uint16_t fragmentPart;
 		uint16_t fragmentsTotal;
 	};
-	struct ServerCode {
-		uint32_t value; // 25 bit value
-	};
+	typedef uint32_t ServerCode;
 	uint8_t pkt_readUint8(const uint8_t **pkt);
 	uint16_t pkt_readUint16(const uint8_t **pkt);
 	uint32_t pkt_readUint32(const uint8_t **pkt);
@@ -237,27 +235,26 @@ code
 		if(NetPacketHeaderSize[in.property] >= 8) pkt_writeUint16(pkt, in.fragmentPart);
 		if(NetPacketHeaderSize[in.property] >= 10) pkt_writeUint16(pkt, in.fragmentsTotal);
 	}
-	static struct ServerCode pkt_readServerCode(const uint8_t **pkt) {
-		static const uint8_t table[128] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,24,25,26,27,28,0,29,30,31,0,0,0,0,0,0,0,0,1,2,3,4,5,6,7,0,8,9,10,11,12,0,13,14,15,16,17,18,19,20,21,22,23,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-		struct ServerCode out = {0};
-		struct String scode = pkt_readString(pkt);
-		for(uint32_t i = 0; i < 5; ++i, out.value <<= 5)
-			out.value |= table[scode.data[i] & 127];
-		if(scode.length != 5)
-			out.value = 0xffffffff;
+	static ServerCode pkt_readServerCode(const uint8_t **pkt) {
+		static const uint8_t readTable[128] = {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,27,28,29,30,31,32,33,34,35,36,1,1,1,1,1,1,1,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1};
+		ServerCode out = 0;
+		struct String str = pkt_readString(pkt);
+		if(str.length <= 5)
+			for(uint32_t i = 0, fac = 1; i < str.length; ++i, fac *= 36)
+				out += readTable[str.data[i] & 127] * fac;
 		return out;
 	}
-	static void pkt_writeServerCode(uint8_t **pkt, struct ServerCode in) {
-		struct String scode = {.length = 5};
-		for(uint32_t i = 0, code = in.value; i < 5; ++i, code >>= 5)
-			scode.data[i] = "ABCDEFGHJKLMNPQRSTUVWXYZ12345789"[code & 31];
-		pkt_writeString(pkt, scode);
+	static void pkt_writeServerCode(uint8_t **pkt, ServerCode in) {
+		struct String str = {.length = 0};
+		for(; in; in /= 36)
+			str.data[str.length++] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--in % 36];
+		pkt_writeString(pkt, str);
 	}
-	static void pkt_logServerCode(const char *name, char *buf, char *it, struct ServerCode in) {
-		fprintf(stderr, "%.*s%s=\"", (uint32_t)(it - buf), buf, name);
-		for(uint32_t i = 0, code = in.value; i < 5; ++i, code >>= 5)
-			fprintf(stderr, "%c", "ABCDEFGHJKLMNPQRSTUVWXYZ12345789"[code & 31]);
-		fprintf(stderr, "\"\n");
+	static void pkt_logServerCode(const char *name, char *buf, char *it, ServerCode in) {
+		fprintf(stderr, "%.*s%s=%u (\"", (uint32_t)(it - buf), buf, name, in);
+		for(; in; in /= 36)
+			fprintf(stderr, "%c", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--in % 36]);
+		fprintf(stderr, "\")\n");
 	}
 
 u8 PacketProperty
@@ -396,7 +393,7 @@ d GameplayServerConfiguration
 	vi32.SongSelectionMode songSelectionMode
 	vi32.GameplayServerControlSettings gameplayServerControlSettings
 s PublicServerInfo
-	ServerCode code
+	t.ServerCode code
 	vi32 currentPlayerCount
 d IPEndPoint
 	String address
@@ -418,6 +415,12 @@ u8 ConnectToServerResponse_Result
 u8 GetPublicServersResponse_Result
 	v Success
 	v UnknownError
+r BaseConnectToServerRequest
+	BaseMasterServerReliableRequest base
+	String userId
+	String userName
+	u8[32] random
+	ByteArrayNetSerializable publicKey
 u32 Message Type 0
 	u8 UserMessage Type 1
 		r AuthenticateUserRequest
@@ -438,10 +441,15 @@ u32 Message Type 0
 				IPEndPoint remoteEndPoint
 				u8[32] random
 				ByteArrayNetSerializable publicKey
-				String code
+				t.ServerCode code
 				GameplayServerConfiguration configuration
 				String managerId
-		d ConnectToServerRequest
+		r ConnectToServerRequest
+			BaseConnectToServerRequest base
+			BeatmapLevelSelectionMask selectionMask
+			String secret
+			t.ServerCode code
+			GameplayServerConfiguration configuration
 		d UserMessageReceivedAcknowledge 13
 			BaseMasterServerAcknowledgeMessage base
 		s UserMultipartMessage

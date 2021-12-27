@@ -109,6 +109,8 @@ static _Bool ValidateReceivedMac(struct EncryptionState *state, uint8_t *data, u
 }
 
 _Bool EncryptionState_decrypt(struct EncryptionState *state, struct PacketEncryptionLayer header, uint8_t *data, uint32_t *length) {
+	if(!state->initialized)
+		return 1;
 	if(*length == 0 || *length % 16)
 		return 1;
 	if(IsInvalidSequenceNum(state, header.sequenceId))

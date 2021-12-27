@@ -6,15 +6,15 @@ MAKEFLAGS += --no-print-directory -j$(command nproc 2>/dev/null || echo 2)
 
 HOST := $(shell uname -m)
 OBJDIR := .obj/$(shell $(CC) -dumpmachine)
-FILES := $(wildcard src/*.c src/*/*.c src/*/*/*.c)
+FILES := $(wildcard src/*.c)
 OBJS := $(FILES:%=$(OBJDIR)/%.o) 
 DEPS := $(OBJS:.o=.d)
 
 LIBS := libmbedtls.a libmbedx509.a libmbedcrypto.a
 OBJS += $(LIBS:%=$(OBJDIR)/%)
 
-CFLAGS := -std=gnu11 -Imbedtls/include -Wall -Wno-unused-function -Werror
-LDFLAGS := -s -O2 -no-pie -Wl,--gc-sections,--fatal-warnings
+CFLAGS := -g -std=gnu11 -Imbedtls/include -Wall -Wno-unused-function -Werror
+LDFLAGS := -O2 -no-pie -Wl,--gc-sections,--fatal-warnings
 
 default: beatupserver
 

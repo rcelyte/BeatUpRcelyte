@@ -1,7 +1,6 @@
-#include "packets.h"
 #include <stdio.h>
 
-void debug_logMessage(struct MessageHeader message, struct SerializeHeader serial) {
+static void debug_logMessage(struct MessageHeader message, struct SerializeHeader serial) {
 	fprintf(stderr, "\tmessage.type=%s\n", reflect(MessageType, message.type));
 	fprintf(stderr, "\tmessage.protocolVersion=%u\n", message.protocolVersion);
 	fprintf(stderr, "\tserial.length=%u\n", serial.length);
@@ -13,7 +12,7 @@ void debug_logMessage(struct MessageHeader message, struct SerializeHeader seria
 		fprintf(stderr, "\tserial.type=%s\n", reflect(HandshakeMessageType, serial.type));
 }
 
-void debug_logType(struct MessageHeader message, struct SerializeHeader serial) {
+static void debug_logType(struct MessageHeader message, struct SerializeHeader serial) {
 	if(message.type == MessageType_UserMessage)
 		fprintf(stderr, "recieve UserMessageType_%s\n", reflect(UserMessageType, serial.type));
 	else if(message.type == MessageType_DedicatedServerMessage)
@@ -22,7 +21,8 @@ void debug_logType(struct MessageHeader message, struct SerializeHeader serial) 
 		fprintf(stderr, "recieve HandshakeMessageType_%s\n", reflect(HandshakeMessageType, serial.type));
 }
 
-void debug_logPacket(const uint8_t *data) {
+#ifdef PACKET_LOGGING_FUNCS
+static void debug_logPacket(const uint8_t *data) {
 	struct MessageHeader message = pkt_readMessageHeader(&data);
 	struct SerializeHeader serial = pkt_readSerializeHeader(&data);
 	debug_logMessage(message, serial);
@@ -72,3 +72,4 @@ void debug_logPacket(const uint8_t *data) {
 		fprintf(stderr, "BAD TYPE\n");
 	}
 }
+#endif

@@ -4,7 +4,7 @@
 #include <string.h>
 #include <errno.h>
 
-const _Bool enableLog = 1;
+static _Bool enableLog = 0;
 
 char *desc_buf;
 
@@ -14,6 +14,9 @@ const char *warning =
 	" * AUTO GENERATED; DO NOT TOUCH\n"
 	" * AUTO GENERATED; DO NOT TOUCH\n"
 	" */\n\n";
+
+const char *header_loginit =
+	"#define PACKET_LOGGING_FUNCS\n";
 
 const char *header_init =
 	"#pragma once\n\n"
@@ -92,7 +95,7 @@ _Bool typename(char *in, char *out, uint32_t lim, const char *de) {
 		} else {
 			if(*tin == '.') {
 				read_word(tin+1, out, lim);
-				return 1;
+				return type != 't';
 			} else {
 				out += sprintf(out, "struct ");
 				read_word(in, out, lim - 7);
@@ -136,6 +139,9 @@ _Bool fnname(char *in, char *out, uint32_t lim) {
 		sprintf(out, "%sInt%u", (*in == 'v') ? "Var" : "", size);
 	} else if(type == 'u') {
 		sprintf(out, "%sUint%u", (*in == 'v') ? "Var" : "", size);
+	} else if(type == 't' && *tin == '.') {
+		read_word(tin+1, out, lim);
+		return 0;
 	} else {
 		read_word(in, out, lim);
 		return 0;
@@ -300,7 +306,7 @@ const char *parse_struct_entries(const char *s, const char *structName, uint32_t
 					if(count)
 						log_it += sprintf(log_it, "%.*sfor(uint32_t i = 0; i < %s%s; ++i)\n\t", outdent, tabs, alpha(*length) ? "in." : "", length);
 					if(isEnum)
-						log_it += sprintf(log_it, "%.*sfprintf(stderr, \"%%s%s=%%s\\n\", buf, reflect(%s, in.%s%s));\n", outdent, tabs, name, stype, name, count ? "[i]" : "");
+						log_it += sprintf(log_it, "%.*sfprintf(stderr, \"%%.*s%s=%%s\\n\", (uint32_t)(it - buf), buf, reflect(%s, in.%s%s));\n", outdent, tabs, name, stype, name, count ? "[i]" : "");
 					else
 						log_it += sprintf(log_it, "%.*spkt_log%s(\"%s\", buf, it, in.%s%s);\n", outdent, tabs, ftype, name, name, count ? "[i]" : "");
 				}
@@ -376,6 +382,10 @@ const char *parse_block(const char *s, uint32_t indent) {
 }
 
 int main(int argc, char const *argv[]) {
+	if(argc == 4 && strcmp(argv[3], "-l") == 0) {
+		enableLog = 1;
+		--argc;
+	}
 	if(argc != 3)
 		return 1;
 	FILE *in = tryopen(argv[1], "r");
@@ -402,6 +412,8 @@ int main(int argc, char const *argv[]) {
 	FILE *out = tryopen(argv[2], "w");
 	if(argv[2][strlen(argv[2])-1] == 'h') {
 		trywrite(out, argv[2], warning, &warning[strlen(warning)]);
+		if(enableLog)
+			trywrite(out, argv[2], header_loginit, &header_loginit[strlen(header_loginit)]);
 		trywrite(out, argv[2], header_init, &header_init[strlen(header_init)]);
 		trywrite(out, argv[2], enum_buf, enum_it);
 		trywrite(out, argv[2], head_buf, head_it);

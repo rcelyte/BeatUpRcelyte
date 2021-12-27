@@ -22,12 +22,14 @@ int main(int argc, char const *argv[]) {
 		if(status_init(cfg.status_path, cfg.status_port))
 			return -1;
 	}
+	instance_init(cfg.host_domain);
 	if(master_init(&cfg.master_cert, &cfg.master_key, cfg.master_port))
 		return -1;
 	usleep(10000); // Fixes out of order logs
 	fprintf(stderr, "Press [enter] to exit\n");
 	getchar();
 	master_cleanup();
+	instance_cleanup();
 	if(cfg.status_tls)
 		status_ssl_cleanup();
 	else

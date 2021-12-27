@@ -132,6 +132,7 @@ _Bool config_load(struct Config *out, const char *path) {
 
 	out->master_port = 2328;
 	out->status_port = 80;
+	*out->host_domain = 0;
 	*out->status_domain = 0;
 	sprintf(out->status_path, "/");
 	out->status_tls = 0;
@@ -146,7 +147,16 @@ _Bool config_load(struct Config *out, const char *path) {
 		else
 			it = json_skip_value(it);*/
 		#define IFEQ(str) if(key_len == sizeof(str) - 1 && memcmp(key, str, sizeof(str) - 1) == 0)
-		IFEQ("HostCert") {
+		IFEQ("HostName") {
+			char *domain;
+			uint32_t domain_len = 0;
+			it = json_get_string(it, &domain, &domain_len);
+			if(domain_len >= 4096) {
+				fprintf(stderr, "Error parsing config value \"HostName\": name too long\n");
+				continue;
+			}
+			sprintf(out->host_domain, "%.*s", domain_len, domain);
+		} else IFEQ("HostCert") {
 			it = json_get_string(it, &master_cert, &master_cert_len);
 		} else IFEQ("HostKey") {
 			it = json_get_string(it, &master_key, &master_key_len);
@@ -200,8 +210,16 @@ _Bool config_load(struct Config *out, const char *path) {
 		#undef IFEQ
 	}
 
-	if(master_cert_len == 0 && master_key_len == 0) {
-		fprintf(stderr, master_cert_len ? "Missing SSL key\n" : "Missing SSL certificate\n");
+	if(!*out->host_domain) {
+		fprintf(stderr, "Missing required value \"HostName\"\n");
+		return 1;
+	}
+	if(master_cert_len == 0) {
+		fprintf(stderr, "Missing required value \"HostCert\"\n");
+		return 1;
+	}
+	if(master_key_len == 0) {
+		fprintf(stderr, "Missing required value \"HostKey\"\n");
 		return 1;
 	}
 	if(!status_cert) {

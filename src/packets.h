@@ -159,7 +159,7 @@ ENUM(uint32_t, MessageType, {
 #define SERIALIZE_HEAD(pkt, mtype) { \
 	struct MessageHeader _message; \
 	_message.type = MessageType_##mtype; \
-	_message.protocolVersion = 5; \
+	_message.protocolVersion = 6; \
 	pkt_writeMessageHeader(pkt, _message); \
 }
 #define SERIALIZE_BODY(pkt, stype, dtype, data) { \
@@ -186,9 +186,7 @@ struct NetPacketHeader {
 	uint16_t fragmentPart;
 	uint16_t fragmentsTotal;
 };
-struct ServerCode {
-	uint32_t value; // 25 bit value
-};
+typedef uint32_t ServerCode;
 uint8_t pkt_readUint8(const uint8_t **pkt);
 uint16_t pkt_readUint16(const uint8_t **pkt);
 uint32_t pkt_readUint32(const uint8_t **pkt);
@@ -281,12 +279,19 @@ struct GameplayServerConfiguration {
 	GameplayServerControlSettings gameplayServerControlSettings;
 };
 struct PublicServerInfo {
-	struct ServerCode code;
+	ServerCode code;
 	int32_t currentPlayerCount;
 };
 struct IPEndPoint {
 	struct String address;
 	uint32_t port;
+};
+struct BaseConnectToServerRequest {
+	struct BaseMasterServerReliableRequest base;
+	struct String userId;
+	struct String userName;
+	uint8_t random[32];
+	struct ByteArrayNetSerializable publicKey;
 };
 struct AuthenticateUserRequest {
 	struct BaseMasterServerReliableResponse base;
@@ -307,11 +312,16 @@ struct ConnectToServerResponse {
 	struct IPEndPoint remoteEndPoint;
 	uint8_t random[32];
 	struct ByteArrayNetSerializable publicKey;
-	struct String code;
+	ServerCode code;
 	struct GameplayServerConfiguration configuration;
 	struct String managerId;
 };
 struct ConnectToServerRequest {
+	struct BaseConnectToServerRequest base;
+	struct BeatmapLevelSelectionMask selectionMask;
+	struct String secret;
+	ServerCode code;
+	struct GameplayServerConfiguration configuration;
 };
 struct UserMessageReceivedAcknowledge {
 	struct BaseMasterServerAcknowledgeMessage base;
@@ -420,138 +430,78 @@ struct HandshakeMultipartMessage {
 };
 struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(const uint8_t **pkt);
 void pkt_writePacketEncryptionLayer(uint8_t **pkt, struct PacketEncryptionLayer in);
-void pkt_logPacketEncryptionLayer(const char *name, char *buf, char *it, struct PacketEncryptionLayer in);
 struct MessageHeader pkt_readMessageHeader(const uint8_t **pkt);
 void pkt_writeMessageHeader(uint8_t **pkt, struct MessageHeader in);
-void pkt_logMessageHeader(const char *name, char *buf, char *it, struct MessageHeader in);
 struct SerializeHeader pkt_readSerializeHeader(const uint8_t **pkt);
 void pkt_writeSerializeHeader(uint8_t **pkt, struct SerializeHeader in);
-void pkt_logSerializeHeader(const char *name, char *buf, char *it, struct SerializeHeader in);
 struct BaseMasterServerReliableRequest pkt_readBaseMasterServerReliableRequest(const uint8_t **pkt);
 void pkt_writeBaseMasterServerReliableRequest(uint8_t **pkt, struct BaseMasterServerReliableRequest in);
-void pkt_logBaseMasterServerReliableRequest(const char *name, char *buf, char *it, struct BaseMasterServerReliableRequest in);
 struct BaseMasterServerResponse pkt_readBaseMasterServerResponse(const uint8_t **pkt);
 void pkt_writeBaseMasterServerResponse(uint8_t **pkt, struct BaseMasterServerResponse in);
-void pkt_logBaseMasterServerResponse(const char *name, char *buf, char *it, struct BaseMasterServerResponse in);
 struct BaseMasterServerReliableResponse pkt_readBaseMasterServerReliableResponse(const uint8_t **pkt);
 void pkt_writeBaseMasterServerReliableResponse(uint8_t **pkt, struct BaseMasterServerReliableResponse in);
-void pkt_logBaseMasterServerReliableResponse(const char *name, char *buf, char *it, struct BaseMasterServerReliableResponse in);
 struct BaseMasterServerAcknowledgeMessage pkt_readBaseMasterServerAcknowledgeMessage(const uint8_t **pkt);
 void pkt_writeBaseMasterServerAcknowledgeMessage(uint8_t **pkt, struct BaseMasterServerAcknowledgeMessage in);
-void pkt_logBaseMasterServerAcknowledgeMessage(const char *name, char *buf, char *it, struct BaseMasterServerAcknowledgeMessage in);
 struct ByteArrayNetSerializable pkt_readByteArrayNetSerializable(const uint8_t **pkt);
 void pkt_writeByteArrayNetSerializable(uint8_t **pkt, struct ByteArrayNetSerializable in);
-void pkt_logByteArrayNetSerializable(const char *name, char *buf, char *it, struct ByteArrayNetSerializable in);
 struct String pkt_readString(const uint8_t **pkt);
 void pkt_writeString(uint8_t **pkt, struct String in);
 struct AuthenticationToken pkt_readAuthenticationToken(const uint8_t **pkt);
-void pkt_logAuthenticationToken(const char *name, char *buf, char *it, struct AuthenticationToken in);
-struct BaseMasterServerMultipartMessage pkt_readBaseMasterServerMultipartMessage(const uint8_t **pkt);
 void pkt_writeBaseMasterServerMultipartMessage(uint8_t **pkt, struct BaseMasterServerMultipartMessage in);
-void pkt_logBaseMasterServerMultipartMessage(const char *name, char *buf, char *it, struct BaseMasterServerMultipartMessage in);
 struct BitMask128 pkt_readBitMask128(const uint8_t **pkt);
 void pkt_writeBitMask128(uint8_t **pkt, struct BitMask128 in);
-void pkt_logBitMask128(const char *name, char *buf, char *it, struct BitMask128 in);
 struct SongPackMask pkt_readSongPackMask(const uint8_t **pkt);
 void pkt_writeSongPackMask(uint8_t **pkt, struct SongPackMask in);
-void pkt_logSongPackMask(const char *name, char *buf, char *it, struct SongPackMask in);
 struct BeatmapLevelSelectionMask pkt_readBeatmapLevelSelectionMask(const uint8_t **pkt);
 void pkt_writeBeatmapLevelSelectionMask(uint8_t **pkt, struct BeatmapLevelSelectionMask in);
-void pkt_logBeatmapLevelSelectionMask(const char *name, char *buf, char *it, struct BeatmapLevelSelectionMask in);
 struct GameplayServerConfiguration pkt_readGameplayServerConfiguration(const uint8_t **pkt);
 void pkt_writeGameplayServerConfiguration(uint8_t **pkt, struct GameplayServerConfiguration in);
-void pkt_logGameplayServerConfiguration(const char *name, char *buf, char *it, struct GameplayServerConfiguration in);
-struct PublicServerInfo pkt_readPublicServerInfo(const uint8_t **pkt);
 void pkt_writePublicServerInfo(uint8_t **pkt, struct PublicServerInfo in);
-void pkt_logPublicServerInfo(const char *name, char *buf, char *it, struct PublicServerInfo in);
 struct IPEndPoint pkt_readIPEndPoint(const uint8_t **pkt);
 void pkt_writeIPEndPoint(uint8_t **pkt, struct IPEndPoint in);
-void pkt_logIPEndPoint(const char *name, char *buf, char *it, struct IPEndPoint in);
+struct BaseConnectToServerRequest pkt_readBaseConnectToServerRequest(const uint8_t **pkt);
 struct AuthenticateUserRequest pkt_readAuthenticateUserRequest(const uint8_t **pkt);
-void pkt_logAuthenticateUserRequest(const char *name, char *buf, char *it, struct AuthenticateUserRequest in);
-struct AuthenticateUserResponse pkt_readAuthenticateUserResponse(const uint8_t **pkt);
 void pkt_writeAuthenticateUserResponse(uint8_t **pkt, struct AuthenticateUserResponse in);
-void pkt_logAuthenticateUserResponse(const char *name, char *buf, char *it, struct AuthenticateUserResponse in);
-struct ConnectToServerResponse pkt_readConnectToServerResponse(const uint8_t **pkt);
 void pkt_writeConnectToServerResponse(uint8_t **pkt, struct ConnectToServerResponse in);
-void pkt_logConnectToServerResponse(const char *name, char *buf, char *it, struct ConnectToServerResponse in);
 struct ConnectToServerRequest pkt_readConnectToServerRequest(const uint8_t **pkt);
-void pkt_writeConnectToServerRequest(uint8_t **pkt, struct ConnectToServerRequest in);
-void pkt_logConnectToServerRequest(const char *name, char *buf, char *it, struct ConnectToServerRequest in);
 struct UserMessageReceivedAcknowledge pkt_readUserMessageReceivedAcknowledge(const uint8_t **pkt);
 void pkt_writeUserMessageReceivedAcknowledge(uint8_t **pkt, struct UserMessageReceivedAcknowledge in);
-void pkt_logUserMessageReceivedAcknowledge(const char *name, char *buf, char *it, struct UserMessageReceivedAcknowledge in);
-struct UserMultipartMessage pkt_readUserMultipartMessage(const uint8_t **pkt);
 void pkt_writeUserMultipartMessage(uint8_t **pkt, struct UserMultipartMessage in);
-void pkt_logUserMultipartMessage(const char *name, char *buf, char *it, struct UserMultipartMessage in);
 struct SessionKeepaliveMessage pkt_readSessionKeepaliveMessage(const uint8_t **pkt);
 void pkt_writeSessionKeepaliveMessage(uint8_t **pkt, struct SessionKeepaliveMessage in);
-void pkt_logSessionKeepaliveMessage(const char *name, char *buf, char *it, struct SessionKeepaliveMessage in);
 struct GetPublicServersRequest pkt_readGetPublicServersRequest(const uint8_t **pkt);
-void pkt_logGetPublicServersRequest(const char *name, char *buf, char *it, struct GetPublicServersRequest in);
-struct GetPublicServersResponse pkt_readGetPublicServersResponse(const uint8_t **pkt);
 void pkt_writeGetPublicServersResponse(uint8_t **pkt, struct GetPublicServersResponse in);
-void pkt_logGetPublicServersResponse(const char *name, char *buf, char *it, struct GetPublicServersResponse in);
 struct AuthenticateDedicatedServerRequest pkt_readAuthenticateDedicatedServerRequest(const uint8_t **pkt);
-void pkt_logAuthenticateDedicatedServerRequest(const char *name, char *buf, char *it, struct AuthenticateDedicatedServerRequest in);
 struct AuthenticateDedicatedServerResponse pkt_readAuthenticateDedicatedServerResponse(const uint8_t **pkt);
 void pkt_writeAuthenticateDedicatedServerResponse(uint8_t **pkt, struct AuthenticateDedicatedServerResponse in);
-void pkt_logAuthenticateDedicatedServerResponse(const char *name, char *buf, char *it, struct AuthenticateDedicatedServerResponse in);
 struct CreateDedicatedServerInstanceRequest pkt_readCreateDedicatedServerInstanceRequest(const uint8_t **pkt);
-void pkt_logCreateDedicatedServerInstanceRequest(const char *name, char *buf, char *it, struct CreateDedicatedServerInstanceRequest in);
 struct CreateDedicatedServerInstanceResponse pkt_readCreateDedicatedServerInstanceResponse(const uint8_t **pkt);
 void pkt_writeCreateDedicatedServerInstanceResponse(uint8_t **pkt, struct CreateDedicatedServerInstanceResponse in);
-void pkt_logCreateDedicatedServerInstanceResponse(const char *name, char *buf, char *it, struct CreateDedicatedServerInstanceResponse in);
 struct DedicatedServerInstanceNoLongerAvailableRequest pkt_readDedicatedServerInstanceNoLongerAvailableRequest(const uint8_t **pkt);
 void pkt_writeDedicatedServerInstanceNoLongerAvailableRequest(uint8_t **pkt, struct DedicatedServerInstanceNoLongerAvailableRequest in);
-void pkt_logDedicatedServerInstanceNoLongerAvailableRequest(const char *name, char *buf, char *it, struct DedicatedServerInstanceNoLongerAvailableRequest in);
 struct DedicatedServerHeartbeatRequest pkt_readDedicatedServerHeartbeatRequest(const uint8_t **pkt);
 void pkt_writeDedicatedServerHeartbeatRequest(uint8_t **pkt, struct DedicatedServerHeartbeatRequest in);
-void pkt_logDedicatedServerHeartbeatRequest(const char *name, char *buf, char *it, struct DedicatedServerHeartbeatRequest in);
 struct DedicatedServerHeartbeatResponse pkt_readDedicatedServerHeartbeatResponse(const uint8_t **pkt);
 void pkt_writeDedicatedServerHeartbeatResponse(uint8_t **pkt, struct DedicatedServerHeartbeatResponse in);
-void pkt_logDedicatedServerHeartbeatResponse(const char *name, char *buf, char *it, struct DedicatedServerHeartbeatResponse in);
 struct DedicatedServerInstanceStatusUpdateRequest pkt_readDedicatedServerInstanceStatusUpdateRequest(const uint8_t **pkt);
 void pkt_writeDedicatedServerInstanceStatusUpdateRequest(uint8_t **pkt, struct DedicatedServerInstanceStatusUpdateRequest in);
-void pkt_logDedicatedServerInstanceStatusUpdateRequest(const char *name, char *buf, char *it, struct DedicatedServerInstanceStatusUpdateRequest in);
 struct DedicatedServerShutDownRequest pkt_readDedicatedServerShutDownRequest(const uint8_t **pkt);
 void pkt_writeDedicatedServerShutDownRequest(uint8_t **pkt, struct DedicatedServerShutDownRequest in);
-void pkt_logDedicatedServerShutDownRequest(const char *name, char *buf, char *it, struct DedicatedServerShutDownRequest in);
 struct DedicatedServerPrepareForConnectionRequest pkt_readDedicatedServerPrepareForConnectionRequest(const uint8_t **pkt);
 void pkt_writeDedicatedServerPrepareForConnectionRequest(uint8_t **pkt, struct DedicatedServerPrepareForConnectionRequest in);
-void pkt_logDedicatedServerPrepareForConnectionRequest(const char *name, char *buf, char *it, struct DedicatedServerPrepareForConnectionRequest in);
 struct DedicatedServerMessageReceivedAcknowledge pkt_readDedicatedServerMessageReceivedAcknowledge(const uint8_t **pkt);
 void pkt_writeDedicatedServerMessageReceivedAcknowledge(uint8_t **pkt, struct DedicatedServerMessageReceivedAcknowledge in);
-void pkt_logDedicatedServerMessageReceivedAcknowledge(const char *name, char *buf, char *it, struct DedicatedServerMessageReceivedAcknowledge in);
-struct DedicatedServerMultipartMessage pkt_readDedicatedServerMultipartMessage(const uint8_t **pkt);
 void pkt_writeDedicatedServerMultipartMessage(uint8_t **pkt, struct DedicatedServerMultipartMessage in);
-void pkt_logDedicatedServerMultipartMessage(const char *name, char *buf, char *it, struct DedicatedServerMultipartMessage in);
 struct DedicatedServerPrepareForConnectionResponse pkt_readDedicatedServerPrepareForConnectionResponse(const uint8_t **pkt);
 void pkt_writeDedicatedServerPrepareForConnectionResponse(uint8_t **pkt, struct DedicatedServerPrepareForConnectionResponse in);
-void pkt_logDedicatedServerPrepareForConnectionResponse(const char *name, char *buf, char *it, struct DedicatedServerPrepareForConnectionResponse in);
 struct ClientHelloRequest pkt_readClientHelloRequest(const uint8_t **pkt);
-void pkt_logClientHelloRequest(const char *name, char *buf, char *it, struct ClientHelloRequest in);
-struct HelloVerifyRequest pkt_readHelloVerifyRequest(const uint8_t **pkt);
 void pkt_writeHelloVerifyRequest(uint8_t **pkt, struct HelloVerifyRequest in);
-void pkt_logHelloVerifyRequest(const char *name, char *buf, char *it, struct HelloVerifyRequest in);
 struct ClientHelloWithCookieRequest pkt_readClientHelloWithCookieRequest(const uint8_t **pkt);
-void pkt_logClientHelloWithCookieRequest(const char *name, char *buf, char *it, struct ClientHelloWithCookieRequest in);
-struct ServerHelloRequest pkt_readServerHelloRequest(const uint8_t **pkt);
 void pkt_writeServerHelloRequest(uint8_t **pkt, struct ServerHelloRequest in);
-void pkt_logServerHelloRequest(const char *name, char *buf, char *it, struct ServerHelloRequest in);
-struct ServerCertificateRequest pkt_readServerCertificateRequest(const uint8_t **pkt);
 void pkt_writeServerCertificateRequest(uint8_t **pkt, struct ServerCertificateRequest in);
-void pkt_logServerCertificateRequest(const char *name, char *buf, char *it, struct ServerCertificateRequest in);
 struct ServerCertificateResponse pkt_readServerCertificateResponse(const uint8_t **pkt);
-void pkt_logServerCertificateResponse(const char *name, char *buf, char *it, struct ServerCertificateResponse in);
 struct ClientKeyExchangeRequest pkt_readClientKeyExchangeRequest(const uint8_t **pkt);
-void pkt_logClientKeyExchangeRequest(const char *name, char *buf, char *it, struct ClientKeyExchangeRequest in);
-struct ChangeCipherSpecRequest pkt_readChangeCipherSpecRequest(const uint8_t **pkt);
 void pkt_writeChangeCipherSpecRequest(uint8_t **pkt, struct ChangeCipherSpecRequest in);
-void pkt_logChangeCipherSpecRequest(const char *name, char *buf, char *it, struct ChangeCipherSpecRequest in);
 struct HandshakeMessageReceivedAcknowledge pkt_readHandshakeMessageReceivedAcknowledge(const uint8_t **pkt);
 void pkt_writeHandshakeMessageReceivedAcknowledge(uint8_t **pkt, struct HandshakeMessageReceivedAcknowledge in);
-void pkt_logHandshakeMessageReceivedAcknowledge(const char *name, char *buf, char *it, struct HandshakeMessageReceivedAcknowledge in);
-struct HandshakeMultipartMessage pkt_readHandshakeMultipartMessage(const uint8_t **pkt);
 void pkt_writeHandshakeMultipartMessage(uint8_t **pkt, struct HandshakeMultipartMessage in);
-void pkt_logHandshakeMultipartMessage(const char *name, char *buf, char *it, struct HandshakeMultipartMessage in);

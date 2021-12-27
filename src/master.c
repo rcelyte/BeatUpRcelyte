@@ -1,4 +1,5 @@
 #include "enum_reflection.h"
+#include "instance.h"
 #include "net.h"
 #ifdef WINDOWS
 #include <processthreadsapi.h>
@@ -81,7 +82,7 @@ static void handle_ServerCertificateRequest_ack(struct Context *ctx, struct Mast
 	r_hello.base.responseId = *MasterServerSession_ClientHelloWithCookieRequest_requestId(session);
 	memcpy(r_hello.random, MasterServerSession_get_serverRandom(session), sizeof(r_hello.random));
 	r_hello.publicKey.length = sizeof(r_hello.publicKey.data);
-	if(MasterServerSession_write_key(session, r_hello.publicKey.data, &r_hello.publicKey.length))
+	if(MasterServerSession_write_key(session, &ctx->net, r_hello.publicKey.data, &r_hello.publicKey.length))
 		return;
 	{
 		uint8_t sig[r_hello.publicKey.length + 64];
@@ -124,6 +125,69 @@ static void handle_AuthenticateUserRequest(struct Context *ctx, struct MasterSer
 	net_send(&ctx->net, session, PacketProperty_UnconnectedMessage, buf, resp - buf, 1);
 }
 
+static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterServerSession *session, uint8_t *buf, const uint8_t **data) {
+	struct ConnectToServerRequest req = pkt_readConnectToServerRequest(data);
+	send_ack(ctx, session, buf, MessageType_UserMessage, req.base.base.requestId);
+	if(MasterServerSession_set_state(session, UserMessageType_ConnectToServerRequest))
+		return;
+	struct ConnectToServerResponse r_conn;
+	r_conn.base.requestId = net_getNextRequestId(session);
+	r_conn.base.responseId = req.base.base.requestId;
+	if(req.code) {
+		if(!instance_get_isopen(req.code)) {
+			r_conn.result = ConnectToServerResponse_Result_InvalidCode;
+			goto send;
+		}
+	} else {
+		if(instance_open(&req.code, net_get_ctr_drbg(&ctx->net))) {
+			r_conn.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers;
+			goto send;
+		}
+	}
+	{
+		struct NetContext *net = instance_get_net(req.code);
+		struct SS addr = MasterServerSession_get_addr(session);
+		struct MasterServerSession *isession = net_resolve_session(net, addr);
+		if(isession) {
+			if(net_reset_session(net, isession)) {
+				r_conn.result = ConnectToServerResponse_Result_UnknownError;
+				goto send;
+			}
+		} else {
+			isession = net_create_session(net, addr);
+			if(!isession) {
+				r_conn.result = ConnectToServerResponse_Result_UnknownError;
+				goto send;
+			}
+		}
+		memcpy(MasterServerSession_get_clientRandom(isession), req.base.random, 32);
+		memcpy(r_conn.random, MasterServerSession_get_serverRandom(isession), 32);
+		r_conn.publicKey.length = sizeof(r_conn.publicKey.data);
+		if(MasterServerSession_write_key(isession, net, r_conn.publicKey.data, &r_conn.publicKey.length)) {
+			r_conn.result = ConnectToServerResponse_Result_UnknownError;
+			goto send;
+		}
+		if(MasterServerSession_set_clientPublicKey(isession, net, &req.base.publicKey)) {
+			r_conn.result = ConnectToServerResponse_Result_UnknownError;
+			goto send;
+		}
+		r_conn.userId.length = sprintf(r_conn.userId.data, "dtxJlHm56k6ZXcnxhbyfiA");
+		r_conn.userName.length = 0;
+		r_conn.secret = req.secret;
+		r_conn.selectionMask = req.selectionMask;
+		r_conn.flags = 3;
+		r_conn.remoteEndPoint = instance_get_address(req.code);
+		r_conn.code = req.code;
+		r_conn.configuration = req.configuration;
+		r_conn.managerId = req.base.userId; // ?
+		r_conn.result = ConnectToServerResponse_Result_Success;
+	}
+	send:;
+	uint8_t *resp = buf;
+	SERIALIZE(&resp, UserMessage, ConnectToServerResponse, ConnectToServerResponse, r_conn);
+	net_send(&ctx->net, session, PacketProperty_UnconnectedMessage, buf, resp - buf, 1);
+}
+
 #ifdef WINDOWS
 static DWORD WINAPI
 #else
@@ -131,26 +195,24 @@ static void*
 #endif
 master_handler(struct Context *ctx) {
 	fprintf(stderr, "Master server started\n");
+	uint8_t buf[262144];
+	memset(buf, 0, sizeof(buf));
 	uint32_t len;
 	struct MasterServerSession *session;
 	PacketProperty property;
 	uint8_t *pkt;
-	while((len = net_recv(&ctx->net, &session, &property, &pkt))) {
+	while((len = net_recv(&ctx->net, buf, sizeof(buf), &session, &property, &pkt))) {
 		const uint8_t *data = pkt, *end = &pkt[len];
 		if(property == PacketProperty_UnconnectedMessage) {
 			struct MessageHeader message = pkt_readMessageHeader(&data);
 			struct SerializeHeader serial = pkt_readSerializeHeader(&data);
-			#if 0
-			debug_logMessage(message, serial);
-			#else
 			debug_logType(message, serial);
-			#endif
 			if(message.type == MessageType_UserMessage) {
 				switch(serial.type) {
 					case UserMessageType_AuthenticateUserRequest: handle_AuthenticateUserRequest(ctx, session, pkt, &data); break;
 					case UserMessageType_AuthenticateUserResponse: fprintf(stderr, "UserMessageType_AuthenticateUserResponse not implemented\n"); return 0;
 					case UserMessageType_ConnectToServerResponse: fprintf(stderr, "UserMessageType_ConnectToServerResponse not implemented\n"); return 0;
-					case UserMessageType_ConnectToServerRequest: fprintf(stderr, "UserMessageType_ConnectToServerRequest not implemented\n"); return 0;
+					case UserMessageType_ConnectToServerRequest: handle_ConnectToServerRequest(ctx, session, pkt, &data); break;
 					case UserMessageType_UserMessageReceivedAcknowledge: {
 						struct BaseMasterServerAcknowledgeMessage ack = pkt_readBaseMasterServerAcknowledgeMessage(&data);
 						if(net_handle_ack(session, &message, &serial, ack.base.responseId)) {
@@ -158,7 +220,7 @@ master_handler(struct Context *ctx) {
 						break;
 					}
 					case UserMessageType_UserMultipartMessage: fprintf(stderr, "UserMessageType_UserMultipartMessage not implemented\n"); return 0;
-					case UserMessageType_SessionKeepaliveMessage: fprintf(stderr, "UserMessageType_SessionKeepaliveMessage not implemented\n"); return 0;
+					case UserMessageType_SessionKeepaliveMessage: break;
 					case UserMessageType_GetPublicServersRequest: fprintf(stderr, "UserMessageType_GetPublicServersRequest not implemented\n"); return 0;
 					case UserMessageType_GetPublicServersResponse: fprintf(stderr, "UserMessageType_GetPublicServersResponse not implemented\n"); return 0;
 					default: fprintf(stderr, "BAD TYPE\n");
@@ -235,7 +297,7 @@ _Bool master_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, uint16_t port
 	}
 	ctx.cert = cert;
 	ctx.key = key;
-	if(net_init(&ctx.net, port)) {
+	if(net_init(&ctx.net, port, net_create_session)) {
 		fprintf(stderr, "net_init() failed\n");
 		return 1;
 	}
