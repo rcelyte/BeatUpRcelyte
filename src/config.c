@@ -6,40 +6,6 @@
 #include <stdlib.h>
 #include <errno.h>
 
-struct Host {
-};
-
-/*static char *json_config_host(char *it, struct Host *res) {
-	char *key;
-	uint32_t key_len;
-	while(json_iter_object(&it, &key, &key_len)) {
-		if(key_len == 6 && memcmp(key, "domain", 6) == 0) {
-			it = json_get_string(it, &res->domain, &res->domain_len);
-			uint32_t ps = 0;
-			for(uint32_t i = 0; i < res->domain_len; ++i) {
-				if(res->domain[i] == ':')
-					ps = i;
-				else if(res->domain[i] < '0' || res->domain[i] > '9')
-					ps = 0;
-			}
-			if(ps) {
-				res->domain_len = ps;
-				res->port = atoi(&res->domain[ps+1]);
-			}
-			// fprintf(stderr, "domain: %.*s\n", res->domain_len, res->domain);
-		} else if(key_len == 4 && memcmp(key, "cert", 4) == 0) {
-			it = json_get_string(it, &res->cert, &res->cert_len);
-			// fprintf(stderr, "cert: %.*s\n", res->cert_len, res->cert);
-		} else if(key_len == 3 && memcmp(key, "key", 3) == 0) {
-			it = json_get_string(it, &res->key, &res->key_len);
-			// fprintf(stderr, "key: %.*s\n", res->key_len, res->key);
-		} else {
-			it = json_skip_value(it);
-		}
-	}
-	return it;
-}*/
-
 static _Bool load_cert(char *cert, uint32_t cert_len, mbedtls_x509_crt *out) {
 	mbedtls_x509_crt_init(out);
 	int32_t err;
@@ -104,9 +70,9 @@ _Bool config_load(struct Config *out, const char *path) {
 		}
 		fprintf(stderr, "Writing default config to %s\n", path);
 		#ifdef WINDOWS
-		fprintf(def, "{\r\n\t\"HostCert\": \"cert.pem\",\r\n\t\"HostKey\": \"key.pem\",\r\n\t\"StatusUri\": \"http://localhost/status\"\r\n}\r\n");
+		fprintf(def, "{\r\n\"HostName\": \"\",\r\n\t\"HostCert\": \"cert.pem\",\r\n\t\"HostKey\": \"key.pem\",\r\n\t\"StatusUri\": \"http://localhost/status\"\r\n}\r\n");
 		#else
-		fprintf(def, "{\n\t\"HostCert\": \"cert.pem\",\n\t\"HostKey\": \"key.pem\",\n\t\"StatusUri\": \"http://localhost/status\"\n}\n");
+		fprintf(def, "{\n\"HostName\": \"\",\n\t\"HostCert\": \"cert.pem\",\n\t\"HostKey\": \"key.pem\",\n\t\"StatusUri\": \"http://localhost/status\"\n}\n");
 		#endif
 		fclose(def);
 		f = fopen(path, "r");

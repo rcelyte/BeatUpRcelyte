@@ -46,27 +46,22 @@ head
 		SERIALIZE_HEAD(pkt, mtype) \
 		SERIALIZE_BODY(pkt, mtype##Type_##stype, dtype, data) \
 	}
-	struct NetPacketHeader {
-		PacketProperty property;
-		uint8_t connectionNumber;
-		_Bool isFragmented;
-		uint16_t sequence;
-		uint8_t channelId;
-		uint16_t fragmentId;
-		uint16_t fragmentPart;
-		uint16_t fragmentsTotal;
-	};
-	typedef uint32_t ServerCode;
 	uint8_t pkt_readUint8(const uint8_t **pkt);
 	uint16_t pkt_readUint16(const uint8_t **pkt);
 	uint32_t pkt_readUint32(const uint8_t **pkt);
 	uint64_t pkt_readUint64(const uint8_t **pkt);
+	#define pkt_readInt8(pkt) (int8_t)pkt_readUint8(pkt)
+	#define pkt_readInt16(pkt) (int16_t)pkt_readUint16(pkt)
+	#define pkt_readInt32(pkt) (int32_t)pkt_readUint32(pkt)
+	#define pkt_readInt64(pkt) (int64_t)pkt_readUint64(pkt)
 	uint64_t pkt_readVarUint64(const uint8_t **pkt);
 	uint64_t pkt_readVarUint64(const uint8_t **pkt);
 	int64_t pkt_readVarInt64(const uint8_t **pkt);
 	uint32_t pkt_readVarUint32(const uint8_t **pkt);
 	int32_t pkt_readVarInt32(const uint8_t **pkt);
 	void pkt_readUint8Array(const uint8_t **pkt, uint8_t *out, uint32_t count);
+	float pkt_readFloat32(const uint8_t **pkt);
+	double pkt_readFloat64(const uint8_t **pkt);
 	void pkt_writeUint8(uint8_t **pkt, uint8_t v);
 	void pkt_writeUint16(uint8_t **pkt, uint16_t v);
 	void pkt_writeUint32(uint8_t **pkt, uint32_t v);
@@ -77,8 +72,8 @@ head
 	void pkt_writeVarInt32(uint8_t **pkt, int32_t v);
 	#define pkt_writeInt8Array(pkt, out, count) pkt_writeUint8Array(pkt, (uint8_t*)out, count)
 	void pkt_writeUint8Array(uint8_t **pkt, uint8_t *in, uint32_t count);
-	struct NetPacketHeader pkt_readNetPacketHeader(const uint8_t **pkt);
-	void pkt_writeNetPacketHeader(uint8_t **pkt, struct NetPacketHeader in);
+	void pkt_writeFloat32(uint8_t **pkt, float v);
+	void pkt_writeFloat64(uint8_t **pkt, double v);
 
 code
 	#include <stdio.h>
@@ -139,6 +134,16 @@ code
 		memcpy(out, *pkt, count);
 		*pkt += count;
 	}
+	float pkt_readFloat32(const uint8_t **pkt) {
+		float v = *(const float*)*pkt;
+		*pkt += 4;
+		return v;
+	}
+	double pkt_readFloat64(const uint8_t **pkt) {
+		double v = *(const double*)*pkt;
+		*pkt += 8;
+		return v;
+	}
 	void pkt_writeUint8(uint8_t **pkt, uint8_t v) {
 		(*pkt)[0] = v;
 		*pkt += sizeof(v);
@@ -177,8 +182,9 @@ code
 	}
 	void pkt_writeVarInt64(uint8_t **pkt, int64_t v) {
 		if(v < 0)
-			return pkt_writeVarUint64(pkt, (-(v + 1L) << 1) + 1L);
-		pkt_writeVarUint64(pkt, v << 1);
+			pkt_writeVarUint64(pkt, (-(v + 1L) << 1) + 1L);
+		else
+			pkt_writeVarUint64(pkt, v << 1);
 	}
 	void pkt_writeVarUint32(uint8_t **pkt, uint32_t v) {
 		pkt_writeVarUint64(pkt, v);
@@ -189,6 +195,14 @@ code
 	void pkt_writeUint8Array(uint8_t **pkt, uint8_t *in, uint32_t count) {
 		memcpy(*pkt, in, count);
 		*pkt += count;
+	}
+	void pkt_writeFloat32(uint8_t **pkt, float v) {
+		*(float*)*pkt = v;
+		*pkt += 4;
+	}
+	void pkt_writeFloat64(uint8_t **pkt, double v) {
+		*(double*)*pkt = v;
+		*pkt += 8;
 	}
 	#define pkt_logUint8(name, buf, it, v) pkt_logUint64(name, buf, it, (uint64_t)v)
 	#define pkt_logUint16(name, buf, it, v) pkt_logUint64(name, buf, it, (uint64_t)v)
@@ -204,78 +218,18 @@ code
 	static void pkt_logInt64(const char *name, char *buf, char *it, int64_t v) {
 		fprintf(stderr, "%.*s%s=%" PRId64 "\n", (uint32_t)(it - buf), buf, name, v);
 	}
-	#define pkt_logInt8Array(name, buf, it, in, count) pkt_logUint8Array(name, buf, it, (uint8_t*)in, count)
-	static void pkt_logUint8Array(const char *name, char *buf, char *it, uint8_t *in, uint32_t count) {
+	#define pkt_logInt8Array(name, buf, it, in, count) pkt_logUint8Array(name, buf, it, (const uint8_t*)in, count)
+	static void pkt_logUint8Array(const char *name, char *buf, char *it, const uint8_t *in, uint32_t count) {
 		fprintf(stderr, "%.*s%s=", (uint32_t)(it - buf), buf, name);
 		for(uint32_t i = 0; i < count; ++i)
 			fprintf(stderr, "%02hhx", in[i]);
 		fprintf(stderr, "\n");
 	}
-	static const uint8_t NetPacketHeaderSize[32] = {
-		1, 4, 4, 3, 11, 14, 11, 9, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-	};
-	struct NetPacketHeader pkt_readNetPacketHeader(const uint8_t **pkt) {
-		struct NetPacketHeader out;
-		uint8_t bits = pkt_readUint8(pkt);
-		out.property = bits & 31;
-		out.connectionNumber = bits >> 5 & 3;
-		out.isFragmented = bits >> 7 & 1;
-		out.sequence = (NetPacketHeaderSize[out.property] < 3) ? 0 : pkt_readUint16(pkt);
-		out.channelId = (NetPacketHeaderSize[out.property] < 4) ? 0 : pkt_readUint8(pkt);
-		out.fragmentId = (NetPacketHeaderSize[out.property] < 6) ? 0 : pkt_readUint16(pkt);
-		out.fragmentPart = (NetPacketHeaderSize[out.property] < 8) ? 0 : pkt_readUint16(pkt);
-		out.fragmentsTotal = (NetPacketHeaderSize[out.property] < 10) ? 0 : pkt_readUint16(pkt);
-		return out;
-	}
-	void pkt_writeNetPacketHeader(uint8_t **pkt, struct NetPacketHeader in) {
-		pkt_writeUint8(pkt, in.property | in.connectionNumber << 5 | in.isFragmented << 7);
-		if(NetPacketHeaderSize[in.property] >= 3) pkt_writeUint16(pkt, in.sequence);
-		if(NetPacketHeaderSize[in.property] >= 4) pkt_writeUint8(pkt, in.channelId);
-		if(NetPacketHeaderSize[in.property] >= 6) pkt_writeUint16(pkt, in.fragmentId);
-		if(NetPacketHeaderSize[in.property] >= 8) pkt_writeUint16(pkt, in.fragmentPart);
-		if(NetPacketHeaderSize[in.property] >= 10) pkt_writeUint16(pkt, in.fragmentsTotal);
-	}
-	static ServerCode pkt_readServerCode(const uint8_t **pkt) {
-		static const uint8_t readTable[128] = {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,27,28,29,30,31,32,33,34,35,36,1,1,1,1,1,1,1,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1};
-		ServerCode out = 0;
-		struct String str = pkt_readString(pkt);
-		if(str.length <= 5)
-			for(uint32_t i = 0, fac = 1; i < str.length; ++i, fac *= 36)
-				out += readTable[str.data[i] & 127] * fac;
-		return out;
-	}
-	static void pkt_writeServerCode(uint8_t **pkt, ServerCode in) {
-		struct String str = {.length = 0};
-		for(; in; in /= 36)
-			str.data[str.length++] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--in % 36];
-		pkt_writeString(pkt, str);
-	}
-	static void pkt_logServerCode(const char *name, char *buf, char *it, ServerCode in) {
-		fprintf(stderr, "%.*s%s=%u (\"", (uint32_t)(it - buf), buf, name, in);
-		for(; in; in /= 36)
-			fprintf(stderr, "%c", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--in % 36]);
-		fprintf(stderr, "\")\n");
+	#define pkt_logFloat32 pkt_logFloat64
+	static void pkt_logFloat64(const char *name, char *buf, char *it, double v) {
+		fprintf(stderr, "%.*s%s=%f\n", (uint32_t)(it - buf), buf, name, v);
 	}
 
-u8 PacketProperty
-	z Unreliable
-	z Channeled
-	z Ack
-	z Ping
-	z Pong
-	z ConnectRequest
-	z ConnectAccept
-	z Disconnect
-	z UnconnectedMessage
-	z MtuCheck
-	z MtuOk
-	z Broadcast
-	z Merged
-	z ShutdownOk
-	z PeerNotFound
-	z InvalidProtocol
-	z NatMessage
-	z Empty
 u8 Platform
 	z Test
 	z OculusRift
@@ -290,12 +244,6 @@ d PacketEncryptionLayer
 	if(encrypted == 1)
 		u32 sequenceId
 		u8[16] iv
-d MessageHeader
-	u32.MessageType type
-	vu32 protocolVersion
-d SerializeHeader
-	vu32 length
-	u8 type
 d BaseMasterServerReliableRequest
 	u32 requestId
 d BaseMasterServerResponse
@@ -308,14 +256,16 @@ d BaseMasterServerAcknowledgeMessage
 	b messageHandled
 d ByteArrayNetSerializable
 	vu32 length
-	u8[length,4096] data
+	u8[4096,length] data
 code
+	#ifdef PACKET_LOGGING_FUNCS
 	static void pkt_logString(const char *name, char *buf, char *it, struct String in) {
 		fprintf(stderr, "%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
 	}
+	#endif
 d String
 	u32 length
-	c[length,4096] data
+	c[60,length] data
 r AuthenticationToken
 	u8.Platform platform
 	String userId
@@ -327,64 +277,64 @@ s BaseMasterServerMultipartMessage
 	vu32 offset
 	vu32 length
 	vu32 totalLength
-	u8[length,384] data
+	u8[384,length] data
 d BitMask128
 	u64 _d0
 	u64 _d1
 d SongPackMask
 	BitMask128 _bloomFilter
 u8 BeatmapDifficultyMask
-	v Easy 1
-	v Normal 2
-	v Hard 4
-	v Expert 8
-	v ExpertPlus 16
-	v All 31
+	z Easy 1
+	z Normal 2
+	z Hard 4
+	z Expert 8
+	z ExpertPlus 16
+	z All 31
 u32 GameplayModifierMask
-	v None 0
-	v BatteryEnergy 1
-	v NoFail 2
-	v InstaFail 4
-	v NoObstacles 8
-	v NoBombs 16
-	v FastNotes 32
-	v StrictAngles 64
-	v DisappearingArrows 128
-	v FasterSong 256
-	v SlowerSong 512
-	v NoArrows 1024
-	v GhostNotes 2048
-	v SuperFastSong 4096
-	v ProMode 8192
-	v ZenMode 16384
-	v SmallCubes 32768
-	v All 65535
+	z None 0
+	z BatteryEnergy 1
+	z NoFail 2
+	z InstaFail 4
+	z NoObstacles 8
+	z NoBombs 16
+	z FastNotes 32
+	z StrictAngles 64
+	z DisappearingArrows 128
+	z FasterSong 256
+	z SlowerSong 512
+	z NoArrows 1024
+	z GhostNotes 2048
+	z SuperFastSong 4096
+	z ProMode 8192
+	z ZenMode 16384
+	z SmallCubes 32768
+	z All 65535
 d BeatmapLevelSelectionMask
 	u8.BeatmapDifficultyMask difficulties
 	u32.GameplayModifierMask modifiers
 	SongPackMask songPacks
 u8 DiscoveryPolicy
-	v Hidden
-	v WithCode
-	v Public
+	z Hidden
+	z WithCode
+	z Public
 u8 InvitePolicy
-	v OnlyConnectionOwnerCanInvite
-	v AnyoneCanInvite
-	v NobodyCanInvite
+	z OnlyConnectionOwnerCanInvite
+	z AnyoneCanInvite
+	z NobodyCanInvite
 u8 GameplayServerMode
-	v Countdown
-	v Managed
-	v QuickStartOneSong
+	z Countdown
+	z Managed
+	z QuickStartOneSong
 u8 SongSelectionMode
-	v Vote
-	v Random
-	v OwnerPicks
-	v RandomPlayerPicks
+	z Vote
+	z Random
+	z OwnerPicks
+	z RandomPlayerPicks
 u8 GameplayServerControlSettings
-	v None 0
-	v AllowModifierSelection 1
-	v AllowSpectate 2
-	v All 3
+	z None 0
+	z AllowModifierSelection 1
+	z AllowSpectate 2
+	z All 3
 d GameplayServerConfiguration
 	vi32 maxPlayerCount
 	vi32.DiscoveryPolicy discoveryPolicy
@@ -392,141 +342,531 @@ d GameplayServerConfiguration
 	vi32.GameplayServerMode gameplayServerMode
 	vi32.SongSelectionMode songSelectionMode
 	vi32.GameplayServerControlSettings gameplayServerControlSettings
-s PublicServerInfo
-	t.ServerCode code
+code
+	ServerCode StringToServerCode(const char *in, uint32_t len) {
+		static const uint8_t readTable[128] = {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,27,28,29,30,31,32,33,34,35,36,1,1,1,1,1,1,1,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1};
+		ServerCode out = 0;
+		if(len <= 5)
+			for(uint32_t i = 0, fac = 1; i < len; ++i, fac *= 36)
+				out += readTable[in[i] & 127] * fac;
+		return out;
+	}
+	char *ServerCodeToString(char *out, ServerCode in) {
+		char *s = out;
+		for(; in; in /= 36)
+			*s++ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--in % 36];
+		*s = 0;
+		return out;
+	}
+	static ServerCode pkt_readServerCode(const uint8_t **pkt) {
+		struct String str = pkt_readString(pkt);
+		return StringToServerCode(str.data, str.length);
+	}
+	static void pkt_writeServerCode(uint8_t **pkt, ServerCode in) {
+		struct String str = {.length = 0};
+		for(; in; in /= 36)
+			str.data[str.length++] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--in % 36];
+		pkt_writeString(pkt, str);
+	}
+	#ifdef PACKET_LOGGING_FUNCS
+	static void pkt_logServerCode(const char *name, char *buf, char *it, ServerCode in) {
+		fprintf(stderr, "%.*s%s=%u (\"", (uint32_t)(it - buf), buf, name, in);
+		for(; in; in /= 36)
+			fprintf(stderr, "%c", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--in % 36]);
+		fprintf(stderr, "\")\n");
+	}
+	#endif
+u32 ServerCode
+head
+	ServerCode StringToServerCode(const char *in, uint32_t len);
+	char *ServerCodeToString(char *out, ServerCode in);
+n PublicServerInfo
+	ServerCode.ServerCode code
 	vi32 currentPlayerCount
-d IPEndPoint
+s IPEndPoint
 	String address
 	u32 port
 u8 AuthenticateUserResponse_Result
-	v Success
-	v Failed
-	v UnknownError
+	z Success
+	z Failed
+	z UnknownError
 u8 ConnectToServerResponse_Result
-	v Success
-	v InvalidSecret
-	v InvalidCode
-	v InvalidPassword
-	v ServerAtCapacity
-	v NoAvailableDedicatedServers
-	v VersionMismatch
-	v ConfigMismatch
-	v UnknownError
+	z Success
+	z InvalidSecret
+	z InvalidCode
+	z InvalidPassword
+	z ServerAtCapacity
+	z NoAvailableDedicatedServers
+	z VersionMismatch
+	z ConfigMismatch
+	z UnknownError
 u8 GetPublicServersResponse_Result
-	v Success
-	v UnknownError
+	z Success
+	z UnknownError
 r BaseConnectToServerRequest
 	BaseMasterServerReliableRequest base
 	String userId
 	String userName
 	u8[32] random
 	ByteArrayNetSerializable publicKey
-u32 Message Type 0
-	u8 UserMessage Type 1
-		r AuthenticateUserRequest
-			BaseMasterServerReliableResponse base
-			AuthenticationToken authenticationToken
-		s AuthenticateUserResponse
-			BaseMasterServerReliableResponse base
-			u8.AuthenticateUserResponse_Result result
-		s ConnectToServerResponse 8
-			BaseMasterServerReliableResponse base
-			u8.ConnectToServerResponse_Result result
-			if(result == GetPublicServersResponse_Result_Success)
-				String userId
-				String userName
-				String secret
-				BeatmapLevelSelectionMask selectionMask
-				u8 flags
-				IPEndPoint remoteEndPoint
-				u8[32] random
-				ByteArrayNetSerializable publicKey
-				t.ServerCode code
-				GameplayServerConfiguration configuration
-				String managerId
-		r ConnectToServerRequest
-			BaseConnectToServerRequest base
-			BeatmapLevelSelectionMask selectionMask
-			String secret
-			t.ServerCode code
-			GameplayServerConfiguration configuration
-		d UserMessageReceivedAcknowledge 13
-			BaseMasterServerAcknowledgeMessage base
-		s UserMultipartMessage
-			BaseMasterServerMultipartMessage base
-		d SessionKeepaliveMessage
-		r GetPublicServersRequest
-			BaseMasterServerReliableRequest base
+u8 DeliveryMethod
+	z ReliableUnordered
+	z Sequenced
+	z ReliableOrdered
+	z ReliableSequenced
+u8 PacketProperty
+	z Unreliable
+	n Channeled
+		u16 sequence
+		u8 channelId
+	r Ack
+		u16 sequence
+		u8 channelId
+		if(channelId % 2 == 0)
+			u8[9] data
+	r Ping
+		u16 sequence
+	s Pong
+		u16 sequence
+		u64 time
+	r ConnectRequest
+		u32 protocolId
+		u64 connectId
+		u8 addrlen
+		u8[38,addrlen] address
+		String secret
+		String userId
+		String userName
+		b isConnectionOwner
+	s ConnectAccept
+		u64 connectId
+		u8 connectNum
+		b reusedPeer
+	n Disconnect
+		u8[8] _pad0
+	z UnconnectedMessage
+	n MtuCheck
+		u32 newMtu0
+		u8[1423,newMtu0-9] pad
+		u32 newMtu1
+	n MtuOk
+		u32 newMtu0
+		u8[1423,newMtu0-9] pad
+		u32 newMtu1
+	z Broadcast
+	z Merged
+	z ShutdownOk
+	z PeerNotFound
+	z InvalidProtocol
+	z NatMessage
+	z Empty
+d NetPacketHeader
+	u8.e bits
+		u5.PacketProperty property
+		u2.u8 connectionNumber
+		u1.b isFragmented
+n PlayerStateHash
+	BitMask128 bloomFilter
+n Color32
+	u8 r
+	u8 g
+	u8 b
+	u8 a
+n MultiplayerAvatarData
+	String headTopId
+	Color32 headTopPrimaryColor
+	Color32 handsColor
+	String clothesId
+	Color32 clothesPrimaryColor
+	Color32 clothesSecondaryColor
+	Color32 clothesDetailColor
+	Color32[2] _unused
+	String eyesId
+	String mouthId
+	Color32 glassesColor
+	Color32 facialHairColor
+	Color32 headTopSecondaryColor
+	String glassesId
+	String facialHairId
+	String handsId
+u32 DisconnectedReason
+	z Unknown
+	z UserInitiated
+	z Timeout
+	z Kicked
+	z ServerAtCapacity
+	z ServerConnectionClosed
+	z MasterServerUnreachable
+	z ClientConnectionClosed
+	z NetworkDisconnected
+	z ServerTerminated
+r RoutingHeader
+	u8 remoteConnectionId
+	u8.e bits
+		u7.u8 connectionId
+		u1.b encrypted
+u8 InternalMessage Type
+	n SyncTime
+		f32 syncTime
+	n PlayerConnected
+		u8 remoteConnectionId
+		String userId
+		String userName
+		b isConnectionOwner
+	n PlayerIdentity
+		PlayerStateHash playerState
+		MultiplayerAvatarData playerAvatar
+		ByteArrayNetSerializable random
+		ByteArrayNetSerializable publicEncryptionKey
+	n PlayerLatencyUpdate
+		f32 latency
+	n PlayerDisconnected
+		vi32.DisconnectedReason disconnectedReason
+	n PlayerSortOrderUpdate
+		String userId
+		vi32 sortIndex
+	n Party
+	z MultiplayerSession
+	n KickPlayer
+		vi32.DisconnectedReason disconnectedReason
+	n PlayerStateUpdate
+		PlayerStateHash playerState
+	n PlayerAvatarUpdate
+		MultiplayerAvatarData playerAvatar
+n RemoteProcedureCall
+	f32 syncTime
+n PlayersMissingEntitlementsNetSerializable
+	i32 count
+	String[128,count] playersWithoutEntitlements
+u8 EntitlementsStatus
+	z Unknown
+	z NotOwned
+	z NotDownloaded
+	z Ok
+u32 BeatmapDifficulty
+	z Easy
+	z Normal
+	z Hard
+	z Expert
+	z ExpertPlus
+n BeatmapIdentifierNetSerializable
+	String levelID
+	String beatmapCharacteristicSerializedName
+	vu32.BeatmapDifficulty difficulty
+u8 EnabledObstacleType
+	z All
+	z FullHeightOnly
+	z NoObstacles
+u8 EnergyType
+	z Bar
+	z Battery
+u8 SongSpeed
+	z Normal
+	z Faster
+	z Slower
+	z SuperFast
+n GameplayModifiers
+	i32.e bits
+		u4.EnergyType energyType
+		u1
+		u1.b demoNoFail
+		u1.b instaFail
+		u1.b failOnSaberClash
+		u4.EnabledObstacleType enabledObstacleType
+		u1.b demoNoObstacles
+		u1.b noBombs
+		u1.b fastNotes
+		u1.b strictAngles
+		u1.b disappearingArrows
+		u1.b ghostNotes
+		u4.SongSpeed songSpeed
+		u1.b noArrows
+		u1.b noFailOn0Energy
+		u1.b proMode
+		u1.b zenMode
+		u1.b smallCubes
+n PlayerLobbyPermissionConfigurationNetSerializable
+	String userId
+	u8.e bits
+		u1.b isServerOwner
+		u1.b hasRecommendBeatmapsPermission
+		u1.b hasRecommendGameplayModifiersPermission
+		u1.b hasKickVotePermission
+		u1.b hasInvitePermission
+n PlayersLobbyPermissionConfigurationNetSerializable
+	i32 count
+	PlayerLobbyPermissionConfigurationNetSerializable[128,count] playersPermission
+n SyncStateId
+	u8 id
+n Vector3Serializable
+	vi32 x
+	vi32 y
+	vi32 z
+n QuaternionSerializable
+	vi32 a
+	vi32 b
+	vi32 c
+n PoseSerializable
+	Vector3Serializable position
+	QuaternionSerializable rotation
+u8 CannotStartGameReason
+	z None 1
+	z AllPlayersSpectating
+	z NoSongSelected
+	z AllPlayersNotInLobby
+	z DoNotOwnSong
+u8 MultiplayerGameState
+	z None
+	z Lobby
+	z Game
+u8 MultiplayerSessionMessage Type
+	u8 MenuRpc Type
+		n SetPlayersMissingEntitlementsToLevel
+			RemoteProcedureCall base
+			PlayersMissingEntitlementsNetSerializable playersMissingEntitlements
+		n GetIsEntitledToLevel
+			RemoteProcedureCall base
+			String levelId
+		n SetIsEntitledToLevel
+			RemoteProcedureCall base
+			String levelId
+			vi32.EntitlementsStatus entitlementStatus
+		n InvalidateLevelEntitlementStatuses
+			RemoteProcedureCall base
+		n SelectLevelPack
+			RemoteProcedureCall base
+			String levelPackId
+		n SetSelectedBeatmap
+			RemoteProcedureCall base
+			BeatmapIdentifierNetSerializable identifier
+		n GetSelectedBeatmap
+			RemoteProcedureCall base
+		n RecommendBeatmap
+			RemoteProcedureCall base
+			BeatmapIdentifierNetSerializable identifier
+		n ClearRecommendedBeatmap
+			RemoteProcedureCall base
+		n GetRecommendedBeatmap
+			RemoteProcedureCall base
+		n SetSelectedGameplayModifiers
+			RemoteProcedureCall base
+			GameplayModifiers gameplayModifiers
+		n GetSelectedGameplayModifiers
+			RemoteProcedureCall base
+		n RecommendGameplayModifiers
+			RemoteProcedureCall base
+			GameplayModifiers gameplayModifiers
+		n ClearRecommendedGameplayModifiers
+			RemoteProcedureCall base
+		n GetRecommendedGameplayModifiers
+			RemoteProcedureCall base
+		n LevelLoadError
+			RemoteProcedureCall base
+			String levelId
+		n LevelLoadSuccess
+			RemoteProcedureCall base
+			String levelId
+		n StartLevel
+			RemoteProcedureCall base
+			BeatmapIdentifierNetSerializable beatmapId
+			GameplayModifiers gameplayModifiers
+			f32 startTime
+		n GetStartedLevel
+			RemoteProcedureCall base
+		n CancelLevelStart
+			RemoteProcedureCall base
+		n GetMultiplayerGameState
+			RemoteProcedureCall base
+		n SetMultiplayerGameState
+			RemoteProcedureCall base
+			vi32.MultiplayerGameState lobbyState
+		n GetIsReady
+			RemoteProcedureCall base
+		n SetIsReady
+			RemoteProcedureCall base
+			b isReady
+		n SetStartGameTime
+			RemoteProcedureCall base
+			f32 newTime
+		n CancelStartGameTime
+			RemoteProcedureCall base
+		n GetIsInLobby
+			RemoteProcedureCall base
+		n SetIsInLobby
+			RemoteProcedureCall base
+			b isBack
+		n GetCountdownEndTime
+			RemoteProcedureCall base
+		n SetCountdownEndTime
+			RemoteProcedureCall base
+			f32 newTime
+		n CancelCountdown
+			RemoteProcedureCall base
+		n GetOwnedSongPacks
+			RemoteProcedureCall base
+		n SetOwnedSongPacks
+			RemoteProcedureCall base
+			SongPackMask songPackMask
+		n RequestKickPlayer
+			RemoteProcedureCall base
+			String kickedPlayerId
+		n GetPermissionConfiguration
+			RemoteProcedureCall base
+		n SetPermissionConfiguration
+			RemoteProcedureCall base
+			PlayersLobbyPermissionConfigurationNetSerializable playersPermissionConfiguration
+		n GetIsStartButtonEnabled
+			RemoteProcedureCall base
+		n SetIsStartButtonEnabled
+			RemoteProcedureCall base
+			vi32.CannotStartGameReason reason
+	u8 GameplayRpc Type
+	n NodePoseSyncState
+		SyncStateId id
+		f32 time
+		PoseSerializable head
+		PoseSerializable leftController
+		PoseSerializable rightController
+	u8 ScoreSyncState Type
+	u8 NodePoseSyncStateDelta Type
+	u8 ScoreSyncStateDelta Type
+n MultiplayerSessionMessageHeader
+	u8.MultiplayerSessionMessageType type
+n MenuRpcHeader
+	u8.MenuRpcType type
+n GameplayRpcHeader
+	u8.GameplayRpcType type
+n ScoreSyncStateHeader
+	u8.ScoreSyncStateType type
+n NodePoseSyncStateDeltaHeader
+	u8.NodePoseSyncStateDeltaType type
+n ScoreSyncStateDeltaHeader
+	u8.ScoreSyncStateDeltaType type
+
+u8 UserMessage Type
+	r AuthenticateUserRequest
+		BaseMasterServerReliableResponse base
+		AuthenticationToken authenticationToken
+	s AuthenticateUserResponse
+		BaseMasterServerReliableResponse base
+		u8.AuthenticateUserResponse_Result result
+	s ConnectToServerResponse 8
+		BaseMasterServerReliableResponse base
+		u8.ConnectToServerResponse_Result result
+		if(result == GetPublicServersResponse_Result_Success)
 			String userId
 			String userName
-			vi32 offset
-			vi32 count
-			BeatmapLevelSelectionMask selectionMask
-			GameplayServerConfiguration configuration
-		s GetPublicServersResponse
-			BaseMasterServerReliableResponse base
-			u8.GetPublicServersResponse_Result result
-			if(result == GetPublicServersResponse_Result_Success)
-				vu32 publicServerCount
-				PublicServerInfo[publicServerCount,16384] publicServers
-	u8 DedicatedServerMessage Type 2
-		r AuthenticateDedicatedServerRequest
-			BaseMasterServerReliableResponse base
-			String dedicatedServerId
-			u8[16] nonce
-			u8[32] hash
-			u64 timestamp
-		d AuthenticateDedicatedServerResponse
-		r CreateDedicatedServerInstanceRequest 4
-			BaseMasterServerReliableRequest base
 			String secret
 			BeatmapLevelSelectionMask selectionMask
-			String userId
-			String userName
-			IPEndPoint userEndPoint
-			u8[32] userRandom
-			ByteArrayNetSerializable userPublicKey
-			GameplayServerConfiguration configuration
-		d CreateDedicatedServerInstanceResponse
-		d DedicatedServerInstanceNoLongerAvailableRequest
-		d DedicatedServerHeartbeatRequest
-		d DedicatedServerHeartbeatResponse
-		d DedicatedServerInstanceStatusUpdateRequest 10
-		d DedicatedServerShutDownRequest
-		d DedicatedServerPrepareForConnectionRequest
-		d DedicatedServerMessageReceivedAcknowledge
-			BaseMasterServerAcknowledgeMessage base
-		s DedicatedServerMultipartMessage
-			BaseMasterServerMultipartMessage base
-		d DedicatedServerPrepareForConnectionResponse
-	u8 HandshakeMessage Type 3192347326
-		r ClientHelloRequest
-			BaseMasterServerReliableRequest base
-			u8[32] random
-		s HelloVerifyRequest
-			BaseMasterServerReliableResponse base
-			u8[32] cookie
-		r ClientHelloWithCookieRequest
-			BaseMasterServerReliableRequest base
-			u32 certificateResponseId
-			u8[32] random
-			u8[32] cookie
-		s ServerHelloRequest
-			BaseMasterServerReliableResponse base
+			u8 flags
+			IPEndPoint remoteEndPoint
 			u8[32] random
 			ByteArrayNetSerializable publicKey
-			ByteArrayNetSerializable signature
-		s ServerCertificateRequest
-			BaseMasterServerReliableResponse base
-			vu32 certificateCount
-			ByteArrayNetSerializable[certificateCount,10] certificateList
-		r ServerCertificateResponse
-		r ClientKeyExchangeRequest
-			BaseMasterServerReliableResponse base
-			ByteArrayNetSerializable clientPublicKey
-		s ChangeCipherSpecRequest
-			BaseMasterServerReliableResponse base
-		d HandshakeMessageReceivedAcknowledge
-			BaseMasterServerAcknowledgeMessage base
-		s HandshakeMultipartMessage
-			BaseMasterServerMultipartMessage base
+			ServerCode.ServerCode code
+			GameplayServerConfiguration configuration
+			String managerId
+	r ConnectToServerRequest
+		BaseConnectToServerRequest base
+		BeatmapLevelSelectionMask selectionMask
+		String secret
+		ServerCode.ServerCode code
+		GameplayServerConfiguration configuration
+	n UserMessageReceivedAcknowledge 13
+		BaseMasterServerAcknowledgeMessage base
+	n UserMultipartMessage
+		BaseMasterServerMultipartMessage base
+	n SessionKeepaliveMessage
+	n GetPublicServersRequest
+		BaseMasterServerReliableRequest base
+		String userId
+		String userName
+		vi32 offset
+		vi32 count
+		BeatmapLevelSelectionMask selectionMask
+		GameplayServerConfiguration configuration
+	n GetPublicServersResponse
+		BaseMasterServerReliableResponse base
+		u8.GetPublicServersResponse_Result result
+		if(result == GetPublicServersResponse_Result_Success)
+			vu32 publicServerCount
+			PublicServerInfo[8192,publicServerCount] publicServers
+u8 DedicatedServerMessage Type
+	n AuthenticateDedicatedServerRequest
+		BaseMasterServerReliableResponse base
+		String dedicatedServerId
+		u8[16] nonce
+		u8[32] hash
+		u64 timestamp
+	n AuthenticateDedicatedServerResponse
+	n CreateDedicatedServerInstanceRequest 4
+		BaseMasterServerReliableRequest base
+		String secret
+		BeatmapLevelSelectionMask selectionMask
+		String userId
+		String userName
+		IPEndPoint userEndPoint
+		u8[32] userRandom
+		ByteArrayNetSerializable userPublicKey
+		GameplayServerConfiguration configuration
+	n CreateDedicatedServerInstanceResponse
+	n DedicatedServerInstanceNoLongerAvailableRequest
+	n DedicatedServerHeartbeatRequest
+	n DedicatedServerHeartbeatResponse
+	n DedicatedServerInstanceStatusUpdateRequest 10
+	n DedicatedServerShutDownRequest
+	n DedicatedServerPrepareForConnectionRequest
+	n DedicatedServerMessageReceivedAcknowledge
+		BaseMasterServerAcknowledgeMessage base
+	n DedicatedServerMultipartMessage
+		BaseMasterServerMultipartMessage base
+	n DedicatedServerPrepareForConnectionResponse
+u8 HandshakeMessage Type
+	r ClientHelloRequest
+		BaseMasterServerReliableRequest base
+		u8[32] random
+	s HelloVerifyRequest
+		BaseMasterServerReliableResponse base
+		u8[32] cookie
+	r ClientHelloWithCookieRequest
+		BaseMasterServerReliableRequest base
+		u32 certificateResponseId
+		u8[32] random
+		u8[32] cookie
+	s ServerHelloRequest
+		BaseMasterServerReliableResponse base
+		u8[32] random
+		ByteArrayNetSerializable publicKey
+		ByteArrayNetSerializable signature
+	s ServerCertificateRequest
+		BaseMasterServerReliableResponse base
+		vu32 certificateCount
+		ByteArrayNetSerializable[10,certificateCount] certificateList
+	n ServerCertificateResponse
+	r ClientKeyExchangeRequest
+		BaseMasterServerReliableResponse base
+		ByteArrayNetSerializable clientPublicKey
+	s ChangeCipherSpecRequest
+		BaseMasterServerReliableResponse base
+	n HandshakeMessageReceivedAcknowledge
+		BaseMasterServerAcknowledgeMessage base
+	n HandshakeMultipartMessage
+		BaseMasterServerMultipartMessage base
+
+head
+	#ifdef reflect
+	static const char *const reflect_MessageType = "{MessageType_UserMessage=1,MessageType_DedicatedServerMessage=2,MessageType_HandshakeMessage=3192347326,}";
+	#endif
+	typedef uint32_t MessageType;
+	#define MessageType_UserMessage 1
+	#define MessageType_DedicatedServerMessage 2
+	#define MessageType_HandshakeMessage 3192347326u
+code
+	void pkt_logMessageType(const char *name, char *buf, char *it, MessageType in) {
+		fprintf(stderr, "%.*s%s=%u (%s)\n", (uint32_t)(it - buf), buf, name, in, reflect(MessageType, in));
+	}
+d MessageHeader
+	u32.MessageType type
+	vu32 protocolVersion
+d SerializeHeader
+	vu32 length
+	u8 type

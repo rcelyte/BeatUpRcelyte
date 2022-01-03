@@ -6,8 +6,9 @@
 #include <pthread.h>
 #endif
 #include <mbedtls/net_sockets.h>
-#include <mbedtls/entropy.h>
 #include <mbedtls/ctr_drbg.h>
+#include <mbedtls/entropy.h>
+#include <mbedtls/error.h>
 #include <string.h>
 
 struct Context {
@@ -33,20 +34,24 @@ status_ssl_handler(struct Context *ctx) {
 		while((ret = mbedtls_ssl_handshake(&ctx->ssl)) != 0)
 			if(ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE)
 				goto reset;
-		uint8_t buf[81920];
+		uint8_t buf[65536];
 		do {
 			memset(buf, 0, sizeof(buf));
 			ret = mbedtls_ssl_read(&ctx->ssl, buf, sizeof(buf) - 1);
 		} while(ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE);
-		size_t len = status_resp("HTTPS", ctx->path, (char*)buf, ret);
-		if(len) {
-			while((ret = mbedtls_ssl_write(&ctx->ssl, buf, len)) <= 0) {
-				if(ret == MBEDTLS_ERR_NET_CONN_RESET)
-					goto reset;
-				if(ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
-					fprintf(stderr, "mbedtls_ssl_write() returned %d\n", ret);
-					mbedtls_net_free(&clientfd);
-					return 0;
+		if(ret < 0) {
+			fprintf(stderr, "mbedtls_ssl_write() failed: %s\n", mbedtls_high_level_strerr(ret));
+		} else {
+			size_t len = status_resp("HTTPS", ctx->path, (char*)buf, ret);
+			if(len) {
+				while((ret = mbedtls_ssl_write(&ctx->ssl, buf, len)) <= 0) {
+					if(ret == MBEDTLS_ERR_NET_CONN_RESET)
+						goto reset;
+					if(ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
+						fprintf(stderr, "mbedtls_ssl_write() failed: %s\n", mbedtls_high_level_strerr(ret));
+						mbedtls_net_free(&clientfd);
+						return 0;
+					}
 				}
 			}
 		}
@@ -74,27 +79,27 @@ _Bool status_ssl_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, const cha
 	mbedtls_ctr_drbg_init(&ctx.ctr_drbg);
 	int ret = mbedtls_ctr_drbg_seed(&ctx.ctr_drbg, mbedtls_entropy_func, &ctx.entropy, (const unsigned char*)"ssl_server", 10);
 	if(ret != 0) {
-		fprintf(stderr, "mbedtls_ctr_drbg_seed() returned %d\n", ret);
+		fprintf(stderr, "mbedtls_ctr_drbg_seed() failed: %s\n", mbedtls_high_level_strerr(ret));
 		return 1;
 	}
 	char service[8];
 	sprintf(service, "%hu", port);
 	if((ret = mbedtls_net_bind(&ctx.listenfd, NULL, service, MBEDTLS_NET_PROTO_TCP)) != 0) {
-		fprintf(stderr, "mbedtls_net_bind() returned %d\n", ret);
+		fprintf(stderr, "mbedtls_net_bind() failed: %s\n", mbedtls_high_level_strerr(ret));
 		return 1;
 	}
 	if((ret = mbedtls_ssl_config_defaults(&ctx.conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT)) != 0) {
-		fprintf(stderr, "mbedtls_ssl_config_defaults() returned %d\n", ret);
+		fprintf(stderr, "mbedtls_ssl_config_defaults() failed: %s\n", mbedtls_high_level_strerr(ret));
 		return 1;
 	}
 	mbedtls_ssl_conf_rng(&ctx.conf, mbedtls_ctr_drbg_random, &ctx.ctr_drbg);
 	mbedtls_ssl_conf_ca_chain(&ctx.conf, cert->MBEDTLS_PRIVATE(next), NULL);
 	if((ret = mbedtls_ssl_conf_own_cert(&ctx.conf, cert, key)) != 0) {
-		fprintf(stderr, "mbedtls_ssl_conf_own_cert() returned %d\n", ret);
+		fprintf(stderr, "mbedtls_ssl_conf_own_cert() failed: %s\n", mbedtls_high_level_strerr(ret));
 		return 1;
 	}
 	if((ret = mbedtls_ssl_setup(&ctx.ssl, &ctx.conf)) != 0) {
-		fprintf(stderr, "mbedtls_ssl_setup() returned %d\n", ret);
+		fprintf(stderr, "mbedtls_ssl_setup() failed: %s\n", mbedtls_high_level_strerr(ret));
 		return 1;
 	}
 	ctx.path = path;
@@ -102,7 +107,7 @@ _Bool status_ssl_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, const cha
 	status_thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)status_ssl_handler, &ctx, 0, NULL);
 	return !status_thread;
 	#else
-	return pthread_create(&status_thread, NULL, (void*)&status_ssl_handler, &ctx) != 0;
+	return pthread_create(&status_thread, NULL, (void*(*)(void*))status_ssl_handler, &ctx) != 0;
 	#endif
 }
 void status_ssl_cleanup() {

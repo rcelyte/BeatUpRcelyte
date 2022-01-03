@@ -13,7 +13,7 @@ DEPS := $(OBJS:.o=.d)
 LIBS := libmbedtls.a libmbedx509.a libmbedcrypto.a
 OBJS += $(LIBS:%=$(OBJDIR)/%)
 
-CFLAGS := -g -std=gnu11 -Imbedtls/include -Wall -Wno-unused-function -Werror
+CFLAGS := -g -std=gnu11 -Imbedtls/include -Wall -Wno-unused-function -Werror -pedantic-errors
 LDFLAGS := -O2 -no-pie -Wl,--gc-sections,--fatal-warnings
 
 default: beatupserver
@@ -46,10 +46,10 @@ $(OBJDIR)/libs.mk: libs.c makefile
 	@mkdir -p "$(@D)"
 	$(CC) -E libs.c -o "$@"
 
-src/packets.c src/packets.h: src/packets.txt gen.c
+src/packets.h: src/packets.txt gen.c
 	$(MAKE) .obj/gen.$(HOST)
 	@echo "[gen $(notdir $@)]"
-	./.obj/gen.$(HOST) "$<" "$@"
+	./.obj/gen.$(HOST) "$<" "$@" src/packets.c
 
 .obj/gen.$(HOST): gen.c
 	@echo "[cc $(notdir $@)]"

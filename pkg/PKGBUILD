@@ -8,6 +8,7 @@ url="https://github.com/rcelyte/BeatUpRcelyte"
 license=('Unlicense')
 depends=('glibc')
 makedepends=()
+backup=('etc/beatupserver.json')
 source=("git+https://github.com/rcelyte/BeatUpRcelyte.git")
 sha256sums=('SKIP')
 
@@ -24,4 +25,6 @@ build() {
 package() {
 	cd "${srcdir}/BeatUpRcelyte"
 	make DESTDIR="$pkgdir/usr" install
+	install -D -m0644 "${srcdir}/BeatUpRcelyte/pkg/beatupserver.service" "$pkgdir/usr/lib/systemd/system/beatupserver.service"
+	install -D -m0644 "${srcdir}/BeatUpRcelyte/pkg/beatupserver.json" "$pkgdir/etc/beatupserver.json"
 }

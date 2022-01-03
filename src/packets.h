@@ -1,33 +1,62 @@
+#pragma once
+
 /* 
  * AUTO GENERATED; DO NOT TOUCH
  * AUTO GENERATED; DO NOT TOUCH
  * AUTO GENERATED; DO NOT TOUCH
  */
 
-#pragma once
-
 #include "enum.h"
 #include <stdint.h>
-ENUM(uint8_t, PacketProperty, {
-	PacketProperty_Unreliable,
-	PacketProperty_Channeled,
-	PacketProperty_Ack,
-	PacketProperty_Ping,
-	PacketProperty_Pong,
-	PacketProperty_ConnectRequest,
-	PacketProperty_ConnectAccept,
-	PacketProperty_Disconnect,
-	PacketProperty_UnconnectedMessage,
-	PacketProperty_MtuCheck,
-	PacketProperty_MtuOk,
-	PacketProperty_Broadcast,
-	PacketProperty_Merged,
-	PacketProperty_ShutdownOk,
-	PacketProperty_PeerNotFound,
-	PacketProperty_InvalidProtocol,
-	PacketProperty_NatMessage,
-	PacketProperty_Empty,
-})
+
+#define SERIALIZE_HEAD(pkt, mtype) { \
+	struct MessageHeader _message; \
+	_message.type = MessageType_##mtype; \
+	_message.protocolVersion = 6; \
+	pkt_writeMessageHeader(pkt, _message); \
+}
+#define SERIALIZE_BODY(pkt, stype, dtype, data) { \
+	fprintf(stderr, "serialize " #stype "\n"); \
+	uint8_t *_end = *(pkt); \
+	pkt_write##dtype(&_end, data); \
+	struct SerializeHeader _serial; \
+	_serial.length = _end + 1 - *(pkt); \
+	_serial.type = stype; \
+	pkt_writeSerializeHeader(pkt, _serial); \
+	pkt_write##dtype(pkt, data); \
+}
+#define SERIALIZE(pkt, mtype, stype, dtype, data) { \
+	SERIALIZE_HEAD(pkt, mtype) \
+	SERIALIZE_BODY(pkt, mtype##Type_##stype, dtype, data) \
+}
+uint8_t pkt_readUint8(const uint8_t **pkt);
+uint16_t pkt_readUint16(const uint8_t **pkt);
+uint32_t pkt_readUint32(const uint8_t **pkt);
+uint64_t pkt_readUint64(const uint8_t **pkt);
+#define pkt_readInt8(pkt) (int8_t)pkt_readUint8(pkt)
+#define pkt_readInt16(pkt) (int16_t)pkt_readUint16(pkt)
+#define pkt_readInt32(pkt) (int32_t)pkt_readUint32(pkt)
+#define pkt_readInt64(pkt) (int64_t)pkt_readUint64(pkt)
+uint64_t pkt_readVarUint64(const uint8_t **pkt);
+uint64_t pkt_readVarUint64(const uint8_t **pkt);
+int64_t pkt_readVarInt64(const uint8_t **pkt);
+uint32_t pkt_readVarUint32(const uint8_t **pkt);
+int32_t pkt_readVarInt32(const uint8_t **pkt);
+void pkt_readUint8Array(const uint8_t **pkt, uint8_t *out, uint32_t count);
+float pkt_readFloat32(const uint8_t **pkt);
+double pkt_readFloat64(const uint8_t **pkt);
+void pkt_writeUint8(uint8_t **pkt, uint8_t v);
+void pkt_writeUint16(uint8_t **pkt, uint16_t v);
+void pkt_writeUint32(uint8_t **pkt, uint32_t v);
+void pkt_writeUint64(uint8_t **pkt, uint64_t v);
+void pkt_writeVarUint64(uint8_t **pkt, uint64_t v);
+void pkt_writeVarInt64(uint8_t **pkt, int64_t v);
+void pkt_writeVarUint32(uint8_t **pkt, uint32_t v);
+void pkt_writeVarInt32(uint8_t **pkt, int32_t v);
+#define pkt_writeInt8Array(pkt, out, count) pkt_writeUint8Array(pkt, (uint8_t*)out, count)
+void pkt_writeUint8Array(uint8_t **pkt, uint8_t *in, uint32_t count);
+void pkt_writeFloat32(uint8_t **pkt, float v);
+void pkt_writeFloat64(uint8_t **pkt, double v);
 ENUM(uint8_t, Platform, {
 	Platform_Test,
 	Platform_OculusRift,
@@ -38,6 +67,74 @@ ENUM(uint8_t, Platform, {
 	Platform_PS4Cert,
 	Platform_Oculus = 1,
 })
+struct PacketEncryptionLayer {
+	_Bool encrypted;
+	uint32_t sequenceId;
+	uint8_t iv[16];
+};
+struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(const uint8_t **pkt);
+void pkt_writePacketEncryptionLayer(uint8_t **pkt, struct PacketEncryptionLayer in);
+struct BaseMasterServerReliableRequest {
+	uint32_t requestId;
+};
+struct BaseMasterServerReliableRequest pkt_readBaseMasterServerReliableRequest(const uint8_t **pkt);
+void pkt_writeBaseMasterServerReliableRequest(uint8_t **pkt, struct BaseMasterServerReliableRequest in);
+struct BaseMasterServerResponse {
+	uint32_t responseId;
+};
+struct BaseMasterServerResponse pkt_readBaseMasterServerResponse(const uint8_t **pkt);
+void pkt_writeBaseMasterServerResponse(uint8_t **pkt, struct BaseMasterServerResponse in);
+struct BaseMasterServerReliableResponse {
+	uint32_t requestId;
+	uint32_t responseId;
+};
+struct BaseMasterServerReliableResponse pkt_readBaseMasterServerReliableResponse(const uint8_t **pkt);
+void pkt_writeBaseMasterServerReliableResponse(uint8_t **pkt, struct BaseMasterServerReliableResponse in);
+struct BaseMasterServerAcknowledgeMessage {
+	struct BaseMasterServerResponse base;
+	_Bool messageHandled;
+};
+struct BaseMasterServerAcknowledgeMessage pkt_readBaseMasterServerAcknowledgeMessage(const uint8_t **pkt);
+void pkt_writeBaseMasterServerAcknowledgeMessage(uint8_t **pkt, struct BaseMasterServerAcknowledgeMessage in);
+struct ByteArrayNetSerializable {
+	uint32_t length;
+	uint8_t data[4096];
+};
+struct ByteArrayNetSerializable pkt_readByteArrayNetSerializable(const uint8_t **pkt);
+void pkt_writeByteArrayNetSerializable(uint8_t **pkt, struct ByteArrayNetSerializable in);
+struct String {
+	uint32_t length;
+	char data[60];
+};
+struct String pkt_readString(const uint8_t **pkt);
+void pkt_writeString(uint8_t **pkt, struct String in);
+struct AuthenticationToken {
+	Platform platform;
+	struct String userId;
+	struct String userName;
+	struct ByteArrayNetSerializable sessionToken;
+};
+struct AuthenticationToken pkt_readAuthenticationToken(const uint8_t **pkt);
+struct BaseMasterServerMultipartMessage {
+	struct BaseMasterServerReliableRequest base;
+	uint32_t multipartMessageId;
+	uint32_t offset;
+	uint32_t length;
+	uint32_t totalLength;
+	uint8_t data[384];
+};
+void pkt_writeBaseMasterServerMultipartMessage(uint8_t **pkt, struct BaseMasterServerMultipartMessage in);
+struct BitMask128 {
+	uint64_t _d0;
+	uint64_t _d1;
+};
+struct BitMask128 pkt_readBitMask128(const uint8_t **pkt);
+void pkt_writeBitMask128(uint8_t **pkt, struct BitMask128 in);
+struct SongPackMask {
+	struct BitMask128 _bloomFilter;
+};
+struct SongPackMask pkt_readSongPackMask(const uint8_t **pkt);
+void pkt_writeSongPackMask(uint8_t **pkt, struct SongPackMask in);
 ENUM(uint8_t, BeatmapDifficultyMask, {
 	BeatmapDifficultyMask_Easy = 1,
 	BeatmapDifficultyMask_Normal = 2,
@@ -66,6 +163,13 @@ ENUM(uint32_t, GameplayModifierMask, {
 	GameplayModifierMask_SmallCubes = 32768,
 	GameplayModifierMask_All = 65535,
 })
+struct BeatmapLevelSelectionMask {
+	BeatmapDifficultyMask difficulties;
+	GameplayModifierMask modifiers;
+	struct SongPackMask songPacks;
+};
+struct BeatmapLevelSelectionMask pkt_readBeatmapLevelSelectionMask(const uint8_t **pkt);
+void pkt_writeBeatmapLevelSelectionMask(uint8_t **pkt, struct BeatmapLevelSelectionMask in);
 ENUM(uint8_t, DiscoveryPolicy, {
 	DiscoveryPolicy_Hidden,
 	DiscoveryPolicy_WithCode,
@@ -93,6 +197,24 @@ ENUM(uint8_t, GameplayServerControlSettings, {
 	GameplayServerControlSettings_AllowSpectate = 2,
 	GameplayServerControlSettings_All = 3,
 })
+struct GameplayServerConfiguration {
+	int32_t maxPlayerCount;
+	DiscoveryPolicy discoveryPolicy;
+	InvitePolicy invitePolicy;
+	GameplayServerMode gameplayServerMode;
+	SongSelectionMode songSelectionMode;
+	GameplayServerControlSettings gameplayServerControlSettings;
+};
+struct GameplayServerConfiguration pkt_readGameplayServerConfiguration(const uint8_t **pkt);
+void pkt_writeGameplayServerConfiguration(uint8_t **pkt, struct GameplayServerConfiguration in);
+typedef uint32_t ServerCode;
+ServerCode StringToServerCode(const char *in, uint32_t len);
+char *ServerCodeToString(char *out, ServerCode in);
+struct IPEndPoint {
+	struct String address;
+	uint32_t port;
+};
+void pkt_writeIPEndPoint(uint8_t **pkt, struct IPEndPoint in);
 ENUM(uint8_t, AuthenticateUserResponse_Result, {
 	AuthenticateUserResponse_Result_Success,
 	AuthenticateUserResponse_Result_Failed,
@@ -113,6 +235,236 @@ ENUM(uint8_t, GetPublicServersResponse_Result, {
 	GetPublicServersResponse_Result_Success,
 	GetPublicServersResponse_Result_UnknownError,
 })
+struct BaseConnectToServerRequest {
+	struct BaseMasterServerReliableRequest base;
+	struct String userId;
+	struct String userName;
+	uint8_t random[32];
+	struct ByteArrayNetSerializable publicKey;
+};
+struct BaseConnectToServerRequest pkt_readBaseConnectToServerRequest(const uint8_t **pkt);
+ENUM(uint8_t, DeliveryMethod, {
+	DeliveryMethod_ReliableUnordered,
+	DeliveryMethod_Sequenced,
+	DeliveryMethod_ReliableOrdered,
+	DeliveryMethod_ReliableSequenced,
+})
+struct Ack {
+	uint16_t sequence;
+	uint8_t channelId;
+	uint8_t data[9];
+};
+struct Ack pkt_readAck(const uint8_t **pkt);
+struct Ping {
+	uint16_t sequence;
+};
+struct Ping pkt_readPing(const uint8_t **pkt);
+struct Pong {
+	uint16_t sequence;
+	uint64_t time;
+};
+void pkt_writePong(uint8_t **pkt, struct Pong in);
+struct ConnectRequest {
+	uint32_t protocolId;
+	uint64_t connectId;
+	uint8_t addrlen;
+	uint8_t address[38];
+	struct String secret;
+	struct String userId;
+	struct String userName;
+	_Bool isConnectionOwner;
+};
+struct ConnectRequest pkt_readConnectRequest(const uint8_t **pkt);
+struct ConnectAccept {
+	uint64_t connectId;
+	uint8_t connectNum;
+	_Bool reusedPeer;
+};
+void pkt_writeConnectAccept(uint8_t **pkt, struct ConnectAccept in);
+ENUM(uint8_t, PacketProperty, {
+	PacketProperty_Unreliable,
+	PacketProperty_Channeled,
+	PacketProperty_Ack,
+	PacketProperty_Ping,
+	PacketProperty_Pong,
+	PacketProperty_ConnectRequest,
+	PacketProperty_ConnectAccept,
+	PacketProperty_Disconnect,
+	PacketProperty_UnconnectedMessage,
+	PacketProperty_MtuCheck,
+	PacketProperty_MtuOk,
+	PacketProperty_Broadcast,
+	PacketProperty_Merged,
+	PacketProperty_ShutdownOk,
+	PacketProperty_PeerNotFound,
+	PacketProperty_InvalidProtocol,
+	PacketProperty_NatMessage,
+	PacketProperty_Empty,
+})
+struct NetPacketHeader {
+	PacketProperty property;
+	uint8_t connectionNumber;
+	_Bool isFragmented;
+};
+struct NetPacketHeader pkt_readNetPacketHeader(const uint8_t **pkt);
+void pkt_writeNetPacketHeader(uint8_t **pkt, struct NetPacketHeader in);
+ENUM(uint32_t, DisconnectedReason, {
+	DisconnectedReason_Unknown,
+	DisconnectedReason_UserInitiated,
+	DisconnectedReason_Timeout,
+	DisconnectedReason_Kicked,
+	DisconnectedReason_ServerAtCapacity,
+	DisconnectedReason_ServerConnectionClosed,
+	DisconnectedReason_MasterServerUnreachable,
+	DisconnectedReason_ClientConnectionClosed,
+	DisconnectedReason_NetworkDisconnected,
+	DisconnectedReason_ServerTerminated,
+})
+struct RoutingHeader {
+	uint8_t remoteConnectionId;
+	uint8_t connectionId;
+	_Bool encrypted;
+};
+struct RoutingHeader pkt_readRoutingHeader(const uint8_t **pkt);
+ENUM(uint8_t, InternalMessageType, {
+	InternalMessageType_SyncTime,
+	InternalMessageType_PlayerConnected,
+	InternalMessageType_PlayerIdentity,
+	InternalMessageType_PlayerLatencyUpdate,
+	InternalMessageType_PlayerDisconnected,
+	InternalMessageType_PlayerSortOrderUpdate,
+	InternalMessageType_Party,
+	InternalMessageType_MultiplayerSession,
+	InternalMessageType_KickPlayer,
+	InternalMessageType_PlayerStateUpdate,
+	InternalMessageType_PlayerAvatarUpdate,
+})
+ENUM(uint8_t, EntitlementsStatus, {
+	EntitlementsStatus_Unknown,
+	EntitlementsStatus_NotOwned,
+	EntitlementsStatus_NotDownloaded,
+	EntitlementsStatus_Ok,
+})
+ENUM(uint32_t, BeatmapDifficulty, {
+	BeatmapDifficulty_Easy,
+	BeatmapDifficulty_Normal,
+	BeatmapDifficulty_Hard,
+	BeatmapDifficulty_Expert,
+	BeatmapDifficulty_ExpertPlus,
+})
+ENUM(uint8_t, EnabledObstacleType, {
+	EnabledObstacleType_All,
+	EnabledObstacleType_FullHeightOnly,
+	EnabledObstacleType_NoObstacles,
+})
+ENUM(uint8_t, EnergyType, {
+	EnergyType_Bar,
+	EnergyType_Battery,
+})
+ENUM(uint8_t, SongSpeed, {
+	SongSpeed_Normal,
+	SongSpeed_Faster,
+	SongSpeed_Slower,
+	SongSpeed_SuperFast,
+})
+ENUM(uint8_t, CannotStartGameReason, {
+	CannotStartGameReason_None = 1,
+	CannotStartGameReason_AllPlayersSpectating,
+	CannotStartGameReason_NoSongSelected,
+	CannotStartGameReason_AllPlayersNotInLobby,
+	CannotStartGameReason_DoNotOwnSong,
+})
+ENUM(uint8_t, MultiplayerGameState, {
+	MultiplayerGameState_None,
+	MultiplayerGameState_Lobby,
+	MultiplayerGameState_Game,
+})
+ENUM(uint8_t, MenuRpcType, {
+	MenuRpcType_SetPlayersMissingEntitlementsToLevel,
+	MenuRpcType_GetIsEntitledToLevel,
+	MenuRpcType_SetIsEntitledToLevel,
+	MenuRpcType_InvalidateLevelEntitlementStatuses,
+	MenuRpcType_SelectLevelPack,
+	MenuRpcType_SetSelectedBeatmap,
+	MenuRpcType_GetSelectedBeatmap,
+	MenuRpcType_RecommendBeatmap,
+	MenuRpcType_ClearRecommendedBeatmap,
+	MenuRpcType_GetRecommendedBeatmap,
+	MenuRpcType_SetSelectedGameplayModifiers,
+	MenuRpcType_GetSelectedGameplayModifiers,
+	MenuRpcType_RecommendGameplayModifiers,
+	MenuRpcType_ClearRecommendedGameplayModifiers,
+	MenuRpcType_GetRecommendedGameplayModifiers,
+	MenuRpcType_LevelLoadError,
+	MenuRpcType_LevelLoadSuccess,
+	MenuRpcType_StartLevel,
+	MenuRpcType_GetStartedLevel,
+	MenuRpcType_CancelLevelStart,
+	MenuRpcType_GetMultiplayerGameState,
+	MenuRpcType_SetMultiplayerGameState,
+	MenuRpcType_GetIsReady,
+	MenuRpcType_SetIsReady,
+	MenuRpcType_SetStartGameTime,
+	MenuRpcType_CancelStartGameTime,
+	MenuRpcType_GetIsInLobby,
+	MenuRpcType_SetIsInLobby,
+	MenuRpcType_GetCountdownEndTime,
+	MenuRpcType_SetCountdownEndTime,
+	MenuRpcType_CancelCountdown,
+	MenuRpcType_GetOwnedSongPacks,
+	MenuRpcType_SetOwnedSongPacks,
+	MenuRpcType_RequestKickPlayer,
+	MenuRpcType_GetPermissionConfiguration,
+	MenuRpcType_SetPermissionConfiguration,
+	MenuRpcType_GetIsStartButtonEnabled,
+	MenuRpcType_SetIsStartButtonEnabled,
+})
+typedef uint8_t GameplayRpcType;
+typedef uint8_t ScoreSyncStateType;
+typedef uint8_t NodePoseSyncStateDeltaType;
+typedef uint8_t ScoreSyncStateDeltaType;
+ENUM(uint8_t, MultiplayerSessionMessageType, {
+	MultiplayerSessionMessageType_MenuRpc,
+	MultiplayerSessionMessageType_GameplayRpc,
+	MultiplayerSessionMessageType_NodePoseSyncState,
+	MultiplayerSessionMessageType_ScoreSyncState,
+	MultiplayerSessionMessageType_NodePoseSyncStateDelta,
+	MultiplayerSessionMessageType_ScoreSyncStateDelta,
+})
+struct AuthenticateUserRequest {
+	struct BaseMasterServerReliableResponse base;
+	struct AuthenticationToken authenticationToken;
+};
+struct AuthenticateUserRequest pkt_readAuthenticateUserRequest(const uint8_t **pkt);
+struct AuthenticateUserResponse {
+	struct BaseMasterServerReliableResponse base;
+	AuthenticateUserResponse_Result result;
+};
+void pkt_writeAuthenticateUserResponse(uint8_t **pkt, struct AuthenticateUserResponse in);
+struct ConnectToServerResponse {
+	struct BaseMasterServerReliableResponse base;
+	ConnectToServerResponse_Result result;
+	struct String userId;
+	struct String userName;
+	struct String secret;
+	struct BeatmapLevelSelectionMask selectionMask;
+	uint8_t flags;
+	struct IPEndPoint remoteEndPoint;
+	uint8_t random[32];
+	struct ByteArrayNetSerializable publicKey;
+	ServerCode code;
+	struct GameplayServerConfiguration configuration;
+	struct String managerId;
+};
+void pkt_writeConnectToServerResponse(uint8_t **pkt, struct ConnectToServerResponse in);
+struct ConnectToServerRequest {
+	struct BaseConnectToServerRequest base;
+	struct BeatmapLevelSelectionMask selectionMask;
+	struct String secret;
+	ServerCode code;
+	struct GameplayServerConfiguration configuration;
+};
+struct ConnectToServerRequest pkt_readConnectToServerRequest(const uint8_t **pkt);
 ENUM(uint8_t, UserMessageType, {
 	UserMessageType_AuthenticateUserRequest,
 	UserMessageType_AuthenticateUserResponse,
@@ -139,6 +491,45 @@ ENUM(uint8_t, DedicatedServerMessageType, {
 	DedicatedServerMessageType_DedicatedServerMultipartMessage,
 	DedicatedServerMessageType_DedicatedServerPrepareForConnectionResponse,
 })
+struct ClientHelloRequest {
+	struct BaseMasterServerReliableRequest base;
+	uint8_t random[32];
+};
+struct ClientHelloRequest pkt_readClientHelloRequest(const uint8_t **pkt);
+struct HelloVerifyRequest {
+	struct BaseMasterServerReliableResponse base;
+	uint8_t cookie[32];
+};
+void pkt_writeHelloVerifyRequest(uint8_t **pkt, struct HelloVerifyRequest in);
+struct ClientHelloWithCookieRequest {
+	struct BaseMasterServerReliableRequest base;
+	uint32_t certificateResponseId;
+	uint8_t random[32];
+	uint8_t cookie[32];
+};
+struct ClientHelloWithCookieRequest pkt_readClientHelloWithCookieRequest(const uint8_t **pkt);
+struct ServerHelloRequest {
+	struct BaseMasterServerReliableResponse base;
+	uint8_t random[32];
+	struct ByteArrayNetSerializable publicKey;
+	struct ByteArrayNetSerializable signature;
+};
+void pkt_writeServerHelloRequest(uint8_t **pkt, struct ServerHelloRequest in);
+struct ServerCertificateRequest {
+	struct BaseMasterServerReliableResponse base;
+	uint32_t certificateCount;
+	struct ByteArrayNetSerializable certificateList[10];
+};
+void pkt_writeServerCertificateRequest(uint8_t **pkt, struct ServerCertificateRequest in);
+struct ClientKeyExchangeRequest {
+	struct BaseMasterServerReliableResponse base;
+	struct ByteArrayNetSerializable clientPublicKey;
+};
+struct ClientKeyExchangeRequest pkt_readClientKeyExchangeRequest(const uint8_t **pkt);
+struct ChangeCipherSpecRequest {
+	struct BaseMasterServerReliableResponse base;
+};
+void pkt_writeChangeCipherSpecRequest(uint8_t **pkt, struct ChangeCipherSpecRequest in);
 ENUM(uint8_t, HandshakeMessageType, {
 	HandshakeMessageType_ClientHelloRequest,
 	HandshakeMessageType_HelloVerifyRequest,
@@ -151,357 +542,22 @@ ENUM(uint8_t, HandshakeMessageType, {
 	HandshakeMessageType_HandshakeMessageReceivedAcknowledge,
 	HandshakeMessageType_HandshakeMultipartMessage,
 })
-ENUM(uint32_t, MessageType, {
-	MessageType_UserMessage = 1,
-	MessageType_DedicatedServerMessage = 2,
-	MessageType_HandshakeMessage = 3192347326,
-})
-#define SERIALIZE_HEAD(pkt, mtype) { \
-	struct MessageHeader _message; \
-	_message.type = MessageType_##mtype; \
-	_message.protocolVersion = 6; \
-	pkt_writeMessageHeader(pkt, _message); \
-}
-#define SERIALIZE_BODY(pkt, stype, dtype, data) { \
-	fprintf(stderr, "serialize " #stype "\n"); \
-	uint8_t *_end = *(pkt); \
-	pkt_write##dtype(&_end, data); \
-	struct SerializeHeader _serial; \
-	_serial.length = _end + 1 - *(pkt); \
-	_serial.type = stype; \
-	pkt_writeSerializeHeader(pkt, _serial); \
-	pkt_write##dtype(pkt, data); \
-}
-#define SERIALIZE(pkt, mtype, stype, dtype, data) { \
-	SERIALIZE_HEAD(pkt, mtype) \
-	SERIALIZE_BODY(pkt, mtype##Type_##stype, dtype, data) \
-}
-struct NetPacketHeader {
-	PacketProperty property;
-	uint8_t connectionNumber;
-	_Bool isFragmented;
-	uint16_t sequence;
-	uint8_t channelId;
-	uint16_t fragmentId;
-	uint16_t fragmentPart;
-	uint16_t fragmentsTotal;
-};
-typedef uint32_t ServerCode;
-uint8_t pkt_readUint8(const uint8_t **pkt);
-uint16_t pkt_readUint16(const uint8_t **pkt);
-uint32_t pkt_readUint32(const uint8_t **pkt);
-uint64_t pkt_readUint64(const uint8_t **pkt);
-uint64_t pkt_readVarUint64(const uint8_t **pkt);
-uint64_t pkt_readVarUint64(const uint8_t **pkt);
-int64_t pkt_readVarInt64(const uint8_t **pkt);
-uint32_t pkt_readVarUint32(const uint8_t **pkt);
-int32_t pkt_readVarInt32(const uint8_t **pkt);
-void pkt_readUint8Array(const uint8_t **pkt, uint8_t *out, uint32_t count);
-void pkt_writeUint8(uint8_t **pkt, uint8_t v);
-void pkt_writeUint16(uint8_t **pkt, uint16_t v);
-void pkt_writeUint32(uint8_t **pkt, uint32_t v);
-void pkt_writeUint64(uint8_t **pkt, uint64_t v);
-void pkt_writeVarUint64(uint8_t **pkt, uint64_t v);
-void pkt_writeVarInt64(uint8_t **pkt, int64_t v);
-void pkt_writeVarUint32(uint8_t **pkt, uint32_t v);
-void pkt_writeVarInt32(uint8_t **pkt, int32_t v);
-#define pkt_writeInt8Array(pkt, out, count) pkt_writeUint8Array(pkt, (uint8_t*)out, count)
-void pkt_writeUint8Array(uint8_t **pkt, uint8_t *in, uint32_t count);
-struct NetPacketHeader pkt_readNetPacketHeader(const uint8_t **pkt);
-void pkt_writeNetPacketHeader(uint8_t **pkt, struct NetPacketHeader in);
-struct PacketEncryptionLayer {
-	_Bool encrypted;
-	uint32_t sequenceId;
-	uint8_t iv[16];
-};
+#ifdef reflect
+static const char *const reflect_MessageType = "{MessageType_UserMessage=1,MessageType_DedicatedServerMessage=2,MessageType_HandshakeMessage=3192347326,}";
+#endif
+typedef uint32_t MessageType;
+#define MessageType_UserMessage 1
+#define MessageType_DedicatedServerMessage 2
+#define MessageType_HandshakeMessage 3192347326u
 struct MessageHeader {
 	MessageType type;
 	uint32_t protocolVersion;
 };
+struct MessageHeader pkt_readMessageHeader(const uint8_t **pkt);
+void pkt_writeMessageHeader(uint8_t **pkt, struct MessageHeader in);
 struct SerializeHeader {
 	uint32_t length;
 	uint8_t type;
 };
-struct BaseMasterServerReliableRequest {
-	uint32_t requestId;
-};
-struct BaseMasterServerResponse {
-	uint32_t responseId;
-};
-struct BaseMasterServerReliableResponse {
-	uint32_t requestId;
-	uint32_t responseId;
-};
-struct BaseMasterServerAcknowledgeMessage {
-	struct BaseMasterServerResponse base;
-	_Bool messageHandled;
-};
-struct ByteArrayNetSerializable {
-	uint32_t length;
-	uint8_t data[4096];
-};
-struct String {
-	uint32_t length;
-	char data[4096];
-};
-struct AuthenticationToken {
-	Platform platform;
-	struct String userId;
-	struct String userName;
-	struct ByteArrayNetSerializable sessionToken;
-};
-struct BaseMasterServerMultipartMessage {
-	struct BaseMasterServerReliableRequest base;
-	uint32_t multipartMessageId;
-	uint32_t offset;
-	uint32_t length;
-	uint32_t totalLength;
-	uint8_t data[384];
-};
-struct BitMask128 {
-	uint64_t _d0;
-	uint64_t _d1;
-};
-struct SongPackMask {
-	struct BitMask128 _bloomFilter;
-};
-struct BeatmapLevelSelectionMask {
-	BeatmapDifficultyMask difficulties;
-	GameplayModifierMask modifiers;
-	struct SongPackMask songPacks;
-};
-struct GameplayServerConfiguration {
-	int32_t maxPlayerCount;
-	DiscoveryPolicy discoveryPolicy;
-	InvitePolicy invitePolicy;
-	GameplayServerMode gameplayServerMode;
-	SongSelectionMode songSelectionMode;
-	GameplayServerControlSettings gameplayServerControlSettings;
-};
-struct PublicServerInfo {
-	ServerCode code;
-	int32_t currentPlayerCount;
-};
-struct IPEndPoint {
-	struct String address;
-	uint32_t port;
-};
-struct BaseConnectToServerRequest {
-	struct BaseMasterServerReliableRequest base;
-	struct String userId;
-	struct String userName;
-	uint8_t random[32];
-	struct ByteArrayNetSerializable publicKey;
-};
-struct AuthenticateUserRequest {
-	struct BaseMasterServerReliableResponse base;
-	struct AuthenticationToken authenticationToken;
-};
-struct AuthenticateUserResponse {
-	struct BaseMasterServerReliableResponse base;
-	AuthenticateUserResponse_Result result;
-};
-struct ConnectToServerResponse {
-	struct BaseMasterServerReliableResponse base;
-	ConnectToServerResponse_Result result;
-	struct String userId;
-	struct String userName;
-	struct String secret;
-	struct BeatmapLevelSelectionMask selectionMask;
-	uint8_t flags;
-	struct IPEndPoint remoteEndPoint;
-	uint8_t random[32];
-	struct ByteArrayNetSerializable publicKey;
-	ServerCode code;
-	struct GameplayServerConfiguration configuration;
-	struct String managerId;
-};
-struct ConnectToServerRequest {
-	struct BaseConnectToServerRequest base;
-	struct BeatmapLevelSelectionMask selectionMask;
-	struct String secret;
-	ServerCode code;
-	struct GameplayServerConfiguration configuration;
-};
-struct UserMessageReceivedAcknowledge {
-	struct BaseMasterServerAcknowledgeMessage base;
-};
-struct UserMultipartMessage {
-	struct BaseMasterServerMultipartMessage base;
-};
-struct SessionKeepaliveMessage {
-};
-struct GetPublicServersRequest {
-	struct BaseMasterServerReliableRequest base;
-	struct String userId;
-	struct String userName;
-	int32_t offset;
-	int32_t count;
-	struct BeatmapLevelSelectionMask selectionMask;
-	struct GameplayServerConfiguration configuration;
-};
-struct GetPublicServersResponse {
-	struct BaseMasterServerReliableResponse base;
-	GetPublicServersResponse_Result result;
-	uint32_t publicServerCount;
-	struct PublicServerInfo publicServers[16384];
-};
-struct AuthenticateDedicatedServerRequest {
-	struct BaseMasterServerReliableResponse base;
-	struct String dedicatedServerId;
-	uint8_t nonce[16];
-	uint8_t hash[32];
-	uint64_t timestamp;
-};
-struct AuthenticateDedicatedServerResponse {
-};
-struct CreateDedicatedServerInstanceRequest {
-	struct BaseMasterServerReliableRequest base;
-	struct String secret;
-	struct BeatmapLevelSelectionMask selectionMask;
-	struct String userId;
-	struct String userName;
-	struct IPEndPoint userEndPoint;
-	uint8_t userRandom[32];
-	struct ByteArrayNetSerializable userPublicKey;
-	struct GameplayServerConfiguration configuration;
-};
-struct CreateDedicatedServerInstanceResponse {
-};
-struct DedicatedServerInstanceNoLongerAvailableRequest {
-};
-struct DedicatedServerHeartbeatRequest {
-};
-struct DedicatedServerHeartbeatResponse {
-};
-struct DedicatedServerInstanceStatusUpdateRequest {
-};
-struct DedicatedServerShutDownRequest {
-};
-struct DedicatedServerPrepareForConnectionRequest {
-};
-struct DedicatedServerMessageReceivedAcknowledge {
-	struct BaseMasterServerAcknowledgeMessage base;
-};
-struct DedicatedServerMultipartMessage {
-	struct BaseMasterServerMultipartMessage base;
-};
-struct DedicatedServerPrepareForConnectionResponse {
-};
-struct ClientHelloRequest {
-	struct BaseMasterServerReliableRequest base;
-	uint8_t random[32];
-};
-struct HelloVerifyRequest {
-	struct BaseMasterServerReliableResponse base;
-	uint8_t cookie[32];
-};
-struct ClientHelloWithCookieRequest {
-	struct BaseMasterServerReliableRequest base;
-	uint32_t certificateResponseId;
-	uint8_t random[32];
-	uint8_t cookie[32];
-};
-struct ServerHelloRequest {
-	struct BaseMasterServerReliableResponse base;
-	uint8_t random[32];
-	struct ByteArrayNetSerializable publicKey;
-	struct ByteArrayNetSerializable signature;
-};
-struct ServerCertificateRequest {
-	struct BaseMasterServerReliableResponse base;
-	uint32_t certificateCount;
-	struct ByteArrayNetSerializable certificateList[10];
-};
-struct ServerCertificateResponse {
-};
-struct ClientKeyExchangeRequest {
-	struct BaseMasterServerReliableResponse base;
-	struct ByteArrayNetSerializable clientPublicKey;
-};
-struct ChangeCipherSpecRequest {
-	struct BaseMasterServerReliableResponse base;
-};
-struct HandshakeMessageReceivedAcknowledge {
-	struct BaseMasterServerAcknowledgeMessage base;
-};
-struct HandshakeMultipartMessage {
-	struct BaseMasterServerMultipartMessage base;
-};
-struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(const uint8_t **pkt);
-void pkt_writePacketEncryptionLayer(uint8_t **pkt, struct PacketEncryptionLayer in);
-struct MessageHeader pkt_readMessageHeader(const uint8_t **pkt);
-void pkt_writeMessageHeader(uint8_t **pkt, struct MessageHeader in);
 struct SerializeHeader pkt_readSerializeHeader(const uint8_t **pkt);
 void pkt_writeSerializeHeader(uint8_t **pkt, struct SerializeHeader in);
-struct BaseMasterServerReliableRequest pkt_readBaseMasterServerReliableRequest(const uint8_t **pkt);
-void pkt_writeBaseMasterServerReliableRequest(uint8_t **pkt, struct BaseMasterServerReliableRequest in);
-struct BaseMasterServerResponse pkt_readBaseMasterServerResponse(const uint8_t **pkt);
-void pkt_writeBaseMasterServerResponse(uint8_t **pkt, struct BaseMasterServerResponse in);
-struct BaseMasterServerReliableResponse pkt_readBaseMasterServerReliableResponse(const uint8_t **pkt);
-void pkt_writeBaseMasterServerReliableResponse(uint8_t **pkt, struct BaseMasterServerReliableResponse in);
-struct BaseMasterServerAcknowledgeMessage pkt_readBaseMasterServerAcknowledgeMessage(const uint8_t **pkt);
-void pkt_writeBaseMasterServerAcknowledgeMessage(uint8_t **pkt, struct BaseMasterServerAcknowledgeMessage in);
-struct ByteArrayNetSerializable pkt_readByteArrayNetSerializable(const uint8_t **pkt);
-void pkt_writeByteArrayNetSerializable(uint8_t **pkt, struct ByteArrayNetSerializable in);
-struct String pkt_readString(const uint8_t **pkt);
-void pkt_writeString(uint8_t **pkt, struct String in);
-struct AuthenticationToken pkt_readAuthenticationToken(const uint8_t **pkt);
-void pkt_writeBaseMasterServerMultipartMessage(uint8_t **pkt, struct BaseMasterServerMultipartMessage in);
-struct BitMask128 pkt_readBitMask128(const uint8_t **pkt);
-void pkt_writeBitMask128(uint8_t **pkt, struct BitMask128 in);
-struct SongPackMask pkt_readSongPackMask(const uint8_t **pkt);
-void pkt_writeSongPackMask(uint8_t **pkt, struct SongPackMask in);
-struct BeatmapLevelSelectionMask pkt_readBeatmapLevelSelectionMask(const uint8_t **pkt);
-void pkt_writeBeatmapLevelSelectionMask(uint8_t **pkt, struct BeatmapLevelSelectionMask in);
-struct GameplayServerConfiguration pkt_readGameplayServerConfiguration(const uint8_t **pkt);
-void pkt_writeGameplayServerConfiguration(uint8_t **pkt, struct GameplayServerConfiguration in);
-void pkt_writePublicServerInfo(uint8_t **pkt, struct PublicServerInfo in);
-struct IPEndPoint pkt_readIPEndPoint(const uint8_t **pkt);
-void pkt_writeIPEndPoint(uint8_t **pkt, struct IPEndPoint in);
-struct BaseConnectToServerRequest pkt_readBaseConnectToServerRequest(const uint8_t **pkt);
-struct AuthenticateUserRequest pkt_readAuthenticateUserRequest(const uint8_t **pkt);
-void pkt_writeAuthenticateUserResponse(uint8_t **pkt, struct AuthenticateUserResponse in);
-void pkt_writeConnectToServerResponse(uint8_t **pkt, struct ConnectToServerResponse in);
-struct ConnectToServerRequest pkt_readConnectToServerRequest(const uint8_t **pkt);
-struct UserMessageReceivedAcknowledge pkt_readUserMessageReceivedAcknowledge(const uint8_t **pkt);
-void pkt_writeUserMessageReceivedAcknowledge(uint8_t **pkt, struct UserMessageReceivedAcknowledge in);
-void pkt_writeUserMultipartMessage(uint8_t **pkt, struct UserMultipartMessage in);
-struct SessionKeepaliveMessage pkt_readSessionKeepaliveMessage(const uint8_t **pkt);
-void pkt_writeSessionKeepaliveMessage(uint8_t **pkt, struct SessionKeepaliveMessage in);
-struct GetPublicServersRequest pkt_readGetPublicServersRequest(const uint8_t **pkt);
-void pkt_writeGetPublicServersResponse(uint8_t **pkt, struct GetPublicServersResponse in);
-struct AuthenticateDedicatedServerRequest pkt_readAuthenticateDedicatedServerRequest(const uint8_t **pkt);
-struct AuthenticateDedicatedServerResponse pkt_readAuthenticateDedicatedServerResponse(const uint8_t **pkt);
-void pkt_writeAuthenticateDedicatedServerResponse(uint8_t **pkt, struct AuthenticateDedicatedServerResponse in);
-struct CreateDedicatedServerInstanceRequest pkt_readCreateDedicatedServerInstanceRequest(const uint8_t **pkt);
-struct CreateDedicatedServerInstanceResponse pkt_readCreateDedicatedServerInstanceResponse(const uint8_t **pkt);
-void pkt_writeCreateDedicatedServerInstanceResponse(uint8_t **pkt, struct CreateDedicatedServerInstanceResponse in);
-struct DedicatedServerInstanceNoLongerAvailableRequest pkt_readDedicatedServerInstanceNoLongerAvailableRequest(const uint8_t **pkt);
-void pkt_writeDedicatedServerInstanceNoLongerAvailableRequest(uint8_t **pkt, struct DedicatedServerInstanceNoLongerAvailableRequest in);
-struct DedicatedServerHeartbeatRequest pkt_readDedicatedServerHeartbeatRequest(const uint8_t **pkt);
-void pkt_writeDedicatedServerHeartbeatRequest(uint8_t **pkt, struct DedicatedServerHeartbeatRequest in);
-struct DedicatedServerHeartbeatResponse pkt_readDedicatedServerHeartbeatResponse(const uint8_t **pkt);
-void pkt_writeDedicatedServerHeartbeatResponse(uint8_t **pkt, struct DedicatedServerHeartbeatResponse in);
-struct DedicatedServerInstanceStatusUpdateRequest pkt_readDedicatedServerInstanceStatusUpdateRequest(const uint8_t **pkt);
-void pkt_writeDedicatedServerInstanceStatusUpdateRequest(uint8_t **pkt, struct DedicatedServerInstanceStatusUpdateRequest in);
-struct DedicatedServerShutDownRequest pkt_readDedicatedServerShutDownRequest(const uint8_t **pkt);
-void pkt_writeDedicatedServerShutDownRequest(uint8_t **pkt, struct DedicatedServerShutDownRequest in);
-struct DedicatedServerPrepareForConnectionRequest pkt_readDedicatedServerPrepareForConnectionRequest(const uint8_t **pkt);
-void pkt_writeDedicatedServerPrepareForConnectionRequest(uint8_t **pkt, struct DedicatedServerPrepareForConnectionRequest in);
-struct DedicatedServerMessageReceivedAcknowledge pkt_readDedicatedServerMessageReceivedAcknowledge(const uint8_t **pkt);
-void pkt_writeDedicatedServerMessageReceivedAcknowledge(uint8_t **pkt, struct DedicatedServerMessageReceivedAcknowledge in);
-void pkt_writeDedicatedServerMultipartMessage(uint8_t **pkt, struct DedicatedServerMultipartMessage in);
-struct DedicatedServerPrepareForConnectionResponse pkt_readDedicatedServerPrepareForConnectionResponse(const uint8_t **pkt);
-void pkt_writeDedicatedServerPrepareForConnectionResponse(uint8_t **pkt, struct DedicatedServerPrepareForConnectionResponse in);
-struct ClientHelloRequest pkt_readClientHelloRequest(const uint8_t **pkt);
-void pkt_writeHelloVerifyRequest(uint8_t **pkt, struct HelloVerifyRequest in);
-struct ClientHelloWithCookieRequest pkt_readClientHelloWithCookieRequest(const uint8_t **pkt);
-void pkt_writeServerHelloRequest(uint8_t **pkt, struct ServerHelloRequest in);
-void pkt_writeServerCertificateRequest(uint8_t **pkt, struct ServerCertificateRequest in);
-struct ServerCertificateResponse pkt_readServerCertificateResponse(const uint8_t **pkt);
-struct ClientKeyExchangeRequest pkt_readClientKeyExchangeRequest(const uint8_t **pkt);
-void pkt_writeChangeCipherSpecRequest(uint8_t **pkt, struct ChangeCipherSpecRequest in);
-struct HandshakeMessageReceivedAcknowledge pkt_readHandshakeMessageReceivedAcknowledge(const uint8_t **pkt);
-void pkt_writeHandshakeMessageReceivedAcknowledge(uint8_t **pkt, struct HandshakeMessageReceivedAcknowledge in);
-void pkt_writeHandshakeMultipartMessage(uint8_t **pkt, struct HandshakeMultipartMessage in);

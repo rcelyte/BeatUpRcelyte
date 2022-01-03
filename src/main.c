@@ -4,11 +4,21 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <signal.h>
 
-static const char *const config_path = "config.json";
+static const char *config_path = "./config.json";
+static _Bool headless = 0;
 
 int main(int argc, char const *argv[]) {
-	if(!isatty(0)) {
+	for(const char **arg = &argv[1]; arg < &argv[argc]; ++arg) {
+		if(strcmp(*arg, "--daemon") == 0) {
+			headless = 1;
+		} else if(strcmp(*arg, "-c") == 0 || strcmp(*arg, "--config") == 0) {
+			if(++arg < &argv[argc])
+				config_path = *arg;
+		}
+	}
+	if(headless == 0 && isatty(0) == 0) {
 		fprintf(stderr, "Not running in an interactive terminal\n");
 		return -1;
 	}
@@ -22,12 +32,23 @@ int main(int argc, char const *argv[]) {
 		if(status_init(cfg.status_path, cfg.status_port))
 			return -1;
 	}
-	instance_init(cfg.host_domain);
+	if(instance_init(cfg.host_domain))
+		return -1;
 	if(master_init(&cfg.master_cert, &cfg.master_key, cfg.master_port))
 		return -1;
-	usleep(10000); // Fixes out of order logs
-	fprintf(stderr, "Press [enter] to exit\n");
-	getchar();
+	if(headless) {
+		sigset_t sigset;
+		sigemptyset(&sigset);
+		sigaddset(&sigset, SIGINT);
+		sigaddset(&sigset, SIGHUP);
+		sigprocmask(SIG_BLOCK, &sigset, NULL);
+		int sig;
+		sigwait(&sigset, &sig);
+	} else {
+		usleep(10000); // Fixes out of order logs
+		fprintf(stderr, "Press [enter] to exit\n");
+		getchar();
+	}
 	master_cleanup();
 	instance_cleanup();
 	if(cfg.status_tls)

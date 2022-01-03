@@ -25,7 +25,7 @@ status_handler(struct Context *ctx) {
 	struct SS addr = {sizeof(struct sockaddr_storage)};
 	int32_t csock;
 	while((csock = accept(ctx->listenfd, &addr.sa, &addr.len)) != -1) {
-		char buf[81920];
+		char buf[65536];
 		ssize_t size = recv(csock, buf, sizeof(buf), 0);
 		if(size < 0) {
 			close(csock);
@@ -73,7 +73,7 @@ _Bool status_init(const char *path, uint16_t port) {
 	status_thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)status_handler, &ctx, 0, NULL);
 	return !status_thread;
 	#else
-	return pthread_create(&status_thread, NULL, (void*)&status_handler, &ctx) != 0;
+	return pthread_create(&status_thread, NULL, (void*(*)(void*))&status_handler, &ctx) != 0;
 	#endif
 }
 void status_cleanup() {
