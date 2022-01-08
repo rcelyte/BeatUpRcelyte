@@ -1,4 +1,5 @@
-#pragma once
+#ifndef PACKETS_H
+#define PACKETS_H
 
 /* 
  * AUTO GENERATED; DO NOT TOUCH
@@ -9,12 +10,6 @@
 #include "enum.h"
 #include <stdint.h>
 
-#define SERIALIZE_HEAD(pkt, mtype) { \
-	struct MessageHeader _message; \
-	_message.type = MessageType_##mtype; \
-	_message.protocolVersion = 6; \
-	pkt_writeMessageHeader(pkt, _message); \
-}
 #define SERIALIZE_BODY(pkt, stype, dtype, data) { \
 	fprintf(stderr, "serialize " #stype "\n"); \
 	uint8_t *_end = *(pkt); \
@@ -24,10 +19,6 @@
 	_serial.type = stype; \
 	pkt_writeSerializeHeader(pkt, _serial); \
 	pkt_write##dtype(pkt, data); \
-}
-#define SERIALIZE(pkt, mtype, stype, dtype, data) { \
-	SERIALIZE_HEAD(pkt, mtype) \
-	SERIALIZE_BODY(pkt, mtype##Type_##stype, dtype, data) \
 }
 uint8_t pkt_readUint8(const uint8_t **pkt);
 uint16_t pkt_readUint16(const uint8_t **pkt);
@@ -54,7 +45,7 @@ void pkt_writeVarInt64(uint8_t **pkt, int64_t v);
 void pkt_writeVarUint32(uint8_t **pkt, uint32_t v);
 void pkt_writeVarInt32(uint8_t **pkt, int32_t v);
 #define pkt_writeInt8Array(pkt, out, count) pkt_writeUint8Array(pkt, (uint8_t*)out, count)
-void pkt_writeUint8Array(uint8_t **pkt, uint8_t *in, uint32_t count);
+void pkt_writeUint8Array(uint8_t **pkt, const uint8_t *in, uint32_t count);
 void pkt_writeFloat32(uint8_t **pkt, float v);
 void pkt_writeFloat64(uint8_t **pkt, double v);
 ENUM(uint8_t, Platform, {
@@ -249,12 +240,19 @@ ENUM(uint8_t, DeliveryMethod, {
 	DeliveryMethod_ReliableOrdered,
 	DeliveryMethod_ReliableSequenced,
 })
+struct Channeled {
+	uint16_t sequence;
+	DeliveryMethod channelId;
+};
+struct Channeled pkt_readChanneled(const uint8_t **pkt);
+void pkt_writeChanneled(uint8_t **pkt, struct Channeled in);
 struct Ack {
 	uint16_t sequence;
-	uint8_t channelId;
+	DeliveryMethod channelId;
 	uint8_t data[9];
 };
 struct Ack pkt_readAck(const uint8_t **pkt);
+void pkt_writeAck(uint8_t **pkt, struct Ack in);
 struct Ping {
 	uint16_t sequence;
 };
@@ -281,6 +279,18 @@ struct ConnectAccept {
 	_Bool reusedPeer;
 };
 void pkt_writeConnectAccept(uint8_t **pkt, struct ConnectAccept in);
+struct MtuCheck {
+	uint32_t newMtu0;
+	uint8_t pad[1423];
+	uint32_t newMtu1;
+};
+struct MtuCheck pkt_readMtuCheck(const uint8_t **pkt);
+struct MtuOk {
+	uint32_t newMtu0;
+	uint8_t pad[1423];
+	uint32_t newMtu1;
+};
+void pkt_writeMtuOk(uint8_t **pkt, struct MtuOk in);
 ENUM(uint8_t, PacketProperty, {
 	PacketProperty_Unreliable,
 	PacketProperty_Channeled,
@@ -308,6 +318,39 @@ struct NetPacketHeader {
 };
 struct NetPacketHeader pkt_readNetPacketHeader(const uint8_t **pkt);
 void pkt_writeNetPacketHeader(uint8_t **pkt, struct NetPacketHeader in);
+struct PlayerStateHash {
+	struct BitMask128 bloomFilter;
+};
+struct PlayerStateHash pkt_readPlayerStateHash(const uint8_t **pkt);
+void pkt_writePlayerStateHash(uint8_t **pkt, struct PlayerStateHash in);
+struct Color32 {
+	uint8_t r;
+	uint8_t g;
+	uint8_t b;
+	uint8_t a;
+};
+struct Color32 pkt_readColor32(const uint8_t **pkt);
+void pkt_writeColor32(uint8_t **pkt, struct Color32 in);
+struct MultiplayerAvatarData {
+	struct String headTopId;
+	struct Color32 headTopPrimaryColor;
+	struct Color32 handsColor;
+	struct String clothesId;
+	struct Color32 clothesPrimaryColor;
+	struct Color32 clothesSecondaryColor;
+	struct Color32 clothesDetailColor;
+	struct Color32 _unused[2];
+	struct String eyesId;
+	struct String mouthId;
+	struct Color32 glassesColor;
+	struct Color32 facialHairColor;
+	struct Color32 headTopSecondaryColor;
+	struct String glassesId;
+	struct String facialHairId;
+	struct String handsId;
+};
+struct MultiplayerAvatarData pkt_readMultiplayerAvatarData(const uint8_t **pkt);
+void pkt_writeMultiplayerAvatarData(uint8_t **pkt, struct MultiplayerAvatarData in);
 ENUM(uint32_t, DisconnectedReason, {
 	DisconnectedReason_Unknown,
 	DisconnectedReason_UserInitiated,
@@ -326,6 +369,19 @@ struct RoutingHeader {
 	_Bool encrypted;
 };
 struct RoutingHeader pkt_readRoutingHeader(const uint8_t **pkt);
+void pkt_writeRoutingHeader(uint8_t **pkt, struct RoutingHeader in);
+struct SyncTime {
+	float syncTime;
+};
+void pkt_writeSyncTime(uint8_t **pkt, struct SyncTime in);
+struct PlayerIdentity {
+	struct PlayerStateHash playerState;
+	struct MultiplayerAvatarData playerAvatar;
+	struct ByteArrayNetSerializable random;
+	struct ByteArrayNetSerializable publicEncryptionKey;
+};
+struct PlayerIdentity pkt_readPlayerIdentity(const uint8_t **pkt);
+void pkt_writePlayerIdentity(uint8_t **pkt, struct PlayerIdentity in);
 ENUM(uint8_t, InternalMessageType, {
 	InternalMessageType_SyncTime,
 	InternalMessageType_PlayerConnected,
@@ -536,8 +592,7 @@ ENUM(uint8_t, HandshakeMessageType, {
 	HandshakeMessageType_ClientHelloWithCookieRequest,
 	HandshakeMessageType_ServerHelloRequest,
 	HandshakeMessageType_ServerCertificateRequest,
-	HandshakeMessageType_ServerCertificateResponse,
-	HandshakeMessageType_ClientKeyExchangeRequest,
+	HandshakeMessageType_ClientKeyExchangeRequest = 6,
 	HandshakeMessageType_ChangeCipherSpecRequest,
 	HandshakeMessageType_HandshakeMessageReceivedAcknowledge,
 	HandshakeMessageType_HandshakeMultipartMessage,
@@ -561,3 +616,4 @@ struct SerializeHeader {
 };
 struct SerializeHeader pkt_readSerializeHeader(const uint8_t **pkt);
 void pkt_writeSerializeHeader(uint8_t **pkt, struct SerializeHeader in);
+#endif // PACKETS_H

@@ -26,12 +26,6 @@
  */
 
 head
-	#define SERIALIZE_HEAD(pkt, mtype) { \
-		struct MessageHeader _message; \
-		_message.type = MessageType_##mtype; \
-		_message.protocolVersion = 6; \
-		pkt_writeMessageHeader(pkt, _message); \
-	}
 	#define SERIALIZE_BODY(pkt, stype, dtype, data) { \
 		fprintf(stderr, "serialize " #stype "\n"); \
 		uint8_t *_end = *(pkt); \
@@ -41,10 +35,6 @@ head
 		_serial.type = stype; \
 		pkt_writeSerializeHeader(pkt, _serial); \
 		pkt_write##dtype(pkt, data); \
-	}
-	#define SERIALIZE(pkt, mtype, stype, dtype, data) { \
-		SERIALIZE_HEAD(pkt, mtype) \
-		SERIALIZE_BODY(pkt, mtype##Type_##stype, dtype, data) \
 	}
 	uint8_t pkt_readUint8(const uint8_t **pkt);
 	uint16_t pkt_readUint16(const uint8_t **pkt);
@@ -71,11 +61,12 @@ head
 	void pkt_writeVarUint32(uint8_t **pkt, uint32_t v);
 	void pkt_writeVarInt32(uint8_t **pkt, int32_t v);
 	#define pkt_writeInt8Array(pkt, out, count) pkt_writeUint8Array(pkt, (uint8_t*)out, count)
-	void pkt_writeUint8Array(uint8_t **pkt, uint8_t *in, uint32_t count);
+	void pkt_writeUint8Array(uint8_t **pkt, const uint8_t *in, uint32_t count);
 	void pkt_writeFloat32(uint8_t **pkt, float v);
 	void pkt_writeFloat64(uint8_t **pkt, double v);
 
 code
+	#include "scramble.h"
 	#include <stdio.h>
 	#include <stdlib.h>
 	#include <string.h>
@@ -192,7 +183,7 @@ code
 	void pkt_writeVarInt32(uint8_t **pkt, int32_t v) {
 		pkt_writeVarInt64(pkt, v);
 	}
-	void pkt_writeUint8Array(uint8_t **pkt, uint8_t *in, uint32_t count) {
+	void pkt_writeUint8Array(uint8_t **pkt, const uint8_t *in, uint32_t count) {
 		memcpy(*pkt, in, count);
 		*pkt += count;
 	}
@@ -349,11 +340,11 @@ code
 		if(len <= 5)
 			for(uint32_t i = 0, fac = 1; i < len; ++i, fac *= 36)
 				out += readTable[in[i] & 127] * fac;
-		return out;
+		return scramble_decode(out);
 	}
 	char *ServerCodeToString(char *out, ServerCode in) {
 		char *s = out;
-		for(; in; in /= 36)
+		for(in = scramble_encode(in); in; in /= 36)
 			*s++ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--in % 36];
 		*s = 0;
 		return out;
@@ -364,7 +355,7 @@ code
 	}
 	static void pkt_writeServerCode(uint8_t **pkt, ServerCode in) {
 		struct String str = {.length = 0};
-		for(; in; in /= 36)
+		for(in = scramble_encode(in); in; in /= 36)
 			str.data[str.length++] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--in % 36];
 		pkt_writeString(pkt, str);
 	}
@@ -416,12 +407,12 @@ u8 DeliveryMethod
 	z ReliableSequenced
 u8 PacketProperty
 	z Unreliable
-	n Channeled
+	d Channeled
 		u16 sequence
-		u8 channelId
-	r Ack
+		u8.DeliveryMethod channelId
+	d Ack
 		u16 sequence
-		u8 channelId
+		u8.DeliveryMethod channelId
 		if(channelId % 2 == 0)
 			u8[9] data
 	r Ping
@@ -445,11 +436,11 @@ u8 PacketProperty
 	n Disconnect
 		u8[8] _pad0
 	z UnconnectedMessage
-	n MtuCheck
+	r MtuCheck
 		u32 newMtu0
 		u8[1423,newMtu0-9] pad
 		u32 newMtu1
-	n MtuOk
+	s MtuOk
 		u32 newMtu0
 		u8[1423,newMtu0-9] pad
 		u32 newMtu1
@@ -465,14 +456,14 @@ d NetPacketHeader
 		u5.PacketProperty property
 		u2.u8 connectionNumber
 		u1.b isFragmented
-n PlayerStateHash
+d PlayerStateHash
 	BitMask128 bloomFilter
-n Color32
+d Color32
 	u8 r
 	u8 g
 	u8 b
 	u8 a
-n MultiplayerAvatarData
+d MultiplayerAvatarData
 	String headTopId
 	Color32 headTopPrimaryColor
 	Color32 handsColor
@@ -500,20 +491,20 @@ u32 DisconnectedReason
 	z ClientConnectionClosed
 	z NetworkDisconnected
 	z ServerTerminated
-r RoutingHeader
+d RoutingHeader
 	u8 remoteConnectionId
 	u8.e bits
 		u7.u8 connectionId
 		u1.b encrypted
 u8 InternalMessage Type
-	n SyncTime
+	s SyncTime
 		f32 syncTime
 	n PlayerConnected
 		u8 remoteConnectionId
 		String userId
 		String userName
 		b isConnectionOwner
-	n PlayerIdentity
+	d PlayerIdentity
 		PlayerStateHash playerState
 		MultiplayerAvatarData playerAvatar
 		ByteArrayNetSerializable random
@@ -841,8 +832,7 @@ u8 HandshakeMessage Type
 		BaseMasterServerReliableResponse base
 		vu32 certificateCount
 		ByteArrayNetSerializable[10,certificateCount] certificateList
-	n ServerCertificateResponse
-	r ClientKeyExchangeRequest
+	r ClientKeyExchangeRequest 6
 		BaseMasterServerReliableResponse base
 		ByteArrayNetSerializable clientPublicKey
 	s ChangeCipherSpecRequest

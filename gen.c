@@ -460,7 +460,7 @@ int main(int argc, char const *argv[]) {
 	in[infile_len] = 0;
 
 	char header[524288], *header_end = header;
-	write_fmt(&header_end, "#pragma once\n\n");
+	write_fmt(&header_end, "#ifndef PACKETS_H\n#define PACKETS_H\n\n");
 	write_warning(&header_end);
 	write_fmt(&header_end, "#include \"enum.h\"\n");
 	write_fmt(&header_end, "#include <stdint.h>\n\n");
@@ -475,6 +475,8 @@ int main(int argc, char const *argv[]) {
 
 	while(*in_end)
 		parse_value(&header_end, &source_end, &in_end, 0);
+
+	write_fmt(&header_end, "#endif // PACKETS_H\n");
 
 	FILE *outfile = fopen(argv[2], "wb");
 	if(fwrite(header, 1, header_end - header, outfile) != header_end - header) {

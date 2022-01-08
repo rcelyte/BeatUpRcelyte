@@ -1,5 +1,6 @@
 #include "config.h"
 #include "net.h"
+#include "scramble.h"
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
@@ -22,6 +23,12 @@ int main(int argc, char const *argv[]) {
 		fprintf(stderr, "Not running in an interactive terminal\n");
 		return -1;
 	}
+	#ifdef WINDOWS
+	if(headless) {
+		fprintf(stderr, "Headless mode is only supported on POSIX systems\n");
+		return -1;
+	}
+	#endif
 	struct Config cfg;
 	if(config_load(&cfg, config_path))
 		return -1;
@@ -32,11 +39,13 @@ int main(int argc, char const *argv[]) {
 		if(status_init(cfg.status_path, cfg.status_port))
 			return -1;
 	}
+	scramble_init();
 	if(instance_init(cfg.host_domain))
 		return -1;
 	if(master_init(&cfg.master_cert, &cfg.master_key, cfg.master_port))
 		return -1;
 	if(headless) {
+		#ifndef WINDOWS
 		sigset_t sigset;
 		sigemptyset(&sigset);
 		sigaddset(&sigset, SIGINT);
@@ -44,6 +53,7 @@ int main(int argc, char const *argv[]) {
 		sigprocmask(SIG_BLOCK, &sigset, NULL);
 		int sig;
 		sigwait(&sigset, &sig);
+		#endif
 	} else {
 		usleep(10000); // Fixes out of order logs
 		fprintf(stderr, "Press [enter] to exit\n");

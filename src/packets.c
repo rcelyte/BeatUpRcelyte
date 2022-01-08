@@ -6,6 +6,7 @@
 
 #include "enum_reflection.h"
 #include "packets.h"
+#include "scramble.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -122,7 +123,7 @@ void pkt_writeVarUint32(uint8_t **pkt, uint32_t v) {
 void pkt_writeVarInt32(uint8_t **pkt, int32_t v) {
 	pkt_writeVarInt64(pkt, v);
 }
-void pkt_writeUint8Array(uint8_t **pkt, uint8_t *in, uint32_t count) {
+void pkt_writeUint8Array(uint8_t **pkt, const uint8_t *in, uint32_t count) {
 	memcpy(*pkt, in, count);
 	*pkt += count;
 }
@@ -314,11 +315,11 @@ ServerCode StringToServerCode(const char *in, uint32_t len) {
 	if(len <= 5)
 		for(uint32_t i = 0, fac = 1; i < len; ++i, fac *= 36)
 			out += readTable[in[i] & 127] * fac;
-	return out;
+	return scramble_decode(out);
 }
 char *ServerCodeToString(char *out, ServerCode in) {
 	char *s = out;
-	for(; in; in /= 36)
+	for(in = scramble_encode(in); in; in /= 36)
 		*s++ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--in % 36];
 	*s = 0;
 	return out;
@@ -329,7 +330,7 @@ static ServerCode pkt_readServerCode(const uint8_t **pkt) {
 }
 static void pkt_writeServerCode(uint8_t **pkt, ServerCode in) {
 	struct String str = {.length = 0};
-	for(; in; in /= 36)
+	for(in = scramble_encode(in); in; in /= 36)
 		str.data[str.length++] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--in % 36];
 	pkt_writeString(pkt, str);
 }
@@ -354,6 +355,16 @@ struct BaseConnectToServerRequest pkt_readBaseConnectToServerRequest(const uint8
 	out.publicKey = pkt_readByteArrayNetSerializable(pkt);
 	return out;
 }
+struct Channeled pkt_readChanneled(const uint8_t **pkt) {
+	struct Channeled out;
+	out.sequence = pkt_readUint16(pkt);
+	out.channelId = pkt_readUint8(pkt);
+	return out;
+}
+void pkt_writeChanneled(uint8_t **pkt, struct Channeled in) {
+	pkt_writeUint16(pkt, in.sequence);
+	pkt_writeUint8(pkt, in.channelId);
+}
 struct Ack pkt_readAck(const uint8_t **pkt) {
 	struct Ack out;
 	out.sequence = pkt_readUint16(pkt);
@@ -362,6 +373,13 @@ struct Ack pkt_readAck(const uint8_t **pkt) {
 		pkt_readUint8Array(pkt, out.data, 9);
 	}
 	return out;
+}
+void pkt_writeAck(uint8_t **pkt, struct Ack in) {
+	pkt_writeUint16(pkt, in.sequence);
+	pkt_writeUint8(pkt, in.channelId);
+	if(in.channelId % 2 == 0) {
+		pkt_writeUint8Array(pkt, in.data, 9);
+	}
 }
 struct Ping pkt_readPing(const uint8_t **pkt) {
 	struct Ping out;
@@ -393,6 +411,22 @@ void pkt_writeConnectAccept(uint8_t **pkt, struct ConnectAccept in) {
 	pkt_writeUint8(pkt, in.connectNum);
 	pkt_writeUint8(pkt, in.reusedPeer);
 }
+struct MtuCheck pkt_readMtuCheck(const uint8_t **pkt) {
+	struct MtuCheck out;
+	out.newMtu0 = pkt_readUint32(pkt);
+	if(out.newMtu0-9 > 1423) {
+		out.newMtu0 = 0, fprintf(stderr, "Buffer overflow in read of MtuCheck.pad: %u > 1423\n", (uint32_t)out.newMtu0-9);
+	} else {
+		pkt_readUint8Array(pkt, out.pad, out.newMtu0-9);
+	}
+	out.newMtu1 = pkt_readUint32(pkt);
+	return out;
+}
+void pkt_writeMtuOk(uint8_t **pkt, struct MtuOk in) {
+	pkt_writeUint32(pkt, in.newMtu0);
+	pkt_writeUint8Array(pkt, in.pad, in.newMtu0-9);
+	pkt_writeUint32(pkt, in.newMtu1);
+}
 struct NetPacketHeader pkt_readNetPacketHeader(const uint8_t **pkt) {
 	struct NetPacketHeader out;
 	uint8_t bits = pkt_readUint8(pkt);
@@ -408,6 +442,68 @@ void pkt_writeNetPacketHeader(uint8_t **pkt, struct NetPacketHeader in) {
 	bits |= (in.isFragmented >> 7) & 1;
 	pkt_writeUint8(pkt, bits);
 }
+struct PlayerStateHash pkt_readPlayerStateHash(const uint8_t **pkt) {
+	struct PlayerStateHash out;
+	out.bloomFilter = pkt_readBitMask128(pkt);
+	return out;
+}
+void pkt_writePlayerStateHash(uint8_t **pkt, struct PlayerStateHash in) {
+	pkt_writeBitMask128(pkt, in.bloomFilter);
+}
+struct Color32 pkt_readColor32(const uint8_t **pkt) {
+	struct Color32 out;
+	out.r = pkt_readUint8(pkt);
+	out.g = pkt_readUint8(pkt);
+	out.b = pkt_readUint8(pkt);
+	out.a = pkt_readUint8(pkt);
+	return out;
+}
+void pkt_writeColor32(uint8_t **pkt, struct Color32 in) {
+	pkt_writeUint8(pkt, in.r);
+	pkt_writeUint8(pkt, in.g);
+	pkt_writeUint8(pkt, in.b);
+	pkt_writeUint8(pkt, in.a);
+}
+struct MultiplayerAvatarData pkt_readMultiplayerAvatarData(const uint8_t **pkt) {
+	struct MultiplayerAvatarData out;
+	out.headTopId = pkt_readString(pkt);
+	out.headTopPrimaryColor = pkt_readColor32(pkt);
+	out.handsColor = pkt_readColor32(pkt);
+	out.clothesId = pkt_readString(pkt);
+	out.clothesPrimaryColor = pkt_readColor32(pkt);
+	out.clothesSecondaryColor = pkt_readColor32(pkt);
+	out.clothesDetailColor = pkt_readColor32(pkt);
+	for(uint32_t i = 0; i < 2; ++i)
+		out._unused[i] = pkt_readColor32(pkt);
+	out.eyesId = pkt_readString(pkt);
+	out.mouthId = pkt_readString(pkt);
+	out.glassesColor = pkt_readColor32(pkt);
+	out.facialHairColor = pkt_readColor32(pkt);
+	out.headTopSecondaryColor = pkt_readColor32(pkt);
+	out.glassesId = pkt_readString(pkt);
+	out.facialHairId = pkt_readString(pkt);
+	out.handsId = pkt_readString(pkt);
+	return out;
+}
+void pkt_writeMultiplayerAvatarData(uint8_t **pkt, struct MultiplayerAvatarData in) {
+	pkt_writeString(pkt, in.headTopId);
+	pkt_writeColor32(pkt, in.headTopPrimaryColor);
+	pkt_writeColor32(pkt, in.handsColor);
+	pkt_writeString(pkt, in.clothesId);
+	pkt_writeColor32(pkt, in.clothesPrimaryColor);
+	pkt_writeColor32(pkt, in.clothesSecondaryColor);
+	pkt_writeColor32(pkt, in.clothesDetailColor);
+	for(uint32_t i = 0; i < 2; ++i)
+		pkt_writeColor32(pkt, in._unused[i]);
+	pkt_writeString(pkt, in.eyesId);
+	pkt_writeString(pkt, in.mouthId);
+	pkt_writeColor32(pkt, in.glassesColor);
+	pkt_writeColor32(pkt, in.facialHairColor);
+	pkt_writeColor32(pkt, in.headTopSecondaryColor);
+	pkt_writeString(pkt, in.glassesId);
+	pkt_writeString(pkt, in.facialHairId);
+	pkt_writeString(pkt, in.handsId);
+}
 struct RoutingHeader pkt_readRoutingHeader(const uint8_t **pkt) {
 	struct RoutingHeader out;
 	out.remoteConnectionId = pkt_readUint8(pkt);
@@ -415,6 +511,30 @@ struct RoutingHeader pkt_readRoutingHeader(const uint8_t **pkt) {
 	out.connectionId = (bits >> 0) & 127;
 	out.encrypted = (bits >> 7) & 1;
 	return out;
+}
+void pkt_writeRoutingHeader(uint8_t **pkt, struct RoutingHeader in) {
+	pkt_writeUint8(pkt, in.remoteConnectionId);
+	uint8_t bits = 0;
+	bits |= (in.connectionId >> 0) & 127;
+	bits |= (in.encrypted >> 7) & 1;
+	pkt_writeUint8(pkt, bits);
+}
+void pkt_writeSyncTime(uint8_t **pkt, struct SyncTime in) {
+	pkt_writeFloat32(pkt, in.syncTime);
+}
+struct PlayerIdentity pkt_readPlayerIdentity(const uint8_t **pkt) {
+	struct PlayerIdentity out;
+	out.playerState = pkt_readPlayerStateHash(pkt);
+	out.playerAvatar = pkt_readMultiplayerAvatarData(pkt);
+	out.random = pkt_readByteArrayNetSerializable(pkt);
+	out.publicEncryptionKey = pkt_readByteArrayNetSerializable(pkt);
+	return out;
+}
+void pkt_writePlayerIdentity(uint8_t **pkt, struct PlayerIdentity in) {
+	pkt_writePlayerStateHash(pkt, in.playerState);
+	pkt_writeMultiplayerAvatarData(pkt, in.playerAvatar);
+	pkt_writeByteArrayNetSerializable(pkt, in.random);
+	pkt_writeByteArrayNetSerializable(pkt, in.publicEncryptionKey);
 }
 struct AuthenticateUserRequest pkt_readAuthenticateUserRequest(const uint8_t **pkt) {
 	struct AuthenticateUserRequest out;

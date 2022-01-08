@@ -5,7 +5,7 @@
 #include <mbedtls/error.h>
 
 #ifdef WINDOWS
-#define SHUT_RD SD_RECEIVE
+#define SHUT_RDWR SD_BOTH
 #else
 #include <netdb.h>
 #include <fcntl.h>
@@ -16,6 +16,18 @@
 #include <string.h>
 #include <errno.h>
 #include <time.h>
+
+#define ENCRYPTION_LAYER_SIZE 63
+
+static const uint32_t PossibleMtu[] = {
+	576 - ENCRYPTION_LAYER_SIZE - 68,
+	1024 - ENCRYPTION_LAYER_SIZE,
+	1232 - ENCRYPTION_LAYER_SIZE - 68,
+	1460 - ENCRYPTION_LAYER_SIZE - 68,
+	1472 - ENCRYPTION_LAYER_SIZE - 68,
+	1492 - ENCRYPTION_LAYER_SIZE - 68,
+	1500 - ENCRYPTION_LAYER_SIZE - 68,
+};
 
 const uint8_t *NetSession_get_serverRandom(const struct NetSession *session) {
 	return session->serverRandom;
@@ -71,8 +83,7 @@ _Bool NetSession_set_clientPublicKey(struct NetSession *session, struct NetConte
 		fprintf(stderr, "mbedtls_ecdh_compute_shared() failed: %s\n", mbedtls_high_level_strerr(err));
 		return 1;
 	}
-	EncryptionState_init(&session->encryptionState, &preMasterSecret, session->serverRandom, session->clientRandom, 0);
-	return 0;
+	return EncryptionState_init(&session->encryptionState, &preMasterSecret, session->serverRandom, session->clientRandom, 0);
 }
 uint32_t NetSession_get_lastKeepAlive(struct NetSession *session) {
 	return session->lastKeepAlive;
@@ -134,25 +145,18 @@ uint32_t net_time() {
 	return now.tv_sec * 1000 + now.tv_nsec / 1000000;
 }
 
-void net_send_internal(struct NetContext *ctx, struct NetSession *session, PacketProperty property, const uint8_t *buf, uint32_t len) {
+void net_send_internal(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint32_t len, _Bool encrypt) {
 	struct PacketEncryptionLayer layer;
-	struct NetPacketHeader packet;
 	layer.encrypted = 0;
-	packet.property = property;
-	packet.connectionNumber = 0;
-	packet.isFragmented = 0;
 	
 	uint8_t head[512], body[1536];
 	uint8_t *head_end = head;
 
-	if(session->encryptionState.initialized && pkt_readMessageHeader((const uint8_t*[]){buf}).type != MessageType_HandshakeMessage) {
-		uint8_t *pkt_end = head;
-		pkt_writeNetPacketHeader(&pkt_end, packet);
-		EncryptionState_encrypt(&session->encryptionState, &layer, &ctx->ctr_drbg, (const uint8_t*[]){head, buf, NULL}, (const uint32_t[]){pkt_end - head, len}, body, &len);
+	if(session->encryptionState.initialized && encrypt) {
+		EncryptionState_encrypt(&session->encryptionState, &layer, &ctx->ctr_drbg, (const uint8_t*[]){buf, NULL}, (const uint32_t[]){len}, body, &len);
 		pkt_writePacketEncryptionLayer(&head_end, layer);
 	} else {
 		pkt_writePacketEncryptionLayer(&head_end, layer);
-		pkt_writeNetPacketHeader(&head_end, packet);
 		memcpy(body, buf, len); // const correctness ._.
 	}
 	#ifdef WINSOCK_VERSION
@@ -291,6 +295,10 @@ _Bool net_session_reset(struct NetContext *ctx, struct NetSession *session) {
 	net_cookie(&ctx->ctr_drbg, session->cookie);
 	session->addr = addr;
 	session->lastKeepAlive = net_time();
+	session->mtu = PossibleMtu[0];
+	session->mtuIdx = 0;
+	session->mergeData_end = session->mergeData;
+	net_flush_merged(ctx, session);
 	if(mbedtls_ecp_gen_keypair(&ctx->grp, &session->serverSecret, &session->serverPublic, mbedtls_ctr_drbg_random, &ctx->ctr_drbg)) {
 		fprintf(stderr, "mbedtls_ecp_gen_keypair() failed\n");
 		return 1;
@@ -312,7 +320,7 @@ void net_cleanup(struct NetContext *ctx) {
 	ctx->sockfd = -1;
 }
 
-uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct NetSession **session, struct NetPacketHeader *header, const uint8_t **pkt) {
+uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct NetSession **session, const uint8_t **pkt) {
 	retry:; // tail calls are theoretical but stack overflows are real
 	uint32_t currentTime = net_time(), nextTick = currentTime + 180000;
 	ctx->onResend(ctx->user, currentTime, &nextTick);
@@ -373,18 +381,22 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct
 		fprintf(stderr, "Invalid packet\n");
 		goto retry;
 	}
-	*header = pkt_readNetPacketHeader((const uint8_t**)&head);
 	*pkt = head;
 	return &buf[size] - *pkt;
 }
-void net_send(struct NetContext *ctx, struct NetSession *session, PacketProperty property, const uint8_t *buf, uint32_t len) {
-	if(len <= 414) {
-		net_send_internal(ctx, session, property, buf, len);
-		return;
-	}
-	fprintf(stderr, "FRAGMENTING NOT IMPLEMENTED\n");
-	abort();
+void net_flush_merged(struct NetContext *ctx, struct NetSession *session) {
+	if(session->mergeData_end - session->mergeData > 3)
+		net_send_internal(ctx, session, session->mergeData, session->mergeData_end - session->mergeData, 1);
+	session->mergeData_end = session->mergeData;
+	pkt_writeNetPacketHeader(&session->mergeData_end, (struct NetPacketHeader){
+		.property = PacketProperty_Merged,
+		.connectionNumber = 0,
+		.isFragmented = 0,
+	});
 }
-void net_send_mtu(struct NetContext *ctx, struct NetSession *session, PacketProperty property, const uint8_t *buf, uint32_t len) {
-	net_send_internal(ctx, session, property, buf, len);
+void net_queue_merged(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint16_t len) {
+	if((session->mergeData_end - session->mergeData) + len + 2 > session->mtu)
+		net_flush_merged(ctx, session);
+	pkt_writeUint16(&session->mergeData_end, len);
+	pkt_writeUint8Array(&session->mergeData_end, buf, len);
 }

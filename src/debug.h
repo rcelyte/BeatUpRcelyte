@@ -36,7 +36,7 @@ static void debug_logPacket(const uint8_t *pkt, const uint8_t *end, struct NetPa
 	const uint8_t *data = pkt;
 	char buf[1024*16];
 	switch(header.property) {
-		case PacketProperty_Unreliable: fprintf(stderr, "\tPacketProperty_Unreliable\n"); return;
+		case PacketProperty_Unreliable: fprintf(stderr, "\tPacketProperty_Unreliable\n"); break;
 		case PacketProperty_Channeled: {
 			pkt_logChanneled("\tChanneled", buf, buf, pkt_readChanneled(&data));
 			pkt_logRoutingHeader("\tRoutingHeader", buf, buf, pkt_readRoutingHeader(&data));
@@ -195,7 +195,6 @@ static void debug_logPacket(const uint8_t *pkt, const uint8_t *end, struct NetPa
 					case HandshakeMessageType_ClientHelloWithCookieRequest: pkt_logClientHelloWithCookieRequest("\tClientHelloWithCookieRequest", buf, buf, pkt_readClientHelloWithCookieRequest(&data)); break;
 					case HandshakeMessageType_ServerHelloRequest: pkt_logServerHelloRequest("\tServerHelloRequest", buf, buf, pkt_readServerHelloRequest(&data)); break;
 					case HandshakeMessageType_ServerCertificateRequest: pkt_logServerCertificateRequest("\tServerCertificateRequest", buf, buf, pkt_readServerCertificateRequest(&data)); break;
-					case HandshakeMessageType_ServerCertificateResponse: pkt_logServerCertificateResponse("\tServerCertificateResponse", buf, buf, pkt_readServerCertificateResponse(&data)); break;
 					case HandshakeMessageType_ClientKeyExchangeRequest: pkt_logClientKeyExchangeRequest("\tClientKeyExchangeRequest", buf, buf, pkt_readClientKeyExchangeRequest(&data)); break;
 					case HandshakeMessageType_ChangeCipherSpecRequest: pkt_logChangeCipherSpecRequest("\tChangeCipherSpecRequest", buf, buf, pkt_readChangeCipherSpecRequest(&data)); break;
 					case HandshakeMessageType_HandshakeMessageReceivedAcknowledge: pkt_logHandshakeMessageReceivedAcknowledge("\tHandshakeMessageReceivedAcknowledge", buf, buf, pkt_readHandshakeMessageReceivedAcknowledge(&data)); break;

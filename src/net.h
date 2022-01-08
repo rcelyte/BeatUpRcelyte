@@ -15,9 +15,12 @@ typedef int socklen_t;
 #endif
 
 #ifndef NET_H_PRIVATE
-#define NET_H_PRIVATE(x) _p_##x##__LINE__
+#define CONCAT2(a,b) a##b
+#define CONCAT(a,b) CONCAT2(a,b)
+#define NET_H_PRIVATE(x) CONCAT(_p_,__LINE__)
 #endif
 
+#define NET_MAX_PKT_SIZE 1432
 #define NET_MAX_SEQUENCE 32768
 #define NET_WINDOW_SIZE 64
 #define NET_RESEND_DELAY 27
@@ -44,6 +47,10 @@ struct NetSession {
 	struct EncryptionState NET_H_PRIVATE(encryptionState);
 	struct SS NET_H_PRIVATE(addr);
 	uint32_t NET_H_PRIVATE(lastKeepAlive);
+	uint16_t NET_H_PRIVATE(mtu);
+	uint8_t NET_H_PRIVATE(mtuIdx);
+	uint8_t *NET_H_PRIVATE(mergeData_end);
+	uint8_t NET_H_PRIVATE(mergeData)[NET_MAX_PKT_SIZE];
 };
 
 struct Context;
@@ -76,10 +83,10 @@ struct NetSession *net_create_session(struct NetContext *ctx, struct SS addr);*/
 _Bool net_session_init(struct NetContext *ctx, struct NetSession *session, struct SS addr);
 _Bool net_session_reset(struct NetContext *ctx, struct NetSession *session);
 void net_session_free(struct NetSession *session);
-uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct NetSession **session, struct NetPacketHeader *header, const uint8_t **pkt);
-void net_send(struct NetContext *ctx, struct NetSession *session, PacketProperty property, const uint8_t *buf, uint32_t len);
-void net_send_mtu(struct NetContext *ctx, struct NetSession *session, PacketProperty property, const uint8_t *buf, uint32_t len);
-void net_send_internal(struct NetContext *ctx, struct NetSession *session, PacketProperty property, const uint8_t *buf, uint32_t len);
+uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct NetSession **session, const uint8_t **pkt);
+void net_flush_merged(struct NetContext *ctx, struct NetSession *session);
+void net_queue_merged(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint16_t len);
+void net_send_internal(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint32_t len, _Bool encrypt);
 int32_t net_get_sockfd(struct NetContext *ctx);
 mbedtls_ctr_drbg_context *net_get_ctr_drbg(struct NetContext *ctx);
 

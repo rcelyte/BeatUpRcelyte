@@ -27,7 +27,6 @@ struct TEMPList {
 	uint32_t playerCount, playerCap;
 	float playerNPS, levelNPS;
 } static tempList[2] = {{
-	.code = 40549761,
 	.levelName = "In-Game Room Listing",
 	.playerCount = 0,
 	.playerCap = 0xffffffff,
@@ -42,9 +41,8 @@ struct TEMPList {
 	.levelNPS = 16.33,
 }};
 
-_Static_assert(sizeof(char) == 1, "no.");
-static size_t escape(char *out, size_t limit, const char *in, size_t in_len) {
-	char *start = out;
+static size_t escape(uint8_t *out, size_t limit, const uint8_t *in, size_t in_len) {
+	uint8_t *start = out;
 	if(in_len)
 		*out++ = ((*in & 192) == 128) ? *in & 127 : *in; // prevents buffer underrun in handling maliciously crafted strings
 	for(size_t i = 1; i < in_len; ++i) {
@@ -68,6 +66,7 @@ static size_t escape(char *out, size_t limit, const char *in, size_t in_len) {
 }
 
 static uint32_t status_web(char *buf, ServerCode code) {
+	tempList[0].code = StringToServerCode("INDEX", 5);
 	char page[65536];
 	uint32_t len = sprintf(page,
 		"<!DOCTYPE html>"
@@ -120,7 +119,7 @@ static uint32_t status_web(char *buf, ServerCode code) {
 			if(tempList[i].playerCap < 0xffffffff)
 				sprintf(plim, "%u", tempList[i].playerCap);
 			ServerCodeToString(scode, tempList[i].code);
-			size_t level_len = escape(level, sizeof(level), tempList[i].levelName, strlen(tempList[i].levelName));
+			uint32_t level_len = escape((uint8_t*)level, sizeof(level), (const uint8_t*)tempList[i].levelName, strlen(tempList[i].levelName));
 			len += sprintf(&page[len], "<tr>");
 			len += sprintf(&page[len], "<th><a href=\"%s\"><code>%s</code></a></th>", scode, scode);
 			len += sprintf(&page[len], "<td><a href=\"%s\"><div class=\"ln\"%s><span>%.*s</span><br><div>|%.*s||%.*s|</div></div></a></td>", scode, (tempList[i].code == 40549761) ? " style=\"color:#ff0;font-weight:bold\"" : "", level_len, level, level_len, level, level_len, level);
@@ -141,19 +140,30 @@ static uint32_t status_web(char *buf, ServerCode code) {
 	return status_bin(buf, "200 OK", "text/html", (const uint8_t*)page, len);
 }
 
+static _Bool status_identify(const char *buf, uint32_t buf_len) {
+	const char *it = memchr(buf, '\n', buf_len), *end = &buf[buf_len];
+	if(it == NULL)
+		return 0;
+	++it;
+	if(end - it > 24)
+		if(memcmp(it, "Connection: keep-alive\r\n", 24) == 0)
+			it += 24;
+	if(end - it <= 6)
+		return 0;
+	if(memcmp(it, "Host: ", 6))
+		return 0;
+	it = memchr(it, '\n', end - it);
+	if(it == NULL)
+		return 0;
+	if(end - it != 3)
+		return 0;
+	return memcmp(&it[1], "\r\n", 2) == 0;
+}
+
 static uint32_t status_resp(const char *source, const char *path, char *buf, uint32_t buf_len) {
 	if(buf_len > 16 && memcmp(buf, "GET /robots.txt ", 16) == 0)
 		return status_text(buf, "200 OK", "text/plain", "User-agent: *\nDisallow: /\n");
-	_Bool isGame = 1;
-	for(uint32_t i = 0, count = 0; i < buf_len; ++i) {
-		if(buf[i] == '\n')
-			++count;
-		if(count > 3) {
-			isGame = 0;
-			break;
-		}
-	}
-	if(isGame) {
+	if(status_identify(buf, buf_len)) {
 		char rq[4096];
 		uint32_t rq_len = sprintf(rq, "GET %s", path);
 		if(buf_len < rq_len || memcmp(buf, rq, rq_len))
