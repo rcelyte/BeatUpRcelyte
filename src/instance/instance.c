@@ -1,14 +1,14 @@
 // #define THREAD_COUNT 256
 #define THREAD_COUNT 1
 
-#include "enum_reflection.h"
+#include "../enum_reflection.h"
 #include "instance.h"
 #ifdef WINDOWS
 #include <processthreadsapi.h>
 #else
 #include <pthread.h>
 #endif
-#include "debug.h"
+#include "../debug.h"
 #include <mbedtls/error.h>
 #include <stdio.h>
 #include <string.h>

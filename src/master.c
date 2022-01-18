@@ -1,5 +1,5 @@
 #include "enum_reflection.h"
-#include "instance.h"
+#include "instance/instance.h"
 #ifdef WINDOWS
 #include <processthreadsapi.h>
 #else

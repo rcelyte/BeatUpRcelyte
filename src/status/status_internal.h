@@ -1,3 +1,4 @@
+#include "status.h"
 #include <string.h>
 
 #define lengthof(x) (sizeof(x)/sizeof(*x))

@@ -6,7 +6,7 @@ MAKEFLAGS += --no-print-directory -j$(command nproc 2>/dev/null || echo 2)
 
 HOST := $(shell uname -m)
 OBJDIR := .obj/$(shell $(CC) -dumpmachine)
-FILES := $(wildcard src/*.c)
+FILES := $(wildcard src/*.c src/*/*.c)
 OBJS := $(FILES:%=$(OBJDIR)/%.o) 
 DEPS := $(OBJS:.o=.d)
 

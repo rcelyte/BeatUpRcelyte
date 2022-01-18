@@ -1,5 +1,5 @@
-#include "net.h"
-#include "status.h"
+#include "../net.h"
+#include "status_internal.h"
 #ifdef WINDOWS
 #include <processthreadsapi.h>
 #else

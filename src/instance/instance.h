@@ -1,6 +1,6 @@
 #include <stdint.h>
 #include <mbedtls/ctr_drbg.h>
-#include "net.h"
+#include "../net.h"
 
 _Bool instance_get_isopen(ServerCode code);
 _Bool instance_open(ServerCode *out);

@@ -1,3 +1,4 @@
+#pragma once
 #include "packets.h"
 #include "encryption.h"
 #include <mbedtls/x509_crt.h>
@@ -97,12 +98,6 @@ int32_t net_get_sockfd(struct NetContext *ctx);
 mbedtls_ctr_drbg_context *net_get_ctr_drbg(struct NetContext *ctx);
 
 uint32_t net_time();
-
-_Bool status_init(const char *path, uint16_t port);
-void status_cleanup();
-
-_Bool status_ssl_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, const char *path, uint16_t port);
-void status_ssl_cleanup();
 
 _Bool master_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, uint16_t port);
 void master_cleanup();

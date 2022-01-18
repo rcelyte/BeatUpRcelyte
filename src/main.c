@@ -1,3 +1,5 @@
+#include "status/status.h"
+#include "instance/instance.h"
 #include "config.h"
 #include "net.h"
 #include "pool.h"
