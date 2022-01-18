@@ -80,10 +80,11 @@ struct InstanceSession {
 
 struct Room {
 	struct NetKeypair keys;
+	struct GameplayServerConfiguration configuration;
 	struct String managerId;
 	float syncBase;
 	MultiplayerGameState state;
-	uint8_t playerCount, playerLimit, *playerSort;
+	uint8_t playerCount, *playerSort;
 	struct InstanceSession *players;
 };
 
@@ -121,7 +122,7 @@ static void room_disconnect(struct Room *room, uint32_t sort) {
 		free(e);
 	}
 	swap(&room->playerSort[sort], &room->playerSort[--room->playerCount]);
-	fprintf(stderr, "[INSTANCE] player count: %hhu / %hhu\n", room->playerCount, room->playerLimit);
+	fprintf(stderr, "[INSTANCE] player count: %hhu / %hhu\n", room->playerCount, room->configuration.maxPlayerCount);
 }
 
 static void try_resend(struct Context *ctx, struct InstanceSession *session, struct InstanceResendPacket *p, uint32_t currentTime) {
@@ -268,7 +269,16 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 		case MenuRpcType_CancelStartGameTime: fprintf(stderr, "[INSTANCE] MenuRpcType_CancelStartGameTime not implemented\n"); abort();
 		case MenuRpcType_GetIsInLobby: pkt_readGetIsInLobby(data); break;
 		case MenuRpcType_SetIsInLobby: pkt_readSetIsInLobby(data); fprintf(stderr, "[INSTANCE] MenuRpcType_SetIsInLobby not implemented\n"); break;
-		case MenuRpcType_GetCountdownEndTime: fprintf(stderr, "[INSTANCE] MenuRpcType_GetCountdownEndTime not implemented\n"); abort();
+		case MenuRpcType_GetCountdownEndTime: {
+			uint8_t resp[65536], *resp_end = resp;
+			struct SetIsStartButtonEnabled r_button;
+			r_button.base.syncTime = room_get_syncTime(room);
+			r_button.reason = CannotStartGameReason_NoSongSelected;
+			pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
+			SERIALIZE_MENURPC(&resp_end, SetIsStartButtonEnabled, r_button);
+			instance_send_channeled(&ctx->net, session, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+			break;
+		}
 		case MenuRpcType_SetCountdownEndTime: fprintf(stderr, "[INSTANCE] MenuRpcType_SetCountdownEndTime not implemented\n"); abort();
 		case MenuRpcType_CancelCountdown: fprintf(stderr, "[INSTANCE] MenuRpcType_CancelCountdown not implemented\n"); abort();
 		case MenuRpcType_GetOwnedSongPacks: fprintf(stderr, "[INSTANCE] MenuRpcType_GetOwnedSongPacks not implemented\n"); abort();
@@ -769,44 +779,45 @@ void instance_cleanup() {
 	}
 }
 
-_Bool instance_get_isopen(ServerCode code, struct String *managerId_out, int32_t *playerLimit_out) {
-	if(code == 1) { // TODO: temporary hack
+_Bool instance_get_isopen(ServerCode code, struct String *managerId_out, struct GameplayServerConfiguration *configuration) {
+	if(code == StringToServerCode("HELLO", 5)) { // TODO: temporary hack
 		*managerId_out = contexts[0].TEMPglobalRoom.managerId;
-		*playerLimit_out = contexts[0].TEMPglobalRoom.playerLimit;
+		configuration->maxPlayerCount = contexts[0].TEMPglobalRoom.configuration.maxPlayerCount;
 		return 1;
 	}
 	return 0;
 }
-_Bool instance_open(ServerCode *out, struct String managerId, uint8_t playerLimit) {
+_Bool instance_open(ServerCode *out, struct String managerId, struct GameplayServerConfiguration *configuration) {
 	if(net_keypair_init(&contexts[0].net, &contexts[0].TEMPglobalRoom.keys))
 		return 1;
 	contexts[0].TEMPglobalRoom.syncBase = 0;
 	contexts[0].TEMPglobalRoom.syncBase = room_get_syncTime(&contexts[0].TEMPglobalRoom);
 	contexts[0].TEMPglobalRoom.state = MultiplayerGameState_Lobby;
 	contexts[0].TEMPglobalRoom.playerCount = 0;
-	contexts[0].TEMPglobalRoom.playerLimit = playerLimit;
-	size_t sortLen = (playerLimit * sizeof(*contexts[0].TEMPglobalRoom.playerSort) + 7) & ~7; // aligned
-	contexts[0].TEMPglobalRoom.playerSort = malloc(sortLen + playerLimit * sizeof(*contexts[0].TEMPglobalRoom.players));
+	contexts[0].TEMPglobalRoom.configuration = *configuration;
+	size_t sortLen = (contexts[0].TEMPglobalRoom.configuration.maxPlayerCount * sizeof(*contexts[0].TEMPglobalRoom.playerSort) + 7) & ~7; // aligned
+	contexts[0].TEMPglobalRoom.playerSort = malloc(sortLen + contexts[0].TEMPglobalRoom.configuration.maxPlayerCount * sizeof(*contexts[0].TEMPglobalRoom.players));
 	contexts[0].TEMPglobalRoom.players = (struct InstanceSession*)&((uint8_t*)contexts[0].TEMPglobalRoom.playerSort)[sortLen];
-	for(uint32_t i = 0; i < playerLimit; ++i) {
+	for(uint32_t i = 0; i < contexts[0].TEMPglobalRoom.configuration.maxPlayerCount; ++i) {
 		contexts[0].TEMPglobalRoom.playerSort[i] = i;
 		contexts[0].TEMPglobalRoom.players[i].clientState = ClientState_disconnected;
 		contexts[0].TEMPglobalRoom.players[i].incomingFragmentsList = NULL;
 	}
 	contexts[0].TEMPglobalRoom.managerId = managerId;
-	*out = 1; // TODO: temporary hack
+	*out = StringToServerCode("HELLO", 5); // TODO: temporary hack
 	return 0;
 }
 
 struct NetContext *instance_get_net(ServerCode code) {
-	return (code == 1) ? &contexts[0].net : NULL;
+	return (code == StringToServerCode("HELLO", 5)) ? &contexts[0].net : NULL;
 }
 
 struct NetSession *instance_resolve_session(ServerCode code, struct SS addr, struct String userId) {
-	if(code != 1)
+	if(code != StringToServerCode("HELLO", 5))
 		return NULL;
 	struct Context *ctx = &contexts[0];
-	struct InstanceSession *session = (struct InstanceSession*)instance_onResolve(ctx, addr, (void*[]){NULL}); // TODO: This may connect the user to previous rooms they haven't successfully disconnected from
+	struct Room *room;
+	struct InstanceSession *session = (struct InstanceSession*)instance_onResolve(ctx, addr, (void**)&room); // TODO: This may connect the user to previous rooms they haven't successfully disconnected from
 	if(session) {
 		if(net_session_reset(&ctx->net, &session->net))
 			return NULL;
@@ -816,14 +827,15 @@ struct NetSession *instance_resolve_session(ServerCode code, struct SS addr, str
 			free(e);
 		}
 	} else {
-		if(ctx->TEMPglobalRoom.playerCount >= ctx->TEMPglobalRoom.playerLimit) {
+		room = &ctx->TEMPglobalRoom;
+		if(room->playerCount >= room->configuration.maxPlayerCount) {
 			fprintf(stderr, "ROOM FULL\n");
 			return NULL;
 		}
-		session = &ctx->TEMPglobalRoom.players[ctx->TEMPglobalRoom.playerSort[ctx->TEMPglobalRoom.playerCount]];
+		session = &room->players[room->playerSort[room->playerCount]];
 		if(net_session_init(&ctx->net, &session->net, addr))
 			return NULL;
-		++ctx->TEMPglobalRoom.playerCount;
+		++room->playerCount;
 	}
 	session->clientState = ClientState_disconnected;
 	session->pong.sequence = 0;
@@ -835,11 +847,11 @@ struct NetSession *instance_resolve_session(ServerCode code, struct SS addr, str
 	session->rsChannel.ack.channelId = DeliveryMethod_ReliableSequenced;
 
 	session->permissions.userId = userId;
-	session->permissions.isServerOwner = (userId.length == ctx->TEMPglobalRoom.managerId.length && memcmp(userId.data, ctx->TEMPglobalRoom.managerId.data, ctx->TEMPglobalRoom.managerId.length) == 0);
-	session->permissions.hasRecommendBeatmapsPermission = 1;
-	session->permissions.hasRecommendGameplayModifiersPermission = 1;
-	session->permissions.hasKickVotePermission = 1;
-	session->permissions.hasInvitePermission = 1;
+	session->permissions.isServerOwner = (userId.length == room->managerId.length && memcmp(userId.data, room->managerId.data, room->managerId.length) == 0);
+	session->permissions.hasRecommendBeatmapsPermission = (room->configuration.songSelectionMode != SongSelectionMode_Random) && (session->permissions.isServerOwner || room->configuration.songSelectionMode != SongSelectionMode_OwnerPicks);
+	session->permissions.hasRecommendGameplayModifiersPermission = (room->configuration.gameplayServerControlSettings == GameplayServerControlSettings_AllowModifierSelection || room->configuration.gameplayServerControlSettings == GameplayServerControlSettings_All);
+	session->permissions.hasKickVotePermission = session->permissions.isServerOwner;
+	session->permissions.hasInvitePermission = (room->configuration.invitePolicy == InvitePolicy_AnyoneCanInvite) || (session->permissions.isServerOwner && room->configuration.invitePolicy == InvitePolicy_OnlyConnectionOwnerCanInvite);
 	session->menu.isReady = 0;
 	session->menu.ownedSongPacks._bloomFilter._d0 = 0;
 	session->menu.ownedSongPacks._bloomFilter._d1 = 0;
@@ -847,7 +859,7 @@ struct NetSession *instance_resolve_session(ServerCode code, struct SS addr, str
 	char addrstr[INET6_ADDRSTRLEN + 8];
 	net_tostr(&addr, addrstr);
 	fprintf(stderr, "[INSTANCE] connect %s\n", addrstr);
-	fprintf(stderr, "[INSTANCE] player count: %hhu / %hhu\n", ctx->TEMPglobalRoom.playerCount, ctx->TEMPglobalRoom.playerLimit);
+	fprintf(stderr, "[INSTANCE] player count: %hhu / %hhu\n", room->playerCount, room->configuration.maxPlayerCount);
 	return &session->net;
 }
 
@@ -855,7 +867,7 @@ struct IPEndPoint instance_get_address(ServerCode code) {
 	struct IPEndPoint out;
 	out.address.length = 0;
 	out.port = 0;
-	if(code != 1) // TODO: temporary hack
+	if(code != StringToServerCode("HELLO", 5)) // TODO: temporary hack
 		return out;
 	out.address.length = sprintf(out.address.data, "%s", instance_domain);
 	struct SS addr = {sizeof(struct sockaddr_storage)};

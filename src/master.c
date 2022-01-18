@@ -332,21 +332,21 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		goto send;
 	}
 	struct String managerId = req.base.userId;
-	#ifdef FORCE_MASSIVE_LOBBIES
-	req.configuration.maxPlayerCount = 127;
-	fprintf(stderr, "ONLY THE BIGGEST OF ROOMS!!!\n");
-	#endif
 	if(req.code == StringToServerCode(NULL, 0)) {
 		if(req.selectionMask.difficulties != BeatmapDifficultyMask_All && req.selectionMask.modifiers == GameplayModifierMask_NoFail && req.configuration.maxPlayerCount == 5 && req.configuration.discoveryPolicy == DiscoveryPolicy_Public && req.configuration.invitePolicy == InvitePolicy_AnyoneCanInvite && req.configuration.gameplayServerMode == GameplayServerMode_Countdown && req.configuration.songSelectionMode == SongSelectionMode_Vote && req.configuration.gameplayServerControlSettings == GameplayServerControlSettings_None) {
 			r_conn.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers; // Quick Play not yet available
 			goto send;
 		}
-		if(instance_open(&req.code, managerId, req.configuration.maxPlayerCount)) {
+		#ifdef FORCE_MASSIVE_LOBBIES
+		req.configuration.maxPlayerCount = 127;
+		fprintf(stderr, "ONLY THE BIGGEST OF ROOMS!!!\n");
+		#endif
+		if(instance_open(&req.code, managerId, &req.configuration)) {
 			r_conn.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers;
 			goto send;
 		}
 	} else {
-		if(!instance_get_isopen(req.code, &managerId, &req.configuration.maxPlayerCount)) {
+		if(!instance_get_isopen(req.code, &managerId, &req.configuration)) {
 			r_conn.result = ConnectToServerResponse_Result_InvalidCode;
 			goto send;
 		}
