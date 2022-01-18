@@ -6,6 +6,7 @@
 
 #include "enum_reflection.h"
 #include "packets.h"
+static const uint8_t _trap[128] = {~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,};
 #include "scramble.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,6 +43,11 @@ uint64_t pkt_readVarUint64(const uint8_t **pkt) {
 	uint64_t byte, value = 0;
 	uint8_t shift = 0;
 	do {
+		if(shift >= 64) {
+			fprintf(stderr, "Buffer overflow in read of VarUint\n");
+			*pkt = _trap;
+			return 0;
+		}
 		byte = pkt_readUint8(pkt);
 		value |= (byte & 127) << shift;
 		shift += 7;
@@ -216,7 +222,7 @@ struct ByteArrayNetSerializable pkt_readByteArrayNetSerializable(const uint8_t *
 	struct ByteArrayNetSerializable out;
 	out.length = pkt_readVarUint32(pkt);
 	if(out.length > 4096) {
-		out.length = 0, fprintf(stderr, "Buffer overflow in read of ByteArrayNetSerializable.data: %u > 4096\n", (uint32_t)out.length);
+		out.length = 0, *pkt = _trap, fprintf(stderr, "Buffer overflow in read of ByteArrayNetSerializable.data: %u > 4096\n", (uint32_t)out.length);
 	} else {
 		pkt_readUint8Array(pkt, out.data, out.length);
 	}
@@ -235,7 +241,7 @@ struct String pkt_readString(const uint8_t **pkt) {
 	struct String out;
 	out.length = pkt_readUint32(pkt);
 	if(out.length > 60) {
-		out.length = 0, fprintf(stderr, "Buffer overflow in read of String.data: %u > 60\n", (uint32_t)out.length);
+		out.length = 0, *pkt = _trap, fprintf(stderr, "Buffer overflow in read of String.data: %u > 60\n", (uint32_t)out.length);
 	} else {
 		pkt_readInt8Array(pkt, out.data, out.length);
 	}
@@ -396,7 +402,7 @@ struct ConnectRequest pkt_readConnectRequest(const uint8_t **pkt) {
 	out.connectId = pkt_readUint64(pkt);
 	out.addrlen = pkt_readUint8(pkt);
 	if(out.addrlen > 38) {
-		out.addrlen = 0, fprintf(stderr, "Buffer overflow in read of ConnectRequest.address: %u > 38\n", (uint32_t)out.addrlen);
+		out.addrlen = 0, *pkt = _trap, fprintf(stderr, "Buffer overflow in read of ConnectRequest.address: %u > 38\n", (uint32_t)out.addrlen);
 	} else {
 		pkt_readUint8Array(pkt, out.address, out.addrlen);
 	}
@@ -411,11 +417,16 @@ void pkt_writeConnectAccept(uint8_t **pkt, struct ConnectAccept in) {
 	pkt_writeUint8(pkt, in.connectNum);
 	pkt_writeUint8(pkt, in.reusedPeer);
 }
+struct Disconnect pkt_readDisconnect(const uint8_t **pkt) {
+	struct Disconnect out;
+	pkt_readUint8Array(pkt, out._pad0, 8);
+	return out;
+}
 struct MtuCheck pkt_readMtuCheck(const uint8_t **pkt) {
 	struct MtuCheck out;
 	out.newMtu0 = pkt_readUint32(pkt);
 	if(out.newMtu0-9 > 1423) {
-		out.newMtu0 = 0, fprintf(stderr, "Buffer overflow in read of MtuCheck.pad: %u > 1423\n", (uint32_t)out.newMtu0-9);
+		out.newMtu0 = 0, *pkt = _trap, fprintf(stderr, "Buffer overflow in read of MtuCheck.pad: %u > 1423\n", (uint32_t)out.newMtu0-9);
 	} else {
 		pkt_readUint8Array(pkt, out.pad, out.newMtu0-9);
 	}
@@ -535,6 +546,124 @@ void pkt_writePlayerIdentity(uint8_t **pkt, struct PlayerIdentity in) {
 	pkt_writeMultiplayerAvatarData(pkt, in.playerAvatar);
 	pkt_writeByteArrayNetSerializable(pkt, in.random);
 	pkt_writeByteArrayNetSerializable(pkt, in.publicEncryptionKey);
+}
+void pkt_writePlayerSortOrderUpdate(uint8_t **pkt, struct PlayerSortOrderUpdate in) {
+	pkt_writeString(pkt, in.userId);
+	pkt_writeVarInt32(pkt, in.sortIndex);
+}
+struct RemoteProcedureCall pkt_readRemoteProcedureCall(const uint8_t **pkt) {
+	struct RemoteProcedureCall out;
+	out.syncTime = pkt_readFloat32(pkt);
+	return out;
+}
+void pkt_writeRemoteProcedureCall(uint8_t **pkt, struct RemoteProcedureCall in) {
+	pkt_writeFloat32(pkt, in.syncTime);
+}
+void pkt_writePlayerLobbyPermissionConfigurationNetSerializable(uint8_t **pkt, struct PlayerLobbyPermissionConfigurationNetSerializable in) {
+	pkt_writeString(pkt, in.userId);
+	uint8_t bits = 0;
+	bits |= (in.isServerOwner >> 0) & 1;
+	bits |= (in.hasRecommendBeatmapsPermission >> 1) & 1;
+	bits |= (in.hasRecommendGameplayModifiersPermission >> 2) & 1;
+	bits |= (in.hasKickVotePermission >> 3) & 1;
+	bits |= (in.hasInvitePermission >> 4) & 1;
+	pkt_writeUint8(pkt, bits);
+}
+void pkt_writePlayersLobbyPermissionConfigurationNetSerializable(uint8_t **pkt, struct PlayersLobbyPermissionConfigurationNetSerializable in) {
+	pkt_writeInt32(pkt, in.count);
+	for(uint32_t i = 0; i < in.count; ++i)
+		pkt_writePlayerLobbyPermissionConfigurationNetSerializable(pkt, in.playersPermission[i]);
+}
+struct SyncStateId pkt_readSyncStateId(const uint8_t **pkt) {
+	struct SyncStateId out;
+	uint8_t bits = pkt_readUint8(pkt);
+	out.id = (bits >> 0) & 127;
+	out.same = (bits >> 7) & 1;
+	return out;
+}
+struct Vector3Serializable pkt_readVector3Serializable(const uint8_t **pkt) {
+	struct Vector3Serializable out;
+	out.x = pkt_readVarInt32(pkt);
+	out.y = pkt_readVarInt32(pkt);
+	out.z = pkt_readVarInt32(pkt);
+	return out;
+}
+struct QuaternionSerializable pkt_readQuaternionSerializable(const uint8_t **pkt) {
+	struct QuaternionSerializable out;
+	out.a = pkt_readVarInt32(pkt);
+	out.b = pkt_readVarInt32(pkt);
+	out.c = pkt_readVarInt32(pkt);
+	return out;
+}
+struct PoseSerializable pkt_readPoseSerializable(const uint8_t **pkt) {
+	struct PoseSerializable out;
+	out.position = pkt_readVector3Serializable(pkt);
+	out.rotation = pkt_readQuaternionSerializable(pkt);
+	return out;
+}
+struct NodePoseSyncState1 pkt_readNodePoseSyncState1(const uint8_t **pkt) {
+	struct NodePoseSyncState1 out;
+	out.head = pkt_readPoseSerializable(pkt);
+	out.leftController = pkt_readPoseSerializable(pkt);
+	out.rightController = pkt_readPoseSerializable(pkt);
+	return out;
+}
+void pkt_writeGetRecommendedBeatmap(uint8_t **pkt, struct GetRecommendedBeatmap in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+}
+void pkt_writeGetRecommendedGameplayModifiers(uint8_t **pkt, struct GetRecommendedGameplayModifiers in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+}
+void pkt_writeGetIsReady(uint8_t **pkt, struct GetIsReady in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+}
+void pkt_writeGetIsInLobby(uint8_t **pkt, struct GetIsInLobby in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+}
+struct GetPermissionConfiguration pkt_readGetPermissionConfiguration(const uint8_t **pkt) {
+	struct GetPermissionConfiguration out;
+	out.base = pkt_readRemoteProcedureCall(pkt);
+	return out;
+}
+void pkt_writeSetPermissionConfiguration(uint8_t **pkt, struct SetPermissionConfiguration in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+	pkt_writePlayersLobbyPermissionConfigurationNetSerializable(pkt, in.playersPermissionConfiguration);
+}
+void pkt_writeSetIsStartButtonEnabled(uint8_t **pkt, struct SetIsStartButtonEnabled in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+	pkt_writeVarInt32(pkt, in.reason);
+}
+struct NodePoseSyncState pkt_readNodePoseSyncState(const uint8_t **pkt) {
+	struct NodePoseSyncState out;
+	out.id = pkt_readSyncStateId(pkt);
+	out.time = pkt_readFloat32(pkt);
+	out.state = pkt_readNodePoseSyncState1(pkt);
+	return out;
+}
+struct NodePoseSyncStateDelta pkt_readNodePoseSyncStateDelta(const uint8_t **pkt) {
+	struct NodePoseSyncStateDelta out;
+	out.baseId = pkt_readSyncStateId(pkt);
+	out.timeOffsetMs = pkt_readVarInt32(pkt);
+	if(out.baseId.same == 0) {
+		out.delta = pkt_readNodePoseSyncState1(pkt);
+	}
+	return out;
+}
+struct MultiplayerSessionMessageHeader pkt_readMultiplayerSessionMessageHeader(const uint8_t **pkt) {
+	struct MultiplayerSessionMessageHeader out;
+	out.type = pkt_readUint8(pkt);
+	return out;
+}
+void pkt_writeMultiplayerSessionMessageHeader(uint8_t **pkt, struct MultiplayerSessionMessageHeader in) {
+	pkt_writeUint8(pkt, in.type);
+}
+struct MenuRpcHeader pkt_readMenuRpcHeader(const uint8_t **pkt) {
+	struct MenuRpcHeader out;
+	out.type = pkt_readUint8(pkt);
+	return out;
+}
+void pkt_writeMenuRpcHeader(uint8_t **pkt, struct MenuRpcHeader in) {
+	pkt_writeUint8(pkt, in.type);
 }
 struct AuthenticateUserRequest pkt_readAuthenticateUserRequest(const uint8_t **pkt) {
 	struct AuthenticateUserRequest out;

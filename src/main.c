@@ -1,8 +1,9 @@
 #include "config.h"
 #include "net.h"
-#include "scramble.h"
+#include "pool.h"
 #include <unistd.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <signal.h>
@@ -11,6 +12,7 @@ static const char *config_path = "./config.json";
 static _Bool headless = 0;
 
 int main(int argc, char const *argv[]) {
+	// fprintf(stderr, "MAX CODE: %u\n", StringToServerCode("99999", 5));
 	for(const char **arg = &argv[1]; arg < &argv[argc]; ++arg) {
 		if(strcmp(*arg, "--daemon") == 0) {
 			headless = 1;
@@ -31,19 +33,19 @@ int main(int argc, char const *argv[]) {
 	#endif
 	struct Config cfg;
 	if(config_load(&cfg, config_path))
-		return -1;
+		goto fail0;
 	if(cfg.status_tls) {
 		if(status_ssl_init(&cfg.status_cert, &cfg.status_key, cfg.status_path, cfg.status_port))
-			return -1;
+			goto fail1;
 	} else {
 		if(status_init(cfg.status_path, cfg.status_port))
-			return -1;
+			goto fail1;
 	}
-	scramble_init();
+	pool_init();
 	if(instance_init(cfg.host_domain))
-		return -1;
+		goto fail2;
 	if(master_init(&cfg.master_cert, &cfg.master_key, cfg.master_port))
-		return -1;
+		goto fail3;
 	if(headless) {
 		#ifndef WINDOWS
 		sigset_t sigset;
@@ -59,12 +61,16 @@ int main(int argc, char const *argv[]) {
 		fprintf(stderr, "Press [enter] to exit\n");
 		getchar();
 	}
+	fail3:
 	master_cleanup();
+	fail2:
 	instance_cleanup();
+	fail1:
 	if(cfg.status_tls)
 		status_ssl_cleanup();
 	else
 		status_cleanup();
+	fail0:
 	config_free(&cfg);
 	return 0;
 }

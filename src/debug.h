@@ -36,9 +36,12 @@ static void debug_logPacket(const uint8_t *pkt, const uint8_t *end, struct NetPa
 	const uint8_t *data = pkt;
 	char buf[1024*16];
 	switch(header.property) {
-		case PacketProperty_Unreliable: fprintf(stderr, "\tPacketProperty_Unreliable\n"); break;
+		case PacketProperty_Unreliable: {
+			goto routing;
+		}
 		case PacketProperty_Channeled: {
 			pkt_logChanneled("\tChanneled", buf, buf, pkt_readChanneled(&data));
+			routing:
 			pkt_logRoutingHeader("\tRoutingHeader", buf, buf, pkt_readRoutingHeader(&data));
 			while(data < end) {
 				struct SerializeHeader serial = pkt_readSerializeHeader(&data);
@@ -114,11 +117,7 @@ static void debug_logPacket(const uint8_t *pkt, const uint8_t *end, struct NetPa
 								pkt_logScoreSyncStateHeader("\tScoreSyncStateHeader", buf, buf, rpc);
 								break;
 							}
-							case MultiplayerSessionMessageType_NodePoseSyncStateDelta: {
-								struct NodePoseSyncStateDeltaHeader rpc = pkt_readNodePoseSyncStateDeltaHeader(&sub);
-								pkt_logNodePoseSyncStateDeltaHeader("\tNodePoseSyncStateDeltaHeader", buf, buf, rpc);
-								break;
-							}
+							case MultiplayerSessionMessageType_NodePoseSyncStateDelta: pkt_logNodePoseSyncStateDelta("\tNodePoseSyncStateDelta", buf, buf, pkt_readNodePoseSyncStateDelta(&sub)); break;
 							case MultiplayerSessionMessageType_ScoreSyncStateDelta: {
 								struct ScoreSyncStateDeltaHeader rpc = pkt_readScoreSyncStateDeltaHeader(&sub);
 								pkt_logScoreSyncStateDeltaHeader("\tScoreSyncStateDeltaHeader", buf, buf, rpc);
@@ -132,7 +131,7 @@ static void debug_logPacket(const uint8_t *pkt, const uint8_t *end, struct NetPa
 					default: fprintf(stderr, "BAD INTERNAL MESSAGE TYPE\n"); continue;
 				}
 				if(sub != data) {
-					fprintf(stderr, "BAD INTERNAL MESSAGE LENGTH (expected %u, got %zu)\n", serial.length, sub - (data - serial.length));
+					fprintf(stderr, "BAD INTERNAL MESSAGE LENGTH (expected %u, read %zu)\n", serial.length, sub - (data - serial.length));
 					if(sub < data) {
 						fprintf(stderr, "\t");
 						for(const uint8_t *it = data - serial.length; it < data; ++it)
@@ -229,7 +228,7 @@ static void debug_logPacket(const uint8_t *pkt, const uint8_t *end, struct NetPa
 		case PacketProperty_Empty: fprintf(stderr, "\tPacketProperty_Empty\n"); return;
 	}
 	if(data != end) {
-		fprintf(stderr, "BAD PACKET LENGTH (expected %zu, got %zu)\n", end - pkt, data - pkt);
+		fprintf(stderr, "BAD PACKET LENGTH (expected %zu, read %zu)\n", end - pkt, data - pkt);
 		if(data < end) {
 			fprintf(stderr, "\t");
 			for(const uint8_t *it = pkt; it < end; ++it)

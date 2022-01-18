@@ -250,7 +250,7 @@ void parse_struct_entries(const char **in, const char *structName, uint32_t inde
 						char length_name[1024];
 						read_word((const char*[]){length}, length_name);
 						*des += sprintf(tabs(des, outdent), "if(%s > %u) {\n", length, count);
-						*des += sprintf(tabs(des, outdent + 1), "%s = 0, fprintf(stderr, \"Buffer overflow in read of %s.%s: %%u > %u\\n\", (uint32_t)%s);\n", length_name, structName, name, count, length);
+						*des += sprintf(tabs(des, outdent + 1), "%s = 0, *pkt = _trap, fprintf(stderr, \"Buffer overflow in read of %s.%s: %%u > %u\\n\", (uint32_t)%s);\n", length_name, structName, name, count, length);
 						*des += sprintf(tabs(des, outdent++), "} else {\n");
 					}
 					if(count && width == 8) {
@@ -472,6 +472,7 @@ int main(int argc, char const *argv[]) {
 	write_warning(&source_end);
 	write_fmt(&source_end, "#include \"enum_reflection.h\"\n");
 	write_fmt(&source_end, "#include \"packets.h\"\n");
+	write_fmt(&source_end, "static const uint8_t _trap[128] = {~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,};\n");
 
 	while(*in_end)
 		parse_value(&header_end, &source_end, &in_end, 0);

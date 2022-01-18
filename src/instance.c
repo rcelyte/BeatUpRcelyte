@@ -1,5 +1,5 @@
-#define THREAD_COUNT 256
-#define ROOM_COUNT 62193781
+// #define THREAD_COUNT 256
+#define THREAD_COUNT 1
 
 #include "enum_reflection.h"
 #include "instance.h"
@@ -15,10 +15,6 @@
 #include <time.h>
 
 #define lengthof(x) (sizeof(x)/sizeof(*x))
-
-struct Room {
-	_Bool isOpen;
-};
 
 struct InstancePacket {
 	uint32_t len;
@@ -47,40 +43,61 @@ struct SequencedChannel {
 	uint16_t localSeqence;
 	struct InstanceResendPacket resend;
 };
+typedef uint8_t ClientState;
+enum ClientState {
+	ClientState_disconnected,
+	ClientState_accepted,
+	ClientState_connected,
+};
 struct InstanceSession {
 	struct NetSession net;
 	struct InstanceSession *next;
-	_Bool connected;
+	ClientState clientState;
+	struct String userId;
 	struct PlayerStateHash state;
 	struct MultiplayerAvatarData avatar;
-	struct Room *room;
 	struct Pong pong;
 	struct ReliableUnorderedChannel ruChannel;
 	struct ReliableOrderedChannel roChannel;
 	struct SequencedChannel rsChannel;
 };
 
-struct Context {
-	struct InstanceSession *sessionList;
-	struct NetContext net;
+struct Room {
+	struct NetKeypair keys;
+	float syncBase;
+	uint8_t playerCount, playerLimit, *playerSort;
+	struct InstanceSession *players;
 };
 
-static struct NetSession *instance_onResolve(struct Context *ctx, struct SS addr) {
-	struct InstanceSession *session = ctx->sessionList;
-	for(; session; session = session->next)
-		if(addrs_are_equal(&addr, NetSession_get_addr(&session->net)))
-			return &session->net;
+struct Context {
+	struct NetContext net;
+	struct Room TEMPglobalRoom; // TODO: room allocation (interface for wire.c)
+};
+
+static struct NetSession *instance_onResolve(struct Context *ctx, struct SS addr, void **userdata_out) {
+	struct Room *room = &ctx->TEMPglobalRoom;
+	for(uint32_t i = 0; i < room->playerCount; ++i) {
+		if(addrs_are_equal(&addr, NetSession_get_addr(&room->players[room->playerSort[i]].net))) {
+			*userdata_out = room;
+			return &room->players[room->playerSort[i]].net;
+		}
+	}
 	return NULL;
 }
 
-static struct InstanceSession *instance_disconnect(struct InstanceSession *session) {
-	struct InstanceSession *next = session->next;
+static void swap(uint8_t *a, uint8_t *b) {
+	uint8_t c = *a;
+	*a = *b, *b = c;
+}
+
+static void room_disconnect(struct Room *room, uint32_t sort) {
 	char addrstr[INET6_ADDRSTRLEN + 8];
-	net_tostr(NetSession_get_addr(&session->net), addrstr);
+	net_tostr(NetSession_get_addr(&room->players[room->playerSort[sort]].net), addrstr);
 	fprintf(stderr, "[INSTANCE] disconnect %s\n", addrstr);
-	net_session_free(&session->net);
-	free(session);
-	return next;
+	net_session_free(&room->players[room->playerSort[sort]].net);
+	room->players[room->playerSort[sort]].clientState = ClientState_disconnected;
+	swap(&room->playerSort[sort], &room->playerSort[--room->playerCount]);
+	fprintf(stderr, "[INSTANCE] player count: %hhu / %hhu\n", room->playerCount, room->playerLimit);
 }
 
 static void try_resend(struct Context *ctx, struct InstanceSession *session, struct InstanceResendPacket *p, uint32_t currentTime) {
@@ -105,14 +122,15 @@ static void flush_ack(struct Context *ctx, struct InstanceSession *session, stru
 }
 
 static void instance_onResend(struct Context *ctx, uint32_t currentTime, uint32_t *nextTick) {
-	for(struct InstanceSession **sp = &ctx->sessionList; *sp;) {
-		uint32_t kickTime = NetSession_get_lastKeepAlive(&(*sp)->net) + 180000;
+	struct Room *room = &ctx->TEMPglobalRoom;
+	for(uint32_t i = 0; i < room->playerCount;) {
+		struct InstanceSession *session = &room->players[room->playerSort[i]];
+		uint32_t kickTime = NetSession_get_lastKeepAlive(&session->net) + 180000;
 		if(currentTime > kickTime) {
-			*sp = instance_disconnect(*sp);
+			room_disconnect(room, i);
 		} else {
 			if(kickTime < *nextTick)
 				*nextTick = kickTime;
-			struct InstanceSession *session = *sp;
 			flush_ack(ctx, session, &session->ruChannel.base.ack);
 			flush_ack(ctx, session, &session->roChannel.base.ack);
 			for(uint_fast8_t i = 0; i < 64; ++i)
@@ -121,7 +139,7 @@ static void instance_onResend(struct Context *ctx, uint32_t currentTime, uint32_
 				try_resend(ctx, session, &session->roChannel.base.resend[i], currentTime);
 			try_resend(ctx, session, &session->rsChannel.resend, currentTime);
 			net_flush_merged(&ctx->net, &session->net);
-			sp = &(*sp)->next;
+			++i;
 		}
 	}
 }
@@ -148,32 +166,133 @@ static void instance_send_channeled(struct NetContext *ctx, struct InstanceSessi
 	channel->localSeqence = (channel->localSeqence + 1) % NET_MAX_SEQUENCE;
 }
 
-static void handle_PlayerIdentity(struct Context *ctx, struct InstanceSession *session, const uint8_t **data) {
+#define SERIALIZE_MENURPC(pkt, dtype, data) { \
+	SERIALIZE_CUSTOM(pkt, InternalMessageType_MultiplayerSession) { \
+		pkt_writeMultiplayerSessionMessageHeader(pkt, (struct MultiplayerSessionMessageHeader){ \
+			.type = MultiplayerSessionMessageType_MenuRpc, \
+		}); \
+		pkt_writeMenuRpcHeader(pkt, (struct MenuRpcHeader){ \
+			.type = MenuRpcType_##dtype, \
+		}); \
+		pkt_write##dtype(pkt, data); \
+	} \
+}
+
+static float room_get_syncTime(struct Room *room) {
+	struct timespec now;
+	if(clock_gettime(CLOCK_MONOTONIC, &now))
+		return 0;
+	return now.tv_sec + (now.tv_nsec / 1000) / 1000000.f - room->syncBase;
+}
+
+static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
+	struct MenuRpcHeader rpc = pkt_readMenuRpcHeader(data);
+	switch(rpc.type) {
+		// default: fprintf(stderr, "BAD MENU RPC TYPE\n");
+		default: fprintf(stderr, "[INSTANCE] MenuRpcType not implemented\n"); break;
+	}
+}
+
+static void handle_PlayerIdentity(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
 	struct PlayerIdentity identity = pkt_readPlayerIdentity(data);
 	session->state = identity.playerState;
 	session->avatar = identity.playerAvatar;
 	fprintf(stderr, "TODO: send to other players\n");
+	if(session->clientState != ClientState_accepted)
+		return;
+	session->clientState = ClientState_connected;
+
+	uint8_t resp[65536], *resp_end = resp;
+	pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
+	struct PlayerSortOrderUpdate r_sort;
+	r_sort.userId = session->userId;
+	r_sort.sortIndex = (session - room->players) / sizeof(*session);
+	SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerSortOrderUpdate)
+		pkt_writePlayerSortOrderUpdate(&resp_end, r_sort);
+	instance_send_channeled(&ctx->net, session, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+
+	resp_end = resp;
+	pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
+	struct RemoteProcedureCall base = {
+		.syncTime = room_get_syncTime(room)
+	};
+	struct SetIsStartButtonEnabled r_rpc0 = {
+		.base = base,
+		.reason = CannotStartGameReason_AllPlayersNotInLobby,
+	};
+	struct GetRecommendedBeatmap r_rpc1 = {
+		.base = base,
+	};
+	struct GetRecommendedGameplayModifiers r_rpc2 = {
+		.base = base,
+	};
+	struct GetIsReady r_rpc3 = {
+		.base = base,
+	};
+	struct GetIsInLobby r_rpc4 = {
+		.base = base,
+	};
+	r_sort.userId = session->userId;
+	r_sort.sortIndex = (session - room->players) / sizeof(*session);
+	SERIALIZE_MENURPC(&resp_end, SetIsStartButtonEnabled, r_rpc0);
+	SERIALIZE_MENURPC(&resp_end, GetRecommendedBeatmap, r_rpc1);
+	SERIALIZE_MENURPC(&resp_end, GetRecommendedGameplayModifiers, r_rpc2);
+	SERIALIZE_MENURPC(&resp_end, GetIsReady, r_rpc3);
+	SERIALIZE_MENURPC(&resp_end, GetIsInLobby, r_rpc4);
+	instance_send_channeled(&ctx->net, session, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 }
 
-static void process_Channeled(struct Context *ctx, struct InstanceSession *session, const uint8_t **data) {
+static void handle_MultiplayerSession(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
+	struct MultiplayerSessionMessageHeader message = pkt_readMultiplayerSessionMessageHeader(data);
+	switch(message.type) {
+		case MultiplayerSessionMessageType_MenuRpc: handle_MenuRpc(ctx, room, session, data); break;
+		case MultiplayerSessionMessageType_GameplayRpc: fprintf(stderr, "[INSTANCE] MultiplayerSessionMessageType_GameplayRpc not implemented\n"); break;
+		case MultiplayerSessionMessageType_NodePoseSyncState: fprintf(stderr, "[INSTANCE] MultiplayerSessionMessageType_NodePoseSyncState not implemented\n"); break;
+		case MultiplayerSessionMessageType_ScoreSyncState: fprintf(stderr, "[INSTANCE] MultiplayerSessionMessageType_ScoreSyncState not implemented\n"); break;
+		case MultiplayerSessionMessageType_NodePoseSyncStateDelta: fprintf(stderr, "[INSTANCE] MultiplayerSessionMessageType_NodePoseSyncStateDelta not implemented\n"); break;
+		case MultiplayerSessionMessageType_ScoreSyncStateDelta: fprintf(stderr, "[INSTANCE] MultiplayerSessionMessageType_ScoreSyncStateDelta not implemented\n"); break;
+		default: fprintf(stderr, "[INSTANCE] BAD MULTIPLAYER SESSION MESSAGE TYPE\n");
+	}
+}
+
+static void handle_Unreliable(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
+	pkt_readRoutingHeader(data);
+	struct SerializeHeader serial = pkt_readSerializeHeader(data);
+	switch(serial.type) {
+		case InternalMessageType_SyncTime: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_SyncTime not implemented\n"); break;
+		case InternalMessageType_PlayerConnected: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerConnected not implemented\n"); break;
+		case InternalMessageType_PlayerIdentity: fprintf(stderr, "[INSTANCE] BAD TYPE: InternalMessageType_PlayerConnected\n"); break;
+		case InternalMessageType_PlayerLatencyUpdate: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerLatencyUpdate not implemented\n"); break;
+		case InternalMessageType_PlayerDisconnected: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerDisconnected not implemented\n"); break;
+		case InternalMessageType_PlayerSortOrderUpdate: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerSortOrderUpdate not implemented\n"); break;
+		case InternalMessageType_Party: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_Party not implemented\n"); break;
+		case InternalMessageType_MultiplayerSession: handle_MultiplayerSession(ctx, room, session, data); break;
+		case InternalMessageType_KickPlayer: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_KickPlayer not implemented\n"); break;
+		case InternalMessageType_PlayerStateUpdate: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerStateUpdate not implemented\n"); break;
+		case InternalMessageType_PlayerAvatarUpdate: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerAvatarUpdate not implemented\n"); break;
+		default: fprintf(stderr, "[INSTANCE] UNRELIABLE : BAD INTERNAL MESSAGE TYPE\n");
+	}
+}
+
+static void process_Channeled(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
 	pkt_readRoutingHeader(data);
 	struct SerializeHeader serial = pkt_readSerializeHeader(data);
 	switch(serial.type) {
 		case InternalMessageType_SyncTime: fprintf(stderr, "[INSTANCE] InternalMessageType_SyncTime not implemented\n"); break;
 		case InternalMessageType_PlayerConnected: fprintf(stderr, "[INSTANCE] InternalMessageType_PlayerConnected not implemented\n"); break;
-		case InternalMessageType_PlayerIdentity: handle_PlayerIdentity(ctx, session, data); break;
+		case InternalMessageType_PlayerIdentity: handle_PlayerIdentity(ctx, room, session, data); break;
 		case InternalMessageType_PlayerLatencyUpdate: fprintf(stderr, "[INSTANCE] InternalMessageType_PlayerLatencyUpdate not implemented\n"); break;
 		case InternalMessageType_PlayerDisconnected: fprintf(stderr, "[INSTANCE] InternalMessageType_PlayerDisconnected not implemented\n"); break;
 		case InternalMessageType_PlayerSortOrderUpdate: fprintf(stderr, "[INSTANCE] InternalMessageType_PlayerSortOrderUpdate not implemented\n"); break;
 		case InternalMessageType_Party: fprintf(stderr, "[INSTANCE] InternalMessageType_Party not implemented\n"); break;
-		case InternalMessageType_MultiplayerSession: fprintf(stderr, "[INSTANCE] InternalMessageType_MultiplayerSession not implemented\n"); break;
+		case InternalMessageType_MultiplayerSession: handle_MultiplayerSession(ctx, room, session, data); break;
 		case InternalMessageType_KickPlayer: fprintf(stderr, "[INSTANCE] InternalMessageType_KickPlayer not implemented\n"); break;
 		case InternalMessageType_PlayerStateUpdate: fprintf(stderr, "[INSTANCE] InternalMessageType_PlayerStateUpdate not implemented\n"); break;
 		case InternalMessageType_PlayerAvatarUpdate: fprintf(stderr, "[INSTANCE] InternalMessageType_PlayerAvatarUpdate not implemented\n"); break;
 		default: fprintf(stderr, "[INSTANCE] BAD INTERNAL MESSAGE TYPE\n");
 	}
 }
-static void handle_Channeled(struct Context *ctx, struct InstanceSession *session, const uint8_t **data, const uint8_t *end) {
+static void handle_Channeled(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data, const uint8_t *end) {
 	struct Channeled channeled = pkt_readChanneled(data);
 	if(channeled.sequence >= NET_MAX_SEQUENCE)
 		return;
@@ -202,17 +321,17 @@ static void handle_Channeled(struct Context *ctx, struct InstanceSession *sessio
 				return;
 			channel->ack.data[ackIdx / 8] |= 1 << (ackIdx % 8);
 			if(channeled.sequence == channel->remoteSequence) {
-				process_Channeled(ctx, session, data);
+				process_Channeled(ctx, room, session, data);
 				channel->remoteSequence = (channel->remoteSequence + 1) % NET_MAX_SEQUENCE;
 				if(channeled.channelId == DeliveryMethod_ReliableOrdered) {
 					while(session->roChannel.receivedPackets[channel->remoteSequence % NET_WINDOW_SIZE].len) {
 						const uint8_t *pkt = session->roChannel.receivedPackets[channel->remoteSequence % NET_WINDOW_SIZE].data, *pkt_it = pkt;
 						const uint8_t *pkt_end = &pkt[session->roChannel.receivedPackets[channel->remoteSequence % NET_WINDOW_SIZE].len];
 						session->roChannel.receivedPackets[channel->remoteSequence % NET_WINDOW_SIZE].len = 0;
-						process_Channeled(ctx, session, &pkt);
+						process_Channeled(ctx, room, session, &pkt);
 						channel->remoteSequence = (channel->remoteSequence + 1) % NET_MAX_SEQUENCE;
 						if(pkt_it != pkt_end)
-							fprintf(stderr, "[INSTANCE] BAD PACKET LENGTH (expected %zu, got %zu)\n", pkt_end - pkt, pkt_it - pkt);
+							fprintf(stderr, "[INSTANCE] BAD PACKET LENGTH (expected %zu, read %zu)\n", pkt_end - pkt, pkt_it - pkt);
 					}
 				} else {
 					while(session->ruChannel.earlyReceived[channel->remoteSequence % NET_WINDOW_SIZE]) {
@@ -226,7 +345,7 @@ static void handle_Channeled(struct Context *ctx, struct InstanceSession *sessio
 				*data = end;
 			} else {
 				session->ruChannel.earlyReceived[ackIdx] = 1;
-				process_Channeled(ctx, session, data);
+				process_Channeled(ctx, room, session, data);
 			}
 		}
 		case DeliveryMethod_Sequenced: return;
@@ -234,7 +353,7 @@ static void handle_Channeled(struct Context *ctx, struct InstanceSession *sessio
 			int32_t relative = RelativeSequenceNumber(channeled.sequence, session->rsChannel.ack.sequence);
 			if(channeled.sequence < NET_MAX_SEQUENCE && relative > 0) {
 				session->rsChannel.ack.sequence = channeled.sequence;
-				process_Channeled(ctx, session, data);
+				process_Channeled(ctx, room, session, data);
 			}
 			uint8_t resp[65536], *resp_end = resp;
 			pkt_writeNetPacketHeader(&resp_end, (struct NetPacketHeader){PacketProperty_Ack, 0, 0});
@@ -245,7 +364,7 @@ static void handle_Channeled(struct Context *ctx, struct InstanceSession *sessio
 	}
 	return;
 }
-static void handle_Ack(struct Context *ctx, struct InstanceSession *session, const uint8_t **data) {
+static void handle_Ack(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
 	struct Ack ack = pkt_readAck(data);
 	/*if(packet.Size != _outgoingAcks.Size) // [PA]Invalid acks packet size
 		return;*/
@@ -269,7 +388,7 @@ static void handle_Ack(struct Context *ctx, struct InstanceSession *session, con
 		channel->resend[pendingIdx].len = 0;
 	}
 }
-static void handle_Ping(struct Context *ctx, struct InstanceSession *session, const uint8_t **data) {
+static void handle_Ping(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
 	struct Ping ping = pkt_readPing(data);
 	if(RelativeSequenceNumber(ping.sequence, session->pong.sequence) > 0) {
 		struct timespec now;
@@ -282,7 +401,7 @@ static void handle_Ping(struct Context *ctx, struct InstanceSession *session, co
 		net_send_internal(&ctx->net, &session->net, resp, resp_end - resp, 1);
 	}
 }
-static void handle_ConnectRequest(struct Context *ctx, struct InstanceSession *session, const uint8_t **data) {
+static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
 	struct ConnectRequest req = pkt_readConnectRequest(data);
 	uint8_t resp[65536], *resp_end = resp;
 	pkt_writeNetPacketHeader(&resp_end, (struct NetPacketHeader){PacketProperty_ConnectAccept, 0, 0});
@@ -293,16 +412,17 @@ static void handle_ConnectRequest(struct Context *ctx, struct InstanceSession *s
 	});
 	net_send_internal(&ctx->net, &session->net, resp, resp_end - resp, 1);
 
-	if(session->connected)
+	if(session->clientState != ClientState_disconnected)
 		return;
-	session->connected = 1;
+	session->clientState = ClientState_accepted;
+	session->userId = req.userId;
 
 	resp_end = resp;
 	pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
 	struct SyncTime r_sync;
-	r_sync.syncTime = 0;
-	fprintf(stderr, "TODO: actually sync time\n");
-	SERIALIZE_BODY(&resp_end, InternalMessageType_SyncTime, SyncTime, r_sync);
+	r_sync.syncTime = room_get_syncTime(room);
+	SERIALIZE_CUSTOM(&resp_end, InternalMessageType_SyncTime)
+		pkt_writeSyncTime(&resp_end, r_sync);
 	instance_send_channeled(&ctx->net, session, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 
 	resp_end = resp;
@@ -311,20 +431,24 @@ static void handle_ConnectRequest(struct Context *ctx, struct InstanceSession *s
 	r_identity.playerState.bloomFilter._d0 = 288266110296588352;
 	r_identity.playerState.bloomFilter._d1 = 576531121051926529;
 	memset(&r_identity.playerAvatar, 0, sizeof(r_identity.playerAvatar));
-	r_identity.random.length = 0;
-	r_identity.publicEncryptionKey.length = 0;
-	SERIALIZE_BODY(&resp_end, InternalMessageType_PlayerIdentity, PlayerIdentity, r_identity);
+	r_identity.random.length = 32;
+	memcpy(r_identity.random.data, NetKeypair_get_random(&room->keys), 32);
+	r_identity.publicEncryptionKey.length = sizeof(r_identity.publicEncryptionKey.data);
+	NetKeypair_write_key(&room->keys, &ctx->net, r_identity.publicEncryptionKey.data, &r_identity.publicEncryptionKey.length);
+	SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerIdentity)
+		pkt_writePlayerIdentity(&resp_end, r_identity);
 	instance_send_channeled(&ctx->net, session, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 }
-static void handle_Disconnect(struct Context *ctx, struct InstanceSession *session, const uint8_t **data) {
-	for(struct InstanceSession **sp = &ctx->sessionList; *sp; *sp = (*sp)->next) {
-		if(*sp == session) {
-			*sp = instance_disconnect(*sp);
+static void handle_Disconnect(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
+	pkt_readDisconnect(data);
+	for(uint32_t i = 0; i < room->playerCount;) {
+		if(&room->players[room->playerSort[i]] == session) {
+			room_disconnect(room, i);
 			return;
 		}
 	}
 }
-static void handle_MtuCheck(struct Context *ctx, struct InstanceSession *session, const uint8_t **data) {
+static void handle_MtuCheck(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
 	struct MtuCheck req = pkt_readMtuCheck(data);
 	uint8_t resp[65536], *resp_end = resp;
 	pkt_writeNetPacketHeader(&resp_end, (struct NetPacketHeader){PacketProperty_MtuOk, 0, 0});
@@ -335,28 +459,27 @@ static void handle_MtuCheck(struct Context *ctx, struct InstanceSession *session
 	net_send_internal(&ctx->net, &session->net, resp, resp_end - resp, 1);
 }
 
-static void handle_packet(struct Context *ctx, struct InstanceSession *session, const uint8_t *pkt, uint32_t len) {
+static void handle_packet(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t *pkt, uint32_t len) {
 	const uint8_t *data = pkt, *end = &pkt[len];
 	struct NetPacketHeader header = pkt_readNetPacketHeader(&data);
 	switch(header.property) {
-		case PacketProperty_Unreliable: fprintf(stderr, "[INSTANCE] PacketProperty_Unreliable not implemented\n"); break;
-		case PacketProperty_Channeled: handle_Channeled(ctx, session, &data, end); break;
-		case PacketProperty_Ack: handle_Ack(ctx, session, &data); break;
-		case PacketProperty_Ping: handle_Ping(ctx, session, &data); break;
+		case PacketProperty_Unreliable: handle_Unreliable(ctx, room, session, &data); break;
+		case PacketProperty_Channeled: handle_Channeled(ctx, room, session, &data, end); break;
+		case PacketProperty_Ack: handle_Ack(ctx, room, session, &data); break;
+		case PacketProperty_Ping: handle_Ping(ctx, room, session, &data); break;
 		case PacketProperty_Pong: fprintf(stderr, "[INSTANCE] PacketProperty_Pong not implemented\n"); break;
-		case PacketProperty_ConnectRequest: handle_ConnectRequest(ctx, session, &data); break;
+		case PacketProperty_ConnectRequest: handle_ConnectRequest(ctx, room, session, &data); break;
 		case PacketProperty_ConnectAccept: fprintf(stderr, "[INSTANCE] BAD PROPERTY: PacketProperty_ConnectAccept\n"); break;
-		case PacketProperty_Disconnect: handle_Disconnect(ctx, session, &data); break;
+		case PacketProperty_Disconnect: handle_Disconnect(ctx, room, session, &data); break;
 		case PacketProperty_UnconnectedMessage: fprintf(stderr, "[INSTANCE] BAD PROPERTY: PacketProperty_UnconnectedMessage\n"); break;
-		case PacketProperty_MtuCheck: handle_MtuCheck(ctx, session, &data); break;
+		case PacketProperty_MtuCheck: handle_MtuCheck(ctx, room, session, &data); break;
 		case PacketProperty_MtuOk: fprintf(stderr, "[INSTANCE] PacketProperty_MtuOk not implemented\n"); break;
 		case PacketProperty_Broadcast: fprintf(stderr, "[INSTANCE] PacketProperty_Broadcast not implemented\n"); break;
 		case PacketProperty_Merged: {
 			for(uint16_t len; data < end; data += len) {
 				len = pkt_readUint16(&data);
 				const uint8_t *sub = data;
-				fprintf(stderr, "[@%zu]:\n", sub - pkt);
-				handle_packet(ctx, session, sub, len);
+				handle_packet(ctx, room, session, sub, len);
 			}
 			break;
 		}
@@ -368,7 +491,7 @@ static void handle_packet(struct Context *ctx, struct InstanceSession *session, 
 		default: fprintf(stderr, "[INSTANCE] BAD PACKET PROPERTY\n");
 	}
 	if(data != end)
-		fprintf(stderr, "[INSTANCE] BAD PACKET LENGTH (expected %u, got %zu)\n", len, data - pkt);
+		fprintf(stderr, "[INSTANCE] BAD PACKET LENGTH (expected %u, read %zu)\n", len, data - pkt);
 }
 
 #ifdef WINDOWS
@@ -381,10 +504,11 @@ instance_handler(struct Context *ctx) {
 	uint8_t buf[262144];
 	memset(buf, 0, sizeof(buf));
 	uint32_t len;
+	struct Room *room;
 	struct InstanceSession *session;
 	const uint8_t *pkt;
-	while((len = net_recv(&ctx->net, buf, sizeof(buf), (struct NetSession**)&session, &pkt))) { // TODO: close instances with zero sessions using `onDisconnect`
-		handle_packet(ctx, session, pkt, len);
+	while((len = net_recv(&ctx->net, buf, sizeof(buf), (struct NetSession**)&session, &pkt, (void**)&room))) { // TODO: close instances with zero sessions using `onDisconnect`
+		handle_packet(ctx, room, session, pkt, len);
 	}
 	return 0;
 }
@@ -408,6 +532,21 @@ _Bool instance_init(const char *domain) {
 		ctx[i].net.user = &ctx[i];
 		ctx[i].net.onResolve = instance_onResolve;
 		ctx[i].net.onResend = instance_onResend;
+
+		if(net_keypair_init(&ctx[i].net, &ctx[i].TEMPglobalRoom.keys))
+			return 1;
+		ctx[i].TEMPglobalRoom.syncBase = 0;
+		ctx[i].TEMPglobalRoom.syncBase = room_get_syncTime(&ctx[i].TEMPglobalRoom);
+		ctx[i].TEMPglobalRoom.playerCount = 0;
+		ctx[i].TEMPglobalRoom.playerLimit = 5;
+		size_t sortLen = (ctx[i].TEMPglobalRoom.playerLimit * sizeof(*ctx[i].TEMPglobalRoom.playerSort) + 7) & ~7; // aligned
+		ctx[i].TEMPglobalRoom.playerSort = malloc(sortLen + ctx[i].TEMPglobalRoom.playerLimit * sizeof(*ctx[i].TEMPglobalRoom.players));
+		ctx[i].TEMPglobalRoom.players = (struct InstanceSession*)&((uint8_t*)ctx[i].TEMPglobalRoom.playerSort)[sortLen];
+		for(uint32_t i = 0; i < ctx[i].TEMPglobalRoom.playerLimit; ++i) {
+			ctx[i].TEMPglobalRoom.playerSort[i] = i;
+			ctx[i].TEMPglobalRoom.players[i].clientState = ClientState_disconnected;
+		}
+
 		#ifdef WINDOWS
 		instance_threads[i] = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)instance_handler, &ctx[i], 0, NULL);
 		#else
@@ -433,15 +572,15 @@ void instance_cleanup() {
 			pthread_join(instance_threads[i], NULL);
 			#endif
 			instance_threads[i] = 0;
-			while(ctx[i].sessionList)
-				ctx[i].sessionList = instance_disconnect(ctx[i].sessionList);
+			while(ctx[i].TEMPglobalRoom.playerCount)
+				room_disconnect(&ctx[i].TEMPglobalRoom, ctx[i].TEMPglobalRoom.playerSort[0]);
 			net_cleanup(&ctx[i].net);
 		}
 	}
 }
 
 static inline struct Context *ServerCode_get_Context(ServerCode code) {
-	return &ctx[(uint64_t)code * (uint64_t)THREAD_COUNT / (uint64_t)ROOM_COUNT];
+	return &ctx[(uint64_t)code * (uint64_t)THREAD_COUNT / (uint64_t)62193781];
 }
 
 _Bool instance_get_isopen(ServerCode code) {
@@ -460,29 +599,20 @@ struct NetContext *instance_get_net(ServerCode code) {
 
 struct NetSession *instance_resolve_session(ServerCode code, struct SS addr) {
 	struct Context *ctx = ServerCode_get_Context(code);
-	struct InstanceSession *session = (struct InstanceSession*)instance_onResolve(ctx, addr);
+	struct InstanceSession *session = (struct InstanceSession*)instance_onResolve(ctx, addr, (void*[]){NULL}); // TODO: This may connect the user to previous rooms they haven't successfully disconnected from
 	if(session) {
 		if(net_session_reset(&ctx->net, &session->net))
 			return NULL;
 	} else {
-		session = malloc(sizeof(struct InstanceSession));
-		if(net_session_init(&ctx->net, &session->net, addr)) {
-			free(session);
+		if(ctx->TEMPglobalRoom.playerCount >= ctx->TEMPglobalRoom.playerLimit) {
+			fprintf(stderr, "ROOM FULL\n");
 			return NULL;
 		}
-		session->next = ctx->sessionList;
-		ctx->sessionList = session;
+		session = &ctx->TEMPglobalRoom.players[ctx->TEMPglobalRoom.playerSort[ctx->TEMPglobalRoom.playerCount]];
+		if(net_session_init(&ctx->net, &session->net, addr))
+			return NULL;
+		++ctx->TEMPglobalRoom.playerCount;
 	}
-	if(!session) {
-		fprintf(stderr, "alloc error\n");
-		return NULL;
-	}
-	if(net_session_init(&ctx->net, &session->net, addr)) {
-		free(session);
-		return NULL;
-	}
-	session->connected = 0;
-	session->room = NULL;
 	session->pong.sequence = 0;
 	memset(&session->ruChannel, 0, sizeof(session->ruChannel));
 	memset(&session->roChannel, 0, sizeof(session->roChannel));
@@ -494,6 +624,7 @@ struct NetSession *instance_resolve_session(ServerCode code, struct SS addr) {
 	char addrstr[INET6_ADDRSTRLEN + 8];
 	net_tostr(&addr, addrstr);
 	fprintf(stderr, "[INSTANCE] connect %s\n", addrstr);
+	fprintf(stderr, "[INSTANCE] player count: %hhu / %hhu\n", ctx->TEMPglobalRoom.playerCount, ctx->TEMPglobalRoom.playerLimit);
 	return &session->net;
 }
 

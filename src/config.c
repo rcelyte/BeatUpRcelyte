@@ -70,9 +70,9 @@ _Bool config_load(struct Config *out, const char *path) {
 		}
 		fprintf(stderr, "Writing default config to %s\n", path);
 		#ifdef WINDOWS
-		fprintf(def, "{\r\n\"HostName\": \"\",\r\n\t\"HostCert\": \"cert.pem\",\r\n\t\"HostKey\": \"key.pem\",\r\n\t\"StatusUri\": \"http://localhost/status\"\r\n}\r\n");
+		fprintf(def, "{\r\n\t\"HostName\": \"\",\r\n\t\"HostCert\": \"cert.pem\",\r\n\t\"HostKey\": \"key.pem\",\r\n\t\"StatusUri\": \"http://localhost/status\"\r\n}\r\n");
 		#else
-		fprintf(def, "{\n\"HostName\": \"\",\n\t\"HostCert\": \"cert.pem\",\n\t\"HostKey\": \"key.pem\",\n\t\"StatusUri\": \"http://localhost/status\"\n}\n");
+		fprintf(def, "{\n\t\"HostName\": \"\",\n\t\"HostCert\": \"cert.pem\",\n\t\"HostKey\": \"key.pem\",\n\t\"StatusUri\": \"http://localhost/status\"\n}\n");
 		#endif
 		fclose(def);
 		f = fopen(path, "r");

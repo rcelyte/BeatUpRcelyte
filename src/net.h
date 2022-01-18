@@ -38,12 +38,16 @@ struct SS {
 uint8_t addrs_are_equal(const struct SS *a0, const struct SS *a1);
 void net_tostr(const struct SS *a, char *out);
 
+struct NetKeypair {
+	uint8_t NET_H_PRIVATE(random)[32];
+	mbedtls_mpi NET_H_PRIVATE(secret);
+	mbedtls_ecp_point NET_H_PRIVATE(public);
+};
+
 struct NetSession {
+	struct NetKeypair keys;
 	uint8_t clientRandom[32];
-	uint8_t NET_H_PRIVATE(serverRandom)[32];
 	uint8_t NET_H_PRIVATE(cookie)[32];
-	mbedtls_mpi NET_H_PRIVATE(serverSecret);
-	mbedtls_ecp_point NET_H_PRIVATE(serverPublic);
 	struct EncryptionState NET_H_PRIVATE(encryptionState);
 	struct SS NET_H_PRIVATE(addr);
 	uint32_t NET_H_PRIVATE(lastKeepAlive);
@@ -62,14 +66,16 @@ struct NetContext {
 	mbedtls_ecp_group NET_H_PRIVATE(grp);
 	struct NetSession *NET_H_PRIVATE(sessionList);
 	struct Context *user;
-	struct NetSession *(*onResolve)(struct Context *ctx, struct SS addr);
+	struct NetSession *(*onResolve)(struct Context *ctx, struct SS addr, void **userdata_out);
 	void (*onResend)(struct Context *ctx, uint32_t currentTime, uint32_t *nextTick);
 	const uint8_t *NET_H_PRIVATE(dirt);
 };
 
-const uint8_t *NetSession_get_serverRandom(const struct NetSession *session);
+_Bool net_keypair_init(struct NetContext *ctx, struct NetKeypair *keys);
+const uint8_t *NetKeypair_get_random(const struct NetKeypair *keys);
+_Bool NetKeypair_write_key(const struct NetKeypair *keys, struct NetContext *ctx, uint8_t *out, uint32_t *out_len);
+
 const uint8_t *NetSession_get_cookie(const struct NetSession *session);
-_Bool NetSession_write_key(const struct NetSession *session, struct NetContext *ctx, uint8_t *out, uint32_t *out_len);
 _Bool NetSession_signature(const struct NetSession *session, struct NetContext *ctx, const mbedtls_pk_context *key, const uint8_t *in, uint32_t in_len, struct ByteArrayNetSerializable *out);
 _Bool NetSession_set_clientPublicKey(struct NetSession *session, struct NetContext *ctx, const struct ByteArrayNetSerializable *in);
 uint32_t NetSession_get_lastKeepAlive(struct NetSession *session);
@@ -83,7 +89,7 @@ struct NetSession *net_create_session(struct NetContext *ctx, struct SS addr);*/
 _Bool net_session_init(struct NetContext *ctx, struct NetSession *session, struct SS addr);
 _Bool net_session_reset(struct NetContext *ctx, struct NetSession *session);
 void net_session_free(struct NetSession *session);
-uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct NetSession **session, const uint8_t **pkt);
+uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct NetSession **session, const uint8_t **pkt, void **userdata_out);
 void net_flush_merged(struct NetContext *ctx, struct NetSession *session);
 void net_queue_merged(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint16_t len);
 void net_send_internal(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint32_t len, _Bool encrypt);

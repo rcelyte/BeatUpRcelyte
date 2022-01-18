@@ -148,24 +148,20 @@ static void ComputeSendMac(struct EncryptionState *state, const uint8_t *data, u
 	memcpy(out, hash, 10);
 }
 
-_Bool EncryptionState_encrypt(struct EncryptionState *state, struct PacketEncryptionLayer *header, mbedtls_ctr_drbg_context *ctr_drbg, const uint8_t **gather, const uint32_t *gather_len, uint8_t *out, uint32_t *out_len) {
-	uint32_t length = 10;
-	for(uint32_t i = 0; gather[i]; ++i)
-		length += gather_len[i];
+_Bool EncryptionState_encrypt(struct EncryptionState *state, struct PacketEncryptionLayer *header, mbedtls_ctr_drbg_context *ctr_drbg, const uint8_t *buf, uint32_t buf_len, uint8_t *out, uint32_t *out_len) {
+	uint32_t length = buf_len + 10;
 	uint8_t pad = 16 - (length & 15);
 	header->encrypted = 1;
 	header->sequenceId = GetNextSentSequenceNum(state);
 	mbedtls_ctr_drbg_random(ctr_drbg, header->iv, sizeof(header->iv));
 	uint8_t unencrypted[length + pad];
 	{
-		uint32_t offset = 0;
-		for(uint32_t i = 0; gather[i]; offset += gather_len[i++])
-			memcpy(&unencrypted[offset], gather[i], gather_len[i]);
-		unencrypted[offset] = header->sequenceId;
-		unencrypted[offset+1] = header->sequenceId >> 8;
-		unencrypted[offset+2] = header->sequenceId >> 16;
-		unencrypted[offset+3] = header->sequenceId >> 24;
-		ComputeSendMac(state, unencrypted, offset + 4, &unencrypted[offset]);
+		memcpy(unencrypted, buf, buf_len);
+		unencrypted[buf_len] = header->sequenceId;
+		unencrypted[buf_len+1] = header->sequenceId >> 8;
+		unencrypted[buf_len+2] = header->sequenceId >> 16;
+		unencrypted[buf_len+3] = header->sequenceId >> 24;
+		ComputeSendMac(state, unencrypted, buf_len + 4, &unencrypted[buf_len]);
 		memset(&unencrypted[length], pad - 1, pad);
 	}
 	*out_len = length + pad;

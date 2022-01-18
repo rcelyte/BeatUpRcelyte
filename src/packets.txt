@@ -26,16 +26,18 @@
  */
 
 head
-	#define SERIALIZE_BODY(pkt, stype, dtype, data) { \
-		fprintf(stderr, "serialize " #stype "\n"); \
-		uint8_t *_end = *(pkt); \
-		pkt_write##dtype(&_end, data); \
-		struct SerializeHeader _serial; \
-		_serial.length = _end + 1 - *(pkt); \
-		_serial.type = stype; \
-		pkt_writeSerializeHeader(pkt, _serial); \
-		pkt_write##dtype(pkt, data); \
-	}
+	#define CONCAT1(a, b) a##b
+	#define CONCAT0(a, b) CONCAT1(a, b)
+	#define SERIALIZE_CUSTOM(pkt, stype) \
+		for(uint8_t *start = *pkt; start;) \
+			if(*pkt != start) { \
+				struct SerializeHeader serial; \
+				serial.length = *pkt + 1 - start; \
+				serial.type = stype; \
+				*pkt = start, start = NULL; \
+				pkt_writeSerializeHeader(pkt, serial); \
+				goto CONCAT0(_body_, __LINE__); \
+			} else CONCAT0(_body_, __LINE__):
 	uint8_t pkt_readUint8(const uint8_t **pkt);
 	uint16_t pkt_readUint16(const uint8_t **pkt);
 	uint32_t pkt_readUint32(const uint8_t **pkt);
@@ -56,6 +58,10 @@ head
 	void pkt_writeUint16(uint8_t **pkt, uint16_t v);
 	void pkt_writeUint32(uint8_t **pkt, uint32_t v);
 	void pkt_writeUint64(uint8_t **pkt, uint64_t v);
+	#define pkt_writeInt8(pkt, v) pkt_writeUint8(pkt, (int8_t)v)
+	#define pkt_writeInt16(pkt, v) pkt_writeUint16(pkt, (int16_t)v)
+	#define pkt_writeInt32(pkt, v) pkt_writeUint32(pkt, (int32_t)v)
+	#define pkt_writeInt64(pkt, v) pkt_writeUint64(pkt, (int64_t)v)
 	void pkt_writeVarUint64(uint8_t **pkt, uint64_t v);
 	void pkt_writeVarInt64(uint8_t **pkt, int64_t v);
 	void pkt_writeVarUint32(uint8_t **pkt, uint32_t v);
@@ -102,6 +108,11 @@ code
 		uint64_t byte, value = 0;
 		uint8_t shift = 0;
 		do {
+			if(shift >= 64) {
+				fprintf(stderr, "Buffer overflow in read of VarUint\n");
+				*pkt = _trap;
+				return 0;
+			}
 			byte = pkt_readUint8(pkt);
 			value |= (byte & 127) << shift;
 			shift += 7;
@@ -433,7 +444,7 @@ u8 PacketProperty
 		u64 connectId
 		u8 connectNum
 		b reusedPeer
-	n Disconnect
+	r Disconnect
 		u8[8] _pad0
 	z UnconnectedMessage
 	r MtuCheck
@@ -513,7 +524,7 @@ u8 InternalMessage Type
 		f32 latency
 	n PlayerDisconnected
 		vi32.DisconnectedReason disconnectedReason
-	n PlayerSortOrderUpdate
+	s PlayerSortOrderUpdate
 		String userId
 		vi32 sortIndex
 	n Party
@@ -524,7 +535,7 @@ u8 InternalMessage Type
 		PlayerStateHash playerState
 	n PlayerAvatarUpdate
 		MultiplayerAvatarData playerAvatar
-n RemoteProcedureCall
+d RemoteProcedureCall
 	f32 syncTime
 n PlayersMissingEntitlementsNetSerializable
 	i32 count
@@ -576,7 +587,7 @@ n GameplayModifiers
 		u1.b proMode
 		u1.b zenMode
 		u1.b smallCubes
-n PlayerLobbyPermissionConfigurationNetSerializable
+s PlayerLobbyPermissionConfigurationNetSerializable
 	String userId
 	u8.e bits
 		u1.b isServerOwner
@@ -584,20 +595,22 @@ n PlayerLobbyPermissionConfigurationNetSerializable
 		u1.b hasRecommendGameplayModifiersPermission
 		u1.b hasKickVotePermission
 		u1.b hasInvitePermission
-n PlayersLobbyPermissionConfigurationNetSerializable
+s PlayersLobbyPermissionConfigurationNetSerializable
 	i32 count
 	PlayerLobbyPermissionConfigurationNetSerializable[128,count] playersPermission
-n SyncStateId
-	u8 id
-n Vector3Serializable
+r SyncStateId
+	u8.e bits
+		u7.u8 id
+		u1.b same
+r Vector3Serializable
 	vi32 x
 	vi32 y
 	vi32 z
-n QuaternionSerializable
+r QuaternionSerializable
 	vi32 a
 	vi32 b
 	vi32 c
-n PoseSerializable
+r PoseSerializable
 	Vector3Serializable position
 	QuaternionSerializable rotation
 u8 CannotStartGameReason
@@ -610,6 +623,10 @@ u8 MultiplayerGameState
 	z None
 	z Lobby
 	z Game
+r NodePoseSyncState1
+	PoseSerializable head
+	PoseSerializable leftController
+	PoseSerializable rightController
 u8 MultiplayerSessionMessage Type
 	u8 MenuRpc Type
 		n SetPlayersMissingEntitlementsToLevel
@@ -637,7 +654,7 @@ u8 MultiplayerSessionMessage Type
 			BeatmapIdentifierNetSerializable identifier
 		n ClearRecommendedBeatmap
 			RemoteProcedureCall base
-		n GetRecommendedBeatmap
+		s GetRecommendedBeatmap
 			RemoteProcedureCall base
 		n SetSelectedGameplayModifiers
 			RemoteProcedureCall base
@@ -649,7 +666,7 @@ u8 MultiplayerSessionMessage Type
 			GameplayModifiers gameplayModifiers
 		n ClearRecommendedGameplayModifiers
 			RemoteProcedureCall base
-		n GetRecommendedGameplayModifiers
+		s GetRecommendedGameplayModifiers
 			RemoteProcedureCall base
 		n LevelLoadError
 			RemoteProcedureCall base
@@ -671,7 +688,7 @@ u8 MultiplayerSessionMessage Type
 		n SetMultiplayerGameState
 			RemoteProcedureCall base
 			vi32.MultiplayerGameState lobbyState
-		n GetIsReady
+		s GetIsReady
 			RemoteProcedureCall base
 		n SetIsReady
 			RemoteProcedureCall base
@@ -681,7 +698,7 @@ u8 MultiplayerSessionMessage Type
 			f32 newTime
 		n CancelStartGameTime
 			RemoteProcedureCall base
-		n GetIsInLobby
+		s GetIsInLobby
 			RemoteProcedureCall base
 		n SetIsInLobby
 			RemoteProcedureCall base
@@ -701,36 +718,36 @@ u8 MultiplayerSessionMessage Type
 		n RequestKickPlayer
 			RemoteProcedureCall base
 			String kickedPlayerId
-		n GetPermissionConfiguration
+		r GetPermissionConfiguration
 			RemoteProcedureCall base
-		n SetPermissionConfiguration
+		s SetPermissionConfiguration
 			RemoteProcedureCall base
 			PlayersLobbyPermissionConfigurationNetSerializable playersPermissionConfiguration
 		n GetIsStartButtonEnabled
 			RemoteProcedureCall base
-		n SetIsStartButtonEnabled
+		s SetIsStartButtonEnabled
 			RemoteProcedureCall base
 			vi32.CannotStartGameReason reason
 	u8 GameplayRpc Type
-	n NodePoseSyncState
+	r NodePoseSyncState
 		SyncStateId id
 		f32 time
-		PoseSerializable head
-		PoseSerializable leftController
-		PoseSerializable rightController
+		NodePoseSyncState1 state
 	u8 ScoreSyncState Type
-	u8 NodePoseSyncStateDelta Type
+	r NodePoseSyncStateDelta
+		SyncStateId baseId
+		vi32 timeOffsetMs
+		if(baseId.same == 0)
+			NodePoseSyncState1 delta
 	u8 ScoreSyncStateDelta Type
-n MultiplayerSessionMessageHeader
+d MultiplayerSessionMessageHeader
 	u8.MultiplayerSessionMessageType type
-n MenuRpcHeader
+d MenuRpcHeader
 	u8.MenuRpcType type
 n GameplayRpcHeader
 	u8.GameplayRpcType type
 n ScoreSyncStateHeader
 	u8.ScoreSyncStateType type
-n NodePoseSyncStateDeltaHeader
-	u8.NodePoseSyncStateDeltaType type
 n ScoreSyncStateDeltaHeader
 	u8.ScoreSyncStateDeltaType type
 

@@ -21,7 +21,8 @@
 		.type = MessageType_##mtype, \
 		.protocolVersion = 6, \
 	}); \
-	SERIALIZE_BODY(pkt, mtype##Type_##stype, dtype, data) \
+	SERIALIZE_CUSTOM(pkt, mtype##Type_##stype) \
+		pkt_write##dtype(pkt, data); \
 }
 
 struct MasterResendPacket {
@@ -51,13 +52,13 @@ struct MasterSession {
 };
 
 struct Context {
+	struct NetContext net;
 	mbedtls_x509_crt *cert;
 	mbedtls_pk_context *key;
 	struct MasterSession *sessionList;
-	struct NetContext net;
 };
 
-static struct NetSession *master_onResolve(struct Context *ctx, struct SS addr) {
+static struct NetSession *master_onResolve(struct Context *ctx, struct SS addr, void **userdata_out) {
 	struct MasterSession *session = ctx->sessionList;
 	for(; session; session = session->next)
 		if(addrs_are_equal(&addr, NetSession_get_addr(&session->net)))
@@ -166,18 +167,14 @@ static void master_send(struct NetContext *ctx, struct MasterSession *session, c
 			net_send_internal(ctx, &session->net, buf, len, message.type != MessageType_HandshakeMessage);
 		return;
 	}
-	if(message.type == MessageType_UserMessage) {
-		fprintf(stderr, "[MASTER] serialize UserMessageType_UserMultipartMessage (%s)\n", reflect(UserMessageType, serial.type));
+	if(message.type == MessageType_UserMessage)
 		serial.type = UserMessageType_UserMultipartMessage;
-	} else if(message.type == MessageType_DedicatedServerMessage) {
-		fprintf(stderr, "[MASTER] serialize DedicatedServerMessageType_DedicatedServerMultipartMessage (%s)\n", reflect(DedicatedServerMessageType, serial.type));
+	else if(message.type == MessageType_DedicatedServerMessage)
 		serial.type = DedicatedServerMessageType_DedicatedServerMultipartMessage;
-	} else if(message.type == MessageType_HandshakeMessage) {
-		fprintf(stderr, "[MASTER] serialize HandshakeMessageType_HandshakeMultipartMessage (%s)\n", reflect(HandshakeMessageType, serial.type));
+	else if(message.type == MessageType_HandshakeMessage)
 		serial.type = HandshakeMessageType_HandshakeMultipartMessage;
-	} else {
+	else
 		return;
-	}
 	pkt_readNetPacketHeader(&buf);
 	len = end - buf;
 
@@ -190,8 +187,7 @@ static void master_send(struct NetContext *ctx, struct MasterSession *session, c
 		mp.base.requestId = master_getNextRequestId(session);
 		if(len - mp.offset < mp.length)
 			mp.length = len - mp.offset;
-		uint8_t mpbuf[512];
-		uint8_t *mpbuf_end = mpbuf;
+		uint8_t mpbuf[512], *mpbuf_end = mpbuf;
 		memcpy(mp.data, &buf[mp.offset], mp.length);
 		pkt_writeNetPacketHeader(&mpbuf_end, (struct NetPacketHeader){
 			.property = PacketProperty_UnconnectedMessage,
@@ -276,14 +272,14 @@ static void handle_ServerCertificateRequest_ack(struct Context *ctx, struct Mast
 	struct ServerHelloRequest r_hello;
 	r_hello.base.requestId = master_getNextRequestId(session);
 	r_hello.base.responseId = session->ClientHelloWithCookieRequest_requestId;
-	memcpy(r_hello.random, NetSession_get_serverRandom(&session->net), sizeof(r_hello.random));
+	memcpy(r_hello.random, NetKeypair_get_random(&session->net.keys), sizeof(r_hello.random));
 	r_hello.publicKey.length = sizeof(r_hello.publicKey.data);
-	if(NetSession_write_key(&session->net, &ctx->net, r_hello.publicKey.data, &r_hello.publicKey.length))
+	if(NetKeypair_write_key(&session->net.keys, &ctx->net, r_hello.publicKey.data, &r_hello.publicKey.length))
 		return;
 	{
 		uint8_t sig[r_hello.publicKey.length + 64];
 		memcpy(sig, session->net.clientRandom, 32);
-		memcpy(&sig[32], NetSession_get_serverRandom(&session->net), 32);
+		memcpy(&sig[32], NetKeypair_get_random(&session->net.keys), 32);
 		memcpy(&sig[64], r_hello.publicKey.data, r_hello.publicKey.length);
 		NetSession_signature(&session->net, &ctx->net, ctx->key, sig, sizeof(sig), &r_hello.signature);
 	}
@@ -353,9 +349,9 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 			goto send;
 		}
 		memcpy(isession->clientRandom, req.base.random, 32);
-		memcpy(r_conn.random, NetSession_get_serverRandom(isession), 32);
+		memcpy(r_conn.random, NetKeypair_get_random(&isession->keys), 32);
 		r_conn.publicKey.length = sizeof(r_conn.publicKey.data);
-		if(NetSession_write_key(isession, net, r_conn.publicKey.data, &r_conn.publicKey.length)) {
+		if(NetKeypair_write_key(&isession->keys, net, r_conn.publicKey.data, &r_conn.publicKey.length)) {
 			r_conn.result = ConnectToServerResponse_Result_UnknownError;
 			goto send;
 		}
@@ -392,7 +388,7 @@ master_handler(struct Context *ctx) {
 	uint32_t len;
 	struct MasterSession *session;
 	const uint8_t *pkt;
-	while((len = net_recv(&ctx->net, buf, sizeof(buf), (struct NetSession**)&session, &pkt))) {
+	while((len = net_recv(&ctx->net, buf, sizeof(buf), (struct NetSession**)&session, &pkt, NULL))) {
 		const uint8_t *data = pkt, *end = &pkt[len];
 		struct NetPacketHeader header = pkt_readNetPacketHeader(&data);
 		if(header.property != PacketProperty_UnconnectedMessage) {
@@ -401,7 +397,6 @@ master_handler(struct Context *ctx) {
 		}
 		struct MessageHeader message = pkt_readMessageHeader(&data);
 		struct SerializeHeader serial = pkt_readSerializeHeader(&data);
-		debug_logType(message, serial);
 		if(message.type == MessageType_UserMessage) {
 			switch(serial.type) {
 				case UserMessageType_AuthenticateUserRequest: handle_AuthenticateUserRequest(ctx, session, &data); break;
@@ -436,14 +431,14 @@ master_handler(struct Context *ctx) {
 					}
 					break;
 				}
-				case HandshakeMessageType_HandshakeMultipartMessage: fprintf(stderr, "[MASTER] HandshakeMessageType_HandshakeMultipartMessage not implemented\n"); return 0;
+				case HandshakeMessageType_HandshakeMultipartMessage: fprintf(stderr, "[MASTER] BAD TYPE: HandshakeMessageType_HandshakeMultipartMessage\n"); break;
 				default: fprintf(stderr, "[MASTER] BAD HANDSHAKE MESSAGE TYPE\n");
 			}
 		} else {
 			fprintf(stderr, "[MASTER] BAD MESSAGE TYPE\n");
 		}
 		if(data != end)
-			fprintf(stderr, "[MASTER] BAD PACKET LENGTH (expected %u, got %zu)\n", len, data - pkt);
+			fprintf(stderr, "[MASTER] BAD PACKET LENGTH (expected %u, read %zu)\n", len, data - pkt);
 	}
 	return 0;
 }
@@ -453,7 +448,7 @@ static HANDLE master_thread = NULL;
 #else
 static pthread_t master_thread = 0;
 #endif
-static struct Context ctx = {NULL, NULL, NULL, {-1}};
+static struct Context ctx = {{-1}, NULL, NULL, NULL};
 _Bool master_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, uint16_t port) {
 	{
 		uint_fast8_t count = 0;

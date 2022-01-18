@@ -3,6 +3,7 @@
 /.obj
 /beatupserver*
 /build.sh
+/makefile.user
 /pkg/BeatUpRcelyte
 /pkg/pkg
 /pkg/src

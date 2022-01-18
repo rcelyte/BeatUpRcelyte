@@ -16,6 +16,8 @@ OBJS += $(LIBS:%=$(OBJDIR)/%)
 CFLAGS := -g -std=gnu11 -Imbedtls/include -Wall -Wno-unused-function -Werror -pedantic-errors
 LDFLAGS := -O2 -no-pie -Wl,--gc-sections,--fatal-warnings
 
+sinclude makefile.user
+
 default: beatupserver
 
 beatupserver: $(OBJS)
@@ -26,7 +28,7 @@ beatupserver.%: $(OBJS)
 	@echo "[cc $@]"
 	$(CC) $(OBJS) $(LDFLAGS) -o "$@"
 
-$(OBJDIR)/%.c.o: %.c $(OBJDIR)/libs.mk mbedtls/.git makefile
+$(OBJDIR)/%.c.o: %.c $(OBJDIR)/libs.mk mbedtls/.git makefile makefile.user
 	@echo "[cc $(notdir $@)]"
 	@mkdir -p "$(@D)"
 	$(CC) $(CFLAGS) -c "$<" -o "$@" -MMD -MP
@@ -42,7 +44,7 @@ $(OBJDIR)/libmbed%.a: mbedtls/.git
 mbedtls/.git:
 	git submodule update --init
 
-$(OBJDIR)/libs.mk: libs.c makefile
+$(OBJDIR)/libs.mk: libs.c makefile makefile.user
 	@mkdir -p "$(@D)"
 	$(CC) -E libs.c -o "$@"
 

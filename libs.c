@@ -4,7 +4,7 @@ LDFLAGS += -lws2_32 -lwinmm -lgdi32
 #else
 LDFLAGS += -pthread
 #if 1
-CFLAGS += -fsanitize=address
+CFLAGS += -fsanitize=address -fno-omit-frame-pointer
 LDFLAGS += -fsanitize=address
 #endif
 #endif

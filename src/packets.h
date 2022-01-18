@@ -10,16 +10,18 @@
 #include "enum.h"
 #include <stdint.h>
 
-#define SERIALIZE_BODY(pkt, stype, dtype, data) { \
-	fprintf(stderr, "serialize " #stype "\n"); \
-	uint8_t *_end = *(pkt); \
-	pkt_write##dtype(&_end, data); \
-	struct SerializeHeader _serial; \
-	_serial.length = _end + 1 - *(pkt); \
-	_serial.type = stype; \
-	pkt_writeSerializeHeader(pkt, _serial); \
-	pkt_write##dtype(pkt, data); \
-}
+#define CONCAT1(a, b) a##b
+#define CONCAT0(a, b) CONCAT1(a, b)
+#define SERIALIZE_CUSTOM(pkt, stype) \
+	for(uint8_t *start = *pkt; start;) \
+		if(*pkt != start) { \
+			struct SerializeHeader serial; \
+			serial.length = *pkt + 1 - start; \
+			serial.type = stype; \
+			*pkt = start, start = NULL; \
+			pkt_writeSerializeHeader(pkt, serial); \
+			goto CONCAT0(_body_, __LINE__); \
+		} else CONCAT0(_body_, __LINE__):
 uint8_t pkt_readUint8(const uint8_t **pkt);
 uint16_t pkt_readUint16(const uint8_t **pkt);
 uint32_t pkt_readUint32(const uint8_t **pkt);
@@ -40,6 +42,10 @@ void pkt_writeUint8(uint8_t **pkt, uint8_t v);
 void pkt_writeUint16(uint8_t **pkt, uint16_t v);
 void pkt_writeUint32(uint8_t **pkt, uint32_t v);
 void pkt_writeUint64(uint8_t **pkt, uint64_t v);
+#define pkt_writeInt8(pkt, v) pkt_writeUint8(pkt, (int8_t)v)
+#define pkt_writeInt16(pkt, v) pkt_writeUint16(pkt, (int16_t)v)
+#define pkt_writeInt32(pkt, v) pkt_writeUint32(pkt, (int32_t)v)
+#define pkt_writeInt64(pkt, v) pkt_writeUint64(pkt, (int64_t)v)
 void pkt_writeVarUint64(uint8_t **pkt, uint64_t v);
 void pkt_writeVarInt64(uint8_t **pkt, int64_t v);
 void pkt_writeVarUint32(uint8_t **pkt, uint32_t v);
@@ -279,6 +285,10 @@ struct ConnectAccept {
 	_Bool reusedPeer;
 };
 void pkt_writeConnectAccept(uint8_t **pkt, struct ConnectAccept in);
+struct Disconnect {
+	uint8_t _pad0[8];
+};
+struct Disconnect pkt_readDisconnect(const uint8_t **pkt);
 struct MtuCheck {
 	uint32_t newMtu0;
 	uint8_t pad[1423];
@@ -382,6 +392,11 @@ struct PlayerIdentity {
 };
 struct PlayerIdentity pkt_readPlayerIdentity(const uint8_t **pkt);
 void pkt_writePlayerIdentity(uint8_t **pkt, struct PlayerIdentity in);
+struct PlayerSortOrderUpdate {
+	struct String userId;
+	int32_t sortIndex;
+};
+void pkt_writePlayerSortOrderUpdate(uint8_t **pkt, struct PlayerSortOrderUpdate in);
 ENUM(uint8_t, InternalMessageType, {
 	InternalMessageType_SyncTime,
 	InternalMessageType_PlayerConnected,
@@ -395,6 +410,11 @@ ENUM(uint8_t, InternalMessageType, {
 	InternalMessageType_PlayerStateUpdate,
 	InternalMessageType_PlayerAvatarUpdate,
 })
+struct RemoteProcedureCall {
+	float syncTime;
+};
+struct RemoteProcedureCall pkt_readRemoteProcedureCall(const uint8_t **pkt);
+void pkt_writeRemoteProcedureCall(uint8_t **pkt, struct RemoteProcedureCall in);
 ENUM(uint8_t, EntitlementsStatus, {
 	EntitlementsStatus_Unknown,
 	EntitlementsStatus_NotOwned,
@@ -423,6 +443,42 @@ ENUM(uint8_t, SongSpeed, {
 	SongSpeed_Slower,
 	SongSpeed_SuperFast,
 })
+struct PlayerLobbyPermissionConfigurationNetSerializable {
+	struct String userId;
+	_Bool isServerOwner;
+	_Bool hasRecommendBeatmapsPermission;
+	_Bool hasRecommendGameplayModifiersPermission;
+	_Bool hasKickVotePermission;
+	_Bool hasInvitePermission;
+};
+void pkt_writePlayerLobbyPermissionConfigurationNetSerializable(uint8_t **pkt, struct PlayerLobbyPermissionConfigurationNetSerializable in);
+struct PlayersLobbyPermissionConfigurationNetSerializable {
+	int32_t count;
+	struct PlayerLobbyPermissionConfigurationNetSerializable playersPermission[128];
+};
+void pkt_writePlayersLobbyPermissionConfigurationNetSerializable(uint8_t **pkt, struct PlayersLobbyPermissionConfigurationNetSerializable in);
+struct SyncStateId {
+	uint8_t id;
+	_Bool same;
+};
+struct SyncStateId pkt_readSyncStateId(const uint8_t **pkt);
+struct Vector3Serializable {
+	int32_t x;
+	int32_t y;
+	int32_t z;
+};
+struct Vector3Serializable pkt_readVector3Serializable(const uint8_t **pkt);
+struct QuaternionSerializable {
+	int32_t a;
+	int32_t b;
+	int32_t c;
+};
+struct QuaternionSerializable pkt_readQuaternionSerializable(const uint8_t **pkt);
+struct PoseSerializable {
+	struct Vector3Serializable position;
+	struct QuaternionSerializable rotation;
+};
+struct PoseSerializable pkt_readPoseSerializable(const uint8_t **pkt);
 ENUM(uint8_t, CannotStartGameReason, {
 	CannotStartGameReason_None = 1,
 	CannotStartGameReason_AllPlayersSpectating,
@@ -435,6 +491,42 @@ ENUM(uint8_t, MultiplayerGameState, {
 	MultiplayerGameState_Lobby,
 	MultiplayerGameState_Game,
 })
+struct NodePoseSyncState1 {
+	struct PoseSerializable head;
+	struct PoseSerializable leftController;
+	struct PoseSerializable rightController;
+};
+struct NodePoseSyncState1 pkt_readNodePoseSyncState1(const uint8_t **pkt);
+struct GetRecommendedBeatmap {
+	struct RemoteProcedureCall base;
+};
+void pkt_writeGetRecommendedBeatmap(uint8_t **pkt, struct GetRecommendedBeatmap in);
+struct GetRecommendedGameplayModifiers {
+	struct RemoteProcedureCall base;
+};
+void pkt_writeGetRecommendedGameplayModifiers(uint8_t **pkt, struct GetRecommendedGameplayModifiers in);
+struct GetIsReady {
+	struct RemoteProcedureCall base;
+};
+void pkt_writeGetIsReady(uint8_t **pkt, struct GetIsReady in);
+struct GetIsInLobby {
+	struct RemoteProcedureCall base;
+};
+void pkt_writeGetIsInLobby(uint8_t **pkt, struct GetIsInLobby in);
+struct GetPermissionConfiguration {
+	struct RemoteProcedureCall base;
+};
+struct GetPermissionConfiguration pkt_readGetPermissionConfiguration(const uint8_t **pkt);
+struct SetPermissionConfiguration {
+	struct RemoteProcedureCall base;
+	struct PlayersLobbyPermissionConfigurationNetSerializable playersPermissionConfiguration;
+};
+void pkt_writeSetPermissionConfiguration(uint8_t **pkt, struct SetPermissionConfiguration in);
+struct SetIsStartButtonEnabled {
+	struct RemoteProcedureCall base;
+	CannotStartGameReason reason;
+};
+void pkt_writeSetIsStartButtonEnabled(uint8_t **pkt, struct SetIsStartButtonEnabled in);
 ENUM(uint8_t, MenuRpcType, {
 	MenuRpcType_SetPlayersMissingEntitlementsToLevel,
 	MenuRpcType_GetIsEntitledToLevel,
@@ -476,8 +568,19 @@ ENUM(uint8_t, MenuRpcType, {
 	MenuRpcType_SetIsStartButtonEnabled,
 })
 typedef uint8_t GameplayRpcType;
+struct NodePoseSyncState {
+	struct SyncStateId id;
+	float time;
+	struct NodePoseSyncState1 state;
+};
+struct NodePoseSyncState pkt_readNodePoseSyncState(const uint8_t **pkt);
 typedef uint8_t ScoreSyncStateType;
-typedef uint8_t NodePoseSyncStateDeltaType;
+struct NodePoseSyncStateDelta {
+	struct SyncStateId baseId;
+	int32_t timeOffsetMs;
+	struct NodePoseSyncState1 delta;
+};
+struct NodePoseSyncStateDelta pkt_readNodePoseSyncStateDelta(const uint8_t **pkt);
 typedef uint8_t ScoreSyncStateDeltaType;
 ENUM(uint8_t, MultiplayerSessionMessageType, {
 	MultiplayerSessionMessageType_MenuRpc,
@@ -487,6 +590,16 @@ ENUM(uint8_t, MultiplayerSessionMessageType, {
 	MultiplayerSessionMessageType_NodePoseSyncStateDelta,
 	MultiplayerSessionMessageType_ScoreSyncStateDelta,
 })
+struct MultiplayerSessionMessageHeader {
+	MultiplayerSessionMessageType type;
+};
+struct MultiplayerSessionMessageHeader pkt_readMultiplayerSessionMessageHeader(const uint8_t **pkt);
+void pkt_writeMultiplayerSessionMessageHeader(uint8_t **pkt, struct MultiplayerSessionMessageHeader in);
+struct MenuRpcHeader {
+	MenuRpcType type;
+};
+struct MenuRpcHeader pkt_readMenuRpcHeader(const uint8_t **pkt);
+void pkt_writeMenuRpcHeader(uint8_t **pkt, struct MenuRpcHeader in);
 struct AuthenticateUserRequest {
 	struct BaseMasterServerReliableResponse base;
 	struct AuthenticationToken authenticationToken;
