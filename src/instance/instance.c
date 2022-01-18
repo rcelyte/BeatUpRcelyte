@@ -122,7 +122,7 @@ static void room_disconnect(struct Room *room, uint32_t sort) {
 		free(e);
 	}
 	swap(&room->playerSort[sort], &room->playerSort[--room->playerCount]);
-	fprintf(stderr, "[INSTANCE] player count: %hhu / %hhu\n", room->playerCount, room->configuration.maxPlayerCount);
+	fprintf(stderr, "[INSTANCE] player count: %hhu / %d\n", room->playerCount, room->configuration.maxPlayerCount);
 }
 
 static void try_resend(struct Context *ctx, struct InstanceSession *session, struct InstanceResendPacket *p, uint32_t currentTime) {
@@ -859,7 +859,7 @@ struct NetSession *instance_resolve_session(ServerCode code, struct SS addr, str
 	char addrstr[INET6_ADDRSTRLEN + 8];
 	net_tostr(&addr, addrstr);
 	fprintf(stderr, "[INSTANCE] connect %s\n", addrstr);
-	fprintf(stderr, "[INSTANCE] player count: %hhu / %hhu\n", room->playerCount, room->configuration.maxPlayerCount);
+	fprintf(stderr, "[INSTANCE] player count: %hhu / %d\n", room->playerCount, room->configuration.maxPlayerCount);
 	return &session->net;
 }
 
