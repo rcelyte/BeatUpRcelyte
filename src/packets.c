@@ -558,6 +558,11 @@ void pkt_writePlayerSortOrderUpdate(uint8_t **pkt, struct PlayerSortOrderUpdate 
 	pkt_writeString(pkt, in.userId);
 	pkt_writeVarInt32(pkt, in.sortIndex);
 }
+struct PlayerStateUpdate pkt_readPlayerStateUpdate(const uint8_t **pkt) {
+	struct PlayerStateUpdate out;
+	out.playerState = pkt_readPlayerStateHash(pkt);
+	return out;
+}
 struct RemoteProcedureCall pkt_readRemoteProcedureCall(const uint8_t **pkt) {
 	struct RemoteProcedureCall out;
 	out.syncTime = pkt_readFloat32(pkt);
@@ -565,6 +570,49 @@ struct RemoteProcedureCall pkt_readRemoteProcedureCall(const uint8_t **pkt) {
 }
 void pkt_writeRemoteProcedureCall(uint8_t **pkt, struct RemoteProcedureCall in) {
 	pkt_writeFloat32(pkt, in.syncTime);
+}
+struct GameplayModifiers pkt_readGameplayModifiers(const uint8_t **pkt) {
+	struct GameplayModifiers out;
+	int32_t bits = pkt_readInt32(pkt);
+	out.energyType = (bits >> 0) & 15;
+	out.demoNoFail = (bits >> 5) & 1;
+	out.instaFail = (bits >> 6) & 1;
+	out.failOnSaberClash = (bits >> 7) & 1;
+	out.enabledObstacleType = (bits >> 8) & 15;
+	out.demoNoObstacles = (bits >> 12) & 1;
+	out.noBombs = (bits >> 13) & 1;
+	out.fastNotes = (bits >> 14) & 1;
+	out.strictAngles = (bits >> 15) & 1;
+	out.disappearingArrows = (bits >> 16) & 1;
+	out.ghostNotes = (bits >> 17) & 1;
+	out.songSpeed = (bits >> 18) & 15;
+	out.noArrows = (bits >> 22) & 1;
+	out.noFailOn0Energy = (bits >> 23) & 1;
+	out.proMode = (bits >> 24) & 1;
+	out.zenMode = (bits >> 25) & 1;
+	out.smallCubes = (bits >> 26) & 1;
+	return out;
+}
+void pkt_writeGameplayModifiers(uint8_t **pkt, struct GameplayModifiers in) {
+	int32_t bits = 0;
+	bits |= (in.energyType >> 0) & 15;
+	bits |= (in.demoNoFail >> 5) & 1;
+	bits |= (in.instaFail >> 6) & 1;
+	bits |= (in.failOnSaberClash >> 7) & 1;
+	bits |= (in.enabledObstacleType >> 8) & 15;
+	bits |= (in.demoNoObstacles >> 12) & 1;
+	bits |= (in.noBombs >> 13) & 1;
+	bits |= (in.fastNotes >> 14) & 1;
+	bits |= (in.strictAngles >> 15) & 1;
+	bits |= (in.disappearingArrows >> 16) & 1;
+	bits |= (in.ghostNotes >> 17) & 1;
+	bits |= (in.songSpeed >> 18) & 15;
+	bits |= (in.noArrows >> 22) & 1;
+	bits |= (in.noFailOn0Energy >> 23) & 1;
+	bits |= (in.proMode >> 24) & 1;
+	bits |= (in.zenMode >> 25) & 1;
+	bits |= (in.smallCubes >> 26) & 1;
+	pkt_writeInt32(pkt, bits);
 }
 void pkt_writePlayerLobbyPermissionConfigurationNetSerializable(uint8_t **pkt, struct PlayerLobbyPermissionConfigurationNetSerializable in) {
 	pkt_writeString(pkt, in.userId);
@@ -620,10 +668,26 @@ struct GetRecommendedBeatmap pkt_readGetRecommendedBeatmap(const uint8_t **pkt) 
 	out.base = pkt_readRemoteProcedureCall(pkt);
 	return out;
 }
+void pkt_writeGetRecommendedBeatmap(uint8_t **pkt, struct GetRecommendedBeatmap in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+}
+void pkt_writeSetSelectedGameplayModifiers(uint8_t **pkt, struct SetSelectedGameplayModifiers in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+	pkt_writeGameplayModifiers(pkt, in.gameplayModifiers);
+}
+struct RecommendGameplayModifiers pkt_readRecommendGameplayModifiers(const uint8_t **pkt) {
+	struct RecommendGameplayModifiers out;
+	out.base = pkt_readRemoteProcedureCall(pkt);
+	out.gameplayModifiers = pkt_readGameplayModifiers(pkt);
+	return out;
+}
 struct GetRecommendedGameplayModifiers pkt_readGetRecommendedGameplayModifiers(const uint8_t **pkt) {
 	struct GetRecommendedGameplayModifiers out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
 	return out;
+}
+void pkt_writeGetRecommendedGameplayModifiers(uint8_t **pkt, struct GetRecommendedGameplayModifiers in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
 }
 struct GetStartedLevel pkt_readGetStartedLevel(const uint8_t **pkt) {
 	struct GetStartedLevel out;
@@ -647,6 +711,9 @@ struct GetIsReady pkt_readGetIsReady(const uint8_t **pkt) {
 	out.base = pkt_readRemoteProcedureCall(pkt);
 	return out;
 }
+void pkt_writeGetIsReady(uint8_t **pkt, struct GetIsReady in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+}
 struct SetIsReady pkt_readSetIsReady(const uint8_t **pkt) {
 	struct SetIsReady out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
@@ -658,10 +725,18 @@ struct GetIsInLobby pkt_readGetIsInLobby(const uint8_t **pkt) {
 	out.base = pkt_readRemoteProcedureCall(pkt);
 	return out;
 }
+void pkt_writeGetIsInLobby(uint8_t **pkt, struct GetIsInLobby in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+}
 struct SetIsInLobby pkt_readSetIsInLobby(const uint8_t **pkt) {
 	struct SetIsInLobby out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
 	out.isBack = pkt_readUint8(pkt);
+	return out;
+}
+struct GetCountdownEndTime pkt_readGetCountdownEndTime(const uint8_t **pkt) {
+	struct GetCountdownEndTime out;
+	out.base = pkt_readRemoteProcedureCall(pkt);
 	return out;
 }
 struct SetOwnedSongPacks pkt_readSetOwnedSongPacks(const uint8_t **pkt) {

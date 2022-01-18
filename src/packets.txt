@@ -536,7 +536,7 @@ u8 InternalMessage Type
 	z MultiplayerSession
 	n KickPlayer
 		vi32.DisconnectedReason disconnectedReason
-	n PlayerStateUpdate
+	r PlayerStateUpdate
 		PlayerStateHash playerState
 	n PlayerAvatarUpdate
 		MultiplayerAvatarData playerAvatar
@@ -572,7 +572,7 @@ u8 SongSpeed
 	z Faster
 	z Slower
 	z SuperFast
-n GameplayModifiers
+d GameplayModifiers
 	i32.e bits
 		u4.EnergyType energyType
 		u1
@@ -659,19 +659,19 @@ u8 MultiplayerSessionMessage Type
 			BeatmapIdentifierNetSerializable identifier
 		n ClearRecommendedBeatmap
 			RemoteProcedureCall base
-		r GetRecommendedBeatmap
+		d GetRecommendedBeatmap
 			RemoteProcedureCall base
-		n SetSelectedGameplayModifiers
+		s SetSelectedGameplayModifiers
 			RemoteProcedureCall base
 			GameplayModifiers gameplayModifiers
 		n GetSelectedGameplayModifiers
 			RemoteProcedureCall base
-		n RecommendGameplayModifiers
+		r RecommendGameplayModifiers
 			RemoteProcedureCall base
 			GameplayModifiers gameplayModifiers
 		n ClearRecommendedGameplayModifiers
 			RemoteProcedureCall base
-		r GetRecommendedGameplayModifiers
+		d GetRecommendedGameplayModifiers
 			RemoteProcedureCall base
 		n LevelLoadError
 			RemoteProcedureCall base
@@ -693,7 +693,7 @@ u8 MultiplayerSessionMessage Type
 		s SetMultiplayerGameState
 			RemoteProcedureCall base
 			vi32.MultiplayerGameState lobbyState
-		r GetIsReady
+		d GetIsReady
 			RemoteProcedureCall base
 		r SetIsReady
 			RemoteProcedureCall base
@@ -703,12 +703,12 @@ u8 MultiplayerSessionMessage Type
 			f32 newTime
 		n CancelStartGameTime
 			RemoteProcedureCall base
-		r GetIsInLobby
+		d GetIsInLobby
 			RemoteProcedureCall base
 		r SetIsInLobby
 			RemoteProcedureCall base
 			b isBack
-		n GetCountdownEndTime
+		r GetCountdownEndTime
 			RemoteProcedureCall base
 		n SetCountdownEndTime
 			RemoteProcedureCall base

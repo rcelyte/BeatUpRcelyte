@@ -68,8 +68,9 @@ struct InstanceSession {
 	struct PlayerStateHash state;
 	struct MultiplayerAvatarData avatar;
 	struct {
-		_Bool isReady;
+		_Bool inLobby, isReady;
 		struct SongPackMask ownedSongPacks;
+		struct GameplayModifiers recommendedModifiers;
 	} menu;
 	struct Pong pong;
 	struct ReliableUnorderedChannel ruChannel;
@@ -229,8 +230,19 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 		case MenuRpcType_GetRecommendedBeatmap: pkt_readGetRecommendedBeatmap(data); fprintf(stderr, "[INSTANCE] MenuRpcType_GetRecommendedBeatmap not implemented\n"); break;
 		case MenuRpcType_SetSelectedGameplayModifiers: fprintf(stderr, "[INSTANCE] MenuRpcType_SetSelectedGameplayModifiers not implemented\n"); abort();
 		case MenuRpcType_GetSelectedGameplayModifiers: fprintf(stderr, "[INSTANCE] MenuRpcType_GetSelectedGameplayModifiers not implemented\n"); abort();
-		case MenuRpcType_RecommendGameplayModifiers: fprintf(stderr, "[INSTANCE] MenuRpcType_RecommendGameplayModifiers not implemented\n"); abort();
-		case MenuRpcType_ClearRecommendedGameplayModifiers: fprintf(stderr, "[INSTANCE] MenuRpcType_ClearRecommendedGameplayModifiers not implemented\n"); abort();
+		case MenuRpcType_RecommendGameplayModifiers: {
+			uint8_t resp[65536], *resp_end = resp;
+			struct SetSelectedGameplayModifiers r_modifiers;
+			r_modifiers.base.syncTime = room_get_syncTime(room);
+			r_modifiers.gameplayModifiers = pkt_readRecommendGameplayModifiers(data).gameplayModifiers;
+			if(session->permissions.hasRecommendGameplayModifiersPermission)
+				session->menu.recommendedModifiers = r_modifiers.gameplayModifiers;
+			pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
+			SERIALIZE_MENURPC(&resp_end, SetSelectedGameplayModifiers, r_modifiers);
+			instance_send_channeled(&ctx->net, session, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+			break;
+		}
+		case MenuRpcType_ClearRecommendedGameplayModifiers: memset(&session->menu.recommendedModifiers, 0, sizeof(session->menu.recommendedModifiers)); break;
 		case MenuRpcType_GetRecommendedGameplayModifiers: pkt_readGetRecommendedGameplayModifiers(data); fprintf(stderr, "[INSTANCE] MenuRpcType_GetRecommendedGameplayModifiers not implemented\n"); break;
 		case MenuRpcType_LevelLoadError: fprintf(stderr, "[INSTANCE] MenuRpcType_LevelLoadError not implemented\n"); abort();
 		case MenuRpcType_LevelLoadSuccess: fprintf(stderr, "[INSTANCE] MenuRpcType_LevelLoadSuccess not implemented\n"); abort();
@@ -268,8 +280,12 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 		case MenuRpcType_SetStartGameTime: fprintf(stderr, "[INSTANCE] MenuRpcType_SetStartGameTime not implemented\n"); abort();
 		case MenuRpcType_CancelStartGameTime: fprintf(stderr, "[INSTANCE] MenuRpcType_CancelStartGameTime not implemented\n"); abort();
 		case MenuRpcType_GetIsInLobby: pkt_readGetIsInLobby(data); break;
-		case MenuRpcType_SetIsInLobby: pkt_readSetIsInLobby(data); fprintf(stderr, "[INSTANCE] MenuRpcType_SetIsInLobby not implemented\n"); break;
+		case MenuRpcType_SetIsInLobby: {
+			session->menu.inLobby = pkt_readSetIsInLobby(data).isBack;
+			break;
+		}
 		case MenuRpcType_GetCountdownEndTime: {
+			pkt_readGetCountdownEndTime(data);
 			uint8_t resp[65536], *resp_end = resp;
 			struct SetIsStartButtonEnabled r_button;
 			r_button.base.syncTime = room_get_syncTime(room);
@@ -322,7 +338,7 @@ static void handle_PlayerIdentity(struct Context *ctx, struct Room *room, struct
 		pkt_writePlayerSortOrderUpdate(&resp_end, r_sort);
 	instance_send_channeled(&ctx->net, session, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 
-	/*resp_end = resp;
+	resp_end = resp;
 	pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
 	struct RemoteProcedureCall base;
 	base.syncTime = room_get_syncTime(room);
@@ -334,7 +350,7 @@ static void handle_PlayerIdentity(struct Context *ctx, struct Room *room, struct
 	SERIALIZE_MENURPC(&resp_end, GetRecommendedGameplayModifiers, (struct GetRecommendedGameplayModifiers){.base = base});
 	SERIALIZE_MENURPC(&resp_end, GetIsReady, (struct GetIsReady){.base = base});
 	SERIALIZE_MENURPC(&resp_end, GetIsInLobby, (struct GetIsInLobby){.base = base});
-	instance_send_channeled(&ctx->net, session, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);*/
+	instance_send_channeled(&ctx->net, session, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 }
 
 static void handle_MultiplayerSession(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
@@ -342,9 +358,9 @@ static void handle_MultiplayerSession(struct Context *ctx, struct Room *room, st
 	switch(message.type) {
 		case MultiplayerSessionMessageType_MenuRpc: handle_MenuRpc(ctx, room, session, data); break;
 		case MultiplayerSessionMessageType_GameplayRpc: fprintf(stderr, "[INSTANCE] MultiplayerSessionMessageType_GameplayRpc not implemented\n"); break;
-		case MultiplayerSessionMessageType_NodePoseSyncState: fprintf(stderr, "[INSTANCE] MultiplayerSessionMessageType_NodePoseSyncState not implemented\n"); break;
+		case MultiplayerSessionMessageType_NodePoseSyncState: pkt_readNodePoseSyncState(data); break;
 		case MultiplayerSessionMessageType_ScoreSyncState: fprintf(stderr, "[INSTANCE] MultiplayerSessionMessageType_ScoreSyncState not implemented\n"); break;
-		case MultiplayerSessionMessageType_NodePoseSyncStateDelta: fprintf(stderr, "[INSTANCE] MultiplayerSessionMessageType_NodePoseSyncStateDelta not implemented\n"); break;
+		case MultiplayerSessionMessageType_NodePoseSyncStateDelta: pkt_readNodePoseSyncStateDelta(data); break;
 		case MultiplayerSessionMessageType_ScoreSyncStateDelta: fprintf(stderr, "[INSTANCE] MultiplayerSessionMessageType_ScoreSyncStateDelta not implemented\n"); break;
 		default: fprintf(stderr, "[INSTANCE] BAD MULTIPLAYER SESSION MESSAGE TYPE\n");
 	}
@@ -357,17 +373,17 @@ static void handle_Unreliable(struct Context *ctx, struct Room *room, struct Ins
 		const uint8_t *sub = (*data)--;
 		*data += serial.length;
 		switch(serial.type) {
-			case InternalMessageType_SyncTime: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_SyncTime not implemented\n"); break;
-			case InternalMessageType_PlayerConnected: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerConnected not implemented\n"); break;
-			case InternalMessageType_PlayerIdentity: fprintf(stderr, "[INSTANCE] BAD TYPE: InternalMessageType_PlayerConnected\n"); break;
-			case InternalMessageType_PlayerLatencyUpdate: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerLatencyUpdate not implemented\n"); break;
-			case InternalMessageType_PlayerDisconnected: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerDisconnected not implemented\n"); break;
-			case InternalMessageType_PlayerSortOrderUpdate: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerSortOrderUpdate not implemented\n"); break;
-			case InternalMessageType_Party: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_Party not implemented\n"); break;
+			case InternalMessageType_SyncTime: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_SyncTime not implemented\n"); abort();
+			case InternalMessageType_PlayerConnected: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerConnected not implemented\n"); abort();
+			case InternalMessageType_PlayerIdentity: fprintf(stderr, "[INSTANCE] BAD TYPE: InternalMessageType_PlayerIdentity\n"); break;
+			case InternalMessageType_PlayerLatencyUpdate: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerLatencyUpdate not implemented\n"); abort();
+			case InternalMessageType_PlayerDisconnected: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerDisconnected not implemented\n"); abort();
+			case InternalMessageType_PlayerSortOrderUpdate: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerSortOrderUpdate not implemented\n"); abort();
+			case InternalMessageType_Party: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_Party not implemented\n"); abort();
 			case InternalMessageType_MultiplayerSession: handle_MultiplayerSession(ctx, room, session, &sub); break;
-			case InternalMessageType_KickPlayer: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_KickPlayer not implemented\n"); break;
-			case InternalMessageType_PlayerStateUpdate: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerStateUpdate not implemented\n"); break;
-			case InternalMessageType_PlayerAvatarUpdate: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerAvatarUpdate not implemented\n"); break;
+			case InternalMessageType_KickPlayer: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_KickPlayer not implemented\n"); abort();
+			case InternalMessageType_PlayerStateUpdate: fprintf(stderr, "[INSTANCE] BAD TYPE: InternalMessageType_PlayerStateUpdate\n"); break;
+			case InternalMessageType_PlayerAvatarUpdate: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerAvatarUpdate not implemented\n"); abort();
 			default: fprintf(stderr, "[INSTANCE] UNRELIABLE : BAD INTERNAL MESSAGE TYPE\n");
 		}
 		if(sub != *data) {
@@ -402,11 +418,10 @@ static void process_Channeled(struct Context *ctx, struct Room *room, struct Ins
 			case InternalMessageType_Party: fprintf(stderr, "[INSTANCE] InternalMessageType_Party not implemented\n"); break;
 			case InternalMessageType_MultiplayerSession: handle_MultiplayerSession(ctx, room, session, &sub); break;
 			case InternalMessageType_KickPlayer: fprintf(stderr, "[INSTANCE] InternalMessageType_KickPlayer not implemented\n"); break;
-			case InternalMessageType_PlayerStateUpdate: fprintf(stderr, "[INSTANCE] InternalMessageType_PlayerStateUpdate not implemented\n"); break;
+			case InternalMessageType_PlayerStateUpdate:  session->state = pkt_readPlayerStateUpdate(&sub).playerState; break;
 			case InternalMessageType_PlayerAvatarUpdate: fprintf(stderr, "[INSTANCE] InternalMessageType_PlayerAvatarUpdate not implemented\n"); break;
 			default: fprintf(stderr, "[INSTANCE] BAD INTERNAL MESSAGE TYPE\n");
 		}
-		fprintf(stderr, "delta: %p == %p\n", (const void*)sub, (const void*)*data);
 		if(sub != *data) {
 			fprintf(stderr, "BAD INTERNAL MESSAGE LENGTH (expected %u, read %zu)\n", serial.length, sub - (*data - serial.length));
 			if(sub < *data) {
@@ -852,9 +867,11 @@ struct NetSession *instance_resolve_session(ServerCode code, struct SS addr, str
 	session->permissions.hasRecommendGameplayModifiersPermission = (room->configuration.gameplayServerControlSettings == GameplayServerControlSettings_AllowModifierSelection || room->configuration.gameplayServerControlSettings == GameplayServerControlSettings_All);
 	session->permissions.hasKickVotePermission = session->permissions.isServerOwner;
 	session->permissions.hasInvitePermission = (room->configuration.invitePolicy == InvitePolicy_AnyoneCanInvite) || (session->permissions.isServerOwner && room->configuration.invitePolicy == InvitePolicy_OnlyConnectionOwnerCanInvite);
+	session->menu.inLobby = 0;
 	session->menu.isReady = 0;
 	session->menu.ownedSongPacks._bloomFilter._d0 = 0;
 	session->menu.ownedSongPacks._bloomFilter._d1 = 0;
+	memset(&session->menu.recommendedModifiers, 0, sizeof(session->menu.recommendedModifiers));
 
 	char addrstr[INET6_ADDRSTRLEN + 8];
 	net_tostr(&addr, addrstr);
