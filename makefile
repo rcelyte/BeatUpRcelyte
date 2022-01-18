@@ -28,7 +28,7 @@ beatupserver.%: $(OBJS)
 	@echo "[cc $@]"
 	$(CC) $(OBJS) $(LDFLAGS) -o "$@"
 
-$(OBJDIR)/%.c.o: %.c $(OBJDIR)/libs.mk mbedtls/.git makefile makefile.user
+$(OBJDIR)/%.c.o: %.c $(OBJDIR)/libs.mk mbedtls/.git makefile
 	@echo "[cc $(notdir $@)]"
 	@mkdir -p "$(@D)"
 	$(CC) $(CFLAGS) -c "$<" -o "$@" -MMD -MP
@@ -44,11 +44,11 @@ $(OBJDIR)/libmbed%.a: mbedtls/.git
 mbedtls/.git:
 	git submodule update --init
 
-$(OBJDIR)/libs.mk: libs.c makefile makefile.user
+$(OBJDIR)/libs.mk: libs.c makefile
 	@mkdir -p "$(@D)"
 	$(CC) -E libs.c -o "$@"
 
-src/packets.h: src/packets.txt gen.c makefile makefile.user
+src/packets.h: src/packets.txt gen.c makefile
 	$(MAKE) .obj/gen.$(HOST)
 	@echo "[gen $(notdir $@)]"
 	./.obj/gen.$(HOST) "$<" "$@" src/packets.c
