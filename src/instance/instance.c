@@ -15,13 +15,16 @@
 #include <time.h>
 
 #define lengthof(x) (sizeof(x)/sizeof(*x))
+#define indexof(a, e) (((e) - (a)) / sizeof(*(a)))
 
 struct InstancePacket {
-	uint32_t len;
+	uint16_t len;
+	_Bool isFragmented;
 	uint8_t data[NET_MAX_PKT_SIZE];
 };
 struct InstanceResendPacket {
-	uint32_t timeStamp, len;
+	uint32_t timeStamp;
+	uint16_t len;
 	uint8_t data[NET_MAX_PKT_SIZE];
 };
 struct ReliableChannel {
@@ -49,22 +52,37 @@ enum ClientState {
 	ClientState_accepted,
 	ClientState_connected,
 };
+struct IncomingFragments {
+	struct IncomingFragments *next;
+	uint16_t fragmentId;
+	DeliveryMethod channelId;
+	uint16_t count, total;
+	uint32_t size;
+	struct InstancePacket fragments[];
+};
 struct InstanceSession {
 	struct NetSession net;
 	struct InstanceSession *next;
 	ClientState clientState;
-	struct String userId;
+	struct PlayerLobbyPermissionConfigurationNetSerializable permissions;
 	struct PlayerStateHash state;
 	struct MultiplayerAvatarData avatar;
+	struct {
+		_Bool isReady;
+		struct SongPackMask ownedSongPacks;
+	} menu;
 	struct Pong pong;
 	struct ReliableUnorderedChannel ruChannel;
 	struct ReliableOrderedChannel roChannel;
 	struct SequencedChannel rsChannel;
+	struct IncomingFragments *incomingFragmentsList;
 };
 
 struct Room {
 	struct NetKeypair keys;
+	struct String managerId;
 	float syncBase;
+	MultiplayerGameState state;
 	uint8_t playerCount, playerLimit, *playerSort;
 	struct InstanceSession *players;
 };
@@ -74,7 +92,7 @@ struct Context {
 	struct Room TEMPglobalRoom; // TODO: room allocation (interface for wire.c)
 };
 
-static struct NetSession *instance_onResolve(struct Context *ctx, struct SS addr, void **userdata_out) {
+static struct NetSession *instance_onResolve(struct Context *ctx, struct SS addr, void **userdata_out) { // TODO: needs mutex
 	struct Room *room = &ctx->TEMPglobalRoom;
 	for(uint32_t i = 0; i < room->playerCount; ++i) {
 		if(addrs_are_equal(&addr, NetSession_get_addr(&room->players[room->playerSort[i]].net))) {
@@ -91,11 +109,17 @@ static void swap(uint8_t *a, uint8_t *b) {
 }
 
 static void room_disconnect(struct Room *room, uint32_t sort) {
+	struct InstanceSession *session = &room->players[room->playerSort[sort]];
 	char addrstr[INET6_ADDRSTRLEN + 8];
-	net_tostr(NetSession_get_addr(&room->players[room->playerSort[sort]].net), addrstr);
+	net_tostr(NetSession_get_addr(&session->net), addrstr);
 	fprintf(stderr, "[INSTANCE] disconnect %s\n", addrstr);
-	net_session_free(&room->players[room->playerSort[sort]].net);
-	room->players[room->playerSort[sort]].clientState = ClientState_disconnected;
+	net_session_free(&session->net);
+	session->clientState = ClientState_disconnected;
+	while(session->incomingFragmentsList) {
+		struct IncomingFragments *e = session->incomingFragmentsList;
+		session->incomingFragmentsList = session->incomingFragmentsList->next;
+		free(e);
+	}
 	swap(&room->playerSort[sort], &room->playerSort[--room->playerCount]);
 	fprintf(stderr, "[INSTANCE] player count: %hhu / %hhu\n", room->playerCount, room->playerLimit);
 }
@@ -121,7 +145,7 @@ static void flush_ack(struct Context *ctx, struct InstanceSession *session, stru
 	}
 }
 
-static void instance_onResend(struct Context *ctx, uint32_t currentTime, uint32_t *nextTick) {
+static void instance_onResend(struct Context *ctx, uint32_t currentTime, uint32_t *nextTick) { // TODO: needs mutex
 	struct Room *room = &ctx->TEMPglobalRoom;
 	for(uint32_t i = 0; i < room->playerCount;) {
 		struct InstanceSession *session = &room->players[room->playerSort[i]];
@@ -161,6 +185,10 @@ static void instance_send_channeled(struct NetContext *ctx, struct InstanceSessi
 		.sequence = channel->localSeqence,
 		.channelId = method,
 	});
+	if(&pkt_end[len] > &pkt[lengthof(channel->resend->data)]) {
+		fprintf(stderr, "Fragmenting not implemented\n");
+		abort();
+	}
 	pkt_writeUint8Array(&pkt_end, buf, len);
 	channel->resend[channel->localSeqence % NET_WINDOW_SIZE].len = pkt_end - pkt;
 	channel->localSeqence = (channel->localSeqence + 1) % NET_MAX_SEQUENCE;
@@ -188,8 +216,81 @@ static float room_get_syncTime(struct Room *room) {
 static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
 	struct MenuRpcHeader rpc = pkt_readMenuRpcHeader(data);
 	switch(rpc.type) {
-		// default: fprintf(stderr, "BAD MENU RPC TYPE\n");
-		default: fprintf(stderr, "[INSTANCE] MenuRpcType not implemented\n"); break;
+		case MenuRpcType_SetPlayersMissingEntitlementsToLevel: fprintf(stderr, "[INSTANCE] MenuRpcType_SetPlayersMissingEntitlementsToLevel not implemented\n"); abort();
+		case MenuRpcType_GetIsEntitledToLevel: fprintf(stderr, "[INSTANCE] MenuRpcType_GetIsEntitledToLevel not implemented\n"); abort();
+		case MenuRpcType_SetIsEntitledToLevel: fprintf(stderr, "[INSTANCE] MenuRpcType_SetIsEntitledToLevel not implemented\n"); abort();
+		case MenuRpcType_InvalidateLevelEntitlementStatuses: fprintf(stderr, "[INSTANCE] MenuRpcType_InvalidateLevelEntitlementStatuses not implemented\n"); abort();
+		case MenuRpcType_SelectLevelPack: fprintf(stderr, "[INSTANCE] MenuRpcType_SelectLevelPack not implemented\n"); abort();
+		case MenuRpcType_SetSelectedBeatmap: fprintf(stderr, "[INSTANCE] MenuRpcType_SetSelectedBeatmap not implemented\n"); abort();
+		case MenuRpcType_GetSelectedBeatmap: fprintf(stderr, "[INSTANCE] MenuRpcType_GetSelectedBeatmap not implemented\n"); abort();
+		case MenuRpcType_RecommendBeatmap: fprintf(stderr, "[INSTANCE] MenuRpcType_RecommendBeatmap not implemented\n"); abort();
+		case MenuRpcType_ClearRecommendedBeatmap: fprintf(stderr, "[INSTANCE] MenuRpcType_ClearRecommendedBeatmap not implemented\n"); abort();
+		case MenuRpcType_GetRecommendedBeatmap: pkt_readGetRecommendedBeatmap(data); fprintf(stderr, "[INSTANCE] MenuRpcType_GetRecommendedBeatmap not implemented\n"); break;
+		case MenuRpcType_SetSelectedGameplayModifiers: fprintf(stderr, "[INSTANCE] MenuRpcType_SetSelectedGameplayModifiers not implemented\n"); abort();
+		case MenuRpcType_GetSelectedGameplayModifiers: fprintf(stderr, "[INSTANCE] MenuRpcType_GetSelectedGameplayModifiers not implemented\n"); abort();
+		case MenuRpcType_RecommendGameplayModifiers: fprintf(stderr, "[INSTANCE] MenuRpcType_RecommendGameplayModifiers not implemented\n"); abort();
+		case MenuRpcType_ClearRecommendedGameplayModifiers: fprintf(stderr, "[INSTANCE] MenuRpcType_ClearRecommendedGameplayModifiers not implemented\n"); abort();
+		case MenuRpcType_GetRecommendedGameplayModifiers: pkt_readGetRecommendedGameplayModifiers(data); fprintf(stderr, "[INSTANCE] MenuRpcType_GetRecommendedGameplayModifiers not implemented\n"); break;
+		case MenuRpcType_LevelLoadError: fprintf(stderr, "[INSTANCE] MenuRpcType_LevelLoadError not implemented\n"); abort();
+		case MenuRpcType_LevelLoadSuccess: fprintf(stderr, "[INSTANCE] MenuRpcType_LevelLoadSuccess not implemented\n"); abort();
+		case MenuRpcType_StartLevel: fprintf(stderr, "[INSTANCE] MenuRpcType_StartLevel not implemented\n"); abort();
+		case MenuRpcType_GetStartedLevel: {
+			pkt_readGetStartedLevel(data);
+			if(room->state == MultiplayerGameState_Game) {
+				fprintf(stderr, "[INSTANCE] MenuRpcType_GetStartedLevel not implemented\n"); abort();
+			} else {
+				uint8_t resp[65536], *resp_end = resp;
+				struct SetIsStartButtonEnabled r_button;
+				r_button.base.syncTime = room_get_syncTime(room);
+				r_button.reason = CannotStartGameReason_NoSongSelected;
+				pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
+				SERIALIZE_MENURPC(&resp_end, SetIsStartButtonEnabled, r_button);
+				instance_send_channeled(&ctx->net, session, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+			}
+			break;
+		}
+		case MenuRpcType_CancelLevelStart: fprintf(stderr, "[INSTANCE] MenuRpcType_CancelLevelStart not implemented\n"); abort();
+		case MenuRpcType_GetMultiplayerGameState: {
+			pkt_readGetMultiplayerGameState(data);
+			uint8_t resp[65536], *resp_end = resp;
+			struct SetMultiplayerGameState r_state;
+			r_state.base.syncTime = room_get_syncTime(room);
+			r_state.lobbyState = room->state;
+			pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
+			SERIALIZE_MENURPC(&resp_end, SetMultiplayerGameState, r_state);
+			instance_send_channeled(&ctx->net, session, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+			break;
+		}
+		case MenuRpcType_SetMultiplayerGameState: fprintf(stderr, "[INSTANCE] MenuRpcType_SetMultiplayerGameState not implemented\n"); abort();
+		case MenuRpcType_GetIsReady: pkt_readGetIsReady(data); break;
+		case MenuRpcType_SetIsReady: session->menu.isReady = pkt_readSetIsReady(data).isReady; break;
+		case MenuRpcType_SetStartGameTime: fprintf(stderr, "[INSTANCE] MenuRpcType_SetStartGameTime not implemented\n"); abort();
+		case MenuRpcType_CancelStartGameTime: fprintf(stderr, "[INSTANCE] MenuRpcType_CancelStartGameTime not implemented\n"); abort();
+		case MenuRpcType_GetIsInLobby: pkt_readGetIsInLobby(data); break;
+		case MenuRpcType_SetIsInLobby: pkt_readSetIsInLobby(data); fprintf(stderr, "[INSTANCE] MenuRpcType_SetIsInLobby not implemented\n"); break;
+		case MenuRpcType_GetCountdownEndTime: fprintf(stderr, "[INSTANCE] MenuRpcType_GetCountdownEndTime not implemented\n"); abort();
+		case MenuRpcType_SetCountdownEndTime: fprintf(stderr, "[INSTANCE] MenuRpcType_SetCountdownEndTime not implemented\n"); abort();
+		case MenuRpcType_CancelCountdown: fprintf(stderr, "[INSTANCE] MenuRpcType_CancelCountdown not implemented\n"); abort();
+		case MenuRpcType_GetOwnedSongPacks: fprintf(stderr, "[INSTANCE] MenuRpcType_GetOwnedSongPacks not implemented\n"); abort();
+		case MenuRpcType_SetOwnedSongPacks: session->menu.ownedSongPacks = pkt_readSetOwnedSongPacks(data).songPackMask; break;
+		case MenuRpcType_RequestKickPlayer: fprintf(stderr, "[INSTANCE] MenuRpcType_RequestKickPlayer not implemented\n"); abort();
+		case MenuRpcType_GetPermissionConfiguration:  {
+			pkt_readGetPermissionConfiguration(data);
+			uint8_t resp[65536], *resp_end = resp;
+			struct SetPermissionConfiguration r_permission;
+			r_permission.base.syncTime = room_get_syncTime(room);
+			r_permission.playersPermissionConfiguration.count = room->playerCount;
+			for(uint32_t i = 0; i < room->playerCount; ++i)
+				r_permission.playersPermissionConfiguration.playersPermission[i] = room->players[room->playerSort[i]].permissions;
+			pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
+			SERIALIZE_MENURPC(&resp_end, SetPermissionConfiguration, r_permission);
+			instance_send_channeled(&ctx->net, session, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+			break;
+		}
+		case MenuRpcType_SetPermissionConfiguration: fprintf(stderr, "[INSTANCE] MenuRpcType_SetPermissionConfiguration not implemented\n"); abort();
+		case MenuRpcType_GetIsStartButtonEnabled: fprintf(stderr, "[INSTANCE] MenuRpcType_GetIsStartButtonEnabled not implemented\n"); abort();
+		case MenuRpcType_SetIsStartButtonEnabled: fprintf(stderr, "[INSTANCE] MenuRpcType_SetIsStartButtonEnabled not implemented\n"); abort();
+		default: fprintf(stderr, "BAD MENU RPC TYPE\n");
 	}
 }
 
@@ -205,41 +306,25 @@ static void handle_PlayerIdentity(struct Context *ctx, struct Room *room, struct
 	uint8_t resp[65536], *resp_end = resp;
 	pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
 	struct PlayerSortOrderUpdate r_sort;
-	r_sort.userId = session->userId;
-	r_sort.sortIndex = (session - room->players) / sizeof(*session);
+	r_sort.userId = session->permissions.userId;
+	r_sort.sortIndex = indexof(room->players, session);
 	SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerSortOrderUpdate)
 		pkt_writePlayerSortOrderUpdate(&resp_end, r_sort);
 	instance_send_channeled(&ctx->net, session, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 
-	resp_end = resp;
+	/*resp_end = resp;
 	pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
-	struct RemoteProcedureCall base = {
-		.syncTime = room_get_syncTime(room)
-	};
-	struct SetIsStartButtonEnabled r_rpc0 = {
-		.base = base,
-		.reason = CannotStartGameReason_AllPlayersNotInLobby,
-	};
-	struct GetRecommendedBeatmap r_rpc1 = {
-		.base = base,
-	};
-	struct GetRecommendedGameplayModifiers r_rpc2 = {
-		.base = base,
-	};
-	struct GetIsReady r_rpc3 = {
-		.base = base,
-	};
-	struct GetIsInLobby r_rpc4 = {
-		.base = base,
-	};
-	r_sort.userId = session->userId;
-	r_sort.sortIndex = (session - room->players) / sizeof(*session);
-	SERIALIZE_MENURPC(&resp_end, SetIsStartButtonEnabled, r_rpc0);
-	SERIALIZE_MENURPC(&resp_end, GetRecommendedBeatmap, r_rpc1);
-	SERIALIZE_MENURPC(&resp_end, GetRecommendedGameplayModifiers, r_rpc2);
-	SERIALIZE_MENURPC(&resp_end, GetIsReady, r_rpc3);
-	SERIALIZE_MENURPC(&resp_end, GetIsInLobby, r_rpc4);
-	instance_send_channeled(&ctx->net, session, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+	struct RemoteProcedureCall base;
+	base.syncTime = room_get_syncTime(room);
+	struct SetIsStartButtonEnabled r_button;
+	r_button.base = base;
+	r_button.reason = CannotStartGameReason_AllPlayersNotInLobby;
+	SERIALIZE_MENURPC(&resp_end, SetIsStartButtonEnabled, r_button);
+	SERIALIZE_MENURPC(&resp_end, GetRecommendedBeatmap, (struct GetRecommendedBeatmap){.base = base});
+	SERIALIZE_MENURPC(&resp_end, GetRecommendedGameplayModifiers, (struct GetRecommendedGameplayModifiers){.base = base});
+	SERIALIZE_MENURPC(&resp_end, GetIsReady, (struct GetIsReady){.base = base});
+	SERIALIZE_MENURPC(&resp_end, GetIsInLobby, (struct GetIsInLobby){.base = base});
+	instance_send_channeled(&ctx->net, session, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);*/
 }
 
 static void handle_MultiplayerSession(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
@@ -255,44 +340,137 @@ static void handle_MultiplayerSession(struct Context *ctx, struct Room *room, st
 	}
 }
 
-static void handle_Unreliable(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
+static void handle_Unreliable(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data, const uint8_t *end) {
 	pkt_readRoutingHeader(data);
-	struct SerializeHeader serial = pkt_readSerializeHeader(data);
-	switch(serial.type) {
-		case InternalMessageType_SyncTime: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_SyncTime not implemented\n"); break;
-		case InternalMessageType_PlayerConnected: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerConnected not implemented\n"); break;
-		case InternalMessageType_PlayerIdentity: fprintf(stderr, "[INSTANCE] BAD TYPE: InternalMessageType_PlayerConnected\n"); break;
-		case InternalMessageType_PlayerLatencyUpdate: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerLatencyUpdate not implemented\n"); break;
-		case InternalMessageType_PlayerDisconnected: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerDisconnected not implemented\n"); break;
-		case InternalMessageType_PlayerSortOrderUpdate: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerSortOrderUpdate not implemented\n"); break;
-		case InternalMessageType_Party: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_Party not implemented\n"); break;
-		case InternalMessageType_MultiplayerSession: handle_MultiplayerSession(ctx, room, session, data); break;
-		case InternalMessageType_KickPlayer: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_KickPlayer not implemented\n"); break;
-		case InternalMessageType_PlayerStateUpdate: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerStateUpdate not implemented\n"); break;
-		case InternalMessageType_PlayerAvatarUpdate: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerAvatarUpdate not implemented\n"); break;
-		default: fprintf(stderr, "[INSTANCE] UNRELIABLE : BAD INTERNAL MESSAGE TYPE\n");
+	while(*data < end) {
+		struct SerializeHeader serial = pkt_readSerializeHeader(data);
+		const uint8_t *sub = (*data)--;
+		*data += serial.length;
+		switch(serial.type) {
+			case InternalMessageType_SyncTime: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_SyncTime not implemented\n"); break;
+			case InternalMessageType_PlayerConnected: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerConnected not implemented\n"); break;
+			case InternalMessageType_PlayerIdentity: fprintf(stderr, "[INSTANCE] BAD TYPE: InternalMessageType_PlayerConnected\n"); break;
+			case InternalMessageType_PlayerLatencyUpdate: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerLatencyUpdate not implemented\n"); break;
+			case InternalMessageType_PlayerDisconnected: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerDisconnected not implemented\n"); break;
+			case InternalMessageType_PlayerSortOrderUpdate: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerSortOrderUpdate not implemented\n"); break;
+			case InternalMessageType_Party: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_Party not implemented\n"); break;
+			case InternalMessageType_MultiplayerSession: handle_MultiplayerSession(ctx, room, session, &sub); break;
+			case InternalMessageType_KickPlayer: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_KickPlayer not implemented\n"); break;
+			case InternalMessageType_PlayerStateUpdate: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerStateUpdate not implemented\n"); break;
+			case InternalMessageType_PlayerAvatarUpdate: fprintf(stderr, "[INSTANCE] UNRELIABLE : InternalMessageType_PlayerAvatarUpdate not implemented\n"); break;
+			default: fprintf(stderr, "[INSTANCE] UNRELIABLE : BAD INTERNAL MESSAGE TYPE\n");
+		}
+		if(sub != *data) {
+			fprintf(stderr, "UNRELIABLE : BAD INTERNAL MESSAGE LENGTH (expected %u, read %zu)\n", serial.length, sub - (*data - serial.length));
+			if(sub < *data) {
+				fprintf(stderr, "\t");
+				for(const uint8_t *it = *data - serial.length; it < *data; ++it)
+					fprintf(stderr, "%02hhx", *it);
+				fprintf(stderr, "\n\t");
+				for(const uint8_t *it = *data - serial.length; it < sub; ++it)
+					fprintf(stderr, "  ");
+				fprintf(stderr, "^ extra data starts here");
+			}
+			fprintf(stderr, "\n");
+		}
 	}
 }
 
-static void process_Channeled(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
+static void process_Channeled(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data, const uint8_t *end) {
 	pkt_readRoutingHeader(data);
-	struct SerializeHeader serial = pkt_readSerializeHeader(data);
-	switch(serial.type) {
-		case InternalMessageType_SyncTime: fprintf(stderr, "[INSTANCE] InternalMessageType_SyncTime not implemented\n"); break;
-		case InternalMessageType_PlayerConnected: fprintf(stderr, "[INSTANCE] InternalMessageType_PlayerConnected not implemented\n"); break;
-		case InternalMessageType_PlayerIdentity: handle_PlayerIdentity(ctx, room, session, data); break;
-		case InternalMessageType_PlayerLatencyUpdate: fprintf(stderr, "[INSTANCE] InternalMessageType_PlayerLatencyUpdate not implemented\n"); break;
-		case InternalMessageType_PlayerDisconnected: fprintf(stderr, "[INSTANCE] InternalMessageType_PlayerDisconnected not implemented\n"); break;
-		case InternalMessageType_PlayerSortOrderUpdate: fprintf(stderr, "[INSTANCE] InternalMessageType_PlayerSortOrderUpdate not implemented\n"); break;
-		case InternalMessageType_Party: fprintf(stderr, "[INSTANCE] InternalMessageType_Party not implemented\n"); break;
-		case InternalMessageType_MultiplayerSession: handle_MultiplayerSession(ctx, room, session, data); break;
-		case InternalMessageType_KickPlayer: fprintf(stderr, "[INSTANCE] InternalMessageType_KickPlayer not implemented\n"); break;
-		case InternalMessageType_PlayerStateUpdate: fprintf(stderr, "[INSTANCE] InternalMessageType_PlayerStateUpdate not implemented\n"); break;
-		case InternalMessageType_PlayerAvatarUpdate: fprintf(stderr, "[INSTANCE] InternalMessageType_PlayerAvatarUpdate not implemented\n"); break;
-		default: fprintf(stderr, "[INSTANCE] BAD INTERNAL MESSAGE TYPE\n");
+	while(*data < end) {
+		struct SerializeHeader serial = pkt_readSerializeHeader(data);
+		const uint8_t *sub = (*data)--;
+		*data += serial.length;
+		switch(serial.type) {
+			case InternalMessageType_SyncTime: fprintf(stderr, "[INSTANCE] InternalMessageType_SyncTime not implemented\n"); break;
+			case InternalMessageType_PlayerConnected: fprintf(stderr, "[INSTANCE] InternalMessageType_PlayerConnected not implemented\n"); break;
+			case InternalMessageType_PlayerIdentity: handle_PlayerIdentity(ctx, room, session, &sub); break;
+			case InternalMessageType_PlayerLatencyUpdate: fprintf(stderr, "[INSTANCE] InternalMessageType_PlayerLatencyUpdate not implemented\n"); break;
+			case InternalMessageType_PlayerDisconnected: fprintf(stderr, "[INSTANCE] InternalMessageType_PlayerDisconnected not implemented\n"); break;
+			case InternalMessageType_PlayerSortOrderUpdate: fprintf(stderr, "[INSTANCE] InternalMessageType_PlayerSortOrderUpdate not implemented\n"); break;
+			case InternalMessageType_Party: fprintf(stderr, "[INSTANCE] InternalMessageType_Party not implemented\n"); break;
+			case InternalMessageType_MultiplayerSession: handle_MultiplayerSession(ctx, room, session, &sub); break;
+			case InternalMessageType_KickPlayer: fprintf(stderr, "[INSTANCE] InternalMessageType_KickPlayer not implemented\n"); break;
+			case InternalMessageType_PlayerStateUpdate: fprintf(stderr, "[INSTANCE] InternalMessageType_PlayerStateUpdate not implemented\n"); break;
+			case InternalMessageType_PlayerAvatarUpdate: fprintf(stderr, "[INSTANCE] InternalMessageType_PlayerAvatarUpdate not implemented\n"); break;
+			default: fprintf(stderr, "[INSTANCE] BAD INTERNAL MESSAGE TYPE\n");
+		}
+		fprintf(stderr, "delta: %p == %p\n", (const void*)sub, (const void*)*data);
+		if(sub != *data) {
+			fprintf(stderr, "BAD INTERNAL MESSAGE LENGTH (expected %u, read %zu)\n", serial.length, sub - (*data - serial.length));
+			if(sub < *data) {
+				fprintf(stderr, "\t");
+				for(const uint8_t *it = *data - serial.length; it < *data; ++it)
+					fprintf(stderr, "%02hhx", *it);
+				fprintf(stderr, "\n\t");
+				for(const uint8_t *it = *data - serial.length; it < sub; ++it)
+					fprintf(stderr, "  ");
+				fprintf(stderr, "^ extra data starts here");
+			}
+			fprintf(stderr, "\n");
+		}
 	}
 }
-static void handle_Channeled(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data, const uint8_t *end) {
+static void process_Reliable(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data, const uint8_t *end, DeliveryMethod channelId, _Bool isFragmented) {
+	if(!isFragmented) {
+		process_Channeled(ctx, room, session, data, end);
+		return;
+	}
+	struct FragmentedHeader header = pkt_readFragmentedHeader(data);
+	struct IncomingFragments **incoming = &session->incomingFragmentsList;
+	do {
+		if(!*incoming) {
+			*incoming = malloc(sizeof(**incoming) + header.fragmentsTotal * sizeof(*(*incoming)->fragments));
+			if(!*incoming) {
+				fprintf(stderr, "[INSTANCE] alloc error\n");
+				abort();
+			}
+			(*incoming)->fragmentId = header.fragmentId;
+			(*incoming)->channelId = channelId;
+			(*incoming)->count = 0;
+			(*incoming)->total = header.fragmentsTotal;
+			(*incoming)->size = 0;
+			for(uint32_t i = 0; i < header.fragmentsTotal; ++i)
+				(*incoming)->fragments[i].isFragmented = 0;
+		} else if((*incoming)->fragmentId != header.fragmentId) {
+			incoming = &(*incoming)->next;
+			continue;
+		}
+		if(header.fragmentPart >= (*incoming)->total || (*incoming)->fragments[header.fragmentPart].isFragmented || channelId != (*incoming)->channelId)
+			return;
+		(*incoming)->size += end - *data;
+		if(++(*incoming)->count < (*incoming)->total) {
+			(*incoming)->fragments[header.fragmentPart].len = end - *data;
+			(*incoming)->fragments[header.fragmentPart].isFragmented = 1;
+			pkt_readUint8Array(data, (*incoming)->fragments[header.fragmentPart].data, end - *data);
+			return;
+		} else {
+			uint8_t pkt[(*incoming)->size], *pkt_end = pkt;
+			const uint8_t *pkt_it = pkt;
+			for(uint32_t i = 0; i < (*incoming)->total; ++i) {
+				if(i == header.fragmentPart)
+					pkt_writeUint8Array(&pkt_end, *data, end - *data), *data = end;
+				else
+					pkt_writeUint8Array(&pkt_end, (*incoming)->fragments[i].data, (*incoming)->fragments[i].len);
+			}
+			#ifdef PACKET_LOGGING_FUNCS
+			{
+				char buf[1024*16];
+				fprintf(stderr, "fragmented\n");
+				debug_logRouting(pkt, pkt, pkt_end, buf);
+			}
+			#endif
+			process_Channeled(ctx, room, session, &pkt_it, pkt_end);
+			if(pkt_it != pkt_end)
+				fprintf(stderr, "[INSTANCE] BAD PACKET LENGTH (expected %zu, read %zu)\n", pkt_end - pkt, pkt_it - pkt);
+			struct IncomingFragments *e = *incoming;
+			*incoming = (*incoming)->next;
+			free(e);
+		}
+	} while(0);
+}
+static void handle_Channeled(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data, const uint8_t *end, _Bool isFragmented) {
 	struct Channeled channeled = pkt_readChanneled(data);
 	if(channeled.sequence >= NET_MAX_SEQUENCE)
 		return;
@@ -321,14 +499,15 @@ static void handle_Channeled(struct Context *ctx, struct Room *room, struct Inst
 				return;
 			channel->ack.data[ackIdx / 8] |= 1 << (ackIdx % 8);
 			if(channeled.sequence == channel->remoteSequence) {
-				process_Channeled(ctx, room, session, data);
+				process_Reliable(ctx, room, session, data, end, channeled.channelId, isFragmented);
 				channel->remoteSequence = (channel->remoteSequence + 1) % NET_MAX_SEQUENCE;
 				if(channeled.channelId == DeliveryMethod_ReliableOrdered) {
 					while(session->roChannel.receivedPackets[channel->remoteSequence % NET_WINDOW_SIZE].len) {
-						const uint8_t *pkt = session->roChannel.receivedPackets[channel->remoteSequence % NET_WINDOW_SIZE].data, *pkt_it = pkt;
-						const uint8_t *pkt_end = &pkt[session->roChannel.receivedPackets[channel->remoteSequence % NET_WINDOW_SIZE].len];
-						session->roChannel.receivedPackets[channel->remoteSequence % NET_WINDOW_SIZE].len = 0;
-						process_Channeled(ctx, room, session, &pkt);
+						struct InstancePacket *ipkt = &session->roChannel.receivedPackets[channel->remoteSequence % NET_WINDOW_SIZE];
+						const uint8_t *pkt = ipkt->data, *pkt_it = pkt;
+						const uint8_t *pkt_end = &pkt[ipkt->len];
+						ipkt->len = 0;
+						process_Reliable(ctx, room, session, &pkt, pkt_end, DeliveryMethod_ReliableOrdered, ipkt->isFragmented);
 						channel->remoteSequence = (channel->remoteSequence + 1) % NET_MAX_SEQUENCE;
 						if(pkt_it != pkt_end)
 							fprintf(stderr, "[INSTANCE] BAD PACKET LENGTH (expected %zu, read %zu)\n", pkt_end - pkt, pkt_it - pkt);
@@ -341,19 +520,24 @@ static void handle_Channeled(struct Context *ctx, struct Room *room, struct Inst
 				}
 			} else if(channeled.channelId == DeliveryMethod_ReliableOrdered) {
 				session->roChannel.receivedPackets[ackIdx].len = end - *data;
+				session->roChannel.receivedPackets[ackIdx].isFragmented = isFragmented;
 				memcpy(session->roChannel.receivedPackets[ackIdx].data, *data, end - *data);
 				*data = end;
 			} else {
 				session->ruChannel.earlyReceived[ackIdx] = 1;
-				process_Channeled(ctx, room, session, data);
+				process_Reliable(ctx, room, session, data, end, DeliveryMethod_ReliableUnordered, isFragmented);
 			}
 		}
 		case DeliveryMethod_Sequenced: return;
 		case DeliveryMethod_ReliableSequenced: {
+			if(isFragmented) {
+				fprintf(stderr, "MALFORMED PACKET\n");
+				return;
+			}
 			int32_t relative = RelativeSequenceNumber(channeled.sequence, session->rsChannel.ack.sequence);
 			if(channeled.sequence < NET_MAX_SEQUENCE && relative > 0) {
 				session->rsChannel.ack.sequence = channeled.sequence;
-				process_Channeled(ctx, room, session, data);
+				process_Channeled(ctx, room, session, data, end);
 			}
 			uint8_t resp[65536], *resp_end = resp;
 			pkt_writeNetPacketHeader(&resp_end, (struct NetPacketHeader){PacketProperty_Ack, 0, 0});
@@ -403,6 +587,8 @@ static void handle_Ping(struct Context *ctx, struct Room *room, struct InstanceS
 }
 static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
 	struct ConnectRequest req = pkt_readConnectRequest(data);
+	if(req.userId.length != session->permissions.userId.length || memcmp(req.userId.data, session->permissions.userId.data, session->permissions.userId.length))
+		return;
 	uint8_t resp[65536], *resp_end = resp;
 	pkt_writeNetPacketHeader(&resp_end, (struct NetPacketHeader){PacketProperty_ConnectAccept, 0, 0});
 	pkt_writeConnectAccept(&resp_end, (struct ConnectAccept){
@@ -415,7 +601,6 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 	if(session->clientState != ClientState_disconnected)
 		return;
 	session->clientState = ClientState_accepted;
-	session->userId = req.userId;
 
 	resp_end = resp;
 	pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
@@ -438,6 +623,8 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 	SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerIdentity)
 		pkt_writePlayerIdentity(&resp_end, r_identity);
 	instance_send_channeled(&ctx->net, session, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+
+	fprintf(stderr, "TODO: send PlayerConnected to other players\n");
 }
 static void handle_Disconnect(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
 	pkt_readDisconnect(data);
@@ -462,9 +649,15 @@ static void handle_MtuCheck(struct Context *ctx, struct Room *room, struct Insta
 static void handle_packet(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t *pkt, uint32_t len) {
 	const uint8_t *data = pkt, *end = &pkt[len];
 	struct NetPacketHeader header = pkt_readNetPacketHeader(&data);
+	if(session->clientState == ClientState_disconnected && header.property != PacketProperty_ConnectRequest)
+		return;
+	if(header.isFragmented && header.property != PacketProperty_Channeled) {
+		fprintf(stderr, "MALFORMED HEADER\n");
+		return;
+	}
 	switch(header.property) {
-		case PacketProperty_Unreliable: handle_Unreliable(ctx, room, session, &data); break;
-		case PacketProperty_Channeled: handle_Channeled(ctx, room, session, &data, end); break;
+		case PacketProperty_Unreliable: handle_Unreliable(ctx, room, session, &data, end); break;
+		case PacketProperty_Channeled: handle_Channeled(ctx, room, session, &data, end, header.isFragmented); break;
 		case PacketProperty_Ack: handle_Ack(ctx, room, session, &data); break;
 		case PacketProperty_Ping: handle_Ping(ctx, room, session, &data); break;
 		case PacketProperty_Pong: fprintf(stderr, "[INSTANCE] PacketProperty_Pong not implemented\n"); break;
@@ -476,10 +669,10 @@ static void handle_packet(struct Context *ctx, struct Room *room, struct Instanc
 		case PacketProperty_MtuOk: fprintf(stderr, "[INSTANCE] PacketProperty_MtuOk not implemented\n"); break;
 		case PacketProperty_Broadcast: fprintf(stderr, "[INSTANCE] PacketProperty_Broadcast not implemented\n"); break;
 		case PacketProperty_Merged: {
-			for(uint16_t len; data < end; data += len) {
-				len = pkt_readUint16(&data);
-				const uint8_t *sub = data;
-				handle_packet(ctx, room, session, sub, len);
+			for(uint16_t sublen; data < end; data += sublen) {
+				sublen = pkt_readUint16(&data);
+				const uint8_t *subdata = data;
+				handle_packet(ctx, room, session, subdata, sublen);
 			}
 			break;
 		}
@@ -508,7 +701,17 @@ instance_handler(struct Context *ctx) {
 	struct InstanceSession *session;
 	const uint8_t *pkt;
 	while((len = net_recv(&ctx->net, buf, sizeof(buf), (struct NetSession**)&session, &pkt, (void**)&room))) { // TODO: close instances with zero sessions using `onDisconnect`
-		handle_packet(ctx, room, session, pkt, len);
+		#ifdef PACKET_LOGGING_FUNCS
+		{
+			const uint8_t *read = pkt;
+			struct NetPacketHeader header = pkt_readNetPacketHeader(&read);
+			if(!header.isFragmented) {
+				fprintf(stderr, "recieve[%s]:\n", reflect(PacketProperty, header.property));
+				debug_logPacket(read, &pkt[len], header);
+			}
+		}
+		#endif
+		handle_packet(ctx, room, session, pkt, len); // TODO: needs mutex
 	}
 	return 0;
 }
@@ -518,39 +721,26 @@ static HANDLE instance_threads[THREAD_COUNT];
 #else
 static pthread_t instance_threads[THREAD_COUNT];
 #endif
-static struct Context ctx[THREAD_COUNT];
+static struct Context contexts[THREAD_COUNT];
 // static uint32_t instance_count = 1; // ServerCode 0 ("") is not valid
 static const char *instance_domain = NULL;
 _Bool instance_init(const char *domain) {
 	instance_domain = domain;
 	memset(instance_threads, 0, sizeof(instance_threads));
 	for(uint32_t i = 0; i < lengthof(instance_threads); ++i) {
-		if(net_init(&ctx[i].net, 0)) {
+		if(net_init(&contexts[i].net, 0)) {
 			fprintf(stderr, "net_init() failed\n");
 			return 1;
 		}
-		ctx[i].net.user = &ctx[i];
-		ctx[i].net.onResolve = instance_onResolve;
-		ctx[i].net.onResend = instance_onResend;
-
-		if(net_keypair_init(&ctx[i].net, &ctx[i].TEMPglobalRoom.keys))
-			return 1;
-		ctx[i].TEMPglobalRoom.syncBase = 0;
-		ctx[i].TEMPglobalRoom.syncBase = room_get_syncTime(&ctx[i].TEMPglobalRoom);
-		ctx[i].TEMPglobalRoom.playerCount = 0;
-		ctx[i].TEMPglobalRoom.playerLimit = 5;
-		size_t sortLen = (ctx[i].TEMPglobalRoom.playerLimit * sizeof(*ctx[i].TEMPglobalRoom.playerSort) + 7) & ~7; // aligned
-		ctx[i].TEMPglobalRoom.playerSort = malloc(sortLen + ctx[i].TEMPglobalRoom.playerLimit * sizeof(*ctx[i].TEMPglobalRoom.players));
-		ctx[i].TEMPglobalRoom.players = (struct InstanceSession*)&((uint8_t*)ctx[i].TEMPglobalRoom.playerSort)[sortLen];
-		for(uint32_t i = 0; i < ctx[i].TEMPglobalRoom.playerLimit; ++i) {
-			ctx[i].TEMPglobalRoom.playerSort[i] = i;
-			ctx[i].TEMPglobalRoom.players[i].clientState = ClientState_disconnected;
-		}
+		contexts[i].net.user = &contexts[i];
+		contexts[i].net.onResolve = instance_onResolve;
+		contexts[i].net.onResend = instance_onResend;
+		contexts[i].TEMPglobalRoom.playerCount = 0;
 
 		#ifdef WINDOWS
-		instance_threads[i] = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)instance_handler, &ctx[i], 0, NULL);
+		instance_threads[i] = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)instance_handler, &contexts[i], 0, NULL);
 		#else
-		if(pthread_create(&instance_threads[i], NULL, (void*(*)(void*))&instance_handler, &ctx[i]))
+		if(pthread_create(&instance_threads[i], NULL, (void*(*)(void*))&instance_handler, &contexts[i]))
 			instance_threads[i] = 0;
 		#endif
 		if(!instance_threads[i]) {
@@ -564,7 +754,7 @@ _Bool instance_init(const char *domain) {
 void instance_cleanup() {
 	for(uint32_t i = 0; i < lengthof(instance_threads); ++i) {
 		if(instance_threads[i]) {
-			net_stop(&ctx[i].net);
+			net_stop(&contexts[i].net);
 			fprintf(stderr, "[INSTANCE] Stopping #%u\n", i);
 			#ifdef WINDOWS
 			WaitForSingleObject(instance_threads[i], INFINITE);
@@ -572,37 +762,59 @@ void instance_cleanup() {
 			pthread_join(instance_threads[i], NULL);
 			#endif
 			instance_threads[i] = 0;
-			while(ctx[i].TEMPglobalRoom.playerCount)
-				room_disconnect(&ctx[i].TEMPglobalRoom, ctx[i].TEMPglobalRoom.playerSort[0]);
-			net_cleanup(&ctx[i].net);
+			while(contexts[i].TEMPglobalRoom.playerCount)
+				room_disconnect(&contexts[i].TEMPglobalRoom, contexts[i].TEMPglobalRoom.playerSort[0]);
+			net_cleanup(&contexts[i].net);
 		}
 	}
 }
 
-static inline struct Context *ServerCode_get_Context(ServerCode code) {
-	return &ctx[(uint64_t)code * (uint64_t)THREAD_COUNT / (uint64_t)62193781];
+_Bool instance_get_isopen(ServerCode code, struct String *managerId_out, int32_t *playerLimit_out) {
+	if(code == 1) { // TODO: temporary hack
+		*managerId_out = contexts[0].TEMPglobalRoom.managerId;
+		*playerLimit_out = contexts[0].TEMPglobalRoom.playerLimit;
+		return 1;
+	}
+	return 0;
 }
-
-_Bool instance_get_isopen(ServerCode code) {
-	return code == 1; // TODO: temporary hack
-}
-_Bool instance_open(ServerCode *out) {
-	// if(roomCount == StringToServerCode(NULL, 0))
-	// 	++roomCount;
+_Bool instance_open(ServerCode *out, struct String managerId, uint8_t playerLimit) {
+	if(net_keypair_init(&contexts[0].net, &contexts[0].TEMPglobalRoom.keys))
+		return 1;
+	contexts[0].TEMPglobalRoom.syncBase = 0;
+	contexts[0].TEMPglobalRoom.syncBase = room_get_syncTime(&contexts[0].TEMPglobalRoom);
+	contexts[0].TEMPglobalRoom.state = MultiplayerGameState_Lobby;
+	contexts[0].TEMPglobalRoom.playerCount = 0;
+	contexts[0].TEMPglobalRoom.playerLimit = playerLimit;
+	size_t sortLen = (playerLimit * sizeof(*contexts[0].TEMPglobalRoom.playerSort) + 7) & ~7; // aligned
+	contexts[0].TEMPglobalRoom.playerSort = malloc(sortLen + playerLimit * sizeof(*contexts[0].TEMPglobalRoom.players));
+	contexts[0].TEMPglobalRoom.players = (struct InstanceSession*)&((uint8_t*)contexts[0].TEMPglobalRoom.playerSort)[sortLen];
+	for(uint32_t i = 0; i < playerLimit; ++i) {
+		contexts[0].TEMPglobalRoom.playerSort[i] = i;
+		contexts[0].TEMPglobalRoom.players[i].clientState = ClientState_disconnected;
+		contexts[0].TEMPglobalRoom.players[i].incomingFragmentsList = NULL;
+	}
+	contexts[0].TEMPglobalRoom.managerId = managerId;
 	*out = 1; // TODO: temporary hack
 	return 0;
 }
 
 struct NetContext *instance_get_net(ServerCode code) {
-	return &ServerCode_get_Context(code)->net;
+	return (code == 1) ? &contexts[0].net : NULL;
 }
 
-struct NetSession *instance_resolve_session(ServerCode code, struct SS addr) {
-	struct Context *ctx = ServerCode_get_Context(code);
+struct NetSession *instance_resolve_session(ServerCode code, struct SS addr, struct String userId) {
+	if(code != 1)
+		return NULL;
+	struct Context *ctx = &contexts[0];
 	struct InstanceSession *session = (struct InstanceSession*)instance_onResolve(ctx, addr, (void*[]){NULL}); // TODO: This may connect the user to previous rooms they haven't successfully disconnected from
 	if(session) {
 		if(net_session_reset(&ctx->net, &session->net))
 			return NULL;
+		while(session->incomingFragmentsList) {
+			struct IncomingFragments *e = session->incomingFragmentsList;
+			session->incomingFragmentsList = session->incomingFragmentsList->next;
+			free(e);
+		}
 	} else {
 		if(ctx->TEMPglobalRoom.playerCount >= ctx->TEMPglobalRoom.playerLimit) {
 			fprintf(stderr, "ROOM FULL\n");
@@ -613,6 +825,7 @@ struct NetSession *instance_resolve_session(ServerCode code, struct SS addr) {
 			return NULL;
 		++ctx->TEMPglobalRoom.playerCount;
 	}
+	session->clientState = ClientState_disconnected;
 	session->pong.sequence = 0;
 	memset(&session->ruChannel, 0, sizeof(session->ruChannel));
 	memset(&session->roChannel, 0, sizeof(session->roChannel));
@@ -620,6 +833,16 @@ struct NetSession *instance_resolve_session(ServerCode code, struct SS addr) {
 	session->ruChannel.base.ack.channelId = DeliveryMethod_ReliableUnordered;
 	session->roChannel.base.ack.channelId = DeliveryMethod_ReliableOrdered;
 	session->rsChannel.ack.channelId = DeliveryMethod_ReliableSequenced;
+
+	session->permissions.userId = userId;
+	session->permissions.isServerOwner = (userId.length == ctx->TEMPglobalRoom.managerId.length && memcmp(userId.data, ctx->TEMPglobalRoom.managerId.data, ctx->TEMPglobalRoom.managerId.length) == 0);
+	session->permissions.hasRecommendBeatmapsPermission = 1;
+	session->permissions.hasRecommendGameplayModifiersPermission = 1;
+	session->permissions.hasKickVotePermission = 1;
+	session->permissions.hasInvitePermission = 1;
+	session->menu.isReady = 0;
+	session->menu.ownedSongPacks._bloomFilter._d0 = 0;
+	session->menu.ownedSongPacks._bloomFilter._d1 = 0;
 
 	char addrstr[INET6_ADDRSTRLEN + 8];
 	net_tostr(&addr, addrstr);
@@ -630,9 +853,13 @@ struct NetSession *instance_resolve_session(ServerCode code, struct SS addr) {
 
 struct IPEndPoint instance_get_address(ServerCode code) {
 	struct IPEndPoint out;
+	out.address.length = 0;
+	out.port = 0;
+	if(code != 1) // TODO: temporary hack
+		return out;
 	out.address.length = sprintf(out.address.data, "%s", instance_domain);
 	struct SS addr = {sizeof(struct sockaddr_storage)};
-	getsockname(net_get_sockfd(&ServerCode_get_Context(code)->net), &addr.sa, &addr.len);
+	getsockname(net_get_sockfd(&contexts[0].net), &addr.sa, &addr.len);
 	switch(addr.ss.ss_family) {
 		case AF_INET: {
 			out.port = htons(addr.in.sin_port);
@@ -642,8 +869,7 @@ struct IPEndPoint instance_get_address(ServerCode code) {
 			out.port = htons(addr.in6.sin6_port);
 			break;
 		}
-		default:
-		out.port = 0;
+		default:;
 	}
 	return out;
 }

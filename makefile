@@ -48,7 +48,7 @@ $(OBJDIR)/libs.mk: libs.c makefile makefile.user
 	@mkdir -p "$(@D)"
 	$(CC) -E libs.c -o "$@"
 
-src/packets.h: src/packets.txt gen.c
+src/packets.h: src/packets.txt gen.c makefile makefile.user
 	$(MAKE) .obj/gen.$(HOST)
 	@echo "[gen $(notdir $@)]"
 	./.obj/gen.$(HOST) "$<" "$@" src/packets.c

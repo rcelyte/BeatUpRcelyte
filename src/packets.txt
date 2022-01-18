@@ -36,6 +36,7 @@ head
 				serial.type = stype; \
 				*pkt = start, start = NULL; \
 				pkt_writeSerializeHeader(pkt, serial); \
+				fprintf(stderr, "serialize " #stype "\n"); \
 				goto CONCAT0(_body_, __LINE__); \
 			} else CONCAT0(_body_, __LINE__):
 	uint8_t pkt_readUint8(const uint8_t **pkt);
@@ -467,6 +468,10 @@ d NetPacketHeader
 		u5.PacketProperty property
 		u2.u8 connectionNumber
 		u1.b isFragmented
+r FragmentedHeader
+	u16 fragmentId
+	u16 fragmentPart
+	u16 fragmentsTotal
 d PlayerStateHash
 	BitMask128 bloomFilter
 d Color32
@@ -654,7 +659,7 @@ u8 MultiplayerSessionMessage Type
 			BeatmapIdentifierNetSerializable identifier
 		n ClearRecommendedBeatmap
 			RemoteProcedureCall base
-		s GetRecommendedBeatmap
+		r GetRecommendedBeatmap
 			RemoteProcedureCall base
 		n SetSelectedGameplayModifiers
 			RemoteProcedureCall base
@@ -666,7 +671,7 @@ u8 MultiplayerSessionMessage Type
 			GameplayModifiers gameplayModifiers
 		n ClearRecommendedGameplayModifiers
 			RemoteProcedureCall base
-		s GetRecommendedGameplayModifiers
+		r GetRecommendedGameplayModifiers
 			RemoteProcedureCall base
 		n LevelLoadError
 			RemoteProcedureCall base
@@ -679,18 +684,18 @@ u8 MultiplayerSessionMessage Type
 			BeatmapIdentifierNetSerializable beatmapId
 			GameplayModifiers gameplayModifiers
 			f32 startTime
-		n GetStartedLevel
+		r GetStartedLevel
 			RemoteProcedureCall base
-		n CancelLevelStart
+		s CancelLevelStart
 			RemoteProcedureCall base
-		n GetMultiplayerGameState
+		r GetMultiplayerGameState
 			RemoteProcedureCall base
-		n SetMultiplayerGameState
+		s SetMultiplayerGameState
 			RemoteProcedureCall base
 			vi32.MultiplayerGameState lobbyState
-		s GetIsReady
+		r GetIsReady
 			RemoteProcedureCall base
-		n SetIsReady
+		r SetIsReady
 			RemoteProcedureCall base
 			b isReady
 		n SetStartGameTime
@@ -698,9 +703,9 @@ u8 MultiplayerSessionMessage Type
 			f32 newTime
 		n CancelStartGameTime
 			RemoteProcedureCall base
-		s GetIsInLobby
+		r GetIsInLobby
 			RemoteProcedureCall base
-		n SetIsInLobby
+		r SetIsInLobby
 			RemoteProcedureCall base
 			b isBack
 		n GetCountdownEndTime
@@ -712,7 +717,7 @@ u8 MultiplayerSessionMessage Type
 			RemoteProcedureCall base
 		n GetOwnedSongPacks
 			RemoteProcedureCall base
-		n SetOwnedSongPacks
+		r SetOwnedSongPacks
 			RemoteProcedureCall base
 			SongPackMask songPackMask
 		n RequestKickPlayer

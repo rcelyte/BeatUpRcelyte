@@ -102,9 +102,6 @@ uint32_t net_time();
 _Bool master_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, uint16_t port);
 void master_cleanup();
 
-_Bool instance_init(const char *domain);
-void instance_cleanup();
-
 static inline int32_t RelativeSequenceNumber(int32_t number, int32_t expected) {
 	return (number - expected + NET_MAX_SEQUENCE + NET_MAX_SEQUENCE / 2) % NET_MAX_SEQUENCE - NET_MAX_SEQUENCE / 2;
 }

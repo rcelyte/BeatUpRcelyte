@@ -20,6 +20,7 @@
 			serial.type = stype; \
 			*pkt = start, start = NULL; \
 			pkt_writeSerializeHeader(pkt, serial); \
+			fprintf(stderr, "serialize " #stype "\n"); \
 			goto CONCAT0(_body_, __LINE__); \
 		} else CONCAT0(_body_, __LINE__):
 uint8_t pkt_readUint8(const uint8_t **pkt);
@@ -328,6 +329,12 @@ struct NetPacketHeader {
 };
 struct NetPacketHeader pkt_readNetPacketHeader(const uint8_t **pkt);
 void pkt_writeNetPacketHeader(uint8_t **pkt, struct NetPacketHeader in);
+struct FragmentedHeader {
+	uint16_t fragmentId;
+	uint16_t fragmentPart;
+	uint16_t fragmentsTotal;
+};
+struct FragmentedHeader pkt_readFragmentedHeader(const uint8_t **pkt);
 struct PlayerStateHash {
 	struct BitMask128 bloomFilter;
 };
@@ -500,19 +507,51 @@ struct NodePoseSyncState1 pkt_readNodePoseSyncState1(const uint8_t **pkt);
 struct GetRecommendedBeatmap {
 	struct RemoteProcedureCall base;
 };
-void pkt_writeGetRecommendedBeatmap(uint8_t **pkt, struct GetRecommendedBeatmap in);
+struct GetRecommendedBeatmap pkt_readGetRecommendedBeatmap(const uint8_t **pkt);
 struct GetRecommendedGameplayModifiers {
 	struct RemoteProcedureCall base;
 };
-void pkt_writeGetRecommendedGameplayModifiers(uint8_t **pkt, struct GetRecommendedGameplayModifiers in);
+struct GetRecommendedGameplayModifiers pkt_readGetRecommendedGameplayModifiers(const uint8_t **pkt);
+struct GetStartedLevel {
+	struct RemoteProcedureCall base;
+};
+struct GetStartedLevel pkt_readGetStartedLevel(const uint8_t **pkt);
+struct CancelLevelStart {
+	struct RemoteProcedureCall base;
+};
+void pkt_writeCancelLevelStart(uint8_t **pkt, struct CancelLevelStart in);
+struct GetMultiplayerGameState {
+	struct RemoteProcedureCall base;
+};
+struct GetMultiplayerGameState pkt_readGetMultiplayerGameState(const uint8_t **pkt);
+struct SetMultiplayerGameState {
+	struct RemoteProcedureCall base;
+	MultiplayerGameState lobbyState;
+};
+void pkt_writeSetMultiplayerGameState(uint8_t **pkt, struct SetMultiplayerGameState in);
 struct GetIsReady {
 	struct RemoteProcedureCall base;
 };
-void pkt_writeGetIsReady(uint8_t **pkt, struct GetIsReady in);
+struct GetIsReady pkt_readGetIsReady(const uint8_t **pkt);
+struct SetIsReady {
+	struct RemoteProcedureCall base;
+	_Bool isReady;
+};
+struct SetIsReady pkt_readSetIsReady(const uint8_t **pkt);
 struct GetIsInLobby {
 	struct RemoteProcedureCall base;
 };
-void pkt_writeGetIsInLobby(uint8_t **pkt, struct GetIsInLobby in);
+struct GetIsInLobby pkt_readGetIsInLobby(const uint8_t **pkt);
+struct SetIsInLobby {
+	struct RemoteProcedureCall base;
+	_Bool isBack;
+};
+struct SetIsInLobby pkt_readSetIsInLobby(const uint8_t **pkt);
+struct SetOwnedSongPacks {
+	struct RemoteProcedureCall base;
+	struct SongPackMask songPackMask;
+};
+struct SetOwnedSongPacks pkt_readSetOwnedSongPacks(const uint8_t **pkt);
 struct GetPermissionConfiguration {
 	struct RemoteProcedureCall base;
 };

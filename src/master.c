@@ -1,3 +1,5 @@
+#define FORCE_MASSIVE_LOBBIES
+
 #include "enum_reflection.h"
 #include "instance/instance.h"
 #ifdef WINDOWS
@@ -325,17 +327,26 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 	struct ConnectToServerResponse r_conn;
 	r_conn.base.requestId = master_getNextRequestId(session);
 	r_conn.base.responseId = req.base.base.requestId;
+	if(req.configuration.maxPlayerCount >= 128) { // connection IDs are 7 bits, with ID `127` reserved for broadcast packets
+		r_conn.result = ConnectToServerResponse_Result_ConfigMismatch; // TODO: is this the correct error to use?
+		goto send;
+	}
+	struct String managerId = req.base.userId;
+	#ifdef FORCE_MASSIVE_LOBBIES
+	req.configuration.maxPlayerCount = 127;
+	fprintf(stderr, "ONLY THE BIGGEST OF ROOMS!!!\n");
+	#endif
 	if(req.code == StringToServerCode(NULL, 0)) {
 		if(req.selectionMask.difficulties != BeatmapDifficultyMask_All && req.selectionMask.modifiers == GameplayModifierMask_NoFail && req.configuration.maxPlayerCount == 5 && req.configuration.discoveryPolicy == DiscoveryPolicy_Public && req.configuration.invitePolicy == InvitePolicy_AnyoneCanInvite && req.configuration.gameplayServerMode == GameplayServerMode_Countdown && req.configuration.songSelectionMode == SongSelectionMode_Vote && req.configuration.gameplayServerControlSettings == GameplayServerControlSettings_None) {
 			r_conn.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers; // Quick Play not yet available
 			goto send;
 		}
-		if(instance_open(&req.code)) {
+		if(instance_open(&req.code, managerId, req.configuration.maxPlayerCount)) {
 			r_conn.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers;
 			goto send;
 		}
 	} else {
-		if(!instance_get_isopen(req.code)) {
+		if(!instance_get_isopen(req.code, &managerId, &req.configuration.maxPlayerCount)) {
 			r_conn.result = ConnectToServerResponse_Result_InvalidCode;
 			goto send;
 		}
@@ -343,7 +354,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 	{
 		struct SS addr = *NetSession_get_addr(&session->net);
 		struct NetContext *net = instance_get_net(req.code);
-		struct NetSession *isession = instance_resolve_session(req.code, addr);
+		struct NetSession *isession = instance_resolve_session(req.code, addr, req.base.userId);
 		if(!isession) {
 			r_conn.result = ConnectToServerResponse_Result_UnknownError;
 			goto send;
@@ -367,7 +378,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		r_conn.remoteEndPoint = instance_get_address(req.code);
 		r_conn.code = req.code;
 		r_conn.configuration = req.configuration;
-		r_conn.managerId = req.base.userId; // ?
+		r_conn.managerId = managerId;
 		r_conn.result = ConnectToServerResponse_Result_Success;
 	}
 	send:;
