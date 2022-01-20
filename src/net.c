@@ -197,8 +197,9 @@ void net_send_internal(struct NetContext *ctx, struct NetSession *session, const
 	#endif
 }
 
+_Bool net_useIPv4 = 0;
 _Bool net_init(struct NetContext *ctx, uint16_t port) {
-	ctx->sockfd = socket(AF_INET6, SOCK_DGRAM, 0);
+	ctx->sockfd = socket(net_useIPv4 ? AF_INET : AF_INET6, SOCK_DGRAM, 0);
 	mbedtls_ctr_drbg_init(&ctx->ctr_drbg);
 	mbedtls_entropy_init(&ctx->entropy);
 	mbedtls_ecp_group_init(&ctx->grp);
@@ -206,14 +207,27 @@ _Bool net_init(struct NetContext *ctx, uint16_t port) {
 		fprintf(stderr, "Socket creation failed\n");
 		return -1;
 	}
-	const struct sockaddr_in6 addr = {
-		.sin6_family = AF_INET6,
-		.sin6_port = htons(port),
-		.sin6_flowinfo = 0,
-		.sin6_addr = IN6ADDR_ANY_INIT,
-		.sin6_scope_id = 0,
-	};
-	if(bind(ctx->sockfd, (const struct sockaddr*)&addr, sizeof(addr)) < 0) {
+	int res;
+	if(net_useIPv4) {
+		const struct sockaddr_in addr = {
+			.sin_family = AF_INET,
+			.sin_port = htons(port),
+			.sin_addr = {
+				.s_addr = htonl(INADDR_ANY),
+			},
+		};
+		res = bind(ctx->sockfd, (const struct sockaddr*)&addr, sizeof(addr));
+	} else {
+		const struct sockaddr_in6 addr = {
+			.sin6_family = AF_INET6,
+			.sin6_port = htons(port),
+			.sin6_flowinfo = 0,
+			.sin6_addr = IN6ADDR_ANY_INIT,
+			.sin6_scope_id = 0,
+		};
+		res = bind(ctx->sockfd, (const struct sockaddr*)&addr, sizeof(addr));
+	}
+	if(res < 0) {
 		close(ctx->sockfd);
 		ctx->sockfd = -1;
 		fprintf(stderr, "Socket binding failed\n");
@@ -370,7 +384,7 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct
 	*session = ctx->onResolve(ctx->user, addr, userdata_out);
 	if(!*session)
 		goto retry;
-	// fprintf(stderr, "[NET] recvfrom[%zi]\n", size);
+	fprintf(stderr, "[NET] recvfrom[%zi]\n", size);
 	uint8_t *head = buf;
 	struct PacketEncryptionLayer layer = pkt_readPacketEncryptionLayer((const uint8_t**)&head);
 	if(layer.encrypted == 1) { // TODO: filter unencrypted?

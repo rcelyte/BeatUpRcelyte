@@ -18,6 +18,8 @@ int main(int argc, char const *argv[]) {
 	for(const char **arg = &argv[1]; arg < &argv[argc]; ++arg) {
 		if(strcmp(*arg, "--daemon") == 0) {
 			headless = 1;
+		} else if(strcmp(*arg, "-4") == 0 || strcmp(*arg, "--ipv4") == 0) {
+			net_useIPv4 = 1;
 		} else if(strcmp(*arg, "-c") == 0 || strcmp(*arg, "--config") == 0) {
 			if(++arg < &argv[argc])
 				config_path = *arg;

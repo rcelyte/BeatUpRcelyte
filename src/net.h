@@ -105,3 +105,5 @@ void master_cleanup();
 static inline int32_t RelativeSequenceNumber(int32_t number, int32_t expected) {
 	return (number - expected + NET_MAX_SEQUENCE + NET_MAX_SEQUENCE / 2) % NET_MAX_SEQUENCE - NET_MAX_SEQUENCE / 2;
 }
+
+extern _Bool net_useIPv4;
