@@ -384,7 +384,7 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct
 	*session = ctx->onResolve(ctx->user, addr, userdata_out);
 	if(!*session)
 		goto retry;
-	fprintf(stderr, "[NET] recvfrom[%zi]\n", size);
+	// fprintf(stderr, "[NET] recvfrom[%zi]\n", size);
 	uint8_t *head = buf;
 	struct PacketEncryptionLayer layer = pkt_readPacketEncryptionLayer((const uint8_t**)&head);
 	if(layer.encrypted == 1) { // TODO: filter unencrypted?

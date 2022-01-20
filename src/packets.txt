@@ -282,10 +282,10 @@ s BaseMasterServerMultipartMessage
 	vu32 totalLength
 	u8[384,length] data
 d BitMask128
-	u64 _d0
-	u64 _d1
+	u64 d0
+	u64 d1
 d SongPackMask
-	BitMask128 _bloomFilter
+	BitMask128 bloomFilter
 u8 BeatmapDifficultyMask
 	z Easy 1
 	z Normal 2
@@ -515,7 +515,7 @@ d RoutingHeader
 u8 InternalMessage Type
 	s SyncTime
 		f32 syncTime
-	n PlayerConnected
+	s PlayerConnected
 		u8 remoteConnectionId
 		String userId
 		String userName
@@ -542,7 +542,7 @@ u8 InternalMessage Type
 		MultiplayerAvatarData playerAvatar
 d RemoteProcedureCall
 	f32 syncTime
-n PlayersMissingEntitlementsNetSerializable
+s PlayersMissingEntitlementsNetSerializable
 	i32 count
 	String[128,count] playersWithoutEntitlements
 u8 EntitlementsStatus
@@ -556,7 +556,7 @@ u32 BeatmapDifficulty
 	z Hard
 	z Expert
 	z ExpertPlus
-n BeatmapIdentifierNetSerializable
+r BeatmapIdentifierNetSerializable
 	String levelID
 	String beatmapCharacteristicSerializedName
 	vu32.BeatmapDifficulty difficulty
@@ -634,13 +634,13 @@ r NodePoseSyncState1
 	PoseSerializable rightController
 u8 MultiplayerSessionMessage Type
 	u8 MenuRpc Type
-		n SetPlayersMissingEntitlementsToLevel
+		s SetPlayersMissingEntitlementsToLevel
 			RemoteProcedureCall base
 			PlayersMissingEntitlementsNetSerializable playersMissingEntitlements
-		n GetIsEntitledToLevel
+		s GetIsEntitledToLevel
 			RemoteProcedureCall base
 			String levelId
-		n SetIsEntitledToLevel
+		r SetIsEntitledToLevel
 			RemoteProcedureCall base
 			String levelId
 			vi32.EntitlementsStatus entitlementStatus
@@ -654,10 +654,10 @@ u8 MultiplayerSessionMessage Type
 			BeatmapIdentifierNetSerializable identifier
 		n GetSelectedBeatmap
 			RemoteProcedureCall base
-		n RecommendBeatmap
+		r RecommendBeatmap
 			RemoteProcedureCall base
 			BeatmapIdentifierNetSerializable identifier
-		n ClearRecommendedBeatmap
+		r ClearRecommendedBeatmap
 			RemoteProcedureCall base
 		d GetRecommendedBeatmap
 			RemoteProcedureCall base

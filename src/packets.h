@@ -123,13 +123,13 @@ struct BaseMasterServerMultipartMessage {
 };
 void pkt_writeBaseMasterServerMultipartMessage(uint8_t **pkt, struct BaseMasterServerMultipartMessage in);
 struct BitMask128 {
-	uint64_t _d0;
-	uint64_t _d1;
+	uint64_t d0;
+	uint64_t d1;
 };
 struct BitMask128 pkt_readBitMask128(const uint8_t **pkt);
 void pkt_writeBitMask128(uint8_t **pkt, struct BitMask128 in);
 struct SongPackMask {
-	struct BitMask128 _bloomFilter;
+	struct BitMask128 bloomFilter;
 };
 struct SongPackMask pkt_readSongPackMask(const uint8_t **pkt);
 void pkt_writeSongPackMask(uint8_t **pkt, struct SongPackMask in);
@@ -391,6 +391,13 @@ struct SyncTime {
 	float syncTime;
 };
 void pkt_writeSyncTime(uint8_t **pkt, struct SyncTime in);
+struct PlayerConnected {
+	uint8_t remoteConnectionId;
+	struct String userId;
+	struct String userName;
+	_Bool isConnectionOwner;
+};
+void pkt_writePlayerConnected(uint8_t **pkt, struct PlayerConnected in);
 struct PlayerIdentity {
 	struct PlayerStateHash playerState;
 	struct MultiplayerAvatarData playerAvatar;
@@ -426,6 +433,11 @@ struct RemoteProcedureCall {
 };
 struct RemoteProcedureCall pkt_readRemoteProcedureCall(const uint8_t **pkt);
 void pkt_writeRemoteProcedureCall(uint8_t **pkt, struct RemoteProcedureCall in);
+struct PlayersMissingEntitlementsNetSerializable {
+	int32_t count;
+	struct String playersWithoutEntitlements[128];
+};
+void pkt_writePlayersMissingEntitlementsNetSerializable(uint8_t **pkt, struct PlayersMissingEntitlementsNetSerializable in);
 ENUM(uint8_t, EntitlementsStatus, {
 	EntitlementsStatus_Unknown,
 	EntitlementsStatus_NotOwned,
@@ -439,6 +451,12 @@ ENUM(uint32_t, BeatmapDifficulty, {
 	BeatmapDifficulty_Expert,
 	BeatmapDifficulty_ExpertPlus,
 })
+struct BeatmapIdentifierNetSerializable {
+	struct String levelID;
+	struct String beatmapCharacteristicSerializedName;
+	BeatmapDifficulty difficulty;
+};
+struct BeatmapIdentifierNetSerializable pkt_readBeatmapIdentifierNetSerializable(const uint8_t **pkt);
 ENUM(uint8_t, EnabledObstacleType, {
 	EnabledObstacleType_All,
 	EnabledObstacleType_FullHeightOnly,
@@ -529,6 +547,31 @@ struct NodePoseSyncState1 {
 	struct PoseSerializable rightController;
 };
 struct NodePoseSyncState1 pkt_readNodePoseSyncState1(const uint8_t **pkt);
+struct SetPlayersMissingEntitlementsToLevel {
+	struct RemoteProcedureCall base;
+	struct PlayersMissingEntitlementsNetSerializable playersMissingEntitlements;
+};
+void pkt_writeSetPlayersMissingEntitlementsToLevel(uint8_t **pkt, struct SetPlayersMissingEntitlementsToLevel in);
+struct GetIsEntitledToLevel {
+	struct RemoteProcedureCall base;
+	struct String levelId;
+};
+void pkt_writeGetIsEntitledToLevel(uint8_t **pkt, struct GetIsEntitledToLevel in);
+struct SetIsEntitledToLevel {
+	struct RemoteProcedureCall base;
+	struct String levelId;
+	EntitlementsStatus entitlementStatus;
+};
+struct SetIsEntitledToLevel pkt_readSetIsEntitledToLevel(const uint8_t **pkt);
+struct RecommendBeatmap {
+	struct RemoteProcedureCall base;
+	struct BeatmapIdentifierNetSerializable identifier;
+};
+struct RecommendBeatmap pkt_readRecommendBeatmap(const uint8_t **pkt);
+struct ClearRecommendedBeatmap {
+	struct RemoteProcedureCall base;
+};
+struct ClearRecommendedBeatmap pkt_readClearRecommendedBeatmap(const uint8_t **pkt);
 struct GetRecommendedBeatmap {
 	struct RemoteProcedureCall base;
 };

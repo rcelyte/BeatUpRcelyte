@@ -269,21 +269,21 @@ void pkt_writeBaseMasterServerMultipartMessage(uint8_t **pkt, struct BaseMasterS
 }
 struct BitMask128 pkt_readBitMask128(const uint8_t **pkt) {
 	struct BitMask128 out;
-	out._d0 = pkt_readUint64(pkt);
-	out._d1 = pkt_readUint64(pkt);
+	out.d0 = pkt_readUint64(pkt);
+	out.d1 = pkt_readUint64(pkt);
 	return out;
 }
 void pkt_writeBitMask128(uint8_t **pkt, struct BitMask128 in) {
-	pkt_writeUint64(pkt, in._d0);
-	pkt_writeUint64(pkt, in._d1);
+	pkt_writeUint64(pkt, in.d0);
+	pkt_writeUint64(pkt, in.d1);
 }
 struct SongPackMask pkt_readSongPackMask(const uint8_t **pkt) {
 	struct SongPackMask out;
-	out._bloomFilter = pkt_readBitMask128(pkt);
+	out.bloomFilter = pkt_readBitMask128(pkt);
 	return out;
 }
 void pkt_writeSongPackMask(uint8_t **pkt, struct SongPackMask in) {
-	pkt_writeBitMask128(pkt, in._bloomFilter);
+	pkt_writeBitMask128(pkt, in.bloomFilter);
 }
 struct BeatmapLevelSelectionMask pkt_readBeatmapLevelSelectionMask(const uint8_t **pkt) {
 	struct BeatmapLevelSelectionMask out;
@@ -540,6 +540,12 @@ void pkt_writeRoutingHeader(uint8_t **pkt, struct RoutingHeader in) {
 void pkt_writeSyncTime(uint8_t **pkt, struct SyncTime in) {
 	pkt_writeFloat32(pkt, in.syncTime);
 }
+void pkt_writePlayerConnected(uint8_t **pkt, struct PlayerConnected in) {
+	pkt_writeUint8(pkt, in.remoteConnectionId);
+	pkt_writeString(pkt, in.userId);
+	pkt_writeString(pkt, in.userName);
+	pkt_writeUint8(pkt, in.isConnectionOwner);
+}
 struct PlayerIdentity pkt_readPlayerIdentity(const uint8_t **pkt) {
 	struct PlayerIdentity out;
 	out.playerState = pkt_readPlayerStateHash(pkt);
@@ -570,6 +576,18 @@ struct RemoteProcedureCall pkt_readRemoteProcedureCall(const uint8_t **pkt) {
 }
 void pkt_writeRemoteProcedureCall(uint8_t **pkt, struct RemoteProcedureCall in) {
 	pkt_writeFloat32(pkt, in.syncTime);
+}
+void pkt_writePlayersMissingEntitlementsNetSerializable(uint8_t **pkt, struct PlayersMissingEntitlementsNetSerializable in) {
+	pkt_writeInt32(pkt, in.count);
+	for(uint32_t i = 0; i < in.count; ++i)
+		pkt_writeString(pkt, in.playersWithoutEntitlements[i]);
+}
+struct BeatmapIdentifierNetSerializable pkt_readBeatmapIdentifierNetSerializable(const uint8_t **pkt) {
+	struct BeatmapIdentifierNetSerializable out;
+	out.levelID = pkt_readString(pkt);
+	out.beatmapCharacteristicSerializedName = pkt_readString(pkt);
+	out.difficulty = pkt_readVarUint32(pkt);
+	return out;
 }
 struct GameplayModifiers pkt_readGameplayModifiers(const uint8_t **pkt) {
 	struct GameplayModifiers out;
@@ -661,6 +679,32 @@ struct NodePoseSyncState1 pkt_readNodePoseSyncState1(const uint8_t **pkt) {
 	out.head = pkt_readPoseSerializable(pkt);
 	out.leftController = pkt_readPoseSerializable(pkt);
 	out.rightController = pkt_readPoseSerializable(pkt);
+	return out;
+}
+void pkt_writeSetPlayersMissingEntitlementsToLevel(uint8_t **pkt, struct SetPlayersMissingEntitlementsToLevel in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+	pkt_writePlayersMissingEntitlementsNetSerializable(pkt, in.playersMissingEntitlements);
+}
+void pkt_writeGetIsEntitledToLevel(uint8_t **pkt, struct GetIsEntitledToLevel in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+	pkt_writeString(pkt, in.levelId);
+}
+struct SetIsEntitledToLevel pkt_readSetIsEntitledToLevel(const uint8_t **pkt) {
+	struct SetIsEntitledToLevel out;
+	out.base = pkt_readRemoteProcedureCall(pkt);
+	out.levelId = pkt_readString(pkt);
+	out.entitlementStatus = pkt_readVarInt32(pkt);
+	return out;
+}
+struct RecommendBeatmap pkt_readRecommendBeatmap(const uint8_t **pkt) {
+	struct RecommendBeatmap out;
+	out.base = pkt_readRemoteProcedureCall(pkt);
+	out.identifier = pkt_readBeatmapIdentifierNetSerializable(pkt);
+	return out;
+}
+struct ClearRecommendedBeatmap pkt_readClearRecommendedBeatmap(const uint8_t **pkt) {
+	struct ClearRecommendedBeatmap out;
+	out.base = pkt_readRemoteProcedureCall(pkt);
 	return out;
 }
 struct GetRecommendedBeatmap pkt_readGetRecommendedBeatmap(const uint8_t **pkt) {

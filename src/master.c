@@ -327,7 +327,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 	struct ConnectToServerResponse r_conn;
 	r_conn.base.requestId = master_getNextRequestId(session);
 	r_conn.base.responseId = req.base.base.requestId;
-	if(req.configuration.maxPlayerCount >= 128) { // connection IDs are 7 bits, with ID `127` reserved for broadcast packets
+	if(req.configuration.maxPlayerCount >= 127) { // connection IDs are 7 bits, with ID `127` reserved for broadcast packets and `0` for local
 		r_conn.result = ConnectToServerResponse_Result_ConfigMismatch; // TODO: is this the correct error to use?
 		goto send;
 	}
@@ -338,7 +338,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 			goto send;
 		}
 		#ifdef FORCE_MASSIVE_LOBBIES
-		req.configuration.maxPlayerCount = 127;
+		req.configuration.maxPlayerCount = 126;
 		fprintf(stderr, "ONLY THE BIGGEST OF ROOMS!!!\n");
 		#endif
 		if(instance_open(&req.code, managerId, &req.configuration)) {
@@ -354,7 +354,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 	{
 		struct SS addr = *NetSession_get_addr(&session->net);
 		struct NetContext *net = instance_get_net(req.code);
-		struct NetSession *isession = instance_resolve_session(req.code, addr, req.base.userId);
+		struct NetSession *isession = instance_resolve_session(req.code, addr, req.base.userId, req.base.userName);
 		if(!isession) {
 			r_conn.result = ConnectToServerResponse_Result_UnknownError;
 			goto send;
