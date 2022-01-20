@@ -3,8 +3,10 @@ CFLAGS += -DWINDOWS
 LDFLAGS += -lws2_32 -lwinmm -lgdi32
 #else
 LDFLAGS += -pthread
-#if 1
+#if 0
 CFLAGS += -fsanitize=address -fno-omit-frame-pointer
-LDFLAGS += -fsanitize=address
+LDFLAGS := -no-pie -fsanitize=address $(LDFLAGS)
+#else
+LDFLAGS := --static $(LDFLAGS)
 #endif
 #endif

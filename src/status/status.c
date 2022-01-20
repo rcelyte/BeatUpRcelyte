@@ -23,18 +23,18 @@ static void*
 status_handler(struct Context *ctx) {
 	fprintf(stderr, "HTTP status started\n");
 	struct SS addr = {sizeof(struct sockaddr_storage)};
-	int32_t csock;
-	while((csock = accept(ctx->listenfd, &addr.sa, &addr.len)) != -1) {
+	int32_t clientfd;
+	while((clientfd = accept(ctx->listenfd, &addr.sa, &addr.len)) != -1) {
 		char buf[65536];
-		ssize_t size = recv(csock, buf, sizeof(buf), 0);
+		ssize_t size = recv(clientfd, buf, sizeof(buf), 0);
 		if(size < 0) {
-			close(csock);
+			close(clientfd);
 			continue;
 		}
 		size = status_resp("HTTP", ctx->path, buf, size);
 		if(size)
-			send(csock, buf, size, 0);
-		close(csock);
+			send(clientfd, buf, size, 0);
+		close(clientfd);
 	}
 	return 0;
 }

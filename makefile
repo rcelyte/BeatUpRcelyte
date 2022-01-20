@@ -14,7 +14,7 @@ LIBS := libmbedtls.a libmbedx509.a libmbedcrypto.a
 OBJS += $(LIBS:%=$(OBJDIR)/%)
 
 CFLAGS := -g -std=gnu11 -Imbedtls/include -Wall -Wno-unused-function -Werror -pedantic-errors
-LDFLAGS := -O2 -no-pie -Wl,--gc-sections,--fatal-warnings
+LDFLAGS := -O2 -Wl,--gc-sections,--fatal-warnings
 
 sinclude makefile.user
 
