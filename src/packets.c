@@ -448,9 +448,9 @@ struct NetPacketHeader pkt_readNetPacketHeader(const uint8_t **pkt) {
 }
 void pkt_writeNetPacketHeader(uint8_t **pkt, struct NetPacketHeader in) {
 	uint8_t bits = 0;
-	bits |= (in.property >> 0) & 31;
-	bits |= (in.connectionNumber >> 5) & 3;
-	bits |= (in.isFragmented >> 7) & 1;
+	bits |= (in.property << 0);
+	bits |= (in.connectionNumber << 5);
+	bits |= (in.isFragmented << 7);
 	pkt_writeUint8(pkt, bits);
 }
 struct FragmentedHeader pkt_readFragmentedHeader(const uint8_t **pkt) {
@@ -533,8 +533,8 @@ struct RoutingHeader pkt_readRoutingHeader(const uint8_t **pkt) {
 void pkt_writeRoutingHeader(uint8_t **pkt, struct RoutingHeader in) {
 	pkt_writeUint8(pkt, in.remoteConnectionId);
 	uint8_t bits = 0;
-	bits |= (in.connectionId >> 0) & 127;
-	bits |= (in.encrypted >> 7) & 1;
+	bits |= (in.connectionId << 0);
+	bits |= (in.encrypted << 7);
 	pkt_writeUint8(pkt, bits);
 }
 void pkt_writeSyncTime(uint8_t **pkt, struct SyncTime in) {
@@ -595,33 +595,33 @@ struct GameplayModifiers pkt_readGameplayModifiers(const uint8_t **pkt) {
 }
 void pkt_writeGameplayModifiers(uint8_t **pkt, struct GameplayModifiers in) {
 	int32_t bits = 0;
-	bits |= (in.energyType >> 0) & 15;
-	bits |= (in.demoNoFail >> 5) & 1;
-	bits |= (in.instaFail >> 6) & 1;
-	bits |= (in.failOnSaberClash >> 7) & 1;
-	bits |= (in.enabledObstacleType >> 8) & 15;
-	bits |= (in.demoNoObstacles >> 12) & 1;
-	bits |= (in.noBombs >> 13) & 1;
-	bits |= (in.fastNotes >> 14) & 1;
-	bits |= (in.strictAngles >> 15) & 1;
-	bits |= (in.disappearingArrows >> 16) & 1;
-	bits |= (in.ghostNotes >> 17) & 1;
-	bits |= (in.songSpeed >> 18) & 15;
-	bits |= (in.noArrows >> 22) & 1;
-	bits |= (in.noFailOn0Energy >> 23) & 1;
-	bits |= (in.proMode >> 24) & 1;
-	bits |= (in.zenMode >> 25) & 1;
-	bits |= (in.smallCubes >> 26) & 1;
+	bits |= (in.energyType << 0);
+	bits |= (in.demoNoFail << 5);
+	bits |= (in.instaFail << 6);
+	bits |= (in.failOnSaberClash << 7);
+	bits |= (in.enabledObstacleType << 8);
+	bits |= (in.demoNoObstacles << 12);
+	bits |= (in.noBombs << 13);
+	bits |= (in.fastNotes << 14);
+	bits |= (in.strictAngles << 15);
+	bits |= (in.disappearingArrows << 16);
+	bits |= (in.ghostNotes << 17);
+	bits |= (in.songSpeed << 18);
+	bits |= (in.noArrows << 22);
+	bits |= (in.noFailOn0Energy << 23);
+	bits |= (in.proMode << 24);
+	bits |= (in.zenMode << 25);
+	bits |= (in.smallCubes << 26);
 	pkt_writeInt32(pkt, bits);
 }
 void pkt_writePlayerLobbyPermissionConfigurationNetSerializable(uint8_t **pkt, struct PlayerLobbyPermissionConfigurationNetSerializable in) {
 	pkt_writeString(pkt, in.userId);
 	uint8_t bits = 0;
-	bits |= (in.isServerOwner >> 0) & 1;
-	bits |= (in.hasRecommendBeatmapsPermission >> 1) & 1;
-	bits |= (in.hasRecommendGameplayModifiersPermission >> 2) & 1;
-	bits |= (in.hasKickVotePermission >> 3) & 1;
-	bits |= (in.hasInvitePermission >> 4) & 1;
+	bits |= (in.isServerOwner << 0);
+	bits |= (in.hasRecommendBeatmapsPermission << 1);
+	bits |= (in.hasRecommendGameplayModifiersPermission << 2);
+	bits |= (in.hasKickVotePermission << 3);
+	bits |= (in.hasInvitePermission << 4);
 	pkt_writeUint8(pkt, bits);
 }
 void pkt_writePlayersLobbyPermissionConfigurationNetSerializable(uint8_t **pkt, struct PlayersLobbyPermissionConfigurationNetSerializable in) {

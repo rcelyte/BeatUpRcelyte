@@ -297,7 +297,7 @@ void parse_struct_entries(const char **in, const char *structName, uint32_t inde
 
 				if(*ser) {
 					if(parent) {
-						*ser += sprintf(tabs(ser, outdent), "%s |= (in.%s >> %u) & %u;\n", parent, name, offset, (1 << width) - 1);
+						*ser += sprintf(tabs(ser, outdent), "%s |= (in.%s << %u);\n", parent, name, offset);
 					} else {
 						if(count && width == 8) {
 							*ser += sprintf(tabs(ser, outdent), "pkt_write%sArray(pkt, %s%s, %s);\n", serialType, (width & EPHEMERAL_BIT) ? "" : "in.", name, length_in);
