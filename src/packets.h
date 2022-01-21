@@ -457,6 +457,7 @@ struct BeatmapIdentifierNetSerializable {
 	BeatmapDifficulty difficulty;
 };
 struct BeatmapIdentifierNetSerializable pkt_readBeatmapIdentifierNetSerializable(const uint8_t **pkt);
+void pkt_writeBeatmapIdentifierNetSerializable(uint8_t **pkt, struct BeatmapIdentifierNetSerializable in);
 ENUM(uint8_t, EnabledObstacleType, {
 	EnabledObstacleType_All,
 	EnabledObstacleType_FullHeightOnly,
@@ -592,6 +593,13 @@ struct GetRecommendedGameplayModifiers {
 };
 struct GetRecommendedGameplayModifiers pkt_readGetRecommendedGameplayModifiers(const uint8_t **pkt);
 void pkt_writeGetRecommendedGameplayModifiers(uint8_t **pkt, struct GetRecommendedGameplayModifiers in);
+struct StartLevel {
+	struct RemoteProcedureCall base;
+	struct BeatmapIdentifierNetSerializable beatmapId;
+	struct GameplayModifiers gameplayModifiers;
+	float startTime;
+};
+void pkt_writeStartLevel(uint8_t **pkt, struct StartLevel in);
 struct GetStartedLevel {
 	struct RemoteProcedureCall base;
 };
@@ -633,6 +641,15 @@ struct GetCountdownEndTime {
 	struct RemoteProcedureCall base;
 };
 struct GetCountdownEndTime pkt_readGetCountdownEndTime(const uint8_t **pkt);
+struct SetCountdownEndTime {
+	struct RemoteProcedureCall base;
+	float newTime;
+};
+void pkt_writeSetCountdownEndTime(uint8_t **pkt, struct SetCountdownEndTime in);
+struct CancelCountdown {
+	struct RemoteProcedureCall base;
+};
+void pkt_writeCancelCountdown(uint8_t **pkt, struct CancelCountdown in);
 struct SetOwnedSongPacks {
 	struct RemoteProcedureCall base;
 	struct SongPackMask songPackMask;
@@ -707,6 +724,10 @@ struct NodePoseSyncStateDelta {
 };
 struct NodePoseSyncStateDelta pkt_readNodePoseSyncStateDelta(const uint8_t **pkt);
 typedef uint8_t ScoreSyncStateDeltaType;
+struct MpCore {
+	struct String packetType;
+};
+struct MpCore pkt_readMpCore(const uint8_t **pkt);
 ENUM(uint8_t, MultiplayerSessionMessageType, {
 	MultiplayerSessionMessageType_MenuRpc,
 	MultiplayerSessionMessageType_GameplayRpc,
@@ -714,6 +735,7 @@ ENUM(uint8_t, MultiplayerSessionMessageType, {
 	MultiplayerSessionMessageType_ScoreSyncState,
 	MultiplayerSessionMessageType_NodePoseSyncStateDelta,
 	MultiplayerSessionMessageType_ScoreSyncStateDelta,
+	MultiplayerSessionMessageType_MpCore = 100,
 })
 struct MultiplayerSessionMessageHeader {
 	MultiplayerSessionMessageType type;

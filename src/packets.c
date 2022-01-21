@@ -589,6 +589,11 @@ struct BeatmapIdentifierNetSerializable pkt_readBeatmapIdentifierNetSerializable
 	out.difficulty = pkt_readVarUint32(pkt);
 	return out;
 }
+void pkt_writeBeatmapIdentifierNetSerializable(uint8_t **pkt, struct BeatmapIdentifierNetSerializable in) {
+	pkt_writeString(pkt, in.levelID);
+	pkt_writeString(pkt, in.beatmapCharacteristicSerializedName);
+	pkt_writeVarUint32(pkt, in.difficulty);
+}
 struct GameplayModifiers pkt_readGameplayModifiers(const uint8_t **pkt) {
 	struct GameplayModifiers out;
 	int32_t bits = pkt_readInt32(pkt);
@@ -733,6 +738,12 @@ struct GetRecommendedGameplayModifiers pkt_readGetRecommendedGameplayModifiers(c
 void pkt_writeGetRecommendedGameplayModifiers(uint8_t **pkt, struct GetRecommendedGameplayModifiers in) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
 }
+void pkt_writeStartLevel(uint8_t **pkt, struct StartLevel in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+	pkt_writeBeatmapIdentifierNetSerializable(pkt, in.beatmapId);
+	pkt_writeGameplayModifiers(pkt, in.gameplayModifiers);
+	pkt_writeFloat32(pkt, in.startTime);
+}
 struct GetStartedLevel pkt_readGetStartedLevel(const uint8_t **pkt) {
 	struct GetStartedLevel out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
@@ -783,6 +794,13 @@ struct GetCountdownEndTime pkt_readGetCountdownEndTime(const uint8_t **pkt) {
 	out.base = pkt_readRemoteProcedureCall(pkt);
 	return out;
 }
+void pkt_writeSetCountdownEndTime(uint8_t **pkt, struct SetCountdownEndTime in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+	pkt_writeFloat32(pkt, in.newTime);
+}
+void pkt_writeCancelCountdown(uint8_t **pkt, struct CancelCountdown in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+}
 struct SetOwnedSongPacks pkt_readSetOwnedSongPacks(const uint8_t **pkt) {
 	struct SetOwnedSongPacks out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
@@ -816,6 +834,11 @@ struct NodePoseSyncStateDelta pkt_readNodePoseSyncStateDelta(const uint8_t **pkt
 	if(out.baseId.same == 0) {
 		out.delta = pkt_readNodePoseSyncState1(pkt);
 	}
+	return out;
+}
+struct MpCore pkt_readMpCore(const uint8_t **pkt) {
+	struct MpCore out;
+	out.packetType = pkt_readString(pkt);
 	return out;
 }
 struct MultiplayerSessionMessageHeader pkt_readMultiplayerSessionMessageHeader(const uint8_t **pkt) {

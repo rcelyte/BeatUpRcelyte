@@ -529,7 +529,7 @@ u32 BeatmapDifficulty
 	z Hard
 	z Expert
 	z ExpertPlus
-r BeatmapIdentifierNetSerializable
+d BeatmapIdentifierNetSerializable
 	String levelID
 	String beatmapCharacteristicSerializedName
 	vu32.BeatmapDifficulty difficulty
@@ -652,7 +652,7 @@ u8 MultiplayerSessionMessage Type
 		n LevelLoadSuccess
 			RemoteProcedureCall base
 			String levelId
-		n StartLevel
+		s StartLevel
 			RemoteProcedureCall base
 			BeatmapIdentifierNetSerializable beatmapId
 			GameplayModifiers gameplayModifiers
@@ -683,10 +683,10 @@ u8 MultiplayerSessionMessage Type
 			b isBack
 		r GetCountdownEndTime
 			RemoteProcedureCall base
-		n SetCountdownEndTime
+		s SetCountdownEndTime
 			RemoteProcedureCall base
 			f32 newTime
-		n CancelCountdown
+		s CancelCountdown
 			RemoteProcedureCall base
 		n GetOwnedSongPacks
 			RemoteProcedureCall base
@@ -718,6 +718,8 @@ u8 MultiplayerSessionMessage Type
 		if(baseId.same == 0)
 			NodePoseSyncState1 delta
 	u8 ScoreSyncStateDelta Type
+	r MpCore 100
+		String packetType
 d MultiplayerSessionMessageHeader
 	u8.MultiplayerSessionMessageType type
 d MenuRpcHeader

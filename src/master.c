@@ -320,6 +320,47 @@ static void handle_AuthenticateUserRequest(struct Context *ctx, struct MasterSes
 	master_send(&ctx->net, session, resp, resp_end - resp, 1);
 }
 
+/*static struct BitMask128 get_mask(const char *key) {
+	uint32_t len = strlen(key);
+	uint32_t hash = 0x21 ^ len;
+	int32_t num3 = 0;
+	while(len >= 4) {
+		uint32_t num4 = (key[num3 + 3] << 24) | (key[num3 + 2] << 16) | (key[num3 + 1] << 8) | key[num3];
+		num4 *= 1540483477;
+		num4 ^= num4 >> 24;
+		num4 *= 1540483477;
+		hash *= 1540483477;
+		hash ^= num4;
+		num3 += 4;
+		len -= 4;
+	}
+	switch(len) {
+		case 3:
+			hash ^= key[num3 + 2] << 16;
+		case 2:
+			hash ^= key[num3 + 1] << 8;
+		case 1:
+			hash ^= key[num3];
+			hash *= 1540483477;
+		case 0:
+			break;
+	}
+	hash ^= hash >> 13;
+	hash *= 1540483477;
+	hash ^= (hash >> 15);
+
+	struct BitMask128 out = {0, 0};
+	for(uint_fast8_t i = 0; i < 2; i++) {
+		uint_fast8_t ind = (hash % 128);
+		if(ind >= 64)
+			out.d0 |= 1LL << (ind - 64);
+		else
+			out.d1 |= 1LL << ind;
+		hash >>= 13;
+	}
+	return out;
+}*/
+
 static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSession *session, const uint8_t **data) {
 	struct ConnectToServerRequest req = pkt_readConnectToServerRequest(data);
 	master_send_ack(ctx, session, MessageType_UserMessage, req.base.base.requestId);
@@ -351,6 +392,9 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 			goto send;
 		}
 	}
+	/*struct BitMask128 customs = get_mask("custom_levelpack_CustomLevels");
+	req.selectionMask.songPacks.bloomFilter.d0 |= customs.d0;
+	req.selectionMask.songPacks.bloomFilter.d1 |= customs.d1;*/
 	{
 		struct SS addr = *NetSession_get_addr(&session->net);
 		struct NetContext *net = instance_get_net(req.code);

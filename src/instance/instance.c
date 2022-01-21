@@ -14,6 +14,8 @@
 #include <string.h>
 #include <time.h>
 
+#define PER_PLAYER_DIFFICULTY 1
+
 #define lengthof(x) (sizeof(x)/sizeof(*x))
 #define indexof(a, e) (((e) - (a)) / sizeof(*(a)))
 #define String_eq(a, b) ((a).length == (b).length && memcmp((a).data, (b).data, (b).length) == 0)
@@ -36,6 +38,13 @@
 #define FOR_EXCLUDING_PLAYER(room, session, id) \
 	FOR_ALL_PLAYERS(room, id) \
 		if(&(room)->players[id] != (session))
+
+typedef uint8_t ClientState;
+enum ClientState {
+	ClientState_disconnected,
+	ClientState_accepted,
+	ClientState_connected,
+};
 
 struct InstancePacket {
 	uint16_t len;
@@ -65,12 +74,6 @@ struct SequencedChannel {
 	struct Ack ack;
 	uint16_t localSeqence;
 	struct InstanceResendPacket resend;
-};
-typedef uint8_t ClientState;
-enum ClientState {
-	ClientState_disconnected,
-	ClientState_accepted,
-	ClientState_connected,
 };
 struct IncomingFragments {
 	struct IncomingFragments *next;
@@ -105,11 +108,13 @@ struct Room {
 	struct NetKeypair keys;
 	struct GameplayServerConfiguration configuration;
 	struct String managerId;
-	float syncBase;
+	float syncBase, countdownEnd;
 	MultiplayerGameState state;
 	uint8_t inLobbyCount, readyCount, entitledCount, spectatingCount;
 	struct BeatmapIdentifierNetSerializable selectedBeatmap;
+	struct GameplayModifiers selectedModifiers;
 	struct PlayersMissingEntitlementsNetSerializable buzzkills;
+	_Bool canStart;
 	uint8_t playerCount, *playerSort;
 	struct InstanceSession *players;
 };
@@ -163,7 +168,71 @@ static void instance_send_channeled(struct NetContext *ctx, struct InstanceSessi
 	channel->localSeqence = (channel->localSeqence + 1) % NET_MAX_SEQUENCE;
 }
 
+static void refresh_countdown(struct Context *ctx, struct Room *room, _Bool start) {
+	if(room->state != MultiplayerGameState_Lobby)
+		return;
+	uint8_t resp[65536], *resp_end = resp;
+	pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
+	uint8_t *routing_end = resp_end;
+	if(room->canStart && room->readyCount == room->playerCount) {
+		if(room->countdownEnd != 0) {
+			if(!start)
+				return;
+			struct StartLevel r_start;
+			r_start.base.syncTime = room_get_syncTime(room);
+			r_start.beatmapId = room->selectedBeatmap;
+			r_start.gameplayModifiers = room->selectedModifiers;
+			r_start.startTime = room->countdownEnd;
+			if(PER_PLAYER_DIFFICULTY) {
+				FOR_ALL_PLAYERS(room, id) {
+					resp_end = routing_end;
+					if(String_eq(room->players[id].menu.recommendedBeatmap.levelID, room->selectedBeatmap.levelID)) {
+						r_start.beatmapId.beatmapCharacteristicSerializedName = room->players[id].menu.recommendedBeatmap.beatmapCharacteristicSerializedName;
+						r_start.beatmapId.difficulty = room->players[id].menu.recommendedBeatmap.difficulty;
+					} else {
+						r_start.beatmapId.beatmapCharacteristicSerializedName = room->selectedBeatmap.beatmapCharacteristicSerializedName;
+						r_start.beatmapId.difficulty = room->selectedBeatmap.difficulty;
+					}
+					SERIALIZE_MENURPC(&resp_end, StartLevel, r_start);
+					instance_send_channeled(&ctx->net, &room->players[id], resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+				}
+			} else {
+				SERIALIZE_MENURPC(&resp_end, StartLevel, r_start);
+				FOR_ALL_PLAYERS(room, id)
+					instance_send_channeled(&ctx->net, &room->players[id], resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+			}
+			room->countdownEnd = 0;
+			room->state = MultiplayerGameState_Game;
+		} else {
+			room->countdownEnd = room_get_syncTime(room) + 5;
+			struct SetCountdownEndTime r_countdown;
+			r_countdown.base.syncTime = room_get_syncTime(room);
+			r_countdown.newTime = room->countdownEnd;
+			SERIALIZE_MENURPC(&resp_end, SetCountdownEndTime, r_countdown);
+			FOR_ALL_PLAYERS(room, id)
+				instance_send_channeled(&ctx->net, &room->players[id], resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+		}
+	} else {
+		if(room->countdownEnd == 0)
+			return;
+		room->countdownEnd = 0;
+		struct CancelCountdown r_cancelC;
+		r_cancelC.base.syncTime = room_get_syncTime(room);
+		SERIALIZE_MENURPC(&resp_end, CancelCountdown, r_cancelC);
+		FOR_ALL_PLAYERS(room, id)
+			instance_send_channeled(&ctx->net, &room->players[id], resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+		resp_end = routing_end;
+		struct CancelLevelStart r_cancelL;
+		r_cancelL.base.syncTime = room_get_syncTime(room);
+		SERIALIZE_MENURPC(&resp_end, CancelLevelStart, r_cancelL);
+		FOR_ALL_PLAYERS(room, id)
+			instance_send_channeled(&ctx->net, &room->players[id], resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+	}
+}
+
 static void refresh_button(struct Context *ctx, struct Room *room) {
+	if(room->state != MultiplayerGameState_Lobby)
+		return;
 	uint8_t resp[65536], *resp_end = resp;
 	pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
 	struct SetIsStartButtonEnabled r_button;
@@ -181,6 +250,8 @@ static void refresh_button(struct Context *ctx, struct Room *room) {
 	SERIALIZE_MENURPC(&resp_end, SetIsStartButtonEnabled, r_button);
 	FOR_ALL_PLAYERS(room, id)
 		instance_send_channeled(&ctx->net, &room->players[id], resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+	room->canStart = (r_button.reason == CannotStartGameReason_None);
+	refresh_countdown(ctx, room, 0);
 }
 
 static void swap(uint8_t *a, uint8_t *b) {
@@ -238,6 +309,18 @@ static void flush_ack(struct Context *ctx, struct InstanceSession *session, stru
 
 static void instance_onResend(struct Context *ctx, uint32_t currentTime, uint32_t *nextTick) { // TODO: needs mutex
 	struct Room *room = &ctx->TEMPglobalRoom;
+	if(room->countdownEnd != 0) {
+		float delta = room->countdownEnd - room_get_syncTime(room);
+		if(delta > 0) {
+			uint32_t ctick = delta * 1000;
+			if(ctick < 10)
+				ctick = 10;
+			if(*nextTick - currentTime > ctick)
+				*nextTick = currentTime + ctick;
+		} else {
+			refresh_countdown(ctx, room, 1);
+		}
+	}
 	for(uint32_t i = 0; i < room->playerCount;) {
 		struct InstanceSession *session = &room->players[room->playerSort[i]];
 		uint32_t kickTime = NetSession_get_lastKeepAlive(&session->net) + 10000;
@@ -309,7 +392,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 								FOR_ALL_PLAYERS(room, cmp) {
 									if(!room->players[cmp].permissions.hasRecommendBeatmapsPermission)
 										continue;
-									if(id == cmp || (String_eq(room->players[id].menu.recommendedBeatmap.levelID, room->players[cmp].menu.recommendedBeatmap.levelID) && String_eq(room->players[id].menu.recommendedBeatmap.beatmapCharacteristicSerializedName, room->players[cmp].menu.recommendedBeatmap.beatmapCharacteristicSerializedName) && room->players[id].menu.recommendedBeatmap.difficulty == room->players[cmp].menu.recommendedBeatmap.difficulty)) {
+									if(id == cmp || (String_eq(room->players[id].menu.recommendedBeatmap.levelID, room->players[cmp].menu.recommendedBeatmap.levelID) && String_eq(room->players[id].menu.recommendedBeatmap.beatmapCharacteristicSerializedName, room->players[cmp].menu.recommendedBeatmap.beatmapCharacteristicSerializedName) && (PER_PLAYER_DIFFICULTY || room->players[id].menu.recommendedBeatmap.difficulty == room->players[cmp].menu.recommendedBeatmap.difficulty))) {
 										if(++counter[cmp] > max) {
 											select = cmp;
 											max = counter[cmp];
@@ -347,6 +430,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 						}
 					}
 				}
+				room->canStart = 0;
 				if(select < room->playerCount && room->players[select].menu.recommendedBeatmap.beatmapCharacteristicSerializedName.length) {
 					room->entitledCount = 0, room->buzzkills.count = 0;
 					room->selectedBeatmap = room->players[select].menu.recommendedBeatmap;
@@ -358,6 +442,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 					SERIALIZE_MENURPC(&resp_end, GetIsEntitledToLevel, r_level);
 					FOR_ALL_PLAYERS(room, id)
 						instance_send_channeled(&ctx->net, &room->players[id], resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+					refresh_countdown(ctx, room, 0);
 				} else {
 					room->entitledCount = room->playerCount, room->buzzkills.count = 0;
 					room->selectedBeatmap = (struct BeatmapIdentifierNetSerializable){{0}, {0}, 0};
@@ -420,6 +505,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 			if(isReady != session->menu.isReady) {
 				room->readyCount = room->readyCount - session->menu.isReady + isReady;
 				session->menu.isReady = isReady;
+				refresh_countdown(ctx, room, 0);
 			}
 			break;
 		}
@@ -467,7 +553,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 		case MenuRpcType_SetPermissionConfiguration: fprintf(stderr, "[INSTANCE] MenuRpcType_SetPermissionConfiguration not implemented\n"); abort();
 		case MenuRpcType_GetIsStartButtonEnabled: fprintf(stderr, "[INSTANCE] MenuRpcType_GetIsStartButtonEnabled not implemented\n"); abort();
 		case MenuRpcType_SetIsStartButtonEnabled: fprintf(stderr, "[INSTANCE] MenuRpcType_SetIsStartButtonEnabled not implemented\n"); abort();
-		default: fprintf(stderr, "BAD MENU RPC TYPE\n");
+		default: fprintf(stderr, "[INSTANCE] BAD MENU RPC TYPE\n");
 	}
 }
 
@@ -571,6 +657,15 @@ static void handle_MultiplayerSession(struct Context *ctx, struct Room *room, st
 		case MultiplayerSessionMessageType_ScoreSyncState: fprintf(stderr, "[INSTANCE] MultiplayerSessionMessageType_ScoreSyncState not implemented\n"); break;
 		case MultiplayerSessionMessageType_NodePoseSyncStateDelta: pkt_readNodePoseSyncStateDelta(data); break;
 		case MultiplayerSessionMessageType_ScoreSyncStateDelta: fprintf(stderr, "[INSTANCE] MultiplayerSessionMessageType_ScoreSyncStateDelta not implemented\n"); break;
+		case MultiplayerSessionMessageType_MpCore: {
+			struct MpCore mpHeader = pkt_readMpCore(data);
+			if(mpHeader.packetType.length == 15 && memcmp(mpHeader.packetType.data, "MpBeatmapPacket", 15) == 0) {
+				fprintf(stderr, "[INSTANCE] 'MpBeatmapPacket' not implemented\n");
+				abort();
+			} else {
+				fprintf(stderr, "[INSTANCE] BAD MPCORE MESSAGE TYPE: '%.*s'\n", mpHeader.packetType.length, mpHeader.packetType.data);
+			}
+		}
 		default: fprintf(stderr, "[INSTANCE] BAD MULTIPLAYER SESSION MESSAGE TYPE\n");
 	}
 }
@@ -1042,13 +1137,16 @@ _Bool instance_open(ServerCode *out, struct String managerId, struct GameplaySer
 		return 1;
 	contexts[0].TEMPglobalRoom.syncBase = 0;
 	contexts[0].TEMPglobalRoom.syncBase = room_get_syncTime(&contexts[0].TEMPglobalRoom);
+	contexts[0].TEMPglobalRoom.countdownEnd = 0;
 	contexts[0].TEMPglobalRoom.state = MultiplayerGameState_Lobby;
 	contexts[0].TEMPglobalRoom.inLobbyCount = 0;
 	contexts[0].TEMPglobalRoom.readyCount = 0;
 	contexts[0].TEMPglobalRoom.entitledCount = 0;
 	contexts[0].TEMPglobalRoom.spectatingCount = 0;
 	contexts[0].TEMPglobalRoom.selectedBeatmap = (struct BeatmapIdentifierNetSerializable){{0}, {0}, 0};
+	memset(&contexts[0].TEMPglobalRoom.selectedModifiers, 0, sizeof(contexts->TEMPglobalRoom.selectedModifiers));
 	contexts[0].TEMPglobalRoom.buzzkills.count = 0;
+	contexts[0].TEMPglobalRoom.canStart = 0;
 	contexts[0].TEMPglobalRoom.playerCount = 0;
 	contexts[0].TEMPglobalRoom.configuration = *configuration;
 	size_t sortLen = (contexts[0].TEMPglobalRoom.configuration.maxPlayerCount * sizeof(*contexts[0].TEMPglobalRoom.playerSort) + 7) & ~7; // aligned
