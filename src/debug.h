@@ -172,22 +172,7 @@ static void debug_logPacket(const uint8_t *pkt, const uint8_t *end, struct NetPa
 					default: fprintf(stderr, "BAD USER MESSAGE TYPE\n");
 				}
 			} else if(message.type == MessageType_DedicatedServerMessage) {
-				switch(serial.type) {
-					case DedicatedServerMessageType_AuthenticateDedicatedServerRequest: pkt_logAuthenticateDedicatedServerRequest("\tAuthenticateDedicatedServerRequest", buf, buf, pkt_readAuthenticateDedicatedServerRequest(&data)); break;
-					case DedicatedServerMessageType_AuthenticateDedicatedServerResponse: pkt_logAuthenticateDedicatedServerResponse("\tAuthenticateDedicatedServerResponse", buf, buf, pkt_readAuthenticateDedicatedServerResponse(&data)); break;
-					case DedicatedServerMessageType_CreateDedicatedServerInstanceRequest: pkt_logCreateDedicatedServerInstanceRequest("\tCreateDedicatedServerInstanceRequest", buf, buf, pkt_readCreateDedicatedServerInstanceRequest(&data)); break;
-					case DedicatedServerMessageType_CreateDedicatedServerInstanceResponse: pkt_logCreateDedicatedServerInstanceResponse("\tCreateDedicatedServerInstanceResponse", buf, buf, pkt_readCreateDedicatedServerInstanceResponse(&data)); break;
-					case DedicatedServerMessageType_DedicatedServerInstanceNoLongerAvailableRequest: pkt_logDedicatedServerInstanceNoLongerAvailableRequest("\tDedicatedServerInstanceNoLongerAvailableRequest", buf, buf, pkt_readDedicatedServerInstanceNoLongerAvailableRequest(&data)); break;
-					case DedicatedServerMessageType_DedicatedServerHeartbeatRequest: pkt_logDedicatedServerHeartbeatRequest("\tDedicatedServerHeartbeatRequest", buf, buf, pkt_readDedicatedServerHeartbeatRequest(&data)); break;
-					case DedicatedServerMessageType_DedicatedServerHeartbeatResponse: pkt_logDedicatedServerHeartbeatResponse("\tDedicatedServerHeartbeatResponse", buf, buf, pkt_readDedicatedServerHeartbeatResponse(&data)); break;
-					case DedicatedServerMessageType_DedicatedServerInstanceStatusUpdateRequest: pkt_logDedicatedServerInstanceStatusUpdateRequest("\tDedicatedServerInstanceStatusUpdateRequest", buf, buf, pkt_readDedicatedServerInstanceStatusUpdateRequest(&data)); break;
-					case DedicatedServerMessageType_DedicatedServerShutDownRequest: pkt_logDedicatedServerShutDownRequest("\tDedicatedServerShutDownRequest", buf, buf, pkt_readDedicatedServerShutDownRequest(&data)); break;
-					case DedicatedServerMessageType_DedicatedServerPrepareForConnectionRequest: pkt_logDedicatedServerPrepareForConnectionRequest("\tDedicatedServerPrepareForConnectionRequest", buf, buf, pkt_readDedicatedServerPrepareForConnectionRequest(&data)); break;
-					case DedicatedServerMessageType_DedicatedServerMessageReceivedAcknowledge: pkt_logDedicatedServerMessageReceivedAcknowledge("\tDedicatedServerMessageReceivedAcknowledge", buf, buf, pkt_readDedicatedServerMessageReceivedAcknowledge(&data)); break;
-					case DedicatedServerMessageType_DedicatedServerMultipartMessage: pkt_logDedicatedServerMultipartMessage("\tDedicatedServerMultipartMessage", buf, buf, pkt_readDedicatedServerMultipartMessage(&data)); break;
-					case DedicatedServerMessageType_DedicatedServerPrepareForConnectionResponse: pkt_logDedicatedServerPrepareForConnectionResponse("\tDedicatedServerPrepareForConnectionResponse", buf, buf, pkt_readDedicatedServerPrepareForConnectionResponse(&data)); break;
-					default: fprintf(stderr, "BAD DEDICATED SERVER MESSAGE TYPE\n");
-				}
+				fprintf(stderr, "DedicatedServerMessageType not implemented\n");
 			} else if(message.type == MessageType_HandshakeMessage) {
 				switch(serial.type) {
 					case HandshakeMessageType_ClientHelloRequest: pkt_logClientHelloRequest("\tClientHelloRequest", buf, buf, pkt_readClientHelloRequest(&data)); break;

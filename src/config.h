@@ -5,7 +5,7 @@ struct Config {
 	mbedtls_x509_crt master_cert, status_cert;
 	mbedtls_pk_context master_key, status_key;
 	uint16_t master_port, status_port;
-	char host_domain[4096], status_domain[4096], status_path[4096];
+	char host_domain[4096], host_domainIPv4[4096], status_domain[4096], status_path[4096];
 	_Bool status_tls;
 };
 

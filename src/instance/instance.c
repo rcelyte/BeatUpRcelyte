@@ -84,7 +84,7 @@ struct InstanceSession {
 	struct NetSession net;
 	struct InstanceSession *next;
 	ClientState clientState;
-	struct String userName;
+	struct String secret, userName;
 	struct PlayerLobbyPermissionConfigurationNetSerializable permissions;
 	struct PlayerStateHash state;
 	struct MultiplayerAvatarData avatar;
@@ -240,7 +240,7 @@ static void instance_onResend(struct Context *ctx, uint32_t currentTime, uint32_
 	struct Room *room = &ctx->TEMPglobalRoom;
 	for(uint32_t i = 0; i < room->playerCount;) {
 		struct InstanceSession *session = &room->players[room->playerSort[i]];
-		uint32_t kickTime = NetSession_get_lastKeepAlive(&session->net) + 180000;
+		uint32_t kickTime = NetSession_get_lastKeepAlive(&session->net) + 10000;
 		if(currentTime > kickTime) {
 			room_disconnect(NULL, room, i);
 		} else {
@@ -555,10 +555,6 @@ static void handle_PlayerIdentity(struct Context *ctx, struct Room *room, struct
 	pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
 	struct RemoteProcedureCall base;
 	base.syncTime = room_get_syncTime(room);
-	struct SetIsStartButtonEnabled r_button;
-	r_button.base = base;
-	r_button.reason = CannotStartGameReason_AllPlayersNotInLobby;
-	SERIALIZE_MENURPC(&resp_end, SetIsStartButtonEnabled, r_button);
 	SERIALIZE_MENURPC(&resp_end, GetRecommendedBeatmap, (struct GetRecommendedBeatmap){.base = base});
 	SERIALIZE_MENURPC(&resp_end, GetRecommendedGameplayModifiers, (struct GetRecommendedGameplayModifiers){.base = base});
 	SERIALIZE_MENURPC(&resp_end, GetIsReady, (struct GetIsReady){.base = base});
@@ -850,7 +846,7 @@ static void handle_Ping(struct Context *ctx, struct Room *room, struct InstanceS
 }
 static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
 	struct ConnectRequest req = pkt_readConnectRequest(data);
-	if(!String_eq(req.userId, session->permissions.userId))
+	if(!(String_eq(req.secret, session->secret) && String_eq(req.userId, session->permissions.userId)))
 		return;
 	uint8_t resp[65536], *resp_end = resp;
 	pkt_writeNetPacketHeader(&resp_end, (struct NetPacketHeader){PacketProperty_ConnectAccept, 0, 0});
@@ -986,9 +982,10 @@ static pthread_t instance_threads[THREAD_COUNT];
 #endif
 static struct Context contexts[THREAD_COUNT];
 // static uint32_t instance_count = 1; // ServerCode 0 ("") is not valid
-static const char *instance_domain = NULL;
-_Bool instance_init(const char *domain) {
+static const char *instance_domain = NULL, *instance_domainIPv4 = NULL;
+_Bool instance_init(const char *domain, const char *domainIPv4) {
 	instance_domain = domain;
+	instance_domainIPv4 = domainIPv4;
 	memset(instance_threads, 0, sizeof(instance_threads));
 	for(uint32_t i = 0; i < lengthof(instance_threads); ++i) {
 		if(net_init(&contexts[i].net, 0)) {
@@ -1071,27 +1068,20 @@ struct NetContext *instance_get_net(ServerCode code) {
 	return (code == StringToServerCode("HELLO", 5)) ? &contexts[0].net : NULL;
 }
 
-struct NetSession *instance_resolve_session(ServerCode code, struct SS addr, struct String userId, struct String userName) {
+struct NetSession *instance_resolve_session(ServerCode code, struct SS addr, struct String secret, struct String userId, struct String userName) {
 	if(code != StringToServerCode("HELLO", 5))
 		return NULL;
 	struct Context *ctx = &contexts[0];
-	struct Room *room;
-	struct InstanceSession *session = (struct InstanceSession*)instance_onResolve(ctx, addr, (void**)&room); // TODO: This may connect the user to previous rooms they haven't successfully disconnected from
-	if(session) {
-		for(uint32_t i = 0; i < room->playerCount; ++i) {
-			if(room->playerSort[i] == indexof(room->players, session)) {
-				room_disconnect(ctx, room, i);
-				break;
-			}
+	struct Room *room = &ctx->TEMPglobalRoom;
+	struct InstanceSession *session = NULL;
+	FOR_ALL_PLAYERS(room, id) {
+		if(addrs_are_equal(&addr, NetSession_get_addr(&room->players[id].net))) {
+			room_disconnect(ctx, room, id);
+			session = &room->players[id];
+			break;
 		}
-		/*if(net_session_reset(&ctx->net, &session->net))
-			return NULL;
-		while(session->incomingFragmentsList) {
-			struct IncomingFragments *e = session->incomingFragmentsList;
-			session->incomingFragmentsList = session->incomingFragmentsList->next;
-			free(e);
-		}*/
-	} else {
+	}
+	if(!session) {
 		room = &ctx->TEMPglobalRoom;
 		if(room->playerCount >= room->configuration.maxPlayerCount) {
 			fprintf(stderr, "ROOM FULL\n");
@@ -1111,6 +1101,7 @@ struct NetSession *instance_resolve_session(ServerCode code, struct SS addr, str
 	session->roChannel.base.ack.channelId = DeliveryMethod_ReliableOrdered;
 	session->rsChannel.ack.channelId = DeliveryMethod_ReliableSequenced;
 
+	session->secret = secret;
 	session->userName = userName;
 	session->permissions.userId = userId;
 	session->permissions.isServerOwner = String_eq(userId, room->managerId);
@@ -1132,27 +1123,29 @@ struct NetSession *instance_resolve_session(ServerCode code, struct SS addr, str
 	net_tostr(&addr, addrstr);
 	fprintf(stderr, "[INSTANCE] connect %s\n", addrstr);
 	fprintf(stderr, "[INSTANCE] player count: %hhu / %d\n", room->playerCount, room->configuration.maxPlayerCount);
+
+	/*uint8_t punch[128], *punch_end = punch;
+	pkt_writeNetPacketHeader(&punch_end, (struct NetPacketHeader){PacketProperty_Ping, 0, 0});
+	pkt_writePing(&punch_end, (struct Ping){0});
+	net_send_internal(&ctx->net, &session->net, punch, punch_end - punch, 1);*/
 	return &session->net;
 }
 
-struct IPEndPoint instance_get_address(ServerCode code) {
+struct IPEndPoint instance_get_address(ServerCode code, _Bool ipv4) {
 	struct IPEndPoint out;
 	out.address.length = 0;
 	out.port = 0;
 	if(code != StringToServerCode("HELLO", 5)) // TODO: temporary hack
 		return out;
-	out.address.length = sprintf(out.address.data, "%s", instance_domain);
+	if(ipv4)
+		out.address.length = sprintf(out.address.data, "%s", instance_domainIPv4);
+	else
+		out.address.length = sprintf(out.address.data, "%s", instance_domain);
 	struct SS addr = {sizeof(struct sockaddr_storage)};
 	getsockname(net_get_sockfd(&contexts[0].net), &addr.sa, &addr.len);
 	switch(addr.ss.ss_family) {
-		case AF_INET: {
-			out.port = htons(addr.in.sin_port);
-			break;
-		}
-		case AF_INET6: {
-			out.port = htons(addr.in6.sin6_port);
-			break;
-		}
+		case AF_INET: out.port = htons(addr.in.sin_port); break;
+		case AF_INET6: out.port = htons(addr.in6.sin6_port); break;
 		default:;
 	}
 	return out;

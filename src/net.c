@@ -378,7 +378,10 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct
 		goto retry;
 	}
 	if(buf[0] > 1) {
-		fprintf(stderr, "testval: %hhu\n", buf[0]);
+		sendto(ctx->sockfd, (char*)buf, 1, 0, &addr.sa, addr.len);
+		char namestr[INET6_ADDRSTRLEN + 8];
+		net_tostr(&addr, namestr);
+		fprintf(stderr, "ping[%s]: %hhu\n", namestr, buf[0]);
 		goto retry;
 	}
 	*session = ctx->onResolve(ctx->user, addr, userdata_out);

@@ -99,6 +99,7 @@ _Bool config_load(struct Config *out, const char *path) {
 	out->master_port = 2328;
 	out->status_port = 80;
 	*out->host_domain = 0;
+	*out->host_domainIPv4 = 0;
 	*out->status_domain = 0;
 	sprintf(out->status_path, "/");
 	out->status_tls = 0;
@@ -122,6 +123,15 @@ _Bool config_load(struct Config *out, const char *path) {
 				continue;
 			}
 			sprintf(out->host_domain, "%.*s", domain_len, domain);
+		} else IFEQ("HostName_IPv4") {
+			char *domain;
+			uint32_t domain_len = 0;
+			it = json_get_string(it, &domain, &domain_len);
+			if(domain_len >= 4096) {
+				fprintf(stderr, "Error parsing config value \"HostName\": name too long\n");
+				continue;
+			}
+			sprintf(out->host_domainIPv4, "%.*s", domain_len, domain);
 		} else IFEQ("HostCert") {
 			it = json_get_string(it, &master_cert, &master_cert_len);
 		} else IFEQ("HostKey") {
@@ -180,6 +190,8 @@ _Bool config_load(struct Config *out, const char *path) {
 		fprintf(stderr, "Missing required value \"HostName\"\n");
 		return 1;
 	}
+	if(!*out->host_domainIPv4)
+		sprintf(out->host_domainIPv4, "%s", out->host_domain);
 	if(master_cert_len == 0) {
 		fprintf(stderr, "Missing required value \"HostCert\"\n");
 		return 1;

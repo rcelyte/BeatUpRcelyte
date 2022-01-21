@@ -223,13 +223,13 @@ static void master_send_ack(struct Context *ctx, struct MasterSession *session, 
 }
 
 static void handle_ClientHelloRequest(struct Context *ctx, struct MasterSession *session, const uint8_t **data) {
+	struct ClientHelloRequest req = pkt_readClientHelloRequest(data);
 	if(session->handshakeStep != 255) {
 		if(net_time() - NetSession_get_lastKeepAlive(&session->net) < 5000) // 5 second timeout to prevent clients from getting "locked out" if their previous session hasn't closed or timed out yet
 			return;
 		net_session_reset(&ctx->net, &session->net); // security or something idk
 		session->resend.count = 0;
 	}
-	struct ClientHelloRequest req = pkt_readClientHelloRequest(data);
 	session->epoch = req.base.requestId & 0xff000000;
 	memcpy(session->net.clientRandom, req.random, 32);
 	struct HelloVerifyRequest r_hello;
@@ -238,7 +238,7 @@ static void handle_ClientHelloRequest(struct Context *ctx, struct MasterSession 
 	memcpy(r_hello.cookie, NetSession_get_cookie(&session->net), sizeof(r_hello.cookie));
 	uint8_t resp[65536], *resp_end = resp;
 	MASTER_SERIALIZE(&resp_end, HandshakeMessage, HelloVerifyRequest, HelloVerifyRequest, r_hello);
-	master_send(&ctx->net, session, resp, resp_end - resp, 0);
+	master_send(&ctx->net, session, resp, resp_end - resp, 1);
 	session->handshakeStep = HandshakeMessageType_ClientHelloRequest;
 }
 
@@ -354,7 +354,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 	{
 		struct SS addr = *NetSession_get_addr(&session->net);
 		struct NetContext *net = instance_get_net(req.code);
-		struct NetSession *isession = instance_resolve_session(req.code, addr, req.base.userId, req.base.userName);
+		struct NetSession *isession = instance_resolve_session(req.code, addr, req.secret, req.base.userId, req.base.userName);
 		if(!isession) {
 			r_conn.result = ConnectToServerResponse_Result_UnknownError;
 			goto send;
@@ -375,7 +375,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		r_conn.secret = req.secret;
 		r_conn.selectionMask = req.selectionMask;
 		r_conn.flags = 3;
-		r_conn.remoteEndPoint = instance_get_address(req.code);
+		r_conn.remoteEndPoint = instance_get_address(req.code, addr.ss.ss_family != AF_INET6 || memcmp(addr.in6.sin6_addr.s6_addr, (const uint8_t[]){0,0,0,0,0,0,0,0,0,0,255,255}, 12) == 0);
 		r_conn.code = req.code;
 		r_conn.configuration = req.configuration;
 		r_conn.managerId = managerId;

@@ -1,30 +1,3 @@
-/* DANGEROUS CLASSES (contain ByteArrayNetSerializable):
- *     ClientHelloWithCookieRequest
- *     ServerCertificateRequest
- *     AuthenticateDedicatedServerRequest
- *     CreateDedicatedServerInstanceResponse
- *     DedicatedServerPrepareForConnectionRequest
- *     HelloVerifyRequest
- *     BaseConnectToServerRequest
- *     ServerHelloRequest
- *     ClientKeyExchangeRequest
- *     CreateDedicatedServerInstanceRequest
- *     ConnectToServerResponse
- */
-
-/* Unreliable packets:
- *     HandshakeMessageType_ClientHelloRequest
- *     HandshakeMessageType_HelloVerifyRequest
- *     HandshakeMessageType_ServerCertificateResponse
- *     HandshakeMessageType_MessageReceivedAcknowledge
- *     UserMessageType_MessageReceivedAcknowledge
- *     UserMessageType_SessionKeepaliveMessage
- *     DedicatedServerMessageType_DedicatedServerHeartbeatRequest
- *     DedicatedServerMessageType_DedicatedServerHeartbeatResponse
- *     DedicatedServerMessageType_DedicatedServerShutDownRequest
- *     DedicatedServerMessageType_MessageReceivedAcknowledge
- */
-
 head
 	#define CONCAT1(a, b) a##b
 	#define CONCAT0(a, b) CONCAT1(a, b)
@@ -804,35 +777,8 @@ u8 UserMessage Type
 			vu32 publicServerCount
 			PublicServerInfo[8192,publicServerCount] publicServers
 u8 DedicatedServerMessage Type
-	n AuthenticateDedicatedServerRequest
-		BaseMasterServerReliableResponse base
-		String dedicatedServerId
-		u8[16] nonce
-		u8[32] hash
-		u64 timestamp
-	n AuthenticateDedicatedServerResponse
-	n CreateDedicatedServerInstanceRequest 4
-		BaseMasterServerReliableRequest base
-		String secret
-		BeatmapLevelSelectionMask selectionMask
-		String userId
-		String userName
-		IPEndPoint userEndPoint
-		u8[32] userRandom
-		ByteArrayNetSerializable userPublicKey
-		GameplayServerConfiguration configuration
-	n CreateDedicatedServerInstanceResponse
-	n DedicatedServerInstanceNoLongerAvailableRequest
-	n DedicatedServerHeartbeatRequest
-	n DedicatedServerHeartbeatResponse
-	n DedicatedServerInstanceStatusUpdateRequest 10
-	n DedicatedServerShutDownRequest
-	n DedicatedServerPrepareForConnectionRequest
-	n DedicatedServerMessageReceivedAcknowledge
-		BaseMasterServerAcknowledgeMessage base
-	n DedicatedServerMultipartMessage
-		BaseMasterServerMultipartMessage base
-	n DedicatedServerPrepareForConnectionResponse
+	z DedicatedServerMessageReceivedAcknowledge 13
+	z DedicatedServerMultipartMessage 14
 u8 HandshakeMessage Type
 	r ClientHelloRequest
 		BaseMasterServerReliableRequest base
