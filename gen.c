@@ -63,9 +63,11 @@ _Bool skip_char_maybe(const char **s, char c) {
 }
 
 const char *skip_number(const char **s) {
+	const char *start = *s;
+	if(**s == '-')
+		++(*s);
 	if(!numeric(**s))
 		fail(*s, "expected number");
-	const char *start = *s;
 	while(numeric(**s))
 		++(*s);
 	return start;
@@ -417,7 +419,7 @@ struct EnumEntry parse_value(char **header, char **source, const char **in, uint
 	struct EnumEntry e = {"", NULL};
 	if((**in == 'r' || **in == 's' || **in == 'd' || **in == 'n') && (*in)[1] == ' ') {
 		return parse_struct(header, source, in, indent);
-	} else if(strncmp(*in, "u8 ", 3) == 0 || strncmp(*in, "u16 ", 4) == 0 || strncmp(*in, "u32 ", 4) == 0) {
+	} else if(strncmp(*in, "u8 ", 3) == 0 || strncmp(*in, "u16 ", 4) == 0 || strncmp(*in, "u32 ", 4) == 0 || strncmp(*in, "i32 ", 4) == 0) {
 		return parse_enum(header, source, in, indent);
 	} else if(skip_string_maybe(in, "z ")) {
 		if(read_word(in, e.name))

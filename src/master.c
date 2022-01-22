@@ -373,6 +373,8 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		goto send;
 	}
 	struct String managerId = req.base.userId;
+	struct SS addr = *NetSession_get_addr(&session->net);
+	struct NetSession *isession;
 	if(req.code == StringToServerCode(NULL, 0)) {
 		if(req.selectionMask.difficulties != BeatmapDifficultyMask_All && req.selectionMask.modifiers == GameplayModifierMask_NoFail && req.configuration.maxPlayerCount == 5 && req.configuration.discoveryPolicy == DiscoveryPolicy_Public && req.configuration.invitePolicy == InvitePolicy_AnyoneCanInvite && req.configuration.gameplayServerMode == GameplayServerMode_Countdown && req.configuration.songSelectionMode == SongSelectionMode_Vote && req.configuration.gameplayServerControlSettings == GameplayServerControlSettings_None) {
 			r_conn.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers; // Quick Play not yet available
@@ -382,7 +384,8 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		req.configuration.maxPlayerCount = 126;
 		fprintf(stderr, "ONLY THE BIGGEST OF ROOMS!!!\n");
 		#endif
-		if(instance_open(&req.code, managerId, &req.configuration)) {
+		isession = instance_open(&req.code, managerId, &req.configuration, addr, req.secret, req.base.userId, req.base.userName);
+		if(!isession) {
 			r_conn.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers;
 			goto send;
 		}
@@ -391,18 +394,17 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 			r_conn.result = ConnectToServerResponse_Result_InvalidCode;
 			goto send;
 		}
+		isession = instance_resolve_session(req.code, addr, req.secret, req.base.userId, req.base.userName);
+		if(!isession) {
+			r_conn.result = ConnectToServerResponse_Result_UnknownError;
+			goto send;
+		}
 	}
 	/*struct BitMask128 customs = get_mask("custom_levelpack_CustomLevels");
 	req.selectionMask.songPacks.bloomFilter.d0 |= customs.d0;
 	req.selectionMask.songPacks.bloomFilter.d1 |= customs.d1;*/
 	{
-		struct SS addr = *NetSession_get_addr(&session->net);
 		struct NetContext *net = instance_get_net(req.code);
-		struct NetSession *isession = instance_resolve_session(req.code, addr, req.secret, req.base.userId, req.base.userName);
-		if(!isession) {
-			r_conn.result = ConnectToServerResponse_Result_UnknownError;
-			goto send;
-		}
 		memcpy(isession->clientRandom, req.base.random, 32);
 		memcpy(r_conn.random, NetKeypair_get_random(&isession->keys), 32);
 		r_conn.publicKey.length = sizeof(r_conn.publicKey.data);

@@ -601,10 +601,128 @@ u8 MultiplayerGameState
 	z None
 	z Lobby
 	z Game
+r ColorNoAlphaSerializable
+	f32 r
+	f32 g
+	f32 b
+r ColorSchemeNetSerializable
+	ColorNoAlphaSerializable saberAColor
+	ColorNoAlphaSerializable saberBColor
+	ColorNoAlphaSerializable obstaclesColor
+	ColorNoAlphaSerializable environmentColor0
+	ColorNoAlphaSerializable environmentColor1
+	ColorNoAlphaSerializable environmentColor0Boost
+	ColorNoAlphaSerializable environmentColor1Boost
+r PlayerSpecificSettingsNetSerializable
+	String userId
+	String userName
+	b leftHanded
+	b automaticPlayerHeight
+	f32 playerHeight
+	f32 headPosToPlayerHeightOffset
+	ColorSchemeNetSerializable colorScheme
+n PlayerSpecificSettingsAtStartNetSerializable
+	i32 count
+	PlayerSpecificSettingsNetSerializable[128,count] activePlayerSpecificSettingsAtGameStart
+i32 ColorType
+	z ColorA 0
+	z ColorB 1
+	z None -1
+u8 NoteLineLayer
+	Base
+	Upper
+	Top
+n NoteCutInfoNetSerializable
+	u8.e bits
+		u1.b cutWasOk
+	f32 saberSpeed
+	Vector3Serializable saberDir
+	Vector3Serializable cutPoint
+	Vector3Serializable cutNormal
+	Vector3Serializable notePosition
+	Vector3Serializable noteScale
+	QuaternionSerializable noteRotation
+	vi32.ColorType colorType
+	vi32.NoteLineLayer noteLineLayer
+	vi32 noteLineIndex
+	f32 noteTime
+	f32 timeToNextColorNote
+	Vector3Serializable moveVec
+n NoteMissInfoNetSerializable
+	vi32.ColorType colorType
+	vi32.NoteLineLayer noteLineLayer
+	vi32 noteLineIndex
+	f32 noteTime
+u8 MultiplayerLevelEndState
+	z Cleared
+	z Failed
+	z GivenUp
+	z WasInactive
+	z StartupFailed
+	z HostEndedLevel
+	z ConnectedAfterLevelEnded
+	z Quit
+u8 Rank
+	z E
+	z D
+	z C
+	z B
+	z A
+	z S
+	z SS
+	z SSS
+u8 LevelEndStateType
+	z None
+	z Cleared
+	z Failed
+u8 LevelEndAction
+	z None
+	z Quit
+	z Restart
+n LevelCompletionResults
+	GameplayModifiers gameplayModifiers
+	vi32 modifiedScore
+	vi32 rawScore
+	vi32.Rank rank
+	b fullCombo
+	f32 leftSaberMovementDistance
+	f32 rightSaberMovementDistance
+	f32 leftHandMovementDistance
+	f32 rightHandMovementDistance
+	f32 songDuration
+	vi32.LevelEndStateType levelEndStateType
+	vi32.LevelEndAction levelEndAction
+	f32 energy
+	vi32 goodCutsCount
+	vi32 badCutsCount
+	vi32 missedCount
+	vi32 notGoodCount
+	vi32 okCount
+	vi32 averageCutScore
+	vi32 maxCutScore
+	f32 averageCutDistanceRawScore
+	vi32 maxCombo
+	f32 minDirDeviation
+	f32 maxDirDeviation
+	f32 averageDirDeviation
+	f32 minTimeDeviation
+	f32 maxTimeDeviation
+	f32 averageTimeDeviation
+	f32 endSongTime
+n MultiplayerLevelCompletionResults
+	vi32.MultiplayerLevelEndState levelEndState
+	if(levelEndState < MultiplayerLevelEndState_GivenUp)
+		LevelCompletionResults levelCompletionResults
 r NodePoseSyncState1
 	PoseSerializable head
 	PoseSerializable leftController
 	PoseSerializable rightController
+r StandardScoreSyncState
+	vi32 modifiedScore
+	vi32 rawScore
+	vi32 immediateMaxPossibleRawScore
+	vi32 combo
+	vi32 multiplier
 u8 MultiplayerSessionMessage Type
 	u8 MenuRpc Type
 		s SetPlayersMissingEntitlementsToLevel
@@ -707,29 +825,68 @@ u8 MultiplayerSessionMessage Type
 			RemoteProcedureCall base
 			vi32.CannotStartGameReason reason
 	u8 GameplayRpc Type
+		n SetGameplaySceneSyncFinish
+			RemoteProcedureCall base
+			PlayerSpecificSettingsAtStartNetSerializable playersAtGameStart
+			String sessionGameId
+		r SetGameplaySceneReady
+			RemoteProcedureCall base
+			PlayerSpecificSettingsNetSerializable playerSpecificSettingsNetSerializable
+		n GetGameplaySceneReady
+			RemoteProcedureCall base
+		n SetActivePlayerFailedToConnect
+			RemoteProcedureCall base
+			String failedUserId
+			PlayerSpecificSettingsAtStartNetSerializable playersAtGameStartNetSerializable
+			String sessionGameId
+		n SetGameplaySongReady
+			RemoteProcedureCall base
+		n GetGameplaySongReady
+			RemoteProcedureCall base
+		n SetSongStartTime
+			RemoteProcedureCall base
+			f32 startTime
+		n NoteCut
+			RemoteProcedureCall base
+			f32 songTime
+			NoteCutInfoNetSerializable noteCutInfo
+		n NoteMissed
+			RemoteProcedureCall base
+			f32 songTime
+			NoteMissInfoNetSerializable noteMissInfo
+		n LevelFinished
+			RemoteProcedureCall base
+			MultiplayerLevelCompletionResults results
+		n ReturnToMenu
+			RemoteProcedureCall base
+		n RequestReturnToMenu
+			RemoteProcedureCall base
 	r NodePoseSyncState
 		SyncStateId id
 		f32 time
 		NodePoseSyncState1 state
-	u8 ScoreSyncState Type
+	r ScoreSyncState
+		SyncStateId id
+		f32 time
+		StandardScoreSyncState state
 	r NodePoseSyncStateDelta
 		SyncStateId baseId
 		vi32 timeOffsetMs
 		if(baseId.same == 0)
 			NodePoseSyncState1 delta
-	u8 ScoreSyncStateDelta Type
+	r ScoreSyncStateDelta
+		SyncStateId baseId
+		vi32 timeOffsetMs
+		if(baseId.same == 0)
+			StandardScoreSyncState delta
 	r MpCore 100
 		String packetType
 d MultiplayerSessionMessageHeader
 	u8.MultiplayerSessionMessageType type
 d MenuRpcHeader
 	u8.MenuRpcType type
-n GameplayRpcHeader
+d GameplayRpcHeader
 	u8.GameplayRpcType type
-n ScoreSyncStateHeader
-	u8.ScoreSyncStateType type
-n ScoreSyncStateDeltaHeader
-	u8.ScoreSyncStateDeltaType type
 
 u8 UserMessage Type
 	r AuthenticateUserRequest

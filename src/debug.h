@@ -96,20 +96,28 @@ static const uint8_t *debug_logRouting(const uint8_t *pkt, const uint8_t *data, 
 					case MultiplayerSessionMessageType_GameplayRpc: {
 						struct GameplayRpcHeader rpc = pkt_readGameplayRpcHeader(&sub);
 						pkt_logGameplayRpcHeader("\tGameplayRpcHeader", buf, buf, rpc);
+						switch(rpc.type) {
+							case GameplayRpcType_SetGameplaySceneSyncFinish: pkt_logSetGameplaySceneSyncFinish("\tSetGameplaySceneSyncFinish", buf, buf, pkt_readSetGameplaySceneSyncFinish(&sub)); break;
+							case GameplayRpcType_SetGameplaySceneReady: pkt_logSetGameplaySceneReady("\tSetGameplaySceneReady", buf, buf, pkt_readSetGameplaySceneReady(&sub)); break;
+							case GameplayRpcType_GetGameplaySceneReady: pkt_logGetGameplaySceneReady("\tGetGameplaySceneReady", buf, buf, pkt_readGetGameplaySceneReady(&sub)); break;
+							case GameplayRpcType_SetActivePlayerFailedToConnect: pkt_logSetActivePlayerFailedToConnect("\tSetActivePlayerFailedToConnect", buf, buf, pkt_readSetActivePlayerFailedToConnect(&sub)); break;
+							case GameplayRpcType_SetGameplaySongReady: pkt_logSetGameplaySongReady("\tSetGameplaySongReady", buf, buf, pkt_readSetGameplaySongReady(&sub)); break;
+							case GameplayRpcType_GetGameplaySongReady: pkt_logGetGameplaySongReady("\tGetGameplaySongReady", buf, buf, pkt_readGetGameplaySongReady(&sub)); break;
+							case GameplayRpcType_SetSongStartTime: pkt_logSetSongStartTime("\tSetSongStartTime", buf, buf, pkt_readSetSongStartTime(&sub)); break;
+							case GameplayRpcType_NoteCut: pkt_logNoteCut("\tNoteCut", buf, buf, pkt_readNoteCut(&sub)); break;
+							case GameplayRpcType_NoteMissed: pkt_logNoteMissed("\tNoteMissed", buf, buf, pkt_readNoteMissed(&sub)); break;
+							case GameplayRpcType_LevelFinished: pkt_logLevelFinished("\tLevelFinished", buf, buf, pkt_readLevelFinished(&sub)); break;
+							case GameplayRpcType_ReturnToMenu: pkt_logReturnToMenu("\tReturnToMenu", buf, buf, pkt_readReturnToMenu(&sub)); break;
+							case GameplayRpcType_RequestReturnToMenu: pkt_logRequestReturnToMenu("\tRequestReturnToMenu", buf, buf, pkt_readRequestReturnToMenu(&sub)); break;
+							default: fprintf(stderr, "BAD MENU RPC TYPE\n");
+						}
 						break;
 					}
 					case MultiplayerSessionMessageType_NodePoseSyncState: pkt_logNodePoseSyncState("\tNodePoseSyncState", buf, buf, pkt_readNodePoseSyncState(&sub)); break;
-					case MultiplayerSessionMessageType_ScoreSyncState: {
-						struct ScoreSyncStateHeader rpc = pkt_readScoreSyncStateHeader(&sub);
-						pkt_logScoreSyncStateHeader("\tScoreSyncStateHeader", buf, buf, rpc);
-						break;
-					}
+					case MultiplayerSessionMessageType_ScoreSyncState: pkt_logScoreSyncState("\tScoreSyncState", buf, buf, pkt_readScoreSyncState(&sub)); break;
 					case MultiplayerSessionMessageType_NodePoseSyncStateDelta: pkt_logNodePoseSyncStateDelta("\tNodePoseSyncStateDelta", buf, buf, pkt_readNodePoseSyncStateDelta(&sub)); break;
-					case MultiplayerSessionMessageType_ScoreSyncStateDelta: {
-						struct ScoreSyncStateDeltaHeader rpc = pkt_readScoreSyncStateDeltaHeader(&sub);
-						pkt_logScoreSyncStateDeltaHeader("\tScoreSyncStateDeltaHeader", buf, buf, rpc);
-						break;
-					}
+					case MultiplayerSessionMessageType_ScoreSyncStateDelta: pkt_logScoreSyncStateDelta("\tScoreSyncStateDelta", buf, buf, pkt_readScoreSyncStateDelta(&sub)); break;
+					default: fprintf(stderr, "BAD MULTIPLAYER SESSION MESSAGE TYPE\n");
 				}
 			}  break;
 			case InternalMessageType_KickPlayer: pkt_logKickPlayer("\tKickPlayer", buf, buf, pkt_readKickPlayer(&sub)); break;

@@ -542,12 +542,82 @@ ENUM(uint8_t, MultiplayerGameState, {
 	MultiplayerGameState_Lobby,
 	MultiplayerGameState_Game,
 })
+struct ColorNoAlphaSerializable {
+	float r;
+	float g;
+	float b;
+};
+struct ColorNoAlphaSerializable pkt_readColorNoAlphaSerializable(const uint8_t **pkt);
+struct ColorSchemeNetSerializable {
+	struct ColorNoAlphaSerializable saberAColor;
+	struct ColorNoAlphaSerializable saberBColor;
+	struct ColorNoAlphaSerializable obstaclesColor;
+	struct ColorNoAlphaSerializable environmentColor0;
+	struct ColorNoAlphaSerializable environmentColor1;
+	struct ColorNoAlphaSerializable environmentColor0Boost;
+	struct ColorNoAlphaSerializable environmentColor1Boost;
+};
+struct ColorSchemeNetSerializable pkt_readColorSchemeNetSerializable(const uint8_t **pkt);
+struct PlayerSpecificSettingsNetSerializable {
+	struct String userId;
+	struct String userName;
+	_Bool leftHanded;
+	_Bool automaticPlayerHeight;
+	float playerHeight;
+	float headPosToPlayerHeightOffset;
+	struct ColorSchemeNetSerializable colorScheme;
+};
+struct PlayerSpecificSettingsNetSerializable pkt_readPlayerSpecificSettingsNetSerializable(const uint8_t **pkt);
+ENUM(int32_t, ColorType, {
+	ColorType_ColorA = 0,
+	ColorType_ColorB = 1,
+	ColorType_None = -1,
+})
+typedef uint8_t NoteLineLayer;
+ENUM(uint8_t, MultiplayerLevelEndState, {
+	MultiplayerLevelEndState_Cleared,
+	MultiplayerLevelEndState_Failed,
+	MultiplayerLevelEndState_GivenUp,
+	MultiplayerLevelEndState_WasInactive,
+	MultiplayerLevelEndState_StartupFailed,
+	MultiplayerLevelEndState_HostEndedLevel,
+	MultiplayerLevelEndState_ConnectedAfterLevelEnded,
+	MultiplayerLevelEndState_Quit,
+})
+ENUM(uint8_t, Rank, {
+	Rank_E,
+	Rank_D,
+	Rank_C,
+	Rank_B,
+	Rank_A,
+	Rank_S,
+	Rank_SS,
+	Rank_SSS,
+})
+ENUM(uint8_t, LevelEndStateType, {
+	LevelEndStateType_None,
+	LevelEndStateType_Cleared,
+	LevelEndStateType_Failed,
+})
+ENUM(uint8_t, LevelEndAction, {
+	LevelEndAction_None,
+	LevelEndAction_Quit,
+	LevelEndAction_Restart,
+})
 struct NodePoseSyncState1 {
 	struct PoseSerializable head;
 	struct PoseSerializable leftController;
 	struct PoseSerializable rightController;
 };
 struct NodePoseSyncState1 pkt_readNodePoseSyncState1(const uint8_t **pkt);
+struct StandardScoreSyncState {
+	int32_t modifiedScore;
+	int32_t rawScore;
+	int32_t immediateMaxPossibleRawScore;
+	int32_t combo;
+	int32_t multiplier;
+};
+struct StandardScoreSyncState pkt_readStandardScoreSyncState(const uint8_t **pkt);
 struct SetPlayersMissingEntitlementsToLevel {
 	struct RemoteProcedureCall base;
 	struct PlayersMissingEntitlementsNetSerializable playersMissingEntitlements;
@@ -709,21 +779,49 @@ ENUM(uint8_t, MenuRpcType, {
 	MenuRpcType_GetIsStartButtonEnabled,
 	MenuRpcType_SetIsStartButtonEnabled,
 })
-typedef uint8_t GameplayRpcType;
+struct SetGameplaySceneReady {
+	struct RemoteProcedureCall base;
+	struct PlayerSpecificSettingsNetSerializable playerSpecificSettingsNetSerializable;
+};
+struct SetGameplaySceneReady pkt_readSetGameplaySceneReady(const uint8_t **pkt);
+ENUM(uint8_t, GameplayRpcType, {
+	GameplayRpcType_SetGameplaySceneSyncFinish,
+	GameplayRpcType_SetGameplaySceneReady,
+	GameplayRpcType_GetGameplaySceneReady,
+	GameplayRpcType_SetActivePlayerFailedToConnect,
+	GameplayRpcType_SetGameplaySongReady,
+	GameplayRpcType_GetGameplaySongReady,
+	GameplayRpcType_SetSongStartTime,
+	GameplayRpcType_NoteCut,
+	GameplayRpcType_NoteMissed,
+	GameplayRpcType_LevelFinished,
+	GameplayRpcType_ReturnToMenu,
+	GameplayRpcType_RequestReturnToMenu,
+})
 struct NodePoseSyncState {
 	struct SyncStateId id;
 	float time;
 	struct NodePoseSyncState1 state;
 };
 struct NodePoseSyncState pkt_readNodePoseSyncState(const uint8_t **pkt);
-typedef uint8_t ScoreSyncStateType;
+struct ScoreSyncState {
+	struct SyncStateId id;
+	float time;
+	struct StandardScoreSyncState state;
+};
+struct ScoreSyncState pkt_readScoreSyncState(const uint8_t **pkt);
 struct NodePoseSyncStateDelta {
 	struct SyncStateId baseId;
 	int32_t timeOffsetMs;
 	struct NodePoseSyncState1 delta;
 };
 struct NodePoseSyncStateDelta pkt_readNodePoseSyncStateDelta(const uint8_t **pkt);
-typedef uint8_t ScoreSyncStateDeltaType;
+struct ScoreSyncStateDelta {
+	struct SyncStateId baseId;
+	int32_t timeOffsetMs;
+	struct StandardScoreSyncState delta;
+};
+struct ScoreSyncStateDelta pkt_readScoreSyncStateDelta(const uint8_t **pkt);
 struct MpCore {
 	struct String packetType;
 };
@@ -747,6 +845,11 @@ struct MenuRpcHeader {
 };
 struct MenuRpcHeader pkt_readMenuRpcHeader(const uint8_t **pkt);
 void pkt_writeMenuRpcHeader(uint8_t **pkt, struct MenuRpcHeader in);
+struct GameplayRpcHeader {
+	GameplayRpcType type;
+};
+struct GameplayRpcHeader pkt_readGameplayRpcHeader(const uint8_t **pkt);
+void pkt_writeGameplayRpcHeader(uint8_t **pkt, struct GameplayRpcHeader in);
 struct AuthenticateUserRequest {
 	struct BaseMasterServerReliableResponse base;
 	struct AuthenticationToken authenticationToken;

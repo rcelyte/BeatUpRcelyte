@@ -679,11 +679,49 @@ struct PoseSerializable pkt_readPoseSerializable(const uint8_t **pkt) {
 	out.rotation = pkt_readQuaternionSerializable(pkt);
 	return out;
 }
+struct ColorNoAlphaSerializable pkt_readColorNoAlphaSerializable(const uint8_t **pkt) {
+	struct ColorNoAlphaSerializable out;
+	out.r = pkt_readFloat32(pkt);
+	out.g = pkt_readFloat32(pkt);
+	out.b = pkt_readFloat32(pkt);
+	return out;
+}
+struct ColorSchemeNetSerializable pkt_readColorSchemeNetSerializable(const uint8_t **pkt) {
+	struct ColorSchemeNetSerializable out;
+	out.saberAColor = pkt_readColorNoAlphaSerializable(pkt);
+	out.saberBColor = pkt_readColorNoAlphaSerializable(pkt);
+	out.obstaclesColor = pkt_readColorNoAlphaSerializable(pkt);
+	out.environmentColor0 = pkt_readColorNoAlphaSerializable(pkt);
+	out.environmentColor1 = pkt_readColorNoAlphaSerializable(pkt);
+	out.environmentColor0Boost = pkt_readColorNoAlphaSerializable(pkt);
+	out.environmentColor1Boost = pkt_readColorNoAlphaSerializable(pkt);
+	return out;
+}
+struct PlayerSpecificSettingsNetSerializable pkt_readPlayerSpecificSettingsNetSerializable(const uint8_t **pkt) {
+	struct PlayerSpecificSettingsNetSerializable out;
+	out.userId = pkt_readString(pkt);
+	out.userName = pkt_readString(pkt);
+	out.leftHanded = pkt_readUint8(pkt);
+	out.automaticPlayerHeight = pkt_readUint8(pkt);
+	out.playerHeight = pkt_readFloat32(pkt);
+	out.headPosToPlayerHeightOffset = pkt_readFloat32(pkt);
+	out.colorScheme = pkt_readColorSchemeNetSerializable(pkt);
+	return out;
+}
 struct NodePoseSyncState1 pkt_readNodePoseSyncState1(const uint8_t **pkt) {
 	struct NodePoseSyncState1 out;
 	out.head = pkt_readPoseSerializable(pkt);
 	out.leftController = pkt_readPoseSerializable(pkt);
 	out.rightController = pkt_readPoseSerializable(pkt);
+	return out;
+}
+struct StandardScoreSyncState pkt_readStandardScoreSyncState(const uint8_t **pkt) {
+	struct StandardScoreSyncState out;
+	out.modifiedScore = pkt_readVarInt32(pkt);
+	out.rawScore = pkt_readVarInt32(pkt);
+	out.immediateMaxPossibleRawScore = pkt_readVarInt32(pkt);
+	out.combo = pkt_readVarInt32(pkt);
+	out.multiplier = pkt_readVarInt32(pkt);
 	return out;
 }
 void pkt_writeSetPlayersMissingEntitlementsToLevel(uint8_t **pkt, struct SetPlayersMissingEntitlementsToLevel in) {
@@ -820,11 +858,24 @@ void pkt_writeSetIsStartButtonEnabled(uint8_t **pkt, struct SetIsStartButtonEnab
 	pkt_writeRemoteProcedureCall(pkt, in.base);
 	pkt_writeVarInt32(pkt, in.reason);
 }
+struct SetGameplaySceneReady pkt_readSetGameplaySceneReady(const uint8_t **pkt) {
+	struct SetGameplaySceneReady out;
+	out.base = pkt_readRemoteProcedureCall(pkt);
+	out.playerSpecificSettingsNetSerializable = pkt_readPlayerSpecificSettingsNetSerializable(pkt);
+	return out;
+}
 struct NodePoseSyncState pkt_readNodePoseSyncState(const uint8_t **pkt) {
 	struct NodePoseSyncState out;
 	out.id = pkt_readSyncStateId(pkt);
 	out.time = pkt_readFloat32(pkt);
 	out.state = pkt_readNodePoseSyncState1(pkt);
+	return out;
+}
+struct ScoreSyncState pkt_readScoreSyncState(const uint8_t **pkt) {
+	struct ScoreSyncState out;
+	out.id = pkt_readSyncStateId(pkt);
+	out.time = pkt_readFloat32(pkt);
+	out.state = pkt_readStandardScoreSyncState(pkt);
 	return out;
 }
 struct NodePoseSyncStateDelta pkt_readNodePoseSyncStateDelta(const uint8_t **pkt) {
@@ -833,6 +884,15 @@ struct NodePoseSyncStateDelta pkt_readNodePoseSyncStateDelta(const uint8_t **pkt
 	out.timeOffsetMs = pkt_readVarInt32(pkt);
 	if(out.baseId.same == 0) {
 		out.delta = pkt_readNodePoseSyncState1(pkt);
+	}
+	return out;
+}
+struct ScoreSyncStateDelta pkt_readScoreSyncStateDelta(const uint8_t **pkt) {
+	struct ScoreSyncStateDelta out;
+	out.baseId = pkt_readSyncStateId(pkt);
+	out.timeOffsetMs = pkt_readVarInt32(pkt);
+	if(out.baseId.same == 0) {
+		out.delta = pkt_readStandardScoreSyncState(pkt);
 	}
 	return out;
 }
@@ -855,6 +915,14 @@ struct MenuRpcHeader pkt_readMenuRpcHeader(const uint8_t **pkt) {
 	return out;
 }
 void pkt_writeMenuRpcHeader(uint8_t **pkt, struct MenuRpcHeader in) {
+	pkt_writeUint8(pkt, in.type);
+}
+struct GameplayRpcHeader pkt_readGameplayRpcHeader(const uint8_t **pkt) {
+	struct GameplayRpcHeader out;
+	out.type = pkt_readUint8(pkt);
+	return out;
+}
+void pkt_writeGameplayRpcHeader(uint8_t **pkt, struct GameplayRpcHeader in) {
 	pkt_writeUint8(pkt, in.type);
 }
 struct AuthenticateUserRequest pkt_readAuthenticateUserRequest(const uint8_t **pkt) {
