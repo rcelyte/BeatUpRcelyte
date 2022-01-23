@@ -406,6 +406,10 @@ struct PlayerIdentity {
 };
 struct PlayerIdentity pkt_readPlayerIdentity(const uint8_t **pkt);
 void pkt_writePlayerIdentity(uint8_t **pkt, struct PlayerIdentity in);
+struct PlayerDisconnected {
+	DisconnectedReason disconnectedReason;
+};
+void pkt_writePlayerDisconnected(uint8_t **pkt, struct PlayerDisconnected in);
 struct PlayerSortOrderUpdate {
 	struct String userId;
 	int32_t sortIndex;
@@ -639,6 +643,7 @@ struct RecommendBeatmap {
 	struct BeatmapIdentifierNetSerializable identifier;
 };
 struct RecommendBeatmap pkt_readRecommendBeatmap(const uint8_t **pkt);
+void pkt_writeRecommendBeatmap(uint8_t **pkt, struct RecommendBeatmap in);
 struct ClearRecommendedBeatmap {
 	struct RemoteProcedureCall base;
 };
@@ -658,6 +663,7 @@ struct RecommendGameplayModifiers {
 	struct GameplayModifiers gameplayModifiers;
 };
 struct RecommendGameplayModifiers pkt_readRecommendGameplayModifiers(const uint8_t **pkt);
+void pkt_writeRecommendGameplayModifiers(uint8_t **pkt, struct RecommendGameplayModifiers in);
 struct GetRecommendedGameplayModifiers {
 	struct RemoteProcedureCall base;
 };
@@ -697,6 +703,7 @@ struct SetIsReady {
 	_Bool isReady;
 };
 struct SetIsReady pkt_readSetIsReady(const uint8_t **pkt);
+void pkt_writeSetIsReady(uint8_t **pkt, struct SetIsReady in);
 struct GetIsInLobby {
 	struct RemoteProcedureCall base;
 };
@@ -707,6 +714,7 @@ struct SetIsInLobby {
 	_Bool isBack;
 };
 struct SetIsInLobby pkt_readSetIsInLobby(const uint8_t **pkt);
+void pkt_writeSetIsInLobby(uint8_t **pkt, struct SetIsInLobby in);
 struct GetCountdownEndTime {
 	struct RemoteProcedureCall base;
 };

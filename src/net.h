@@ -72,7 +72,7 @@ struct NetContext {
 	const uint8_t *NET_H_PRIVATE(dirt);
 };
 
-_Bool net_keypair_init(struct NetContext *ctx, struct NetKeypair *keys);
+void net_keypair_init(struct NetContext *ctx, struct NetKeypair *keys);
 const uint8_t *NetKeypair_get_random(const struct NetKeypair *keys);
 _Bool NetKeypair_write_key(const struct NetKeypair *keys, struct NetContext *ctx, uint8_t *out, uint32_t *out_len);
 
@@ -87,8 +87,8 @@ void net_stop(struct NetContext *ctx);
 void net_cleanup(struct NetContext *ctx);
 /*struct NetSession *net_resolve_session(struct NetContext *ctx, struct SS addr);
 struct NetSession *net_create_session(struct NetContext *ctx, struct SS addr);*/
-_Bool net_session_init(struct NetContext *ctx, struct NetSession *session, struct SS addr);
-_Bool net_session_reset(struct NetContext *ctx, struct NetSession *session);
+void net_session_init(struct NetContext *ctx, struct NetSession *session, struct SS addr);
+void net_session_reset(struct NetContext *ctx, struct NetSession *session);
 void net_session_free(struct NetSession *session);
 uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct NetSession **session, const uint8_t **pkt, void **userdata_out);
 void net_flush_merged(struct NetContext *ctx, struct NetSession *session);

@@ -500,7 +500,7 @@ u8 InternalMessage Type
 		ByteArrayNetSerializable publicEncryptionKey
 	n PlayerLatencyUpdate
 		f32 latency
-	n PlayerDisconnected
+	s PlayerDisconnected
 		vi32.DisconnectedReason disconnectedReason
 	s PlayerSortOrderUpdate
 		String userId
@@ -745,7 +745,7 @@ u8 MultiplayerSessionMessage Type
 			BeatmapIdentifierNetSerializable identifier
 		n GetSelectedBeatmap
 			RemoteProcedureCall base
-		r RecommendBeatmap
+		d RecommendBeatmap
 			RemoteProcedureCall base
 			BeatmapIdentifierNetSerializable identifier
 		r ClearRecommendedBeatmap
@@ -757,7 +757,7 @@ u8 MultiplayerSessionMessage Type
 			GameplayModifiers gameplayModifiers
 		n GetSelectedGameplayModifiers
 			RemoteProcedureCall base
-		r RecommendGameplayModifiers
+		d RecommendGameplayModifiers
 			RemoteProcedureCall base
 			GameplayModifiers gameplayModifiers
 		n ClearRecommendedGameplayModifiers
@@ -786,7 +786,7 @@ u8 MultiplayerSessionMessage Type
 			vi32.MultiplayerGameState lobbyState
 		d GetIsReady
 			RemoteProcedureCall base
-		r SetIsReady
+		d SetIsReady
 			RemoteProcedureCall base
 			b isReady
 		n SetStartGameTime
@@ -796,7 +796,7 @@ u8 MultiplayerSessionMessage Type
 			RemoteProcedureCall base
 		d GetIsInLobby
 			RemoteProcedureCall base
-		r SetIsInLobby
+		d SetIsInLobby
 			RemoteProcedureCall base
 			b isBack
 		r GetCountdownEndTime

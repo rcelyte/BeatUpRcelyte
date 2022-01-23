@@ -560,6 +560,9 @@ void pkt_writePlayerIdentity(uint8_t **pkt, struct PlayerIdentity in) {
 	pkt_writeByteArrayNetSerializable(pkt, in.random);
 	pkt_writeByteArrayNetSerializable(pkt, in.publicEncryptionKey);
 }
+void pkt_writePlayerDisconnected(uint8_t **pkt, struct PlayerDisconnected in) {
+	pkt_writeVarInt32(pkt, in.disconnectedReason);
+}
 void pkt_writePlayerSortOrderUpdate(uint8_t **pkt, struct PlayerSortOrderUpdate in) {
 	pkt_writeString(pkt, in.userId);
 	pkt_writeVarInt32(pkt, in.sortIndex);
@@ -745,6 +748,10 @@ struct RecommendBeatmap pkt_readRecommendBeatmap(const uint8_t **pkt) {
 	out.identifier = pkt_readBeatmapIdentifierNetSerializable(pkt);
 	return out;
 }
+void pkt_writeRecommendBeatmap(uint8_t **pkt, struct RecommendBeatmap in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+	pkt_writeBeatmapIdentifierNetSerializable(pkt, in.identifier);
+}
 struct ClearRecommendedBeatmap pkt_readClearRecommendedBeatmap(const uint8_t **pkt) {
 	struct ClearRecommendedBeatmap out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
@@ -767,6 +774,10 @@ struct RecommendGameplayModifiers pkt_readRecommendGameplayModifiers(const uint8
 	out.base = pkt_readRemoteProcedureCall(pkt);
 	out.gameplayModifiers = pkt_readGameplayModifiers(pkt);
 	return out;
+}
+void pkt_writeRecommendGameplayModifiers(uint8_t **pkt, struct RecommendGameplayModifiers in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+	pkt_writeGameplayModifiers(pkt, in.gameplayModifiers);
 }
 struct GetRecommendedGameplayModifiers pkt_readGetRecommendedGameplayModifiers(const uint8_t **pkt) {
 	struct GetRecommendedGameplayModifiers out;
@@ -813,6 +824,10 @@ struct SetIsReady pkt_readSetIsReady(const uint8_t **pkt) {
 	out.isReady = pkt_readUint8(pkt);
 	return out;
 }
+void pkt_writeSetIsReady(uint8_t **pkt, struct SetIsReady in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+	pkt_writeUint8(pkt, in.isReady);
+}
 struct GetIsInLobby pkt_readGetIsInLobby(const uint8_t **pkt) {
 	struct GetIsInLobby out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
@@ -826,6 +841,10 @@ struct SetIsInLobby pkt_readSetIsInLobby(const uint8_t **pkt) {
 	out.base = pkt_readRemoteProcedureCall(pkt);
 	out.isBack = pkt_readUint8(pkt);
 	return out;
+}
+void pkt_writeSetIsInLobby(uint8_t **pkt, struct SetIsInLobby in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+	pkt_writeUint8(pkt, in.isBack);
 }
 struct GetCountdownEndTime pkt_readGetCountdownEndTime(const uint8_t **pkt) {
 	struct GetCountdownEndTime out;

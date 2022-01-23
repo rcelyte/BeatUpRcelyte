@@ -67,13 +67,10 @@ static struct NetSession *master_onResolve(struct Context *ctx, struct SS addr, 
 			return &session->net;
 	session = malloc(sizeof(struct MasterSession));
 	if(!session) {
-		fprintf(stderr, "[MASTER] alloc error\n");
-		return NULL;
+		fprintf(stderr, "alloc error\n");
+		abort();
 	}
-	if(net_session_init(&ctx->net, &session->net, addr)) {
-		free(session);
-		return NULL;
-	}
+	net_session_init(&ctx->net, &session->net, addr);
 	session->handshakeStep = 255;
 	session->resend.count = 0;
 	for(uint32_t i = 0; i < NET_WINDOW_SIZE; ++i)
@@ -238,7 +235,7 @@ static void handle_ClientHelloRequest(struct Context *ctx, struct MasterSession 
 	memcpy(r_hello.cookie, NetSession_get_cookie(&session->net), sizeof(r_hello.cookie));
 	uint8_t resp[65536], *resp_end = resp;
 	MASTER_SERIALIZE(&resp_end, HandshakeMessage, HelloVerifyRequest, HelloVerifyRequest, r_hello);
-	master_send(&ctx->net, session, resp, resp_end - resp, 1);
+	master_send(&ctx->net, session, resp, resp_end - resp, 0);
 	session->handshakeStep = HandshakeMessageType_ClientHelloRequest;
 }
 
