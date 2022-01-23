@@ -689,6 +689,11 @@ struct ColorNoAlphaSerializable pkt_readColorNoAlphaSerializable(const uint8_t *
 	out.b = pkt_readFloat32(pkt);
 	return out;
 }
+void pkt_writeColorNoAlphaSerializable(uint8_t **pkt, struct ColorNoAlphaSerializable in) {
+	pkt_writeFloat32(pkt, in.r);
+	pkt_writeFloat32(pkt, in.g);
+	pkt_writeFloat32(pkt, in.b);
+}
 struct ColorSchemeNetSerializable pkt_readColorSchemeNetSerializable(const uint8_t **pkt) {
 	struct ColorSchemeNetSerializable out;
 	out.saberAColor = pkt_readColorNoAlphaSerializable(pkt);
@@ -700,6 +705,15 @@ struct ColorSchemeNetSerializable pkt_readColorSchemeNetSerializable(const uint8
 	out.environmentColor1Boost = pkt_readColorNoAlphaSerializable(pkt);
 	return out;
 }
+void pkt_writeColorSchemeNetSerializable(uint8_t **pkt, struct ColorSchemeNetSerializable in) {
+	pkt_writeColorNoAlphaSerializable(pkt, in.saberAColor);
+	pkt_writeColorNoAlphaSerializable(pkt, in.saberBColor);
+	pkt_writeColorNoAlphaSerializable(pkt, in.obstaclesColor);
+	pkt_writeColorNoAlphaSerializable(pkt, in.environmentColor0);
+	pkt_writeColorNoAlphaSerializable(pkt, in.environmentColor1);
+	pkt_writeColorNoAlphaSerializable(pkt, in.environmentColor0Boost);
+	pkt_writeColorNoAlphaSerializable(pkt, in.environmentColor1Boost);
+}
 struct PlayerSpecificSettingsNetSerializable pkt_readPlayerSpecificSettingsNetSerializable(const uint8_t **pkt) {
 	struct PlayerSpecificSettingsNetSerializable out;
 	out.userId = pkt_readString(pkt);
@@ -709,6 +723,88 @@ struct PlayerSpecificSettingsNetSerializable pkt_readPlayerSpecificSettingsNetSe
 	out.playerHeight = pkt_readFloat32(pkt);
 	out.headPosToPlayerHeightOffset = pkt_readFloat32(pkt);
 	out.colorScheme = pkt_readColorSchemeNetSerializable(pkt);
+	return out;
+}
+void pkt_writePlayerSpecificSettingsNetSerializable(uint8_t **pkt, struct PlayerSpecificSettingsNetSerializable in) {
+	pkt_writeString(pkt, in.userId);
+	pkt_writeString(pkt, in.userName);
+	pkt_writeUint8(pkt, in.leftHanded);
+	pkt_writeUint8(pkt, in.automaticPlayerHeight);
+	pkt_writeFloat32(pkt, in.playerHeight);
+	pkt_writeFloat32(pkt, in.headPosToPlayerHeightOffset);
+	pkt_writeColorSchemeNetSerializable(pkt, in.colorScheme);
+}
+void pkt_writePlayerSpecificSettingsAtStartNetSerializable(uint8_t **pkt, struct PlayerSpecificSettingsAtStartNetSerializable in) {
+	pkt_writeInt32(pkt, in.count);
+	for(uint32_t i = 0; i < in.count; ++i)
+		pkt_writePlayerSpecificSettingsNetSerializable(pkt, in.activePlayerSpecificSettingsAtGameStart[i]);
+}
+struct NoteCutInfoNetSerializable pkt_readNoteCutInfoNetSerializable(const uint8_t **pkt) {
+	struct NoteCutInfoNetSerializable out;
+	uint8_t bits = pkt_readUint8(pkt);
+	out.cutWasOk = (bits >> 0) & 1;
+	out.saberSpeed = pkt_readFloat32(pkt);
+	out.saberDir = pkt_readVector3Serializable(pkt);
+	out.cutPoint = pkt_readVector3Serializable(pkt);
+	out.cutNormal = pkt_readVector3Serializable(pkt);
+	out.notePosition = pkt_readVector3Serializable(pkt);
+	out.noteScale = pkt_readVector3Serializable(pkt);
+	out.noteRotation = pkt_readQuaternionSerializable(pkt);
+	out.colorType = pkt_readVarInt32(pkt);
+	out.noteLineLayer = pkt_readVarInt32(pkt);
+	out.noteLineIndex = pkt_readVarInt32(pkt);
+	out.noteTime = pkt_readFloat32(pkt);
+	out.timeToNextColorNote = pkt_readFloat32(pkt);
+	out.moveVec = pkt_readVector3Serializable(pkt);
+	return out;
+}
+struct NoteMissInfoNetSerializable pkt_readNoteMissInfoNetSerializable(const uint8_t **pkt) {
+	struct NoteMissInfoNetSerializable out;
+	out.colorType = pkt_readVarInt32(pkt);
+	out.noteLineLayer = pkt_readVarInt32(pkt);
+	out.noteLineIndex = pkt_readVarInt32(pkt);
+	out.noteTime = pkt_readFloat32(pkt);
+	return out;
+}
+struct LevelCompletionResults pkt_readLevelCompletionResults(const uint8_t **pkt) {
+	struct LevelCompletionResults out;
+	out.gameplayModifiers = pkt_readGameplayModifiers(pkt);
+	out.modifiedScore = pkt_readVarInt32(pkt);
+	out.rawScore = pkt_readVarInt32(pkt);
+	out.rank = pkt_readVarInt32(pkt);
+	out.fullCombo = pkt_readUint8(pkt);
+	out.leftSaberMovementDistance = pkt_readFloat32(pkt);
+	out.rightSaberMovementDistance = pkt_readFloat32(pkt);
+	out.leftHandMovementDistance = pkt_readFloat32(pkt);
+	out.rightHandMovementDistance = pkt_readFloat32(pkt);
+	out.songDuration = pkt_readFloat32(pkt);
+	out.levelEndStateType = pkt_readVarInt32(pkt);
+	out.levelEndAction = pkt_readVarInt32(pkt);
+	out.energy = pkt_readFloat32(pkt);
+	out.goodCutsCount = pkt_readVarInt32(pkt);
+	out.badCutsCount = pkt_readVarInt32(pkt);
+	out.missedCount = pkt_readVarInt32(pkt);
+	out.notGoodCount = pkt_readVarInt32(pkt);
+	out.okCount = pkt_readVarInt32(pkt);
+	out.averageCutScore = pkt_readVarInt32(pkt);
+	out.maxCutScore = pkt_readVarInt32(pkt);
+	out.averageCutDistanceRawScore = pkt_readFloat32(pkt);
+	out.maxCombo = pkt_readVarInt32(pkt);
+	out.minDirDeviation = pkt_readFloat32(pkt);
+	out.maxDirDeviation = pkt_readFloat32(pkt);
+	out.averageDirDeviation = pkt_readFloat32(pkt);
+	out.minTimeDeviation = pkt_readFloat32(pkt);
+	out.maxTimeDeviation = pkt_readFloat32(pkt);
+	out.averageTimeDeviation = pkt_readFloat32(pkt);
+	out.endSongTime = pkt_readFloat32(pkt);
+	return out;
+}
+struct MultiplayerLevelCompletionResults pkt_readMultiplayerLevelCompletionResults(const uint8_t **pkt) {
+	struct MultiplayerLevelCompletionResults out;
+	out.levelEndState = pkt_readVarInt32(pkt);
+	if(out.levelEndState < MultiplayerLevelEndState_GivenUp) {
+		out.levelCompletionResults = pkt_readLevelCompletionResults(pkt);
+	}
 	return out;
 }
 struct NodePoseSyncState1 pkt_readNodePoseSyncState1(const uint8_t **pkt) {
@@ -741,6 +837,10 @@ struct SetIsEntitledToLevel pkt_readSetIsEntitledToLevel(const uint8_t **pkt) {
 	out.levelId = pkt_readString(pkt);
 	out.entitlementStatus = pkt_readVarInt32(pkt);
 	return out;
+}
+void pkt_writeSetSelectedBeatmap(uint8_t **pkt, struct SetSelectedBeatmap in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+	pkt_writeBeatmapIdentifierNetSerializable(pkt, in.identifier);
 }
 struct RecommendBeatmap pkt_readRecommendBeatmap(const uint8_t **pkt) {
 	struct RecommendBeatmap out;
@@ -877,11 +977,54 @@ void pkt_writeSetIsStartButtonEnabled(uint8_t **pkt, struct SetIsStartButtonEnab
 	pkt_writeRemoteProcedureCall(pkt, in.base);
 	pkt_writeVarInt32(pkt, in.reason);
 }
+void pkt_writeSetGameplaySceneSyncFinish(uint8_t **pkt, struct SetGameplaySceneSyncFinish in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+	pkt_writePlayerSpecificSettingsAtStartNetSerializable(pkt, in.playersAtGameStart);
+	pkt_writeString(pkt, in.sessionGameId);
+}
 struct SetGameplaySceneReady pkt_readSetGameplaySceneReady(const uint8_t **pkt) {
 	struct SetGameplaySceneReady out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
 	out.playerSpecificSettingsNetSerializable = pkt_readPlayerSpecificSettingsNetSerializable(pkt);
 	return out;
+}
+void pkt_writeGetGameplaySceneReady(uint8_t **pkt, struct GetGameplaySceneReady in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+}
+struct SetGameplaySongReady pkt_readSetGameplaySongReady(const uint8_t **pkt) {
+	struct SetGameplaySongReady out;
+	out.base = pkt_readRemoteProcedureCall(pkt);
+	return out;
+}
+void pkt_writeGetGameplaySongReady(uint8_t **pkt, struct GetGameplaySongReady in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+}
+void pkt_writeSetSongStartTime(uint8_t **pkt, struct SetSongStartTime in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+	pkt_writeFloat32(pkt, in.startTime);
+}
+struct NoteCut pkt_readNoteCut(const uint8_t **pkt) {
+	struct NoteCut out;
+	out.base = pkt_readRemoteProcedureCall(pkt);
+	out.songTime = pkt_readFloat32(pkt);
+	out.noteCutInfo = pkt_readNoteCutInfoNetSerializable(pkt);
+	return out;
+}
+struct NoteMissed pkt_readNoteMissed(const uint8_t **pkt) {
+	struct NoteMissed out;
+	out.base = pkt_readRemoteProcedureCall(pkt);
+	out.songTime = pkt_readFloat32(pkt);
+	out.noteMissInfo = pkt_readNoteMissInfoNetSerializable(pkt);
+	return out;
+}
+struct LevelFinished pkt_readLevelFinished(const uint8_t **pkt) {
+	struct LevelFinished out;
+	out.base = pkt_readRemoteProcedureCall(pkt);
+	out.results = pkt_readMultiplayerLevelCompletionResults(pkt);
+	return out;
+}
+void pkt_writeReturnToMenu(uint8_t **pkt, struct ReturnToMenu in) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
 }
 struct NodePoseSyncState pkt_readNodePoseSyncState(const uint8_t **pkt) {
 	struct NodePoseSyncState out;

@@ -601,11 +601,11 @@ u8 MultiplayerGameState
 	z None
 	z Lobby
 	z Game
-r ColorNoAlphaSerializable
+d ColorNoAlphaSerializable
 	f32 r
 	f32 g
 	f32 b
-r ColorSchemeNetSerializable
+d ColorSchemeNetSerializable
 	ColorNoAlphaSerializable saberAColor
 	ColorNoAlphaSerializable saberBColor
 	ColorNoAlphaSerializable obstaclesColor
@@ -613,7 +613,7 @@ r ColorSchemeNetSerializable
 	ColorNoAlphaSerializable environmentColor1
 	ColorNoAlphaSerializable environmentColor0Boost
 	ColorNoAlphaSerializable environmentColor1Boost
-r PlayerSpecificSettingsNetSerializable
+d PlayerSpecificSettingsNetSerializable
 	String userId
 	String userName
 	b leftHanded
@@ -621,7 +621,7 @@ r PlayerSpecificSettingsNetSerializable
 	f32 playerHeight
 	f32 headPosToPlayerHeightOffset
 	ColorSchemeNetSerializable colorScheme
-n PlayerSpecificSettingsAtStartNetSerializable
+s PlayerSpecificSettingsAtStartNetSerializable
 	i32 count
 	PlayerSpecificSettingsNetSerializable[128,count] activePlayerSpecificSettingsAtGameStart
 i32 ColorType
@@ -632,7 +632,7 @@ u8 NoteLineLayer
 	Base
 	Upper
 	Top
-n NoteCutInfoNetSerializable
+r NoteCutInfoNetSerializable
 	u8.e bits
 		u1.b cutWasOk
 	f32 saberSpeed
@@ -648,7 +648,7 @@ n NoteCutInfoNetSerializable
 	f32 noteTime
 	f32 timeToNextColorNote
 	Vector3Serializable moveVec
-n NoteMissInfoNetSerializable
+r NoteMissInfoNetSerializable
 	vi32.ColorType colorType
 	vi32.NoteLineLayer noteLineLayer
 	vi32 noteLineIndex
@@ -679,7 +679,7 @@ u8 LevelEndAction
 	z None
 	z Quit
 	z Restart
-n LevelCompletionResults
+r LevelCompletionResults
 	GameplayModifiers gameplayModifiers
 	vi32 modifiedScore
 	vi32 rawScore
@@ -709,7 +709,7 @@ n LevelCompletionResults
 	f32 maxTimeDeviation
 	f32 averageTimeDeviation
 	f32 endSongTime
-n MultiplayerLevelCompletionResults
+r MultiplayerLevelCompletionResults
 	vi32.MultiplayerLevelEndState levelEndState
 	if(levelEndState < MultiplayerLevelEndState_GivenUp)
 		LevelCompletionResults levelCompletionResults
@@ -740,7 +740,7 @@ u8 MultiplayerSessionMessage Type
 		n SelectLevelPack
 			RemoteProcedureCall base
 			String levelPackId
-		n SetSelectedBeatmap
+		s SetSelectedBeatmap
 			RemoteProcedureCall base
 			BeatmapIdentifierNetSerializable identifier
 		n GetSelectedBeatmap
@@ -825,39 +825,39 @@ u8 MultiplayerSessionMessage Type
 			RemoteProcedureCall base
 			vi32.CannotStartGameReason reason
 	u8 GameplayRpc Type
-		n SetGameplaySceneSyncFinish
+		s SetGameplaySceneSyncFinish
 			RemoteProcedureCall base
 			PlayerSpecificSettingsAtStartNetSerializable playersAtGameStart
 			String sessionGameId
 		r SetGameplaySceneReady
 			RemoteProcedureCall base
 			PlayerSpecificSettingsNetSerializable playerSpecificSettingsNetSerializable
-		n GetGameplaySceneReady
+		s GetGameplaySceneReady
 			RemoteProcedureCall base
 		n SetActivePlayerFailedToConnect
 			RemoteProcedureCall base
 			String failedUserId
 			PlayerSpecificSettingsAtStartNetSerializable playersAtGameStartNetSerializable
 			String sessionGameId
-		n SetGameplaySongReady
+		r SetGameplaySongReady
 			RemoteProcedureCall base
-		n GetGameplaySongReady
+		s GetGameplaySongReady
 			RemoteProcedureCall base
-		n SetSongStartTime
+		s SetSongStartTime
 			RemoteProcedureCall base
 			f32 startTime
-		n NoteCut
+		r NoteCut
 			RemoteProcedureCall base
 			f32 songTime
 			NoteCutInfoNetSerializable noteCutInfo
-		n NoteMissed
+		r NoteMissed
 			RemoteProcedureCall base
 			f32 songTime
 			NoteMissInfoNetSerializable noteMissInfo
-		n LevelFinished
+		r LevelFinished
 			RemoteProcedureCall base
 			MultiplayerLevelCompletionResults results
-		n ReturnToMenu
+		s ReturnToMenu
 			RemoteProcedureCall base
 		n RequestReturnToMenu
 			RemoteProcedureCall base

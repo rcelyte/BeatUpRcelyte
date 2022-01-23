@@ -6,6 +6,7 @@
 #else
 #include <pthread.h>
 #endif
+#include <time.h>
 
 struct IndexSession {
 	struct NetSession net;
@@ -270,7 +271,7 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 			r_permission.playersPermissionConfiguration.playersPermission[0].hasKickVotePermission = 0;
 			r_permission.playersPermissionConfiguration.playersPermission[0].hasInvitePermission = 0;
 			for(uint8_t *it = session->menu; *it; ++r_permission.playersPermissionConfiguration.count, it += *it + 1) {
-				r_permission.playersPermissionConfiguration.playersPermission[r_permission.playersPermissionConfiguration.count].userId.length = sprintf(r_permission.playersPermissionConfiguration.playersPermission[r_permission.playersPermissionConfiguration.count].userId.data, "%hhx", r_permission.playersPermissionConfiguration.count);
+				r_permission.playersPermissionConfiguration.playersPermission[r_permission.playersPermissionConfiguration.count].userId.length = sprintf(r_permission.playersPermissionConfiguration.playersPermission[r_permission.playersPermissionConfiguration.count].userId.data, "%hhx", (uint8_t)r_permission.playersPermissionConfiguration.count);
 				r_permission.playersPermissionConfiguration.playersPermission[r_permission.playersPermissionConfiguration.count].isServerOwner = 0;
 				r_permission.playersPermissionConfiguration.playersPermission[r_permission.playersPermissionConfiguration.count].hasRecommendBeatmapsPermission = 0;
 				r_permission.playersPermissionConfiguration.playersPermission[r_permission.playersPermissionConfiguration.count].hasRecommendGameplayModifiersPermission = 0;

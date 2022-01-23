@@ -101,7 +101,7 @@ struct Room {
 	struct String managerId;
 	float syncBase, countdownEnd;
 	ServerState state;
-	struct Counter128 inLobby, ready, entitled, spectating, loaded;
+	struct Counter128 inLobby, ready, entitled, spectating, sceneLoaded, songLoaded, levelFinished;
 	struct BeatmapIdentifierNetSerializable selectedBeatmap;
 	struct GameplayModifiers selectedModifiers; // TODO: recommend modifiers
 	struct PlayersMissingEntitlementsNetSerializable buzzkills;
@@ -137,20 +137,28 @@ static void refresh_countdown(struct Context *ctx, struct Room *room, _Bool star
 	if(room->state != ServerState_Lobby)
 		return;
 	uint8_t resp[65536], *resp_end = resp;
-	pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
+	pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
 	uint8_t *routing_end = resp_end;
 	if(room->canStart && Counter128_contains(Counter128_or(room->ready, room->spectating), room->playerSort)) {
 		if(room->countdownEnd != 0) {
 			if(!start)
 				return;
+			Counter128_clear(&room->sceneLoaded);
+			Counter128_clear(&room->songLoaded);
+			Counter128_clear(&room->levelFinished);
+			room->state = ServerState_SceneLoading;
+
+			struct SetSelectedBeatmap r_beatmap;
+			struct SetSelectedGameplayModifiers r_modifiers;
 			struct StartLevel r_start;
-			r_start.base.syncTime = room_get_syncTime(room);
-			r_start.beatmapId = room->selectedBeatmap;
-			r_start.gameplayModifiers = room->selectedModifiers;
+			struct GetGameplaySceneReady r_ready;
+			r_ready.base.syncTime = r_start.base.syncTime = r_modifiers.base.syncTime = r_beatmap.base.syncTime = room_get_syncTime(room);
+			r_start.beatmapId = r_beatmap.identifier = room->selectedBeatmap;
+			r_start.gameplayModifiers = r_modifiers.gameplayModifiers = room->selectedModifiers;
 			r_start.startTime = room->countdownEnd;
-			if(PER_PLAYER_DIFFICULTY) {
-				FOR_ALL_PLAYERS(room, id) {
-					resp_end = routing_end;
+			FOR_ALL_PLAYERS(room, id) {
+				resp_end = routing_end;
+				if(PER_PLAYER_DIFFICULTY) {
 					if(String_eq(room->players[id].menu.recommendedBeatmap.levelID, room->selectedBeatmap.levelID)) {
 						r_start.beatmapId.beatmapCharacteristicSerializedName = room->players[id].menu.recommendedBeatmap.beatmapCharacteristicSerializedName;
 						r_start.beatmapId.difficulty = room->players[id].menu.recommendedBeatmap.difficulty;
@@ -158,17 +166,22 @@ static void refresh_countdown(struct Context *ctx, struct Room *room, _Bool star
 						r_start.beatmapId.beatmapCharacteristicSerializedName = room->selectedBeatmap.beatmapCharacteristicSerializedName;
 						r_start.beatmapId.difficulty = room->selectedBeatmap.difficulty;
 					}
-					SERIALIZE_MENURPC(&resp_end, StartLevel, r_start);
-					instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 				}
-			} else {
+				SERIALIZE_MENURPC(&resp_end, SetSelectedBeatmap, r_beatmap);
+				SERIALIZE_MENURPC(&resp_end, SetSelectedGameplayModifiers, r_modifiers);
 				SERIALIZE_MENURPC(&resp_end, StartLevel, r_start);
-				FOR_ALL_PLAYERS(room, id)
-					instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+				SERIALIZE_GAMEPLAYRPC(&resp_end, GetGameplaySceneReady, r_ready);
+				instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+				room->players[id].game.settings = (struct PlayerSpecificSettingsNetSerializable){
+					.userId = room->players[id].permissions.userId,
+					.userName = room->players[id].userName,
+					.leftHanded = 0,
+					.automaticPlayerHeight = 0,
+					.playerHeight = 1.8,
+					.headPosToPlayerHeightOffset = .1,
+				};
+				memset(&room->players[id].game.settings.colorScheme, 0, sizeof(room->players->game.settings.colorScheme));
 			}
-
-			Counter128_clear(&room->loaded);
-			room->state = ServerState_Loading;
 		} else {
 			room->countdownEnd = room_get_syncTime(room) + 5;
 			struct SetCountdownEndTime r_countdown;
@@ -252,14 +265,38 @@ static void room_disconnect(struct Context *ctx, struct Room *room, struct Insta
 	fprintf(stderr, "[INSTANCE] player bits: ");
 	for(uint32_t i = 0; i < lengthof(room->playerSort.bits); ++i)
 		for(uint32_t b = 0; b < sizeof(*room->playerSort.bits) * 8; ++b)
-			fprintf(stderr, "%hhu", (room->playerSort.bits[i] >> b) & 1);
+			fprintf(stderr, "%u", (room->playerSort.bits[i] >> b) & 1);
 	fprintf(stderr, "\n");
 	refresh_button(ctx, room);
 }
 
+static void load_song(struct Context *ctx, struct Room *room) {
+	uint8_t resp[65536], *resp_end = resp;
+	pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
+	struct GetGameplaySongReady r_ready;
+	struct SetGameplaySceneSyncFinish r_sync;
+	r_sync.base.syncTime = r_ready.base.syncTime = room_get_syncTime(room);
+	r_sync.playersAtGameStart.count = 0;
+	FOR_ALL_PLAYERS(room, id)
+		r_sync.playersAtGameStart.activePlayerSpecificSettingsAtGameStart[r_sync.playersAtGameStart.count++] = room->players[id].game.settings;
+	r_sync.sessionGameId.length = sprintf(r_sync.sessionGameId.data, "f85bfe8f-beb5-407d-b07b-4fe5841e6ad0");
+	SERIALIZE_GAMEPLAYRPC(&resp_end, GetGameplaySongReady, r_ready);
+	SERIALIZE_GAMEPLAYRPC(&resp_end, SetGameplaySceneSyncFinish, r_sync);
+	FOR_ALL_PLAYERS(room, id)
+		instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+
+	room->state = ServerState_SongLoading;
+}
+
 static void start_game(struct Context *ctx, struct Room *room) {
-	fprintf(stderr, "TODO: START GAME HERE\n");
-	abort();
+	uint8_t resp[65536], *resp_end = resp;
+	pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
+	struct SetSongStartTime r_start;
+	r_start.base.syncTime = room_get_syncTime(room);
+	r_start.startTime = r_start.base.syncTime + .5;
+	SERIALIZE_GAMEPLAYRPC(&resp_end, SetSongStartTime, r_start);
+	FOR_ALL_PLAYERS(room, id)
+		instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 	room->state = ServerState_Game;
 }
 
@@ -299,8 +336,21 @@ static void instance_onResend(struct Context *ctx, uint32_t currentTime, uint32_
 				}
 				break;
 			}
-			case ServerState_Loading: {
-				delta += GAME_LOAD_TIMEOUT;
+			case ServerState_SceneLoading: {
+				delta += SCENE_LOAD_TIMEOUT;
+				if(delta > 0) {
+					uint32_t ctick = delta * 1000;
+					if(ctick < 10)
+						ctick = 10;
+					if(*nextTick - currentTime > ctick)
+						*nextTick = currentTime + ctick;
+				} else {
+					load_song(ctx, room);
+				}
+				break;
+			}
+			case ServerState_SongLoading: {
+				delta += SONG_LOAD_TIMEOUT;
 				if(delta > 0) {
 					uint32_t ctick = delta * 1000;
 					if(ctick < 10)
@@ -329,6 +379,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 			if(!String_eq(entitlement.levelId, room->selectedBeatmap.levelID))
 				break;
 			if(Counter128_set(&room->entitled, indexof(room->players, session), 1))
+				break;
 			if(entitlement.entitlementStatus != EntitlementsStatus_Ok)
 				room->buzzkills.playersWithoutEntitlements[room->buzzkills.count++] = session->permissions.userId;
 			if(Counter128_contains(room->entitled, room->playerSort)) {
@@ -533,20 +584,43 @@ static void handle_GameplayRpc(struct Context *ctx, struct Room *room, struct In
 	switch(rpc.type) {
 		case GameplayRpcType_SetGameplaySceneSyncFinish: fprintf(stderr, "[INSTANCE] GameplayRpcType_SetGameplaySceneSyncFinish not implemented\n"); abort();
 		case GameplayRpcType_SetGameplaySceneReady: {
-			pkt_readSetGameplaySceneReady(data);
-			if(Counter128_set(&room->loaded, indexof(room->players, session), 1))
-				if(Counter128_contains(room->loaded, room->playerSort))
-					start_game(ctx, room);
+			session->game.settings = pkt_readSetGameplaySceneReady(data).playerSpecificSettingsNetSerializable;
+			if(room->state != ServerState_SceneLoading)
+				break;
+			if(!Counter128_set(&room->sceneLoaded, indexof(room->players, session), 1))
+				if(Counter128_contains(room->sceneLoaded, room->playerSort))
+					load_song(ctx, room);
 			break;
 		}
 		case GameplayRpcType_GetGameplaySceneReady: fprintf(stderr, "[INSTANCE] GameplayRpcType_GetGameplaySceneReady not implemented\n"); abort();
 		case GameplayRpcType_SetActivePlayerFailedToConnect: fprintf(stderr, "[INSTANCE] GameplayRpcType_SetActivePlayerFailedToConnect not implemented\n"); abort();
-		case GameplayRpcType_SetGameplaySongReady: fprintf(stderr, "[INSTANCE] GameplayRpcType_SetGameplaySongReady not implemented\n"); abort();
+		case GameplayRpcType_SetGameplaySongReady: {
+			pkt_readSetGameplaySongReady(data);
+			if(room->state != ServerState_SongLoading)
+				break;
+			if(!Counter128_set(&room->songLoaded, indexof(room->players, session), 1))
+				if(Counter128_contains(room->songLoaded, room->playerSort))
+					start_game(ctx, room);
+			break;
+		}
 		case GameplayRpcType_GetGameplaySongReady: fprintf(stderr, "[INSTANCE] GameplayRpcType_GetGameplaySongReady not implemented\n"); abort();
 		case GameplayRpcType_SetSongStartTime: fprintf(stderr, "[INSTANCE] GameplayRpcType_SetSongStartTime not implemented\n"); abort();
-		case GameplayRpcType_NoteCut: fprintf(stderr, "[INSTANCE] GameplayRpcType_NoteCut not implemented\n"); abort();
-		case GameplayRpcType_NoteMissed: fprintf(stderr, "[INSTANCE] GameplayRpcType_NoteMissed not implemented\n"); abort();
-		case GameplayRpcType_LevelFinished: fprintf(stderr, "[INSTANCE] GameplayRpcType_LevelFinished not implemented\n"); abort();
+		case GameplayRpcType_NoteCut: pkt_readNoteCut(data); break;
+		case GameplayRpcType_NoteMissed: pkt_readNoteMissed(data); break;
+		case GameplayRpcType_LevelFinished: {
+			pkt_readLevelFinished(data);
+			if(room->state == ServerState_Lobby)
+				break;
+			if(!Counter128_set(&room->levelFinished, indexof(room->players, session), 1)) {
+				if(Counter128_contains(room->levelFinished, room->playerSort)) {
+					fprintf(stderr, "TODO: wait on results screen\n");
+					/*struct ReturnToMenu r_menu;
+					r_menu.base.syncTime = room_get_syncTime(room);*/
+					room->state = ServerState_Lobby;
+				}
+			}
+			break;
+		}
 		case GameplayRpcType_ReturnToMenu: fprintf(stderr, "[INSTANCE] GameplayRpcType_ReturnToMenu not implemented\n"); abort();
 		case GameplayRpcType_RequestReturnToMenu: fprintf(stderr, "[INSTANCE] GameplayRpcType_RequestReturnToMenu not implemented\n"); abort();
 		default: fprintf(stderr, "[INSTANCE] BAD GAMEPLAY RPC TYPE\n");
@@ -646,9 +720,9 @@ static void handle_MultiplayerSession(struct Context *ctx, struct Room *room, st
 		case MultiplayerSessionMessageType_MenuRpc: handle_MenuRpc(ctx, room, session, data); break;
 		case MultiplayerSessionMessageType_GameplayRpc: handle_GameplayRpc(ctx, room, session, data); break;
 		case MultiplayerSessionMessageType_NodePoseSyncState: pkt_readNodePoseSyncState(data); break;
-		case MultiplayerSessionMessageType_ScoreSyncState: pkt_readScoreSyncState(data); fprintf(stderr, "[INSTANCE] MultiplayerSessionMessageType_ScoreSyncState not implemented\n"); break;
+		case MultiplayerSessionMessageType_ScoreSyncState: pkt_readScoreSyncState(data); break;
 		case MultiplayerSessionMessageType_NodePoseSyncStateDelta: pkt_readNodePoseSyncStateDelta(data); break;
-		case MultiplayerSessionMessageType_ScoreSyncStateDelta: pkt_readScoreSyncStateDelta(data); fprintf(stderr, "[INSTANCE] MultiplayerSessionMessageType_ScoreSyncStateDelta not implemented\n"); break;
+		case MultiplayerSessionMessageType_ScoreSyncStateDelta: pkt_readScoreSyncStateDelta(data); break;
 		case MultiplayerSessionMessageType_MpCore: {
 			struct MpCore mpHeader = pkt_readMpCore(data);
 			if(mpHeader.packetType.length == 15 && memcmp(mpHeader.packetType.data, "MpBeatmapPacket", 15) == 0) {
@@ -991,7 +1065,7 @@ struct NetSession *instance_resolve_session(ServerCode code, struct SS addr, str
 	fprintf(stderr, "[INSTANCE] player bits: ");
 	for(uint32_t i = 0; i < lengthof(room->playerSort.bits); ++i)
 		for(uint32_t b = 0; b < sizeof(*room->playerSort.bits) * 8; ++b)
-			fprintf(stderr, "%hhu", (room->playerSort.bits[i] >> b) & 1);
+			fprintf(stderr, "%u", (room->playerSort.bits[i] >> b) & 1);
 	fprintf(stderr, "\n");
 
 	/*uint8_t punch[128], *punch_end = punch;
@@ -1011,7 +1085,6 @@ struct NetSession *instance_open(ServerCode *out, struct String managerId, struc
 	Counter128_clear(&contexts[0].TEMPglobalRoom.ready);
 	Counter128_clear(&contexts[0].TEMPglobalRoom.entitled);
 	Counter128_clear(&contexts[0].TEMPglobalRoom.spectating);
-	Counter128_clear(&contexts[0].TEMPglobalRoom.loaded);
 	contexts[0].TEMPglobalRoom.selectedBeatmap = (struct BeatmapIdentifierNetSerializable){{0}, {0}, 0};
 	memset(&contexts[0].TEMPglobalRoom.selectedModifiers, 0, sizeof(contexts->TEMPglobalRoom.selectedModifiers));
 	contexts[0].TEMPglobalRoom.buzzkills.count = 0;

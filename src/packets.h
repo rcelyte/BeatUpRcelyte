@@ -552,6 +552,7 @@ struct ColorNoAlphaSerializable {
 	float b;
 };
 struct ColorNoAlphaSerializable pkt_readColorNoAlphaSerializable(const uint8_t **pkt);
+void pkt_writeColorNoAlphaSerializable(uint8_t **pkt, struct ColorNoAlphaSerializable in);
 struct ColorSchemeNetSerializable {
 	struct ColorNoAlphaSerializable saberAColor;
 	struct ColorNoAlphaSerializable saberBColor;
@@ -562,6 +563,7 @@ struct ColorSchemeNetSerializable {
 	struct ColorNoAlphaSerializable environmentColor1Boost;
 };
 struct ColorSchemeNetSerializable pkt_readColorSchemeNetSerializable(const uint8_t **pkt);
+void pkt_writeColorSchemeNetSerializable(uint8_t **pkt, struct ColorSchemeNetSerializable in);
 struct PlayerSpecificSettingsNetSerializable {
 	struct String userId;
 	struct String userName;
@@ -572,12 +574,42 @@ struct PlayerSpecificSettingsNetSerializable {
 	struct ColorSchemeNetSerializable colorScheme;
 };
 struct PlayerSpecificSettingsNetSerializable pkt_readPlayerSpecificSettingsNetSerializable(const uint8_t **pkt);
+void pkt_writePlayerSpecificSettingsNetSerializable(uint8_t **pkt, struct PlayerSpecificSettingsNetSerializable in);
+struct PlayerSpecificSettingsAtStartNetSerializable {
+	int32_t count;
+	struct PlayerSpecificSettingsNetSerializable activePlayerSpecificSettingsAtGameStart[128];
+};
+void pkt_writePlayerSpecificSettingsAtStartNetSerializable(uint8_t **pkt, struct PlayerSpecificSettingsAtStartNetSerializable in);
 ENUM(int32_t, ColorType, {
 	ColorType_ColorA = 0,
 	ColorType_ColorB = 1,
 	ColorType_None = -1,
 })
 typedef uint8_t NoteLineLayer;
+struct NoteCutInfoNetSerializable {
+	_Bool cutWasOk;
+	float saberSpeed;
+	struct Vector3Serializable saberDir;
+	struct Vector3Serializable cutPoint;
+	struct Vector3Serializable cutNormal;
+	struct Vector3Serializable notePosition;
+	struct Vector3Serializable noteScale;
+	struct QuaternionSerializable noteRotation;
+	ColorType colorType;
+	NoteLineLayer noteLineLayer;
+	int32_t noteLineIndex;
+	float noteTime;
+	float timeToNextColorNote;
+	struct Vector3Serializable moveVec;
+};
+struct NoteCutInfoNetSerializable pkt_readNoteCutInfoNetSerializable(const uint8_t **pkt);
+struct NoteMissInfoNetSerializable {
+	ColorType colorType;
+	NoteLineLayer noteLineLayer;
+	int32_t noteLineIndex;
+	float noteTime;
+};
+struct NoteMissInfoNetSerializable pkt_readNoteMissInfoNetSerializable(const uint8_t **pkt);
 ENUM(uint8_t, MultiplayerLevelEndState, {
 	MultiplayerLevelEndState_Cleared,
 	MultiplayerLevelEndState_Failed,
@@ -608,6 +640,43 @@ ENUM(uint8_t, LevelEndAction, {
 	LevelEndAction_Quit,
 	LevelEndAction_Restart,
 })
+struct LevelCompletionResults {
+	struct GameplayModifiers gameplayModifiers;
+	int32_t modifiedScore;
+	int32_t rawScore;
+	Rank rank;
+	_Bool fullCombo;
+	float leftSaberMovementDistance;
+	float rightSaberMovementDistance;
+	float leftHandMovementDistance;
+	float rightHandMovementDistance;
+	float songDuration;
+	LevelEndStateType levelEndStateType;
+	LevelEndAction levelEndAction;
+	float energy;
+	int32_t goodCutsCount;
+	int32_t badCutsCount;
+	int32_t missedCount;
+	int32_t notGoodCount;
+	int32_t okCount;
+	int32_t averageCutScore;
+	int32_t maxCutScore;
+	float averageCutDistanceRawScore;
+	int32_t maxCombo;
+	float minDirDeviation;
+	float maxDirDeviation;
+	float averageDirDeviation;
+	float minTimeDeviation;
+	float maxTimeDeviation;
+	float averageTimeDeviation;
+	float endSongTime;
+};
+struct LevelCompletionResults pkt_readLevelCompletionResults(const uint8_t **pkt);
+struct MultiplayerLevelCompletionResults {
+	MultiplayerLevelEndState levelEndState;
+	struct LevelCompletionResults levelCompletionResults;
+};
+struct MultiplayerLevelCompletionResults pkt_readMultiplayerLevelCompletionResults(const uint8_t **pkt);
 struct NodePoseSyncState1 {
 	struct PoseSerializable head;
 	struct PoseSerializable leftController;
@@ -638,6 +707,11 @@ struct SetIsEntitledToLevel {
 	EntitlementsStatus entitlementStatus;
 };
 struct SetIsEntitledToLevel pkt_readSetIsEntitledToLevel(const uint8_t **pkt);
+struct SetSelectedBeatmap {
+	struct RemoteProcedureCall base;
+	struct BeatmapIdentifierNetSerializable identifier;
+};
+void pkt_writeSetSelectedBeatmap(uint8_t **pkt, struct SetSelectedBeatmap in);
 struct RecommendBeatmap {
 	struct RemoteProcedureCall base;
 	struct BeatmapIdentifierNetSerializable identifier;
@@ -787,11 +861,55 @@ ENUM(uint8_t, MenuRpcType, {
 	MenuRpcType_GetIsStartButtonEnabled,
 	MenuRpcType_SetIsStartButtonEnabled,
 })
+struct SetGameplaySceneSyncFinish {
+	struct RemoteProcedureCall base;
+	struct PlayerSpecificSettingsAtStartNetSerializable playersAtGameStart;
+	struct String sessionGameId;
+};
+void pkt_writeSetGameplaySceneSyncFinish(uint8_t **pkt, struct SetGameplaySceneSyncFinish in);
 struct SetGameplaySceneReady {
 	struct RemoteProcedureCall base;
 	struct PlayerSpecificSettingsNetSerializable playerSpecificSettingsNetSerializable;
 };
 struct SetGameplaySceneReady pkt_readSetGameplaySceneReady(const uint8_t **pkt);
+struct GetGameplaySceneReady {
+	struct RemoteProcedureCall base;
+};
+void pkt_writeGetGameplaySceneReady(uint8_t **pkt, struct GetGameplaySceneReady in);
+struct SetGameplaySongReady {
+	struct RemoteProcedureCall base;
+};
+struct SetGameplaySongReady pkt_readSetGameplaySongReady(const uint8_t **pkt);
+struct GetGameplaySongReady {
+	struct RemoteProcedureCall base;
+};
+void pkt_writeGetGameplaySongReady(uint8_t **pkt, struct GetGameplaySongReady in);
+struct SetSongStartTime {
+	struct RemoteProcedureCall base;
+	float startTime;
+};
+void pkt_writeSetSongStartTime(uint8_t **pkt, struct SetSongStartTime in);
+struct NoteCut {
+	struct RemoteProcedureCall base;
+	float songTime;
+	struct NoteCutInfoNetSerializable noteCutInfo;
+};
+struct NoteCut pkt_readNoteCut(const uint8_t **pkt);
+struct NoteMissed {
+	struct RemoteProcedureCall base;
+	float songTime;
+	struct NoteMissInfoNetSerializable noteMissInfo;
+};
+struct NoteMissed pkt_readNoteMissed(const uint8_t **pkt);
+struct LevelFinished {
+	struct RemoteProcedureCall base;
+	struct MultiplayerLevelCompletionResults results;
+};
+struct LevelFinished pkt_readLevelFinished(const uint8_t **pkt);
+struct ReturnToMenu {
+	struct RemoteProcedureCall base;
+};
+void pkt_writeReturnToMenu(uint8_t **pkt, struct ReturnToMenu in);
 ENUM(uint8_t, GameplayRpcType, {
 	GameplayRpcType_SetGameplaySceneSyncFinish,
 	GameplayRpcType_SetGameplaySceneReady,

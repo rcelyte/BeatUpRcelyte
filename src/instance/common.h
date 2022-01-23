@@ -1,7 +1,8 @@
 #include "../net.h"
 
 #define PER_PLAYER_DIFFICULTY 1
-#define GAME_LOAD_TIMEOUT 15
+#define SCENE_LOAD_TIMEOUT 15
+#define SONG_LOAD_TIMEOUT 30
 
 #define lengthof(x) (sizeof(x)/sizeof(*x))
 #define indexof(a, e) (((e) - (a)) / sizeof(*(a)))
@@ -32,7 +33,8 @@ enum ClientState {
 typedef uint8_t ServerState;
 enum ServerState {
 	ServerState_Lobby,
-	ServerState_Loading,
+	ServerState_SceneLoading,
+	ServerState_SongLoading,
 	ServerState_Game,
 };
 
