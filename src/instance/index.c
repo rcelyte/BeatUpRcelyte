@@ -30,10 +30,10 @@ static void _update_menu(struct Context *ctx, struct IndexSession *session, cons
 	for(uint8_t i = 1, *it = session->menu; *it; ++i, it += *it + 1) {
 		resp_end = resp;
 		pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){i, 0, 0});
-		struct PlayerDisconnected r_dc;
-		r_dc.disconnectedReason = DisconnectedReason_ClientConnectionClosed;
+		struct PlayerDisconnected r_disconnect;
+		r_disconnect.disconnectedReason = DisconnectedReason_ClientConnectionClosed;
 		SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerDisconnected)
-			pkt_writePlayerDisconnected(&resp_end, r_dc);
+			pkt_writePlayerDisconnected(&resp_end, r_disconnect);
 		instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 	}
 	for(uint8_t i = 1, *it = session->menu; *entries; ++i, it += *it + 1, ++entries) {

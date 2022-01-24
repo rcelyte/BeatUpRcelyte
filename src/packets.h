@@ -106,6 +106,12 @@ struct String {
 };
 struct String pkt_readString(const uint8_t **pkt);
 void pkt_writeString(uint8_t **pkt, struct String in);
+struct LongString {
+	uint32_t length;
+	char data[4096];
+};
+struct LongString pkt_readLongString(const uint8_t **pkt);
+void pkt_writeLongString(uint8_t **pkt, struct LongString in);
 struct AuthenticationToken {
 	Platform platform;
 	struct String userId;
@@ -456,7 +462,7 @@ ENUM(uint32_t, BeatmapDifficulty, {
 	BeatmapDifficulty_ExpertPlus,
 })
 struct BeatmapIdentifierNetSerializable {
-	struct String levelID;
+	struct LongString levelID;
 	struct String beatmapCharacteristicSerializedName;
 	BeatmapDifficulty difficulty;
 };
@@ -698,12 +704,12 @@ struct SetPlayersMissingEntitlementsToLevel {
 void pkt_writeSetPlayersMissingEntitlementsToLevel(uint8_t **pkt, struct SetPlayersMissingEntitlementsToLevel in);
 struct GetIsEntitledToLevel {
 	struct RemoteProcedureCall base;
-	struct String levelId;
+	struct LongString levelId;
 };
 void pkt_writeGetIsEntitledToLevel(uint8_t **pkt, struct GetIsEntitledToLevel in);
 struct SetIsEntitledToLevel {
 	struct RemoteProcedureCall base;
-	struct String levelId;
+	struct LongString levelId;
 	EntitlementsStatus entitlementStatus;
 };
 struct SetIsEntitledToLevel pkt_readSetIsEntitledToLevel(const uint8_t **pkt);
@@ -910,6 +916,10 @@ struct ReturnToMenu {
 	struct RemoteProcedureCall base;
 };
 void pkt_writeReturnToMenu(uint8_t **pkt, struct ReturnToMenu in);
+struct RequestReturnToMenu {
+	struct RemoteProcedureCall base;
+};
+struct RequestReturnToMenu pkt_readRequestReturnToMenu(const uint8_t **pkt);
 ENUM(uint8_t, GameplayRpcType, {
 	GameplayRpcType_SetGameplaySceneSyncFinish,
 	GameplayRpcType_SetGameplaySceneReady,

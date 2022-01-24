@@ -1,8 +1,8 @@
 #include "../net.h"
 
 #define PER_PLAYER_DIFFICULTY 1
-#define SCENE_LOAD_TIMEOUT 15
-#define SONG_LOAD_TIMEOUT 30
+#define PER_PLAYER_MODIFIERS 1
+#define LOAD_TIMEOUT 15
 
 #define lengthof(x) (sizeof(x)/sizeof(*x))
 #define indexof(a, e) (((e) - (a)) / sizeof(*(a)))
@@ -23,6 +23,11 @@
 #define SERIALIZE_MENURPC(pkt, dtype, data) SERIALIZE_RPC(pkt, Menu, dtype, data)
 #define SERIALIZE_GAMEPLAYRPC(pkt, dtype, data) SERIALIZE_RPC(pkt, Gameplay, dtype, data)
 
+#define CLEAR_BEATMAP (struct BeatmapIdentifierNetSerializable){{0}, {0}, 0}
+#define CLEAR_MODIFIERS (struct GameplayModifiers){EnergyType_Bar, 0, 0, 0, EnabledObstacleType_All, 0, 0, 0, 0, 0, 0, SongSpeed_Normal, 0, 0, 0, 0, 0}
+#define CLEAR_COLORSCHEME (struct ColorSchemeNetSerializable){{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}}
+#define CLEAR_AVATARDATA (struct MultiplayerAvatarData){{0}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, {{0, 0, 0, 1}, {0, 0, 0, 1}}, {0}, {0}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0}, {0}, {0}}
+
 typedef uint8_t ClientState;
 enum ClientState {
 	ClientState_disconnected,
@@ -33,8 +38,8 @@ enum ClientState {
 typedef uint8_t ServerState;
 enum ServerState {
 	ServerState_Lobby,
-	ServerState_SceneLoading,
-	ServerState_SongLoading,
+	ServerState_LoadingScene,
+	ServerState_LoadingSong,
 	ServerState_Game,
 };
 

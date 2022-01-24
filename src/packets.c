@@ -251,6 +251,20 @@ void pkt_writeString(uint8_t **pkt, struct String in) {
 	pkt_writeUint32(pkt, in.length);
 	pkt_writeInt8Array(pkt, in.data, in.length);
 }
+struct LongString pkt_readLongString(const uint8_t **pkt) {
+	struct LongString out;
+	out.length = pkt_readUint32(pkt);
+	if(out.length > 4096) {
+		out.length = 0, *pkt = _trap, fprintf(stderr, "Buffer overflow in read of LongString.data: %u > 4096\n", (uint32_t)out.length);
+	} else {
+		pkt_readInt8Array(pkt, out.data, out.length);
+	}
+	return out;
+}
+void pkt_writeLongString(uint8_t **pkt, struct LongString in) {
+	pkt_writeUint32(pkt, in.length);
+	pkt_writeInt8Array(pkt, in.data, in.length);
+}
 struct AuthenticationToken pkt_readAuthenticationToken(const uint8_t **pkt) {
 	struct AuthenticationToken out;
 	out.platform = pkt_readUint8(pkt);
@@ -587,13 +601,13 @@ void pkt_writePlayersMissingEntitlementsNetSerializable(uint8_t **pkt, struct Pl
 }
 struct BeatmapIdentifierNetSerializable pkt_readBeatmapIdentifierNetSerializable(const uint8_t **pkt) {
 	struct BeatmapIdentifierNetSerializable out;
-	out.levelID = pkt_readString(pkt);
+	out.levelID = pkt_readLongString(pkt);
 	out.beatmapCharacteristicSerializedName = pkt_readString(pkt);
 	out.difficulty = pkt_readVarUint32(pkt);
 	return out;
 }
 void pkt_writeBeatmapIdentifierNetSerializable(uint8_t **pkt, struct BeatmapIdentifierNetSerializable in) {
-	pkt_writeString(pkt, in.levelID);
+	pkt_writeLongString(pkt, in.levelID);
 	pkt_writeString(pkt, in.beatmapCharacteristicSerializedName);
 	pkt_writeVarUint32(pkt, in.difficulty);
 }
@@ -829,12 +843,12 @@ void pkt_writeSetPlayersMissingEntitlementsToLevel(uint8_t **pkt, struct SetPlay
 }
 void pkt_writeGetIsEntitledToLevel(uint8_t **pkt, struct GetIsEntitledToLevel in) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeString(pkt, in.levelId);
+	pkt_writeLongString(pkt, in.levelId);
 }
 struct SetIsEntitledToLevel pkt_readSetIsEntitledToLevel(const uint8_t **pkt) {
 	struct SetIsEntitledToLevel out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.levelId = pkt_readString(pkt);
+	out.levelId = pkt_readLongString(pkt);
 	out.entitlementStatus = pkt_readVarInt32(pkt);
 	return out;
 }
@@ -1025,6 +1039,11 @@ struct LevelFinished pkt_readLevelFinished(const uint8_t **pkt) {
 }
 void pkt_writeReturnToMenu(uint8_t **pkt, struct ReturnToMenu in) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
+}
+struct RequestReturnToMenu pkt_readRequestReturnToMenu(const uint8_t **pkt) {
+	struct RequestReturnToMenu out;
+	out.base = pkt_readRemoteProcedureCall(pkt);
+	return out;
 }
 struct NodePoseSyncState pkt_readNodePoseSyncState(const uint8_t **pkt) {
 	struct NodePoseSyncState out;

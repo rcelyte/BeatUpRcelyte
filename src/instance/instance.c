@@ -57,16 +57,23 @@ _Bool Counter128_set_next(struct Counter128 *set, uint32_t *bit, _Bool state) {
 	return 0;
 }
 
-_Bool Counter128_isEmpty(struct Counter128 set) {
+_Bool Counter128_contains(struct Counter128 set, struct Counter128 subset) {
 	for(uint32_t i = 0; i < lengthof(set.bits); ++i)
-		if(set.bits[i])
+		if((set.bits[i] & subset.bits[i]) != subset.bits[i])
 			return 0;
 	return 1;
 }
 
-_Bool Counter128_contains(struct Counter128 set, struct Counter128 subset) {
+_Bool Counter128_containsNone(struct Counter128 set, struct Counter128 subset) { // TODO: think of a better name for this
 	for(uint32_t i = 0; i < lengthof(set.bits); ++i)
-		if((set.bits[i] & subset.bits[i]) != subset.bits[i])
+		if(set.bits[i] & subset.bits[i])
+			return 0;
+	return 1;
+}
+
+_Bool Counter128_isEmpty(struct Counter128 set) {
+	for(uint32_t i = 0; i < lengthof(set.bits); ++i)
+		if(set.bits[i])
 			return 0;
 	return 1;
 }
@@ -82,41 +89,69 @@ struct InstanceSession {
 	ClientState clientState;
 	struct String secret, userName;
 	struct PlayerLobbyPermissionConfigurationNetSerializable permissions;
-	struct PlayerStateHash state;
-	struct MultiplayerAvatarData avatar;
-	struct {
-		struct SongPackMask ownedSongPacks;
-		struct GameplayModifiers recommendedModifiers;
-		struct BeatmapIdentifierNetSerializable recommendedBeatmap;
-	} menu;
-	struct {
-		struct PlayerSpecificSettingsNetSerializable settings;
-	} game;
+
 	struct Pong pong;
 	struct Channels channels;
+	struct PlayerStateHash stateHash;
+	struct MultiplayerAvatarData avatar;
+
+	union {
+		struct {
+			struct SongPackMask ownedSongPacks;
+			struct BeatmapIdentifierNetSerializable recommendedBeatmap;
+			struct GameplayModifiers recommendedModifiers;
+		} lobby;
+		struct {
+			struct PlayerSpecificSettingsNetSerializable settings;
+		} game;
+	};
 };
 struct Room {
 	struct NetKeypair keys;
-	struct GameplayServerConfiguration configuration;
 	struct String managerId;
-	float syncBase, countdownEnd;
-	ServerState state;
-	struct Counter128 inLobby, ready, entitled, spectating, sceneLoaded, songLoaded, levelFinished;
+	struct GameplayServerConfiguration configuration;
+	float syncBase;
+
+	struct Counter128 inLobby;
+	struct Counter128 levelFinished;
 	struct BeatmapIdentifierNetSerializable selectedBeatmap;
 	struct GameplayModifiers selectedModifiers; // TODO: recommend modifiers
-	struct PlayersMissingEntitlementsNetSerializable buzzkills;
-	_Bool canStart;
+
+	ServerState state;
+	union {
+		struct {
+			float countdownEnd;
+			struct Counter128 isReady;
+			struct Counter128 isEntitled;
+			struct Counter128 isSpectating;
+			struct PlayersMissingEntitlementsNetSerializable buzzkills;
+			_Bool canStart;
+		} lobby;
+
+		struct {
+			float timeout;
+			struct Counter128 isLoaded;
+		} loadingScene;
+
+		struct {
+			float timeout;
+			struct Counter128 isLoaded;
+		} loadingSong;
+	};
+
 	struct Counter128 playerSort;
-	struct InstanceSession *players;
+	struct InstanceSession players[];
 };
 
 struct Context {
 	struct NetContext net;
-	struct Room TEMPglobalRoom; // TODO: room allocation (interface for wire.c)
+	struct Room *TEMPglobalRoom; // TODO: room allocation (interface for wire.c)
 };
 
 static struct NetSession *instance_onResolve(struct Context *ctx, struct SS addr, void **userdata_out) { // TODO: needs mutex
-	struct Room *room = &ctx->TEMPglobalRoom;
+	struct Room *room = ctx->TEMPglobalRoom;
+	if(!room)
+		return NULL;
 	FOR_ALL_PLAYERS(room, id) {
 		if(addrs_are_equal(&addr, NetSession_get_addr(&room->players[id].net))) {
 			*userdata_out = room;
@@ -133,76 +168,44 @@ static float room_get_syncTime(struct Room *room) {
 	return now.tv_sec + (now.tv_nsec / 1000) / 1000000.f - room->syncBase;
 }
 
-static void refresh_countdown(struct Context *ctx, struct Room *room, _Bool start) {
+static _Bool should_countdown(struct Room *room) {
+	return room->lobby.canStart && Counter128_contains(Counter128_or(room->lobby.isReady, room->lobby.isSpectating), room->playerSort);
+}
+
+static void refresh_countdown(struct Context *ctx, struct Room *room) {
 	if(room->state != ServerState_Lobby)
 		return;
-	uint8_t resp[65536], *resp_end = resp;
-	pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
-	uint8_t *routing_end = resp_end;
-	if(room->canStart && Counter128_contains(Counter128_or(room->ready, room->spectating), room->playerSort)) {
-		if(room->countdownEnd != 0) {
-			if(!start)
-				return;
-			Counter128_clear(&room->sceneLoaded);
-			Counter128_clear(&room->songLoaded);
-			Counter128_clear(&room->levelFinished);
-			room->state = ServerState_SceneLoading;
-
-			struct SetSelectedBeatmap r_beatmap;
-			struct SetSelectedGameplayModifiers r_modifiers;
-			struct StartLevel r_start;
-			struct GetGameplaySceneReady r_ready;
-			r_ready.base.syncTime = r_start.base.syncTime = r_modifiers.base.syncTime = r_beatmap.base.syncTime = room_get_syncTime(room);
-			r_start.beatmapId = r_beatmap.identifier = room->selectedBeatmap;
-			r_start.gameplayModifiers = r_modifiers.gameplayModifiers = room->selectedModifiers;
-			r_start.startTime = room->countdownEnd;
-			FOR_ALL_PLAYERS(room, id) {
-				resp_end = routing_end;
-				if(PER_PLAYER_DIFFICULTY) {
-					if(String_eq(room->players[id].menu.recommendedBeatmap.levelID, room->selectedBeatmap.levelID)) {
-						r_start.beatmapId.beatmapCharacteristicSerializedName = room->players[id].menu.recommendedBeatmap.beatmapCharacteristicSerializedName;
-						r_start.beatmapId.difficulty = room->players[id].menu.recommendedBeatmap.difficulty;
-					} else {
-						r_start.beatmapId.beatmapCharacteristicSerializedName = room->selectedBeatmap.beatmapCharacteristicSerializedName;
-						r_start.beatmapId.difficulty = room->selectedBeatmap.difficulty;
-					}
-				}
-				SERIALIZE_MENURPC(&resp_end, SetSelectedBeatmap, r_beatmap);
-				SERIALIZE_MENURPC(&resp_end, SetSelectedGameplayModifiers, r_modifiers);
-				SERIALIZE_MENURPC(&resp_end, StartLevel, r_start);
-				SERIALIZE_GAMEPLAYRPC(&resp_end, GetGameplaySceneReady, r_ready);
-				instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
-				room->players[id].game.settings = (struct PlayerSpecificSettingsNetSerializable){
-					.userId = room->players[id].permissions.userId,
-					.userName = room->players[id].userName,
-					.leftHanded = 0,
-					.automaticPlayerHeight = 0,
-					.playerHeight = 1.8,
-					.headPosToPlayerHeightOffset = .1,
-				};
-				memset(&room->players[id].game.settings.colorScheme, 0, sizeof(room->players->game.settings.colorScheme));
-			}
-		} else {
-			room->countdownEnd = room_get_syncTime(room) + 5;
+	if(should_countdown(room)) {
+		if(room->lobby.countdownEnd == 0) {
+			room->lobby.countdownEnd = room_get_syncTime(room) + 5;
 			struct SetCountdownEndTime r_countdown;
 			r_countdown.base.syncTime = room_get_syncTime(room);
-			r_countdown.newTime = room->countdownEnd;
+			r_countdown.newTime = room->lobby.countdownEnd;
+
+			uint8_t resp[65536], *resp_end = resp;
+			pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
 			SERIALIZE_MENURPC(&resp_end, SetCountdownEndTime, r_countdown);
 			FOR_ALL_PLAYERS(room, id)
 				instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 		}
 	} else {
-		if(room->countdownEnd == 0)
+		if(room->lobby.countdownEnd == 0)
 			return;
-		room->countdownEnd = 0;
+		room->lobby.countdownEnd = 0;
 		struct CancelCountdown r_cancelC;
 		r_cancelC.base.syncTime = room_get_syncTime(room);
+
+		uint8_t resp[65536], *resp_end = resp;
+		pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
+		uint8_t *routing_end = resp_end;
 		SERIALIZE_MENURPC(&resp_end, CancelCountdown, r_cancelC);
 		FOR_ALL_PLAYERS(room, id)
 			instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
-		resp_end = routing_end;
+
 		struct CancelLevelStart r_cancelL;
 		r_cancelL.base.syncTime = room_get_syncTime(room);
+
+		resp_end = routing_end;
 		SERIALIZE_MENURPC(&resp_end, CancelLevelStart, r_cancelL);
 		FOR_ALL_PLAYERS(room, id)
 			instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
@@ -216,415 +219,21 @@ static void refresh_button(struct Context *ctx, struct Room *room) {
 	pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
 	struct SetIsStartButtonEnabled r_button;
 	r_button.base.syncTime = room_get_syncTime(room);
-	if(Counter128_isEmpty(room->inLobby))
+	if(Counter128_containsNone(room->inLobby, room->playerSort))
 		r_button.reason = CannotStartGameReason_AllPlayersNotInLobby;
 	if(!room->selectedBeatmap.beatmapCharacteristicSerializedName.length)
 		r_button.reason = CannotStartGameReason_NoSongSelected;
-	else if(room->buzzkills.count)
+	else if(room->lobby.buzzkills.count)
 		r_button.reason = CannotStartGameReason_DoNotOwnSong;
-	else if(Counter128_contains(room->spectating, room->playerSort))
+	else if(Counter128_contains(room->lobby.isSpectating, room->playerSort))
 		r_button.reason = CannotStartGameReason_AllPlayersSpectating;
 	else
 		r_button.reason = CannotStartGameReason_None;
 	SERIALIZE_MENURPC(&resp_end, SetIsStartButtonEnabled, r_button);
 	FOR_ALL_PLAYERS(room, id)
 		instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
-	room->canStart = (r_button.reason == CannotStartGameReason_None);
-	refresh_countdown(ctx, room, 0);
-}
-
-static void swap(uint8_t *a, uint8_t *b) {
-	uint8_t c = *a;
-	*a = *b, *b = c;
-}
-
-static void room_disconnect(struct Context *ctx, struct Room *room, struct InstanceSession *session) {
-	if(session->clientState == ClientState_disconnected)
-		return;
-	session->clientState = ClientState_disconnected;
-	char addrstr[INET6_ADDRSTRLEN + 8];
-	net_tostr(NetSession_get_addr(&session->net), addrstr);
-	fprintf(stderr, "[INSTANCE] %sconnect %s\n", ctx ? "re" : "dis", addrstr);
-	if(ctx)
-		net_session_reset(&ctx->net, &session->net);
-	else
-		net_session_free(&session->net);
-	while(session->channels.incomingFragmentsList) {
-		struct IncomingFragments *e = session->channels.incomingFragmentsList;
-		session->channels.incomingFragmentsList = session->channels.incomingFragmentsList->next;
-		free(e);
-	}
-	uint32_t id = indexof(room->players, session);
-	Counter128_set(&room->inLobby, id, 0);
-	Counter128_set(&room->ready, id, 0);
-	Counter128_set(&room->spectating, id, 0);
-	Counter128_set(&room->playerSort, id, 0);
-	if(Counter128_set(&room->entitled, id, 0)) {
-		fprintf(stderr, "TODO: recount entitlement for selectedBeatmap\n");
-	}
-	fprintf(stderr, "[INSTANCE] player bits: ");
-	for(uint32_t i = 0; i < lengthof(room->playerSort.bits); ++i)
-		for(uint32_t b = 0; b < sizeof(*room->playerSort.bits) * 8; ++b)
-			fprintf(stderr, "%u", (room->playerSort.bits[i] >> b) & 1);
-	fprintf(stderr, "\n");
-	refresh_button(ctx, room);
-}
-
-static void load_song(struct Context *ctx, struct Room *room) {
-	uint8_t resp[65536], *resp_end = resp;
-	pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
-	struct GetGameplaySongReady r_ready;
-	struct SetGameplaySceneSyncFinish r_sync;
-	r_sync.base.syncTime = r_ready.base.syncTime = room_get_syncTime(room);
-	r_sync.playersAtGameStart.count = 0;
-	FOR_ALL_PLAYERS(room, id)
-		r_sync.playersAtGameStart.activePlayerSpecificSettingsAtGameStart[r_sync.playersAtGameStart.count++] = room->players[id].game.settings;
-	r_sync.sessionGameId.length = sprintf(r_sync.sessionGameId.data, "f85bfe8f-beb5-407d-b07b-4fe5841e6ad0");
-	SERIALIZE_GAMEPLAYRPC(&resp_end, GetGameplaySongReady, r_ready);
-	SERIALIZE_GAMEPLAYRPC(&resp_end, SetGameplaySceneSyncFinish, r_sync);
-	FOR_ALL_PLAYERS(room, id)
-		instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
-
-	room->state = ServerState_SongLoading;
-}
-
-static void start_game(struct Context *ctx, struct Room *room) {
-	uint8_t resp[65536], *resp_end = resp;
-	pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
-	struct SetSongStartTime r_start;
-	r_start.base.syncTime = room_get_syncTime(room);
-	r_start.startTime = r_start.base.syncTime + .5;
-	SERIALIZE_GAMEPLAYRPC(&resp_end, SetSongStartTime, r_start);
-	FOR_ALL_PLAYERS(room, id)
-		instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
-	room->state = ServerState_Game;
-}
-
-static void instance_onResend(struct Context *ctx, uint32_t currentTime, uint32_t *nextTick) { // TODO: needs mutex
-	struct Room *room = &ctx->TEMPglobalRoom;
-	if(Counter128_isEmpty(room->playerSort))
-		return;
-	FOR_ALL_PLAYERS(room, id) {
-		struct InstanceSession *session = &room->players[id];
-		uint32_t kickTime = NetSession_get_lastKeepAlive(&session->net) + 10000;
-		if(currentTime > kickTime) {
-			room_disconnect(NULL, room, session);
-		} else {
-			if(kickTime < *nextTick)
-				*nextTick = kickTime;
-			flush_ack(&ctx->net, &session->net, &session->channels.ru.base.ack);
-			flush_ack(&ctx->net, &session->net, &session->channels.ro.base.ack);
-			for(uint_fast8_t i = 0; i < 64; ++i)
-				try_resend(&ctx->net, &session->net, &session->channels.ru.base.resend[i], currentTime);
-			for(uint_fast8_t i = 0; i < 64; ++i)
-				try_resend(&ctx->net, &session->net, &session->channels.ro.base.resend[i], currentTime);
-			try_resend(&ctx->net, &session->net, &session->channels.rs.resend, currentTime);
-		}
-	}
-	if(room->countdownEnd != 0) {
-		float delta = room->countdownEnd - room_get_syncTime(room);
-		switch(room->state) {
-			case ServerState_Lobby: {
-				if(delta > 0) {
-					uint32_t ctick = delta * 1000;
-					if(ctick < 10)
-						ctick = 10;
-					if(*nextTick - currentTime > ctick)
-						*nextTick = currentTime + ctick;
-				} else {
-					refresh_countdown(ctx, room, 1);
-				}
-				break;
-			}
-			case ServerState_SceneLoading: {
-				delta += SCENE_LOAD_TIMEOUT;
-				if(delta > 0) {
-					uint32_t ctick = delta * 1000;
-					if(ctick < 10)
-						ctick = 10;
-					if(*nextTick - currentTime > ctick)
-						*nextTick = currentTime + ctick;
-				} else {
-					load_song(ctx, room);
-				}
-				break;
-			}
-			case ServerState_SongLoading: {
-				delta += SONG_LOAD_TIMEOUT;
-				if(delta > 0) {
-					uint32_t ctick = delta * 1000;
-					if(ctick < 10)
-						ctick = 10;
-					if(*nextTick - currentTime > ctick)
-						*nextTick = currentTime + ctick;
-				} else {
-					start_game(ctx, room);
-				}
-				break;
-			}
-			default:;
-		}
-	}
-	FOR_ALL_PLAYERS(room, id)
-		net_flush_merged(&ctx->net, &room->players[id].net);
-}
-
-static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
-	struct MenuRpcHeader rpc = pkt_readMenuRpcHeader(data);
-	switch(rpc.type) {
-		case MenuRpcType_SetPlayersMissingEntitlementsToLevel: fprintf(stderr, "[INSTANCE] MenuRpcType_SetPlayersMissingEntitlementsToLevel not implemented\n"); abort();
-		case MenuRpcType_GetIsEntitledToLevel: fprintf(stderr, "[INSTANCE] MenuRpcType_GetIsEntitledToLevel not implemented\n"); abort();
-		case MenuRpcType_SetIsEntitledToLevel: {
-			struct SetIsEntitledToLevel entitlement = pkt_readSetIsEntitledToLevel(data);
-			if(!String_eq(entitlement.levelId, room->selectedBeatmap.levelID))
-				break;
-			if(Counter128_set(&room->entitled, indexof(room->players, session), 1))
-				break;
-			if(entitlement.entitlementStatus != EntitlementsStatus_Ok)
-				room->buzzkills.playersWithoutEntitlements[room->buzzkills.count++] = session->permissions.userId;
-			if(Counter128_contains(room->entitled, room->playerSort)) {
-				uint8_t resp[65536], *resp_end = resp;
-				pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
-				struct SetPlayersMissingEntitlementsToLevel r_missing;
-				r_missing.base.syncTime = room_get_syncTime(room);
-				r_missing.playersMissingEntitlements = room->buzzkills;
-				SERIALIZE_MENURPC(&resp_end, SetPlayersMissingEntitlementsToLevel, r_missing);
-				FOR_ALL_PLAYERS(room, id)
-					instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
-				refresh_button(ctx, room);
-			}
-			break;
-		}
-		case MenuRpcType_InvalidateLevelEntitlementStatuses: fprintf(stderr, "[INSTANCE] MenuRpcType_InvalidateLevelEntitlementStatuses not implemented\n"); abort();
-		case MenuRpcType_SelectLevelPack: fprintf(stderr, "[INSTANCE] MenuRpcType_SelectLevelPack not implemented\n"); abort();
-		case MenuRpcType_SetSelectedBeatmap: fprintf(stderr, "[INSTANCE] MenuRpcType_SetSelectedBeatmap not implemented\n"); abort();
-		case MenuRpcType_GetSelectedBeatmap: fprintf(stderr, "[INSTANCE] MenuRpcType_GetSelectedBeatmap not implemented\n"); abort();
-		case MenuRpcType_RecommendBeatmap: session->menu.recommendedBeatmap = pkt_readRecommendBeatmap(data).identifier;
-		case MenuRpcType_ClearRecommendedBeatmap: {
-			if(rpc.type == MenuRpcType_ClearRecommendedBeatmap) {
-				pkt_readClearRecommendedBeatmap(data);
-				session->menu.recommendedBeatmap = (struct BeatmapIdentifierNetSerializable){{0}, {0}, 0};
-			}
-			if(session->permissions.hasRecommendBeatmapsPermission) {
-				uint32_t select = ~0;
-				switch(room->configuration.songSelectionMode) {
-					case SongSelectionMode_Vote: {
-						uint8_t counter[126], max = 0;
-						FOR_ALL_PLAYERS(room, id) {
-							counter[id] = 0;
-							if(room->players[id].permissions.hasRecommendBeatmapsPermission && room->players[id].menu.recommendedBeatmap.beatmapCharacteristicSerializedName.length) {
-								FOR_ALL_PLAYERS(room, cmp) {
-									if(!room->players[cmp].permissions.hasRecommendBeatmapsPermission)
-										continue;
-									if(id == cmp || (String_eq(room->players[id].menu.recommendedBeatmap.levelID, room->players[cmp].menu.recommendedBeatmap.levelID) && String_eq(room->players[id].menu.recommendedBeatmap.beatmapCharacteristicSerializedName, room->players[cmp].menu.recommendedBeatmap.beatmapCharacteristicSerializedName) && (PER_PLAYER_DIFFICULTY || room->players[id].menu.recommendedBeatmap.difficulty == room->players[cmp].menu.recommendedBeatmap.difficulty))) {
-										if(++counter[cmp] > max) {
-											select = cmp;
-											max = counter[cmp];
-										}
-										break;
-									}
-								}
-							}
-						}
-						break;
-					}
-					case SongSelectionMode_Random:
-					case SongSelectionMode_OwnerPicks: {
-						FOR_ALL_PLAYERS(room, id) {
-							if(room->players[id].permissions.isServerOwner) {
-								select = id;
-								break;
-							}
-						}
-						break;
-					}
-					case SongSelectionMode_RandomPlayerPicks: {
-						uint32_t validPlayerCount = 0, luckyFellow;
-						mbedtls_ctr_drbg_random(net_get_ctr_drbg(&ctx->net), (uint8_t*)&luckyFellow, sizeof(luckyFellow));
-						FOR_ALL_PLAYERS(room, id)
-							validPlayerCount += room->players[id].permissions.hasRecommendBeatmapsPermission;
-						if(validPlayerCount) {
-							luckyFellow %= validPlayerCount;
-							FOR_ALL_PLAYERS(room, id) {
-								if(--validPlayerCount == luckyFellow) {
-									select = id;
-									break;
-								}
-							}
-						}
-					}
-				}
-				room->canStart = 0, room->buzzkills.count = 0;
-				if(select != ~0 && room->players[select].menu.recommendedBeatmap.beatmapCharacteristicSerializedName.length) {
-					Counter128_clear(&room->entitled);
-					room->selectedBeatmap = room->players[select].menu.recommendedBeatmap;
-					uint8_t resp[65536], *resp_end = resp;
-					struct GetIsEntitledToLevel r_level;
-					r_level.base.syncTime = room_get_syncTime(room);
-					r_level.levelId = session->menu.recommendedBeatmap.levelID;
-					pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
-					SERIALIZE_MENURPC(&resp_end, GetIsEntitledToLevel, r_level);
-					FOR_ALL_PLAYERS(room, id)
-						instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
-					refresh_countdown(ctx, room, 0);
-				} else {
-					room->entitled = room->playerSort;
-					room->selectedBeatmap = (struct BeatmapIdentifierNetSerializable){{0}, {0}, 0};
-					refresh_button(ctx, room);
-				}
-			}
-			break;
-		}
-		case MenuRpcType_GetRecommendedBeatmap: pkt_readGetRecommendedBeatmap(data); break;
-		case MenuRpcType_SetSelectedGameplayModifiers: fprintf(stderr, "[INSTANCE] BAD TYPE: MenuRpcType_SetSelectedGameplayModifiers\n"); break;
-		case MenuRpcType_GetSelectedGameplayModifiers: fprintf(stderr, "[INSTANCE] MenuRpcType_GetSelectedGameplayModifiers not implemented\n"); abort();
-		case MenuRpcType_RecommendGameplayModifiers: {
-			struct RecommendGameplayModifiers req = pkt_readRecommendGameplayModifiers(data);
-			uint8_t resp[65536], *resp_end = resp;
-			struct SetSelectedGameplayModifiers r_modifiers;
-			r_modifiers.base.syncTime = room_get_syncTime(room);
-			if(session->permissions.hasRecommendGameplayModifiersPermission)
-				session->menu.recommendedModifiers = req.gameplayModifiers;
-			r_modifiers.gameplayModifiers = room->selectedModifiers;
-			pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
-			SERIALIZE_MENURPC(&resp_end, SetSelectedGameplayModifiers, r_modifiers);
-			instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
-			break;
-		}
-		case MenuRpcType_ClearRecommendedGameplayModifiers: memset(&session->menu.recommendedModifiers, 0, sizeof(session->menu.recommendedModifiers)); break;
-		case MenuRpcType_GetRecommendedGameplayModifiers: pkt_readGetRecommendedGameplayModifiers(data); break;
-		case MenuRpcType_LevelLoadError: fprintf(stderr, "[INSTANCE] MenuRpcType_LevelLoadError not implemented\n"); abort();
-		case MenuRpcType_LevelLoadSuccess: fprintf(stderr, "[INSTANCE] MenuRpcType_LevelLoadSuccess not implemented\n"); abort();
-		case MenuRpcType_StartLevel: fprintf(stderr, "[INSTANCE] MenuRpcType_StartLevel not implemented\n"); abort();
-		case MenuRpcType_GetStartedLevel: {
-			pkt_readGetStartedLevel(data);
-			if(room->state != ServerState_Lobby) {
-				fprintf(stderr, "[INSTANCE] MenuRpcType_GetStartedLevel not implemented\n"); abort();
-			} else {
-				uint8_t resp[65536], *resp_end = resp;
-				struct SetIsStartButtonEnabled r_button;
-				r_button.base.syncTime = room_get_syncTime(room);
-				r_button.reason = CannotStartGameReason_NoSongSelected;
-				pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
-				SERIALIZE_MENURPC(&resp_end, SetIsStartButtonEnabled, r_button);
-				instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
-			}
-			break;
-		}
-		case MenuRpcType_CancelLevelStart: fprintf(stderr, "[INSTANCE] MenuRpcType_CancelLevelStart not implemented\n"); abort();
-		case MenuRpcType_GetMultiplayerGameState: {
-			pkt_readGetMultiplayerGameState(data);
-			uint8_t resp[65536], *resp_end = resp;
-			struct SetMultiplayerGameState r_state;
-			r_state.base.syncTime = room_get_syncTime(room);
-			if(room->state == ServerState_Lobby)
-				r_state.lobbyState = MultiplayerGameState_Lobby;
-			else
-				r_state.lobbyState = MultiplayerGameState_Game;
-			pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
-			SERIALIZE_MENURPC(&resp_end, SetMultiplayerGameState, r_state);
-			instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
-			break;
-		}
-		case MenuRpcType_SetMultiplayerGameState: fprintf(stderr, "[INSTANCE] BAD TYPE: MenuRpcType_SetMultiplayerGameState\n"); break;
-		case MenuRpcType_GetIsReady: pkt_readGetIsReady(data); break;
-		case MenuRpcType_SetIsReady: {
-			_Bool isReady = pkt_readSetIsReady(data).isReady;
-			if(Counter128_set(&room->ready, indexof(room->players, session), isReady) != isReady)
-				refresh_countdown(ctx, room, 0);
-			break;
-		}
-		case MenuRpcType_SetStartGameTime: fprintf(stderr, "[INSTANCE] MenuRpcType_SetStartGameTime not implemented\n"); abort();
-		case MenuRpcType_CancelStartGameTime: fprintf(stderr, "[INSTANCE] MenuRpcType_CancelStartGameTime not implemented\n"); abort();
-		case MenuRpcType_GetIsInLobby: pkt_readGetIsInLobby(data); break;
-		case MenuRpcType_SetIsInLobby: {
-			_Bool inLobby = pkt_readSetIsInLobby(data).isBack;
-			if(Counter128_set(&room->inLobby, indexof(room->players, session), inLobby) != inLobby)
-				refresh_button(ctx, room);
-			break;
-		}
-		case MenuRpcType_GetCountdownEndTime: {
-			pkt_readGetCountdownEndTime(data);
-			uint8_t resp[65536], *resp_end = resp;
-			struct SetIsStartButtonEnabled r_button;
-			r_button.base.syncTime = room_get_syncTime(room);
-			r_button.reason = CannotStartGameReason_NoSongSelected;
-			pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
-			SERIALIZE_MENURPC(&resp_end, SetIsStartButtonEnabled, r_button);
-			instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
-			break;
-		}
-		case MenuRpcType_SetCountdownEndTime: fprintf(stderr, "[INSTANCE] BAD TYPE: MenuRpcType_SetCountdownEndTime\n"); break;
-		case MenuRpcType_CancelCountdown: fprintf(stderr, "[INSTANCE] BAD TYPE: MenuRpcType_CancelCountdown\n"); break;
-		case MenuRpcType_GetOwnedSongPacks: fprintf(stderr, "[INSTANCE] MenuRpcType_GetOwnedSongPacks not implemented\n"); abort();
-		case MenuRpcType_SetOwnedSongPacks: session->menu.ownedSongPacks = pkt_readSetOwnedSongPacks(data).songPackMask; break;
-		case MenuRpcType_RequestKickPlayer: fprintf(stderr, "[INSTANCE] MenuRpcType_RequestKickPlayer not implemented\n"); abort();
-		case MenuRpcType_GetPermissionConfiguration:  {
-			pkt_readGetPermissionConfiguration(data);
-			uint8_t resp[65536], *resp_end = resp;
-			struct SetPermissionConfiguration r_permission;
-			r_permission.base.syncTime = room_get_syncTime(room);
-			r_permission.playersPermissionConfiguration.count = 0;
-			FOR_ALL_PLAYERS(room, id)
-				r_permission.playersPermissionConfiguration.playersPermission[r_permission.playersPermissionConfiguration.count++] = room->players[id].permissions;
-			pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
-			SERIALIZE_MENURPC(&resp_end, SetPermissionConfiguration, r_permission);
-			instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
-			break;
-		}
-		case MenuRpcType_SetPermissionConfiguration: fprintf(stderr, "[INSTANCE] BAD TYPE: MenuRpcType_SetPermissionConfiguration\n"); break;
-		case MenuRpcType_GetIsStartButtonEnabled: fprintf(stderr, "[INSTANCE] MenuRpcType_GetIsStartButtonEnabled not implemented\n"); abort();
-		case MenuRpcType_SetIsStartButtonEnabled: fprintf(stderr, "[INSTANCE] BAD TYPE: MenuRpcType_SetIsStartButtonEnabled\n"); break;
-		default: fprintf(stderr, "[INSTANCE] BAD MENU RPC TYPE\n");
-	}
-}
-
-static void handle_GameplayRpc(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
-	struct GameplayRpcHeader rpc = pkt_readGameplayRpcHeader(data);
-	switch(rpc.type) {
-		case GameplayRpcType_SetGameplaySceneSyncFinish: fprintf(stderr, "[INSTANCE] GameplayRpcType_SetGameplaySceneSyncFinish not implemented\n"); abort();
-		case GameplayRpcType_SetGameplaySceneReady: {
-			session->game.settings = pkt_readSetGameplaySceneReady(data).playerSpecificSettingsNetSerializable;
-			if(room->state != ServerState_SceneLoading)
-				break;
-			if(!Counter128_set(&room->sceneLoaded, indexof(room->players, session), 1))
-				if(Counter128_contains(room->sceneLoaded, room->playerSort))
-					load_song(ctx, room);
-			break;
-		}
-		case GameplayRpcType_GetGameplaySceneReady: fprintf(stderr, "[INSTANCE] GameplayRpcType_GetGameplaySceneReady not implemented\n"); abort();
-		case GameplayRpcType_SetActivePlayerFailedToConnect: fprintf(stderr, "[INSTANCE] GameplayRpcType_SetActivePlayerFailedToConnect not implemented\n"); abort();
-		case GameplayRpcType_SetGameplaySongReady: {
-			pkt_readSetGameplaySongReady(data);
-			if(room->state != ServerState_SongLoading)
-				break;
-			if(!Counter128_set(&room->songLoaded, indexof(room->players, session), 1))
-				if(Counter128_contains(room->songLoaded, room->playerSort))
-					start_game(ctx, room);
-			break;
-		}
-		case GameplayRpcType_GetGameplaySongReady: fprintf(stderr, "[INSTANCE] GameplayRpcType_GetGameplaySongReady not implemented\n"); abort();
-		case GameplayRpcType_SetSongStartTime: fprintf(stderr, "[INSTANCE] GameplayRpcType_SetSongStartTime not implemented\n"); abort();
-		case GameplayRpcType_NoteCut: pkt_readNoteCut(data); break;
-		case GameplayRpcType_NoteMissed: pkt_readNoteMissed(data); break;
-		case GameplayRpcType_LevelFinished: {
-			pkt_readLevelFinished(data);
-			if(room->state == ServerState_Lobby)
-				break;
-			if(!Counter128_set(&room->levelFinished, indexof(room->players, session), 1)) {
-				if(Counter128_contains(room->levelFinished, room->playerSort)) {
-					fprintf(stderr, "TODO: wait on results screen\n");
-					/*struct ReturnToMenu r_menu;
-					r_menu.base.syncTime = room_get_syncTime(room);*/
-					room->state = ServerState_Lobby;
-				}
-			}
-			break;
-		}
-		case GameplayRpcType_ReturnToMenu: fprintf(stderr, "[INSTANCE] GameplayRpcType_ReturnToMenu not implemented\n"); abort();
-		case GameplayRpcType_RequestReturnToMenu: fprintf(stderr, "[INSTANCE] GameplayRpcType_RequestReturnToMenu not implemented\n"); abort();
-		default: fprintf(stderr, "[INSTANCE] BAD GAMEPLAY RPC TYPE\n");
-	}
+	room->lobby.canStart = (r_button.reason == CannotStartGameReason_None);
+	refresh_countdown(ctx, room);
 }
 
 static _Bool PlayerStateHash_contains(struct PlayerStateHash state, const char *key) {
@@ -664,44 +273,578 @@ static _Bool PlayerStateHash_contains(struct PlayerStateHash state, const char *
 	return 1;
 }
 
-static void update_session_state(struct Context *ctx, struct Room *room, struct InstanceSession *session, struct PlayerStateHash state) {
-	_Bool isSpectating = !PlayerStateHash_contains(state, "wants_to_play_next_level");
-	_Bool allPlayersSpectating = Counter128_contains(room->spectating, room->playerSort);
-	if(Counter128_set(&room->spectating, indexof(room->players, session), isSpectating) != isSpectating)
-		if(Counter128_contains(room->spectating, room->playerSort) != allPlayersSpectating)
+static void session_refresh_stateHash(struct Context *ctx, struct Room *room, struct InstanceSession *session) {
+	if(room->state != ServerState_Lobby)
+		return;
+	_Bool isSpectating = !PlayerStateHash_contains(session->stateHash, "wants_to_play_next_level");
+	_Bool allPlayersSpectating = Counter128_contains(room->lobby.isSpectating, room->playerSort);
+	if(Counter128_set(&room->lobby.isSpectating, indexof(room->players, session), isSpectating) != isSpectating)
+		if(Counter128_contains(room->lobby.isSpectating, room->playerSort) != allPlayersSpectating)
 			refresh_button(ctx, room);
+}
+
+static void session_refresh_state(struct Context *ctx, struct Room *room, struct InstanceSession *session) {
+	if(room->state == ServerState_Lobby) {
+		session->lobby.ownedSongPacks.bloomFilter = (struct BitMask128){0, 0};
+		session->lobby.recommendedBeatmap = CLEAR_BEATMAP;
+		session->lobby.recommendedModifiers = CLEAR_MODIFIERS;
+		session_refresh_stateHash(ctx, room, session);
+	} else {
+		session->game.settings = (struct PlayerSpecificSettingsNetSerializable){
+			.userId = session->permissions.userId,
+			.userName = session->userName,
+			.leftHanded = 0,
+			.automaticPlayerHeight = 0,
+			.playerHeight = 1.8,
+			.headPosToPlayerHeightOffset = .1,
+			.colorScheme = CLEAR_COLORSCHEME,
+		};
+	}
+}
+
+static void room_set_state(struct Context *ctx, struct Room *room, ServerState state) {
+	room->state = state;
+	switch(state) {
+		case ServerState_Lobby: {
+			room->selectedBeatmap = CLEAR_BEATMAP;
+			room->selectedModifiers = CLEAR_MODIFIERS;
+			room->lobby.countdownEnd = 0;
+			Counter128_clear(&room->lobby.isReady);
+			Counter128_clear(&room->lobby.isEntitled);
+			Counter128_clear(&room->lobby.isSpectating);
+			room->lobby.buzzkills.count = 0;
+			room->lobby.canStart = 0;
+
+			struct ReturnToMenu r_menu;
+			r_menu.base.syncTime = room_get_syncTime(room);
+			uint8_t resp[65536], *resp_end = resp;
+			pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
+			SERIALIZE_GAMEPLAYRPC(&resp_end, ReturnToMenu, r_menu);
+			FOR_ALL_PLAYERS(room, id) {
+				instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+				session_refresh_state(ctx, room, &room->players[id]);
+			}
+			refresh_button(ctx, room);
+			break;
+		}
+		case ServerState_LoadingScene: {
+			float startTime = room->lobby.countdownEnd;
+			Counter128_clear(&room->levelFinished);
+			room->loadingScene.timeout = room_get_syncTime(room) + LOAD_TIMEOUT;
+			Counter128_clear(&room->loadingScene.isLoaded);
+
+			struct SetSelectedBeatmap r_beatmap;
+			struct SetSelectedGameplayModifiers r_modifiers;
+			struct StartLevel r_start;
+			struct GetGameplaySceneReady r_ready;
+			r_ready.base.syncTime = r_start.base.syncTime = r_modifiers.base.syncTime = r_beatmap.base.syncTime = room_get_syncTime(room);
+			r_start.beatmapId = r_beatmap.identifier = room->selectedBeatmap;
+			r_start.gameplayModifiers = r_modifiers.gameplayModifiers = room->selectedModifiers;
+			r_start.startTime = startTime;
+			FOR_ALL_PLAYERS(room, id) {
+				if(PER_PLAYER_DIFFICULTY) { // The "gaslighting" approach
+					if(String_eq(room->players[id].lobby.recommendedBeatmap.levelID, room->selectedBeatmap.levelID)) {
+						r_start.beatmapId.beatmapCharacteristicSerializedName = room->players[id].lobby.recommendedBeatmap.beatmapCharacteristicSerializedName;
+						r_start.beatmapId.difficulty = room->players[id].lobby.recommendedBeatmap.difficulty;
+					} else {
+						r_start.beatmapId.beatmapCharacteristicSerializedName = room->selectedBeatmap.beatmapCharacteristicSerializedName;
+						r_start.beatmapId.difficulty = room->selectedBeatmap.difficulty;
+					}
+					r_beatmap.identifier = r_start.beatmapId;
+					r_modifiers.gameplayModifiers = r_start.gameplayModifiers;
+				}
+				uint8_t resp[65536], *resp_end = resp;
+				pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
+				SERIALIZE_MENURPC(&resp_end, SetSelectedBeatmap, r_beatmap);
+				SERIALIZE_MENURPC(&resp_end, SetSelectedGameplayModifiers, r_modifiers);
+				SERIALIZE_MENURPC(&resp_end, StartLevel, r_start);
+				SERIALIZE_GAMEPLAYRPC(&resp_end, GetGameplaySceneReady, r_ready);
+				instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+				session_refresh_state(ctx, room, &room->players[id]);
+			}
+			break;
+		}
+		case ServerState_LoadingSong: {
+			room->loadingSong.timeout = room_get_syncTime(room) + LOAD_TIMEOUT;
+			Counter128_clear(&room->loadingSong.isLoaded);
+
+			uint8_t resp[65536], *resp_end = resp;
+			pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
+			struct GetGameplaySongReady r_ready;
+			struct SetGameplaySceneSyncFinish r_sync;
+			r_sync.base.syncTime = r_ready.base.syncTime = room_get_syncTime(room);
+			r_sync.playersAtGameStart.count = 0;
+			FOR_ALL_PLAYERS(room, id)
+				r_sync.playersAtGameStart.activePlayerSpecificSettingsAtGameStart[r_sync.playersAtGameStart.count++] = room->players[id].game.settings;
+			r_sync.sessionGameId.length = sprintf(r_sync.sessionGameId.data, "00000000-0000-0000-0000-000000000000");
+			SERIALIZE_GAMEPLAYRPC(&resp_end, GetGameplaySongReady, r_ready);
+			SERIALIZE_GAMEPLAYRPC(&resp_end, SetGameplaySceneSyncFinish, r_sync);
+			FOR_ALL_PLAYERS(room, id)
+				instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+			break;
+		}
+		case ServerState_Game: {
+			uint8_t resp[65536], *resp_end = resp;
+			pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
+			struct SetSongStartTime r_start;
+			r_start.base.syncTime = room_get_syncTime(room);
+			r_start.startTime = r_start.base.syncTime + .5;
+			SERIALIZE_GAMEPLAYRPC(&resp_end, SetSongStartTime, r_start);
+			FOR_ALL_PLAYERS(room, id)
+				instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+			break;
+		}
+	}
+}
+
+static void swap(uint8_t *a, uint8_t *b) {
+	uint8_t c = *a;
+	*a = *b, *b = c;
+}
+
+static void room_disconnect(struct Context *ctx, struct Room *room, struct InstanceSession *session, _Bool notify) { // TODO: misleading name; handles both disconnect and reconnect
+	if(session->clientState == ClientState_disconnected)
+		return;
+	session->clientState = ClientState_disconnected;
+	char addrstr[INET6_ADDRSTRLEN + 8];
+	net_tostr(NetSession_get_addr(&session->net), addrstr);
+	fprintf(stderr, "[INSTANCE] %sconnect %s\n", ctx ? "re" : "dis", addrstr);
+	if(ctx)
+		net_session_reset(&ctx->net, &session->net);
+	else
+		net_session_free(&session->net);
+	while(session->channels.incomingFragmentsList) {
+		struct IncomingFragments *e = session->channels.incomingFragmentsList;
+		session->channels.incomingFragmentsList = session->channels.incomingFragmentsList->next;
+		free(e);
+	}
+	uint32_t id = indexof(room->players, session);
+	Counter128_set(&room->playerSort, id, 0);
+	fprintf(stderr, "TODO: recount entitlement for selectedBeatmap\n");
+
+	fprintf(stderr, "[INSTANCE] player bits: ");
+	for(uint32_t i = 0; i < lengthof(room->playerSort.bits); ++i)
+		for(uint32_t b = 0; b < sizeof(*room->playerSort.bits) * 8; ++b)
+			fprintf(stderr, "%u", (room->playerSort.bits[i] >> b) & 1);
+	fprintf(stderr, "\n");
+
+	if(notify) {
+		refresh_button(ctx, room);
+		struct PlayerDisconnected r_disconnect;
+		r_disconnect.disconnectedReason = DisconnectedReason_ClientConnectionClosed;
+
+		uint8_t resp[65536], *resp_end = resp;
+		pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
+		SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerDisconnected)
+			pkt_writePlayerDisconnected(&resp_end, r_disconnect);
+		FOR_EXCLUDING_PLAYER(room, session, id)
+			instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+	}
+	/* TODO: close rooms with zero players
+	 * calling `room_close()` here would crash the server if processing a `Merged` packet containing `Disconnect` followed by any other message
+	 */
+}
+
+static void instance_onResend(struct Context *ctx, uint32_t currentTime, uint32_t *nextTick) { // TODO: needs mutex
+	struct Room *room = ctx->TEMPglobalRoom;
+	if(!room)
+		return;
+	FOR_ALL_PLAYERS(room, id) {
+		struct InstanceSession *session = &room->players[id];
+		uint32_t kickTime = NetSession_get_lastKeepAlive(&session->net) + 10000;
+		if(currentTime > kickTime) {
+			room_disconnect(NULL, room, session, 1);
+		} else {
+			if(kickTime < *nextTick)
+				*nextTick = kickTime;
+			flush_ack(&ctx->net, &session->net, &session->channels.ru.base.ack);
+			flush_ack(&ctx->net, &session->net, &session->channels.ro.base.ack);
+			for(uint_fast8_t i = 0; i < 64; ++i)
+				try_resend(&ctx->net, &session->net, &session->channels.ru.base.resend[i], currentTime);
+			for(uint_fast8_t i = 0; i < 64; ++i)
+				try_resend(&ctx->net, &session->net, &session->channels.ro.base.resend[i], currentTime);
+			try_resend(&ctx->net, &session->net, &session->channels.rs.resend, currentTime);
+		}
+	}
+	switch(room->state) {
+		case ServerState_Lobby: {
+			if(!should_countdown(room))
+				refresh_countdown(ctx, room);
+			if(room->lobby.countdownEnd == 0)
+				break;
+			float delta = room->lobby.countdownEnd - room_get_syncTime(room);
+			if(0) {
+				case ServerState_LoadingScene:
+				delta = room->loadingScene.timeout - room_get_syncTime(room);
+			}
+			if(0) {
+				case ServerState_LoadingSong:
+				delta = room->loadingSong.timeout - room_get_syncTime(room);
+			}
+			if(delta > 0) {
+				uint32_t ctick = delta * 1000;
+				if(ctick < 10)
+					ctick = 10;
+				if(*nextTick - currentTime > ctick)
+					*nextTick = currentTime + ctick;
+			} else {
+				room_set_state(ctx, room, room->state + 1);
+			}
+			break;
+		}
+		default:;
+	}
+	FOR_ALL_PLAYERS(room, id)
+		net_flush_merged(&ctx->net, &room->players[id].net);
+}
+
+static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
+	struct MenuRpcHeader rpc = pkt_readMenuRpcHeader(data);
+	switch(rpc.type) {
+		case MenuRpcType_SetPlayersMissingEntitlementsToLevel: fprintf(stderr, "[INSTANCE] MenuRpcType_SetPlayersMissingEntitlementsToLevel not implemented\n"); abort();
+		case MenuRpcType_GetIsEntitledToLevel: fprintf(stderr, "[INSTANCE] MenuRpcType_GetIsEntitledToLevel not implemented\n"); abort();
+		case MenuRpcType_SetIsEntitledToLevel: {
+			struct SetIsEntitledToLevel entitlement = pkt_readSetIsEntitledToLevel(data);
+			if(room->state != ServerState_Lobby || !String_eq(entitlement.levelId, room->selectedBeatmap.levelID))
+				break;
+			if(Counter128_set(&room->lobby.isEntitled, indexof(room->players, session), 1))
+				break;
+			if(entitlement.entitlementStatus != EntitlementsStatus_Ok)
+				room->lobby.buzzkills.playersWithoutEntitlements[room->lobby.buzzkills.count++] = session->permissions.userId;
+			if(Counter128_contains(room->lobby.isEntitled, room->playerSort)) {
+				uint8_t resp[65536], *resp_end = resp;
+				pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
+				struct SetPlayersMissingEntitlementsToLevel r_missing;
+				r_missing.base.syncTime = room_get_syncTime(room);
+				r_missing.playersMissingEntitlements = room->lobby.buzzkills;
+				SERIALIZE_MENURPC(&resp_end, SetPlayersMissingEntitlementsToLevel, r_missing);
+				FOR_ALL_PLAYERS(room, id)
+					instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+				refresh_button(ctx, room);
+			}
+			break;
+		}
+		case MenuRpcType_InvalidateLevelEntitlementStatuses: fprintf(stderr, "[INSTANCE] MenuRpcType_InvalidateLevelEntitlementStatuses not implemented\n"); abort();
+		case MenuRpcType_SelectLevelPack: fprintf(stderr, "[INSTANCE] MenuRpcType_SelectLevelPack not implemented\n"); abort();
+		case MenuRpcType_SetSelectedBeatmap: fprintf(stderr, "[INSTANCE] MenuRpcType_SetSelectedBeatmap not implemented\n"); abort();
+		case MenuRpcType_GetSelectedBeatmap: fprintf(stderr, "[INSTANCE] MenuRpcType_GetSelectedBeatmap not implemented\n"); abort();
+		case MenuRpcType_RecommendBeatmap: {
+			struct RecommendBeatmap beatmap = pkt_readRecommendBeatmap(data);
+			if(room->state != ServerState_Lobby)
+				break;
+			fprintf(stderr, "\n\n\n%.*s\n\n\n\n", beatmap.identifier.levelID.length, beatmap.identifier.levelID.data);
+			session->lobby.recommendedBeatmap = beatmap.identifier;
+			if(0) {
+				case MenuRpcType_ClearRecommendedBeatmap:
+				pkt_readClearRecommendedBeatmap(data);
+				if(room->state != ServerState_Lobby)
+					break;
+				session->lobby.recommendedBeatmap = CLEAR_BEATMAP;
+			}
+			if(session->permissions.hasRecommendBeatmapsPermission) {
+				uint32_t select = ~0;
+				switch(room->configuration.songSelectionMode) {
+					case SongSelectionMode_Vote: {
+						uint8_t counter[126], max = 0;
+						FOR_ALL_PLAYERS(room, id) {
+							counter[id] = 0;
+							if(room->players[id].permissions.hasRecommendBeatmapsPermission && room->players[id].lobby.recommendedBeatmap.beatmapCharacteristicSerializedName.length) {
+								FOR_ALL_PLAYERS(room, cmp) {
+									if(!room->players[cmp].permissions.hasRecommendBeatmapsPermission)
+										continue;
+									if(id == cmp || (String_eq(room->players[id].lobby.recommendedBeatmap.levelID, room->players[cmp].lobby.recommendedBeatmap.levelID) && String_eq(room->players[id].lobby.recommendedBeatmap.beatmapCharacteristicSerializedName, room->players[cmp].lobby.recommendedBeatmap.beatmapCharacteristicSerializedName) && (PER_PLAYER_DIFFICULTY || room->players[id].lobby.recommendedBeatmap.difficulty == room->players[cmp].lobby.recommendedBeatmap.difficulty))) {
+										if(++counter[cmp] > max) {
+											select = cmp;
+											max = counter[cmp];
+										}
+										break;
+									}
+								}
+							}
+						}
+						break;
+					}
+					case SongSelectionMode_Random:
+					case SongSelectionMode_OwnerPicks: {
+						FOR_ALL_PLAYERS(room, id) {
+							if(room->players[id].permissions.isServerOwner) {
+								select = id;
+								break;
+							}
+						}
+						break;
+					}
+					case SongSelectionMode_RandomPlayerPicks: {
+						uint32_t validPlayerCount = 0, luckyFellow;
+						mbedtls_ctr_drbg_random(net_get_ctr_drbg(&ctx->net), (uint8_t*)&luckyFellow, sizeof(luckyFellow));
+						FOR_ALL_PLAYERS(room, id)
+							validPlayerCount += room->players[id].permissions.hasRecommendBeatmapsPermission;
+						if(validPlayerCount) {
+							luckyFellow %= validPlayerCount;
+							FOR_ALL_PLAYERS(room, id) {
+								if(--validPlayerCount == luckyFellow) {
+									select = id;
+									break;
+								}
+							}
+						}
+					}
+				}
+				room->lobby.canStart = 0, room->lobby.buzzkills.count = 0;
+				if(select != ~0 && room->players[select].lobby.recommendedBeatmap.beatmapCharacteristicSerializedName.length) {
+					Counter128_clear(&room->lobby.isEntitled);
+					room->selectedBeatmap = room->players[select].lobby.recommendedBeatmap;
+					uint8_t resp[65536], *resp_end = resp;
+					struct GetIsEntitledToLevel r_level;
+					r_level.base.syncTime = room_get_syncTime(room);
+					r_level.levelId = session->lobby.recommendedBeatmap.levelID;
+					pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
+					SERIALIZE_MENURPC(&resp_end, GetIsEntitledToLevel, r_level);
+					FOR_ALL_PLAYERS(room, id)
+						instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+				} else {
+					room->lobby.isEntitled = room->playerSort;
+					room->selectedBeatmap = CLEAR_BEATMAP;
+				}
+				refresh_button(ctx, room);
+			}
+			break;
+		}
+		case MenuRpcType_GetRecommendedBeatmap: pkt_readGetRecommendedBeatmap(data); break;
+		case MenuRpcType_SetSelectedGameplayModifiers: fprintf(stderr, "[INSTANCE] BAD TYPE: MenuRpcType_SetSelectedGameplayModifiers\n"); break;
+		case MenuRpcType_GetSelectedGameplayModifiers: fprintf(stderr, "[INSTANCE] MenuRpcType_GetSelectedGameplayModifiers not implemented\n"); abort();
+		case MenuRpcType_RecommendGameplayModifiers: {
+			struct RecommendGameplayModifiers modifiers = pkt_readRecommendGameplayModifiers(data);
+			if(room->state != ServerState_Lobby)
+				break;
+			if(0) {
+				case MenuRpcType_ClearRecommendedGameplayModifiers:
+				if(room->state != ServerState_Lobby)
+					break;
+				modifiers.gameplayModifiers = CLEAR_MODIFIERS;
+			}
+			uint8_t resp[65536], *resp_end = resp;
+			struct SetSelectedGameplayModifiers r_modifiers;
+			r_modifiers.base.syncTime = room_get_syncTime(room);
+			if(session->permissions.hasRecommendGameplayModifiersPermission)
+				session->lobby.recommendedModifiers = modifiers.gameplayModifiers;
+			r_modifiers.gameplayModifiers = room->selectedModifiers;
+			pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
+			SERIALIZE_MENURPC(&resp_end, SetSelectedGameplayModifiers, r_modifiers);
+			instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+			break;
+		}
+		case MenuRpcType_GetRecommendedGameplayModifiers: pkt_readGetRecommendedGameplayModifiers(data); break;
+		case MenuRpcType_LevelLoadError: fprintf(stderr, "[INSTANCE] MenuRpcType_LevelLoadError not implemented\n"); abort();
+		case MenuRpcType_LevelLoadSuccess: fprintf(stderr, "[INSTANCE] MenuRpcType_LevelLoadSuccess not implemented\n"); abort();
+		case MenuRpcType_StartLevel: fprintf(stderr, "[INSTANCE] MenuRpcType_StartLevel not implemented\n"); abort();
+		case MenuRpcType_GetStartedLevel: {
+			pkt_readGetStartedLevel(data);
+			if(room->state != ServerState_Lobby) {
+				fprintf(stderr, "[INSTANCE] MenuRpcType_GetStartedLevel not implemented\n"); abort();
+			} else {
+				uint8_t resp[65536], *resp_end = resp;
+				struct SetIsStartButtonEnabled r_button;
+				r_button.base.syncTime = room_get_syncTime(room);
+				r_button.reason = CannotStartGameReason_NoSongSelected;
+				pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
+				SERIALIZE_MENURPC(&resp_end, SetIsStartButtonEnabled, r_button);
+				instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+			}
+			break;
+		}
+		case MenuRpcType_CancelLevelStart: fprintf(stderr, "[INSTANCE] MenuRpcType_CancelLevelStart not implemented\n"); abort();
+		case MenuRpcType_GetMultiplayerGameState: {
+			pkt_readGetMultiplayerGameState(data);
+			uint8_t resp[65536], *resp_end = resp;
+			struct SetMultiplayerGameState r_state;
+			r_state.base.syncTime = room_get_syncTime(room);
+			if(room->state == ServerState_Lobby)
+				r_state.lobbyState = MultiplayerGameState_Lobby;
+			else
+				r_state.lobbyState = MultiplayerGameState_Game;
+			pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
+			SERIALIZE_MENURPC(&resp_end, SetMultiplayerGameState, r_state);
+			instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+			break;
+		}
+		case MenuRpcType_SetMultiplayerGameState: fprintf(stderr, "[INSTANCE] BAD TYPE: MenuRpcType_SetMultiplayerGameState\n"); break;
+		case MenuRpcType_GetIsReady: pkt_readGetIsReady(data); break;
+		case MenuRpcType_SetIsReady: {
+			_Bool isReady = pkt_readSetIsReady(data).isReady;
+			if(room->state == ServerState_Lobby)
+				if(Counter128_set(&room->lobby.isReady, indexof(room->players, session), isReady) != isReady)
+					refresh_countdown(ctx, room);
+			break;
+		}
+		case MenuRpcType_SetStartGameTime: fprintf(stderr, "[INSTANCE] MenuRpcType_SetStartGameTime not implemented\n"); abort();
+		case MenuRpcType_CancelStartGameTime: fprintf(stderr, "[INSTANCE] MenuRpcType_CancelStartGameTime not implemented\n"); abort();
+		case MenuRpcType_GetIsInLobby: pkt_readGetIsInLobby(data); break;
+		case MenuRpcType_SetIsInLobby: {
+			_Bool inLobby = pkt_readSetIsInLobby(data).isBack;
+			if(Counter128_set(&room->inLobby, indexof(room->players, session), inLobby) != inLobby)
+				refresh_button(ctx, room);
+			break;
+		}
+		case MenuRpcType_GetCountdownEndTime: {
+			pkt_readGetCountdownEndTime(data);
+			uint8_t resp[65536], *resp_end = resp;
+			struct SetIsStartButtonEnabled r_button;
+			r_button.base.syncTime = room_get_syncTime(room);
+			r_button.reason = CannotStartGameReason_NoSongSelected;
+			pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
+			SERIALIZE_MENURPC(&resp_end, SetIsStartButtonEnabled, r_button);
+			instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+			break;
+		}
+		case MenuRpcType_SetCountdownEndTime: fprintf(stderr, "[INSTANCE] BAD TYPE: MenuRpcType_SetCountdownEndTime\n"); break;
+		case MenuRpcType_CancelCountdown: fprintf(stderr, "[INSTANCE] BAD TYPE: MenuRpcType_CancelCountdown\n"); break;
+		case MenuRpcType_GetOwnedSongPacks: fprintf(stderr, "[INSTANCE] MenuRpcType_GetOwnedSongPacks not implemented\n"); abort();
+		case MenuRpcType_SetOwnedSongPacks: {
+			struct SetOwnedSongPacks owned = pkt_readSetOwnedSongPacks(data);
+			if(room->state == ServerState_Lobby)
+				session->lobby.ownedSongPacks = owned.songPackMask;
+			break;
+		}
+		case MenuRpcType_RequestKickPlayer: fprintf(stderr, "[INSTANCE] MenuRpcType_RequestKickPlayer not implemented\n"); abort();
+		case MenuRpcType_GetPermissionConfiguration:  {
+			pkt_readGetPermissionConfiguration(data);
+			uint8_t resp[65536], *resp_end = resp;
+			struct SetPermissionConfiguration r_permission;
+			r_permission.base.syncTime = room_get_syncTime(room);
+			r_permission.playersPermissionConfiguration.count = 0;
+			FOR_ALL_PLAYERS(room, id)
+				r_permission.playersPermissionConfiguration.playersPermission[r_permission.playersPermissionConfiguration.count++] = room->players[id].permissions;
+			pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
+			SERIALIZE_MENURPC(&resp_end, SetPermissionConfiguration, r_permission);
+			instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+			break;
+		}
+		case MenuRpcType_SetPermissionConfiguration: fprintf(stderr, "[INSTANCE] BAD TYPE: MenuRpcType_SetPermissionConfiguration\n"); break;
+		case MenuRpcType_GetIsStartButtonEnabled: fprintf(stderr, "[INSTANCE] MenuRpcType_GetIsStartButtonEnabled not implemented\n"); abort();
+		case MenuRpcType_SetIsStartButtonEnabled: fprintf(stderr, "[INSTANCE] BAD TYPE: MenuRpcType_SetIsStartButtonEnabled\n"); break;
+		default: fprintf(stderr, "[INSTANCE] BAD MENU RPC TYPE\n");
+	}
+}
+
+static void handle_GameplayRpc(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
+	struct GameplayRpcHeader rpc = pkt_readGameplayRpcHeader(data);
+	switch(rpc.type) {
+		case GameplayRpcType_SetGameplaySceneSyncFinish: fprintf(stderr, "[INSTANCE] GameplayRpcType_SetGameplaySceneSyncFinish not implemented\n"); abort();
+		case GameplayRpcType_SetGameplaySceneReady: {
+			struct SetGameplaySceneReady ready = pkt_readSetGameplaySceneReady(data);
+			if(room->state != ServerState_LoadingScene)
+				break;
+			session->game.settings = ready.playerSpecificSettingsNetSerializable;
+			if(!Counter128_set(&room->loadingScene.isLoaded, indexof(room->players, session), 1))
+				if(Counter128_contains(room->loadingScene.isLoaded, room->playerSort))
+					room_set_state(ctx, room, ServerState_LoadingSong);
+			break;
+		}
+		case GameplayRpcType_GetGameplaySceneReady: fprintf(stderr, "[INSTANCE] GameplayRpcType_GetGameplaySceneReady not implemented\n"); abort();
+		case GameplayRpcType_SetActivePlayerFailedToConnect: fprintf(stderr, "[INSTANCE] GameplayRpcType_SetActivePlayerFailedToConnect not implemented\n"); abort();
+		case GameplayRpcType_SetGameplaySongReady: {
+			pkt_readSetGameplaySongReady(data);
+			if(room->state != ServerState_LoadingSong)
+				break;
+			if(!Counter128_set(&room->loadingSong.isLoaded, indexof(room->players, session), 1))
+				if(Counter128_contains(room->loadingSong.isLoaded, room->playerSort))
+					room_set_state(ctx, room, ServerState_Game);
+			break;
+		}
+		case GameplayRpcType_GetGameplaySongReady: fprintf(stderr, "[INSTANCE] GameplayRpcType_GetGameplaySongReady not implemented\n"); abort();
+		case GameplayRpcType_SetSongStartTime: fprintf(stderr, "[INSTANCE] GameplayRpcType_SetSongStartTime not implemented\n"); abort();
+		case GameplayRpcType_NoteCut: pkt_readNoteCut(data); break;
+		case GameplayRpcType_NoteMissed: pkt_readNoteMissed(data); break;
+		case GameplayRpcType_LevelFinished: {
+			pkt_readLevelFinished(data);
+			if(room->state == ServerState_Lobby)
+				break;
+			if(!Counter128_set(&room->levelFinished, indexof(room->players, session), 1)) {
+				if(Counter128_contains(room->levelFinished, room->playerSort)) {
+					fprintf(stderr, "TODO: wait on results screen\n");
+					room_set_state(ctx, room, ServerState_Lobby);
+				}
+			}
+			break;
+		}
+		case GameplayRpcType_ReturnToMenu: fprintf(stderr, "[INSTANCE] BAD TYPE: GameplayRpcType_ReturnToMenu\n"); break;
+		case GameplayRpcType_RequestReturnToMenu: {
+			pkt_readRequestReturnToMenu(data);
+			if(room->state != ServerState_Lobby && String_eq(session->permissions.userId, room->managerId))
+				room_set_state(ctx, room, ServerState_Lobby);
+			break;
+		}
+		default: fprintf(stderr, "[INSTANCE] BAD GAMEPLAY RPC TYPE\n");
+	}
 }
 
 static void handle_PlayerIdentity(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
 	struct PlayerIdentity identity = pkt_readPlayerIdentity(data);
-	update_session_state(ctx, room, session, identity.playerState);
+	session->stateHash = identity.playerState;
+	session_refresh_stateHash(ctx, room, session);
 	session->avatar = identity.playerAvatar;
-	fprintf(stderr, "TODO: send to other players\n");
 	if(session->clientState != ClientState_accepted)
 		return;
 	session->clientState = ClientState_connected;
 
 	uint8_t resp[65536], *resp_end = resp;
-	pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
-	uint8_t *routing_end = resp_end;
-	struct PlayerConnected r_connected;
-	r_connected.remoteConnectionId = indexof(room->players, session) + 1;
-	r_connected.userId = session->permissions.userId;
-	r_connected.userName = session->userName;
-	r_connected.isConnectionOwner = 0;
-	SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerConnected)
-		pkt_writePlayerConnected(&resp_end, r_connected);
-	FOR_EXCLUDING_PLAYER(room, session, id)
-		instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+	{
+		struct PlayerConnected r_connected;
+		r_connected.remoteConnectionId = indexof(room->players, session) + 1;
+		r_connected.userId = session->permissions.userId;
+		r_connected.userName = session->userName;
+		r_connected.isConnectionOwner = 0;
+		pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
+		SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerConnected)
+			pkt_writePlayerConnected(&resp_end, r_connected);
+		FOR_EXCLUDING_PLAYER(room, session, id)
+			instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 
-	resp_end = routing_end;
-	struct PlayerSortOrderUpdate r_sort;
-	r_sort.userId = session->permissions.userId;
-	r_sort.sortIndex = indexof(room->players, session);
-	SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerSortOrderUpdate)
-		pkt_writePlayerSortOrderUpdate(&resp_end, r_sort);
-	FOR_ALL_PLAYERS(room, id)
-		instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+		struct PlayerSortOrderUpdate r_sort;
+		r_sort.userId = session->permissions.userId;
+		r_sort.sortIndex = indexof(room->players, session);
+		resp_end = resp;
+		pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
+		SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerSortOrderUpdate)
+			pkt_writePlayerSortOrderUpdate(&resp_end, r_sort);
+		FOR_ALL_PLAYERS(room, id)
+			instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+	}
+
+	FOR_EXCLUDING_PLAYER(room, session, id) {
+		struct PlayerConnected r_connected;
+		r_connected.remoteConnectionId = id + 1;
+		r_connected.userId = room->players[id].permissions.userId;
+		r_connected.userName = room->players[id].userName;
+		r_connected.isConnectionOwner = 0;
+		resp_end = resp;
+		pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
+		SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerConnected)
+			pkt_writePlayerConnected(&resp_end, r_connected);
+		instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+
+		struct PlayerSortOrderUpdate r_sort;
+		r_sort.userId = room->players[id].permissions.userId;
+		r_sort.sortIndex = id;
+		resp_end = resp;
+		pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
+		SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerSortOrderUpdate)
+			pkt_writePlayerSortOrderUpdate(&resp_end, r_sort);
+		instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+
+		struct PlayerIdentity r_identity;
+		r_identity.playerState = room->players[id].stateHash;
+		r_identity.playerAvatar = room->players[id].avatar;
+		r_identity.random.length = 0;
+		r_identity.publicEncryptionKey.length = 0;
+		fprintf(stderr, "TODO: do we need to include the encrytion key?\n");
+		resp_end = resp;
+		pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
+		SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerSortOrderUpdate)
+			pkt_writePlayerIdentity(&resp_end, r_identity);
+		instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+	}
 
 	resp_end = resp;
 	pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
@@ -711,7 +854,9 @@ static void handle_PlayerIdentity(struct Context *ctx, struct Room *room, struct
 	SERIALIZE_MENURPC(&resp_end, GetRecommendedGameplayModifiers, (struct GetRecommendedGameplayModifiers){.base = base});
 	SERIALIZE_MENURPC(&resp_end, GetIsReady, (struct GetIsReady){.base = base});
 	SERIALIZE_MENURPC(&resp_end, GetIsInLobby, (struct GetIsInLobby){.base = base});
-	instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+	FOR_ALL_PLAYERS(room, id)
+		instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+	fprintf(stderr, "TODO: are these necessary?\n");
 }
 
 static void handle_MultiplayerSession(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
@@ -813,7 +958,11 @@ static void process_Channeled(struct Context *ctx, struct Room *room, struct Ins
 			case InternalMessageType_Party: fprintf(stderr, "[INSTANCE] InternalMessageType_Party not implemented\n"); break;
 			case InternalMessageType_MultiplayerSession: handle_MultiplayerSession(ctx, room, session, &sub); break;
 			case InternalMessageType_KickPlayer: fprintf(stderr, "[INSTANCE] InternalMessageType_KickPlayer not implemented\n"); break;
-			case InternalMessageType_PlayerStateUpdate: update_session_state(ctx, room, session, pkt_readPlayerStateUpdate(&sub).playerState); break;
+			case InternalMessageType_PlayerStateUpdate: {
+				session->stateHash = pkt_readPlayerStateUpdate(&sub).playerState;
+				session_refresh_stateHash(ctx, room, session);
+				break;
+			}
 			case InternalMessageType_PlayerAvatarUpdate: fprintf(stderr, "[INSTANCE] InternalMessageType_PlayerAvatarUpdate not implemented\n"); break;
 			default: fprintf(stderr, "[INSTANCE] BAD INTERNAL MESSAGE TYPE\n");
 		}
@@ -871,12 +1020,10 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 	SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerIdentity)
 		pkt_writePlayerIdentity(&resp_end, r_identity);
 	instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
-
-	fprintf(stderr, "TODO: send PlayerConnected to other players\n");
 }
 static void handle_Disconnect(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
 	pkt_readDisconnect(data);
-	room_disconnect(NULL, room, session);
+	room_disconnect(NULL, room, session, 1);
 }
 
 static void handle_packet(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t *pkt, uint32_t len) {
@@ -949,6 +1096,12 @@ instance_handler(struct Context *ctx) {
 	return 0;
 }
 
+static void room_close(struct Room *room) {
+	FOR_ALL_PLAYERS(room, id)
+		room_disconnect(NULL, room, &room->players[id], 0);
+	free(room);
+}
+
 #ifdef WINDOWS
 static HANDLE instance_threads[THREAD_COUNT];
 #else
@@ -969,7 +1122,7 @@ _Bool instance_init(const char *domain, const char *domainIPv4) {
 		contexts[i].net.user = &contexts[i];
 		contexts[i].net.onResolve = instance_onResolve;
 		contexts[i].net.onResend = instance_onResend;
-		Counter128_clear(&contexts[i].TEMPglobalRoom.playerSort);
+		contexts[i].TEMPglobalRoom = NULL;
 
 		#ifdef WINDOWS
 		instance_threads[i] = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)instance_handler, &contexts[i], 0, NULL);
@@ -996,8 +1149,9 @@ void instance_cleanup() {
 			pthread_join(instance_threads[i], NULL);
 			#endif
 			instance_threads[i] = 0;
-			FOR_ALL_PLAYERS(&contexts[i].TEMPglobalRoom, id)
-				room_disconnect(NULL, &contexts[i].TEMPglobalRoom, &contexts[i].TEMPglobalRoom.players[id]);
+			if(contexts[i].TEMPglobalRoom)
+				room_close(contexts[i].TEMPglobalRoom);
+			contexts[i].TEMPglobalRoom = NULL;
 			net_cleanup(&contexts[i].net);
 		}
 	}
@@ -1007,9 +1161,9 @@ void instance_cleanup() {
 _Bool instance_get_isopen(ServerCode code, struct String *managerId_out, struct GameplayServerConfiguration *configuration) {
 	if(code == StringToServerCode("INDEX", 5))
 		return index_get_isopen(managerId_out, configuration);
-	if(code == StringToServerCode("HELLO", 5)) { // TODO: temporary hack
-		*managerId_out = contexts[0].TEMPglobalRoom.managerId;
-		configuration->maxPlayerCount = contexts[0].TEMPglobalRoom.configuration.maxPlayerCount;
+	if(contexts[0].TEMPglobalRoom && code == StringToServerCode("HELLO", 5)) { // TODO: temporary hack
+		*managerId_out = contexts[0].TEMPglobalRoom->managerId;
+		configuration->maxPlayerCount = contexts[0].TEMPglobalRoom->configuration.maxPlayerCount;
 		return 1;
 	}
 	return 0;
@@ -1021,12 +1175,14 @@ struct NetSession *instance_resolve_session(ServerCode code, struct SS addr, str
 	if(code != StringToServerCode("HELLO", 5))
 		return NULL;
 	struct Context *ctx = &contexts[0];
-	struct Room *room = &ctx->TEMPglobalRoom;
+	struct Room *room = ctx->TEMPglobalRoom;
+	if(!room)
+		return NULL;
 	struct InstanceSession *session = NULL;
 	FOR_ALL_PLAYERS(room, id) {
 		if(addrs_are_equal(&addr, NetSession_get_addr(&room->players[id].net))) {
 			session = &room->players[id];
-			room_disconnect(ctx, room, session);
+			room_disconnect(ctx, room, session, 1);
 			break;
 		}
 	}
@@ -1042,9 +1198,6 @@ struct NetSession *instance_resolve_session(ServerCode code, struct SS addr, str
 		room->playerSort = tmp;
 	}
 	session->clientState = ClientState_disconnected;
-	session->pong.sequence = 0;
-	instance_channels_init(&session->channels);
-
 	session->secret = secret;
 	session->userName = userName;
 	session->permissions.userId = userId;
@@ -1053,11 +1206,13 @@ struct NetSession *instance_resolve_session(ServerCode code, struct SS addr, str
 	session->permissions.hasRecommendGameplayModifiersPermission = (room->configuration.gameplayServerControlSettings == GameplayServerControlSettings_AllowModifierSelection || room->configuration.gameplayServerControlSettings == GameplayServerControlSettings_All);
 	session->permissions.hasKickVotePermission = session->permissions.isServerOwner;
 	session->permissions.hasInvitePermission = (room->configuration.invitePolicy == InvitePolicy_AnyoneCanInvite) || (session->permissions.isServerOwner && room->configuration.invitePolicy == InvitePolicy_OnlyConnectionOwnerCanInvite);
-	session->state.bloomFilter = (struct BitMask128){0, 0};
-	session->menu.ownedSongPacks.bloomFilter.d0 = 0;
-	session->menu.ownedSongPacks.bloomFilter.d1 = 0;
-	memset(&session->menu.recommendedModifiers, 0, sizeof(session->menu.recommendedModifiers));
-	session->menu.recommendedBeatmap = (struct BeatmapIdentifierNetSerializable){{0}, {0}, 0};
+
+	session->pong.sequence = 0;
+	instance_channels_init(&session->channels);
+	session->stateHash.bloomFilter = (struct BitMask128){0, 0};
+	session->avatar = CLEAR_AVATARDATA;
+
+	session_refresh_state(ctx, room, session);
 
 	char addrstr[INET6_ADDRSTRLEN + 8];
 	net_tostr(&addr, addrstr);
@@ -1067,36 +1222,25 @@ struct NetSession *instance_resolve_session(ServerCode code, struct SS addr, str
 		for(uint32_t b = 0; b < sizeof(*room->playerSort.bits) * 8; ++b)
 			fprintf(stderr, "%u", (room->playerSort.bits[i] >> b) & 1);
 	fprintf(stderr, "\n");
-
-	/*uint8_t punch[128], *punch_end = punch;
-	pkt_writeNetPacketHeader(&punch_end, (struct NetPacketHeader){PacketProperty_Ping, 0, 0});
-	pkt_writePing(&punch_end, (struct Ping){0});
-	net_send_internal(&ctx->net, &session->net, punch, punch_end - punch, 1);*/
 	return &session->net;
 }
 
 struct NetSession *instance_open(ServerCode *out, struct String managerId, struct GameplayServerConfiguration *configuration, struct SS addr, struct String secret, struct String userId, struct String userName) {
-	net_keypair_init(&contexts[0].net, &contexts[0].TEMPglobalRoom.keys);
-	contexts[0].TEMPglobalRoom.syncBase = 0;
-	contexts[0].TEMPglobalRoom.syncBase = room_get_syncTime(&contexts[0].TEMPglobalRoom);
-	contexts[0].TEMPglobalRoom.countdownEnd = 0;
-	contexts[0].TEMPglobalRoom.state = ServerState_Lobby;
-	Counter128_clear(&contexts[0].TEMPglobalRoom.inLobby);
-	Counter128_clear(&contexts[0].TEMPglobalRoom.ready);
-	Counter128_clear(&contexts[0].TEMPglobalRoom.entitled);
-	Counter128_clear(&contexts[0].TEMPglobalRoom.spectating);
-	contexts[0].TEMPglobalRoom.selectedBeatmap = (struct BeatmapIdentifierNetSerializable){{0}, {0}, 0};
-	memset(&contexts[0].TEMPglobalRoom.selectedModifiers, 0, sizeof(contexts->TEMPglobalRoom.selectedModifiers));
-	contexts[0].TEMPglobalRoom.buzzkills.count = 0;
-	contexts[0].TEMPglobalRoom.canStart = 0;
-	contexts[0].TEMPglobalRoom.configuration = *configuration;
-	Counter128_clear(&contexts[0].TEMPglobalRoom.playerSort);
-	contexts[0].TEMPglobalRoom.players = malloc(contexts[0].TEMPglobalRoom.configuration.maxPlayerCount * sizeof(*contexts->TEMPglobalRoom.players));
-	for(uint32_t i = 0; i < contexts[0].TEMPglobalRoom.configuration.maxPlayerCount; ++i) {
-		contexts[0].TEMPglobalRoom.players[i].clientState = ClientState_disconnected;
-		contexts[0].TEMPglobalRoom.players[i].channels.incomingFragmentsList = NULL;
+	struct Room *room = malloc(sizeof(struct Room) + configuration->maxPlayerCount * sizeof(*room->players));
+	if(!room) {
+		fprintf(stderr, "alloc error\n");
+		abort();
 	}
-	contexts[0].TEMPglobalRoom.managerId = managerId;
+	net_keypair_init(&contexts[0].net, &room->keys);
+	room->managerId = managerId;
+	room->configuration = *configuration;
+	room->syncBase = 0;
+	room->syncBase = room_get_syncTime(room);
+	Counter128_clear(&room->playerSort);
+	room_set_state(&contexts[0], room, ServerState_Lobby);
+	if(contexts[0].TEMPglobalRoom)
+		room_close(contexts[0].TEMPglobalRoom);
+	contexts[0].TEMPglobalRoom = room;
 	*out = StringToServerCode("HELLO", 5); // TODO: temporary hack
 	return instance_resolve_session(*out, addr, secret, userId, userName);
 }

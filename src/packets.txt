@@ -242,6 +242,9 @@ code
 d String
 	u32 length
 	c[60,length] data
+d LongString
+	u32 length
+	c[4096,length] data
 r AuthenticationToken
 	u8.Platform platform
 	String userId
@@ -530,7 +533,7 @@ u32 BeatmapDifficulty
 	z Expert
 	z ExpertPlus
 d BeatmapIdentifierNetSerializable
-	String levelID
+	LongString levelID
 	String beatmapCharacteristicSerializedName
 	vu32.BeatmapDifficulty difficulty
 u8 EnabledObstacleType
@@ -730,10 +733,10 @@ u8 MultiplayerSessionMessage Type
 			PlayersMissingEntitlementsNetSerializable playersMissingEntitlements
 		s GetIsEntitledToLevel
 			RemoteProcedureCall base
-			String levelId
+			LongString levelId
 		r SetIsEntitledToLevel
 			RemoteProcedureCall base
-			String levelId
+			LongString levelId
 			vi32.EntitlementsStatus entitlementStatus
 		n InvalidateLevelEntitlementStatuses
 			RemoteProcedureCall base
@@ -766,10 +769,10 @@ u8 MultiplayerSessionMessage Type
 			RemoteProcedureCall base
 		n LevelLoadError
 			RemoteProcedureCall base
-			String levelId
+			LongString levelId
 		n LevelLoadSuccess
 			RemoteProcedureCall base
-			String levelId
+			LongString levelId
 		s StartLevel
 			RemoteProcedureCall base
 			BeatmapIdentifierNetSerializable beatmapId
@@ -859,7 +862,7 @@ u8 MultiplayerSessionMessage Type
 			MultiplayerLevelCompletionResults results
 		s ReturnToMenu
 			RemoteProcedureCall base
-		n RequestReturnToMenu
+		r RequestReturnToMenu
 			RemoteProcedureCall base
 	r NodePoseSyncState
 		SyncStateId id
