@@ -425,6 +425,14 @@ struct PlayerStateUpdate {
 	struct PlayerStateHash playerState;
 };
 struct PlayerStateUpdate pkt_readPlayerStateUpdate(const uint8_t **pkt);
+struct PingMessage {
+	float pingTime;
+};
+struct PingMessage pkt_readPingMessage(const uint8_t **pkt);
+struct PongMessage {
+	float pingTime;
+};
+struct PongMessage pkt_readPongMessage(const uint8_t **pkt);
 ENUM(uint8_t, InternalMessageType, {
 	InternalMessageType_SyncTime,
 	InternalMessageType_PlayerConnected,
@@ -437,12 +445,22 @@ ENUM(uint8_t, InternalMessageType, {
 	InternalMessageType_KickPlayer,
 	InternalMessageType_PlayerStateUpdate,
 	InternalMessageType_PlayerAvatarUpdate,
+	InternalMessageType_PingMessage,
+	InternalMessageType_PongMessage,
 })
 struct RemoteProcedureCall {
 	float syncTime;
 };
 struct RemoteProcedureCall pkt_readRemoteProcedureCall(const uint8_t **pkt);
 void pkt_writeRemoteProcedureCall(uint8_t **pkt, struct RemoteProcedureCall in);
+struct RemoteProcedureCallFlags pkt_readRemoteProcedureCallFlags(const uint8_t **pkt, uint32_t protocolVersion);
+struct RemoteProcedureCallFlags {
+	_Bool hasValue0;
+	_Bool hasValue1;
+	_Bool hasValue2;
+	_Bool hasValue3;
+};
+void pkt_writeRemoteProcedureCallFlags(uint8_t **pkt, struct RemoteProcedureCallFlags in, uint32_t protocolVersion);
 struct PlayersMissingEntitlementsNetSerializable {
 	int32_t count;
 	struct String playersWithoutEntitlements[128];
@@ -626,6 +644,21 @@ ENUM(uint8_t, MultiplayerLevelEndState, {
 	MultiplayerLevelEndState_ConnectedAfterLevelEnded,
 	MultiplayerLevelEndState_Quit,
 })
+ENUM(uint8_t, MultiplayerPlayerLevelEndState, {
+	MultiplayerPlayerLevelEndState_SongFinished,
+	MultiplayerPlayerLevelEndState_NotFinished,
+	MultiplayerPlayerLevelEndState_NotStarted,
+})
+ENUM(uint8_t, MultiplayerPlayerLevelEndReason, {
+	MultiplayerPlayerLevelEndReason_Cleared,
+	MultiplayerPlayerLevelEndReason_Failed,
+	MultiplayerPlayerLevelEndReason_GivenUp,
+	MultiplayerPlayerLevelEndReason_Quit,
+	MultiplayerPlayerLevelEndReason_HostEndedLevel,
+	MultiplayerPlayerLevelEndReason_WasInactive,
+	MultiplayerPlayerLevelEndReason_StartupFailed,
+	MultiplayerPlayerLevelEndReason_ConnectedAfterLevelEnded,
+})
 ENUM(uint8_t, Rank, {
 	Rank_E,
 	Rank_D,
@@ -680,9 +713,11 @@ struct LevelCompletionResults {
 struct LevelCompletionResults pkt_readLevelCompletionResults(const uint8_t **pkt);
 struct MultiplayerLevelCompletionResults {
 	MultiplayerLevelEndState levelEndState;
+	MultiplayerPlayerLevelEndState playerLevelEndState;
+	MultiplayerPlayerLevelEndReason playerLevelEndReason;
 	struct LevelCompletionResults levelCompletionResults;
 };
-struct MultiplayerLevelCompletionResults pkt_readMultiplayerLevelCompletionResults(const uint8_t **pkt);
+struct MultiplayerLevelCompletionResults pkt_readMultiplayerLevelCompletionResults(const uint8_t **pkt, uint32_t protocolVersion);
 struct NodePoseSyncState1 {
 	struct PoseSerializable head;
 	struct PoseSerializable leftController;
@@ -697,136 +732,208 @@ struct StandardScoreSyncState {
 	int32_t multiplier;
 };
 struct StandardScoreSyncState pkt_readStandardScoreSyncState(const uint8_t **pkt);
+ENUM(uint8_t, NoteCutDirection, {
+	NoteCutDirection_Up,
+	NoteCutDirection_Down,
+	NoteCutDirection_Left,
+	NoteCutDirection_Right,
+	NoteCutDirection_UpLeft,
+	NoteCutDirection_UpRight,
+	NoteCutDirection_DownLeft,
+	NoteCutDirection_DownRight,
+	NoteCutDirection_Any,
+	NoteCutDirection_None,
+})
+struct NoteSpawnInfoNetSerializable {
+	float time;
+	int32_t lineIndex;
+	NoteLineLayer noteLineLayer;
+	NoteLineLayer beforeJumpNoteLineLayer;
+	ColorType colorType;
+	NoteCutDirection cutDirection;
+	float timeToNextColorNote;
+	float timeToPrevColorNote;
+	int32_t flipLineIndex;
+	int32_t flipYSide;
+	struct Vector3Serializable moveStartPos;
+	struct Vector3Serializable moveEndPos;
+	struct Vector3Serializable jumpEndPos;
+	float jumpGravity;
+	float moveDuration;
+	float jumpDuration;
+	float rotation;
+	float cutDirectionAngleOffset;
+};
+struct NoteSpawnInfoNetSerializable pkt_readNoteSpawnInfoNetSerializable(const uint8_t **pkt);
+ENUM(uint8_t, ObstacleType, {
+	ObstacleType_FullHeight,
+	ObstacleType_Top,
+})
+struct ObstacleSpawnInfoNetSerializable {
+	float time;
+	int32_t lineIndex;
+	ObstacleType obstacleType;
+	float duration;
+	int32_t width;
+	struct Vector3Serializable moveStartPos;
+	struct Vector3Serializable moveEndPos;
+	struct Vector3Serializable jumpEndPos;
+	float obstacleHeight;
+	float moveDuration;
+	float jumpDuration;
+	float noteLinesDistance;
+	float rotation;
+};
+struct ObstacleSpawnInfoNetSerializable pkt_readObstacleSpawnInfoNetSerializable(const uint8_t **pkt);
 struct SetPlayersMissingEntitlementsToLevel {
 	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
 	struct PlayersMissingEntitlementsNetSerializable playersMissingEntitlements;
 };
-void pkt_writeSetPlayersMissingEntitlementsToLevel(uint8_t **pkt, struct SetPlayersMissingEntitlementsToLevel in);
+void pkt_writeSetPlayersMissingEntitlementsToLevel(uint8_t **pkt, struct SetPlayersMissingEntitlementsToLevel in, uint32_t protocolVersion);
 struct GetIsEntitledToLevel {
 	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
 	struct LongString levelId;
 };
-void pkt_writeGetIsEntitledToLevel(uint8_t **pkt, struct GetIsEntitledToLevel in);
+void pkt_writeGetIsEntitledToLevel(uint8_t **pkt, struct GetIsEntitledToLevel in, uint32_t protocolVersion);
 struct SetIsEntitledToLevel {
 	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
 	struct LongString levelId;
 	EntitlementsStatus entitlementStatus;
 };
-struct SetIsEntitledToLevel pkt_readSetIsEntitledToLevel(const uint8_t **pkt);
+struct SetIsEntitledToLevel pkt_readSetIsEntitledToLevel(const uint8_t **pkt, uint32_t protocolVersion);
 struct SetSelectedBeatmap {
 	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
 	struct BeatmapIdentifierNetSerializable identifier;
 };
-void pkt_writeSetSelectedBeatmap(uint8_t **pkt, struct SetSelectedBeatmap in);
+void pkt_writeSetSelectedBeatmap(uint8_t **pkt, struct SetSelectedBeatmap in, uint32_t protocolVersion);
 struct RecommendBeatmap {
 	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
 	struct BeatmapIdentifierNetSerializable identifier;
 };
-struct RecommendBeatmap pkt_readRecommendBeatmap(const uint8_t **pkt);
-void pkt_writeRecommendBeatmap(uint8_t **pkt, struct RecommendBeatmap in);
+struct RecommendBeatmap pkt_readRecommendBeatmap(const uint8_t **pkt, uint32_t protocolVersion);
+void pkt_writeRecommendBeatmap(uint8_t **pkt, struct RecommendBeatmap in, uint32_t protocolVersion);
 struct ClearRecommendedBeatmap {
 	struct RemoteProcedureCall base;
 };
-struct ClearRecommendedBeatmap pkt_readClearRecommendedBeatmap(const uint8_t **pkt);
+struct ClearRecommendedBeatmap pkt_readClearRecommendedBeatmap(const uint8_t **pkt, uint32_t protocolVersion);
 struct GetRecommendedBeatmap {
 	struct RemoteProcedureCall base;
 };
-struct GetRecommendedBeatmap pkt_readGetRecommendedBeatmap(const uint8_t **pkt);
-void pkt_writeGetRecommendedBeatmap(uint8_t **pkt, struct GetRecommendedBeatmap in);
+struct GetRecommendedBeatmap pkt_readGetRecommendedBeatmap(const uint8_t **pkt, uint32_t protocolVersion);
+void pkt_writeGetRecommendedBeatmap(uint8_t **pkt, struct GetRecommendedBeatmap in, uint32_t protocolVersion);
 struct SetSelectedGameplayModifiers {
 	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
 	struct GameplayModifiers gameplayModifiers;
 };
-void pkt_writeSetSelectedGameplayModifiers(uint8_t **pkt, struct SetSelectedGameplayModifiers in);
+void pkt_writeSetSelectedGameplayModifiers(uint8_t **pkt, struct SetSelectedGameplayModifiers in, uint32_t protocolVersion);
 struct RecommendGameplayModifiers {
 	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
 	struct GameplayModifiers gameplayModifiers;
 };
-struct RecommendGameplayModifiers pkt_readRecommendGameplayModifiers(const uint8_t **pkt);
-void pkt_writeRecommendGameplayModifiers(uint8_t **pkt, struct RecommendGameplayModifiers in);
+struct RecommendGameplayModifiers pkt_readRecommendGameplayModifiers(const uint8_t **pkt, uint32_t protocolVersion);
+void pkt_writeRecommendGameplayModifiers(uint8_t **pkt, struct RecommendGameplayModifiers in, uint32_t protocolVersion);
+struct ClearRecommendedGameplayModifiers {
+	struct RemoteProcedureCall base;
+};
+struct ClearRecommendedGameplayModifiers pkt_readClearRecommendedGameplayModifiers(const uint8_t **pkt, uint32_t protocolVersion);
 struct GetRecommendedGameplayModifiers {
 	struct RemoteProcedureCall base;
 };
-struct GetRecommendedGameplayModifiers pkt_readGetRecommendedGameplayModifiers(const uint8_t **pkt);
-void pkt_writeGetRecommendedGameplayModifiers(uint8_t **pkt, struct GetRecommendedGameplayModifiers in);
+struct GetRecommendedGameplayModifiers pkt_readGetRecommendedGameplayModifiers(const uint8_t **pkt, uint32_t protocolVersion);
+void pkt_writeGetRecommendedGameplayModifiers(uint8_t **pkt, struct GetRecommendedGameplayModifiers in, uint32_t protocolVersion);
 struct StartLevel {
 	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
 	struct BeatmapIdentifierNetSerializable beatmapId;
 	struct GameplayModifiers gameplayModifiers;
 	float startTime;
 };
-void pkt_writeStartLevel(uint8_t **pkt, struct StartLevel in);
+void pkt_writeStartLevel(uint8_t **pkt, struct StartLevel in, uint32_t protocolVersion);
 struct GetStartedLevel {
 	struct RemoteProcedureCall base;
 };
-struct GetStartedLevel pkt_readGetStartedLevel(const uint8_t **pkt);
+struct GetStartedLevel pkt_readGetStartedLevel(const uint8_t **pkt, uint32_t protocolVersion);
 struct CancelLevelStart {
 	struct RemoteProcedureCall base;
 };
-void pkt_writeCancelLevelStart(uint8_t **pkt, struct CancelLevelStart in);
+void pkt_writeCancelLevelStart(uint8_t **pkt, struct CancelLevelStart in, uint32_t protocolVersion);
 struct GetMultiplayerGameState {
 	struct RemoteProcedureCall base;
 };
-struct GetMultiplayerGameState pkt_readGetMultiplayerGameState(const uint8_t **pkt);
+struct GetMultiplayerGameState pkt_readGetMultiplayerGameState(const uint8_t **pkt, uint32_t protocolVersion);
 struct SetMultiplayerGameState {
 	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
 	MultiplayerGameState lobbyState;
 };
-void pkt_writeSetMultiplayerGameState(uint8_t **pkt, struct SetMultiplayerGameState in);
+void pkt_writeSetMultiplayerGameState(uint8_t **pkt, struct SetMultiplayerGameState in, uint32_t protocolVersion);
 struct GetIsReady {
 	struct RemoteProcedureCall base;
 };
-struct GetIsReady pkt_readGetIsReady(const uint8_t **pkt);
-void pkt_writeGetIsReady(uint8_t **pkt, struct GetIsReady in);
+struct GetIsReady pkt_readGetIsReady(const uint8_t **pkt, uint32_t protocolVersion);
+void pkt_writeGetIsReady(uint8_t **pkt, struct GetIsReady in, uint32_t protocolVersion);
 struct SetIsReady {
 	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
 	_Bool isReady;
 };
-struct SetIsReady pkt_readSetIsReady(const uint8_t **pkt);
-void pkt_writeSetIsReady(uint8_t **pkt, struct SetIsReady in);
+struct SetIsReady pkt_readSetIsReady(const uint8_t **pkt, uint32_t protocolVersion);
+void pkt_writeSetIsReady(uint8_t **pkt, struct SetIsReady in, uint32_t protocolVersion);
 struct GetIsInLobby {
 	struct RemoteProcedureCall base;
 };
-struct GetIsInLobby pkt_readGetIsInLobby(const uint8_t **pkt);
-void pkt_writeGetIsInLobby(uint8_t **pkt, struct GetIsInLobby in);
+struct GetIsInLobby pkt_readGetIsInLobby(const uint8_t **pkt, uint32_t protocolVersion);
+void pkt_writeGetIsInLobby(uint8_t **pkt, struct GetIsInLobby in, uint32_t protocolVersion);
 struct SetIsInLobby {
 	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
 	_Bool isBack;
 };
-struct SetIsInLobby pkt_readSetIsInLobby(const uint8_t **pkt);
-void pkt_writeSetIsInLobby(uint8_t **pkt, struct SetIsInLobby in);
+struct SetIsInLobby pkt_readSetIsInLobby(const uint8_t **pkt, uint32_t protocolVersion);
+void pkt_writeSetIsInLobby(uint8_t **pkt, struct SetIsInLobby in, uint32_t protocolVersion);
 struct GetCountdownEndTime {
 	struct RemoteProcedureCall base;
 };
-struct GetCountdownEndTime pkt_readGetCountdownEndTime(const uint8_t **pkt);
+struct GetCountdownEndTime pkt_readGetCountdownEndTime(const uint8_t **pkt, uint32_t protocolVersion);
 struct SetCountdownEndTime {
 	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
 	float newTime;
 };
-void pkt_writeSetCountdownEndTime(uint8_t **pkt, struct SetCountdownEndTime in);
+void pkt_writeSetCountdownEndTime(uint8_t **pkt, struct SetCountdownEndTime in, uint32_t protocolVersion);
 struct CancelCountdown {
 	struct RemoteProcedureCall base;
 };
-void pkt_writeCancelCountdown(uint8_t **pkt, struct CancelCountdown in);
+void pkt_writeCancelCountdown(uint8_t **pkt, struct CancelCountdown in, uint32_t protocolVersion);
 struct SetOwnedSongPacks {
 	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
 	struct SongPackMask songPackMask;
 };
-struct SetOwnedSongPacks pkt_readSetOwnedSongPacks(const uint8_t **pkt);
+struct SetOwnedSongPacks pkt_readSetOwnedSongPacks(const uint8_t **pkt, uint32_t protocolVersion);
 struct GetPermissionConfiguration {
 	struct RemoteProcedureCall base;
 };
-struct GetPermissionConfiguration pkt_readGetPermissionConfiguration(const uint8_t **pkt);
+struct GetPermissionConfiguration pkt_readGetPermissionConfiguration(const uint8_t **pkt, uint32_t protocolVersion);
 struct SetPermissionConfiguration {
 	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
 	struct PlayersLobbyPermissionConfigurationNetSerializable playersPermissionConfiguration;
 };
-void pkt_writeSetPermissionConfiguration(uint8_t **pkt, struct SetPermissionConfiguration in);
+void pkt_writeSetPermissionConfiguration(uint8_t **pkt, struct SetPermissionConfiguration in, uint32_t protocolVersion);
 struct SetIsStartButtonEnabled {
 	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
 	CannotStartGameReason reason;
 };
-void pkt_writeSetIsStartButtonEnabled(uint8_t **pkt, struct SetIsStartButtonEnabled in);
+void pkt_writeSetIsStartButtonEnabled(uint8_t **pkt, struct SetIsStartButtonEnabled in, uint32_t protocolVersion);
 ENUM(uint8_t, MenuRpcType, {
 	MenuRpcType_SetPlayersMissingEntitlementsToLevel,
 	MenuRpcType_GetIsEntitledToLevel,
@@ -869,57 +976,77 @@ ENUM(uint8_t, MenuRpcType, {
 })
 struct SetGameplaySceneSyncFinish {
 	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
 	struct PlayerSpecificSettingsAtStartNetSerializable playersAtGameStart;
 	struct String sessionGameId;
 };
-void pkt_writeSetGameplaySceneSyncFinish(uint8_t **pkt, struct SetGameplaySceneSyncFinish in);
+void pkt_writeSetGameplaySceneSyncFinish(uint8_t **pkt, struct SetGameplaySceneSyncFinish in, uint32_t protocolVersion);
 struct SetGameplaySceneReady {
 	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
 	struct PlayerSpecificSettingsNetSerializable playerSpecificSettingsNetSerializable;
 };
-struct SetGameplaySceneReady pkt_readSetGameplaySceneReady(const uint8_t **pkt);
+struct SetGameplaySceneReady pkt_readSetGameplaySceneReady(const uint8_t **pkt, uint32_t protocolVersion);
 struct GetGameplaySceneReady {
 	struct RemoteProcedureCall base;
 };
-void pkt_writeGetGameplaySceneReady(uint8_t **pkt, struct GetGameplaySceneReady in);
+void pkt_writeGetGameplaySceneReady(uint8_t **pkt, struct GetGameplaySceneReady in, uint32_t protocolVersion);
 struct SetGameplaySongReady {
 	struct RemoteProcedureCall base;
 };
-struct SetGameplaySongReady pkt_readSetGameplaySongReady(const uint8_t **pkt);
+struct SetGameplaySongReady pkt_readSetGameplaySongReady(const uint8_t **pkt, uint32_t protocolVersion);
 struct GetGameplaySongReady {
 	struct RemoteProcedureCall base;
 };
-void pkt_writeGetGameplaySongReady(uint8_t **pkt, struct GetGameplaySongReady in);
+void pkt_writeGetGameplaySongReady(uint8_t **pkt, struct GetGameplaySongReady in, uint32_t protocolVersion);
 struct SetSongStartTime {
 	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
 	float startTime;
 };
-void pkt_writeSetSongStartTime(uint8_t **pkt, struct SetSongStartTime in);
+void pkt_writeSetSongStartTime(uint8_t **pkt, struct SetSongStartTime in, uint32_t protocolVersion);
 struct NoteCut {
 	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
 	float songTime;
 	struct NoteCutInfoNetSerializable noteCutInfo;
 };
-struct NoteCut pkt_readNoteCut(const uint8_t **pkt);
+struct NoteCut pkt_readNoteCut(const uint8_t **pkt, uint32_t protocolVersion);
 struct NoteMissed {
 	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
 	float songTime;
 	struct NoteMissInfoNetSerializable noteMissInfo;
 };
-struct NoteMissed pkt_readNoteMissed(const uint8_t **pkt);
+struct NoteMissed pkt_readNoteMissed(const uint8_t **pkt, uint32_t protocolVersion);
 struct LevelFinished {
 	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
 	struct MultiplayerLevelCompletionResults results;
 };
-struct LevelFinished pkt_readLevelFinished(const uint8_t **pkt);
+struct LevelFinished pkt_readLevelFinished(const uint8_t **pkt, uint32_t protocolVersion);
 struct ReturnToMenu {
 	struct RemoteProcedureCall base;
 };
-void pkt_writeReturnToMenu(uint8_t **pkt, struct ReturnToMenu in);
+void pkt_writeReturnToMenu(uint8_t **pkt, struct ReturnToMenu in, uint32_t protocolVersion);
 struct RequestReturnToMenu {
 	struct RemoteProcedureCall base;
 };
-struct RequestReturnToMenu pkt_readRequestReturnToMenu(const uint8_t **pkt);
+struct RequestReturnToMenu pkt_readRequestReturnToMenu(const uint8_t **pkt, uint32_t protocolVersion);
+struct NoteSpawned {
+	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
+	float songTime;
+	struct NoteSpawnInfoNetSerializable noteSpawnInfo;
+};
+struct NoteSpawned pkt_readNoteSpawned(const uint8_t **pkt, uint32_t protocolVersion);
+struct ObstacleSpawned {
+	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
+	float songTime;
+	struct ObstacleSpawnInfoNetSerializable obstacleSpawnInfo;
+};
+struct ObstacleSpawned pkt_readObstacleSpawned(const uint8_t **pkt, uint32_t protocolVersion);
 ENUM(uint8_t, GameplayRpcType, {
 	GameplayRpcType_SetGameplaySceneSyncFinish,
 	GameplayRpcType_SetGameplaySceneReady,
@@ -933,6 +1060,8 @@ ENUM(uint8_t, GameplayRpcType, {
 	GameplayRpcType_LevelFinished,
 	GameplayRpcType_ReturnToMenu,
 	GameplayRpcType_RequestReturnToMenu,
+	GameplayRpcType_NoteSpawned,
+	GameplayRpcType_ObstacleSpawned,
 })
 struct NodePoseSyncState {
 	struct SyncStateId id;

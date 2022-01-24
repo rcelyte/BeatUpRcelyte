@@ -1,4 +1,6 @@
 #include "../enum_reflection.h"
+#include "../packets.h"
+#include "../debug.h"
 #include "common.h"
 #include <stdlib.h>
 #include <time.h>
@@ -63,7 +65,7 @@ void handle_Ack(struct Channels *channels, const uint8_t **data) {
 	}
 }
 
-static void process_Reliable(ChanneledHandler handler, struct Channels *channels, void *p_ctx, void *p_room, void *p_session, const uint8_t **data, const uint8_t *end, DeliveryMethod channelId, _Bool isFragmented) {
+static void process_Reliable(ChanneledHandler handler, struct NetSession *session, struct Channels *channels, void *p_ctx, void *p_room, void *p_session, const uint8_t **data, const uint8_t *end, DeliveryMethod channelId, _Bool isFragmented) {
 	if(!isFragmented) {
 		handler(p_ctx, p_room, p_session, data, end, channelId);
 		return;
@@ -109,7 +111,7 @@ static void process_Reliable(ChanneledHandler handler, struct Channels *channels
 			{
 				char buf[1024*16];
 				fprintf(stderr, "fragmented\n");
-				debug_logRouting(pkt, pkt, pkt_end, buf);
+				debug_logRouting(pkt, pkt, pkt_end, buf, session->protocolVersion);
 			}
 			#endif
 			handler(p_ctx, p_room, p_session, &pkt_it, pkt_end, channelId);
@@ -151,7 +153,7 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 				return;
 			channel->ack.data[ackIdx / 8] |= 1 << (ackIdx % 8);
 			if(channeled.sequence == channel->remoteSequence) {
-				process_Reliable(handler, channels, p_ctx, p_room, p_session, data, end, channeled.channelId, isFragmented);
+				process_Reliable(handler, session, channels, p_ctx, p_room, p_session, data, end, channeled.channelId, isFragmented);
 				channel->remoteSequence = (channel->remoteSequence + 1) % NET_MAX_SEQUENCE;
 				if(channeled.channelId == DeliveryMethod_ReliableOrdered) {
 					while(channels->ro.receivedPackets[channel->remoteSequence % NET_WINDOW_SIZE].len) {
@@ -159,7 +161,7 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 						const uint8_t *pkt = ipkt->data, *pkt_it = pkt;
 						const uint8_t *pkt_end = &pkt[ipkt->len];
 						ipkt->len = 0;
-						process_Reliable(handler, channels, p_ctx, p_room, p_session, &pkt, pkt_end, DeliveryMethod_ReliableOrdered, ipkt->isFragmented);
+						process_Reliable(handler, session, channels, p_ctx, p_room, p_session, &pkt, pkt_end, DeliveryMethod_ReliableOrdered, ipkt->isFragmented);
 						channel->remoteSequence = (channel->remoteSequence + 1) % NET_MAX_SEQUENCE;
 						if(pkt_it != pkt_end)
 							fprintf(stderr, "[INSTANCE] BAD PACKET LENGTH (expected %zu, read %zu)\n", pkt_end - pkt, pkt_it - pkt);
@@ -177,7 +179,7 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 				*data = end;
 			} else {
 				channels->ru.earlyReceived[ackIdx] = 1;
-				process_Reliable(handler, channels, p_ctx, p_room, p_session, data, end, DeliveryMethod_ReliableUnordered, isFragmented);
+				process_Reliable(handler, session, channels, p_ctx, p_room, p_session, data, end, DeliveryMethod_ReliableUnordered, isFragmented);
 			}
 		}
 		case DeliveryMethod_Sequenced: return;

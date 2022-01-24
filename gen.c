@@ -190,6 +190,19 @@ char *tabs(char **s, uint32_t count) {
 	return *s;
 }
 
+static uint8_t pvBuf[131072] = {0}, *pvBuf_end = pvBuf;
+void pvBuf_add(const char *name) {
+	*pvBuf_end = sprintf((char*)&pvBuf_end[1], "%s", name);
+	pvBuf_end += *pvBuf_end + 1;
+}
+_Bool pvBuf_has(const char *name) {
+	uint8_t len = strlen(name);
+	for(const uint8_t *it = pvBuf; it < pvBuf_end; it += *it + 1)
+		if(*it == len && memcmp(&it[1], name, len) == 0)
+			return 1;
+	return 0;
+}
+
 struct EnumEntry {
 	char name[128];
 	const char *value;
@@ -201,6 +214,7 @@ void parse_struct_entries(const char **in, const char *structName, uint32_t inde
 		if(skip_string_maybe(in, "if(")) {
 			if(parent)
 				fail(*in, "bitfields cannot contain conditionals");
+			_Bool member = skip_char_maybe(in, '.');
 			const char *start = *in;
 			while(**in && **in != ')' && **in != '\n')
 				++(*in);
@@ -209,11 +223,11 @@ void parse_struct_entries(const char **in, const char *structName, uint32_t inde
 			skip_char(in, '\n');
 
 			if(*des)
-				*des += sprintf(tabs(des, outdent), "if(out.%.*s) {\n", len, start);
+				*des += sprintf(tabs(des, outdent), "if(%s%.*s) {\n", member ? "out." : "", len, start);
 			if(*ser)
-				*ser += sprintf(tabs(ser, outdent), "if(in.%.*s) {\n", len, start);
+				*ser += sprintf(tabs(ser, outdent), "if(%s%.*s) {\n", member ? "in." : "", len, start);
 			if(*log)
-				*log += sprintf(tabs(log, outdent), "if(in.%.*s) {\n", len, start);
+				*log += sprintf(tabs(log, outdent), "if(%s%.*s) {\n", member ? "in." : "", len, start);
 			parse_struct_entries(in, structName, indent + 1, outdent + 1, parent, def, des, ser, log);
 			if(*des)
 				*des += sprintf(tabs(des, outdent), "}\n");
@@ -271,7 +285,7 @@ void parse_struct_entries(const char **in, const char *structName, uint32_t inde
 						if(parent)
 							*des += sprintf(*des, " = (%s >> %u) & %u;\n", parent, offset, (1 << width) - 1);
 						else
-							*des += sprintf(*des, " = pkt_read%s(pkt);\n", serialType);
+							*des += sprintf(*des, " = pkt_read%s(pkt%s);\n", serialType, pvBuf_has(serialType) ? ", protocolVersion" : "");
 					}
 					if(rangecheck)
 						*des += sprintf(tabs(des, --outdent), "}\n");
@@ -288,7 +302,7 @@ void parse_struct_entries(const char **in, const char *structName, uint32_t inde
 					} else {
 						if(count)
 							*log += sprintf(tabs(log, outdent), "for(uint32_t i = 0; i < %s; ++i)\n\t", length_in);
-						*log += sprintf(tabs(log, outdent), "pkt_log%s(\"%s%s\", buf, it, in.%s%s);\n", logType, name, count ? "[]" : "", name, count ? "[i]" : "");
+						*log += sprintf(tabs(log, outdent), "pkt_log%s(\"%s%s\", buf, it, in.%s%s%s);\n", logType, name, count ? "[]" : "", name, count ? "[i]" : "", pvBuf_has(logType) ? ", protocolVersion" : "");
 					}
 				}
 
@@ -306,7 +320,7 @@ void parse_struct_entries(const char **in, const char *structName, uint32_t inde
 						} else {
 							if(count)
 								*ser += sprintf(tabs(ser, outdent), "for(uint32_t i = 0; i < %s; ++i)\n\t", length_in);
-							*ser += sprintf(tabs(ser, outdent), "pkt_write%s(pkt, %s%s%s);\n", serialType, (width & EPHEMERAL_BIT) ? "" : "in.", name, count ? "[i]" : "");
+							*ser += sprintf(tabs(ser, outdent), "pkt_write%s(pkt, %s%s%s%s);\n", serialType, (width & EPHEMERAL_BIT) ? "" : "in.", name, count ? "[i]" : "", pvBuf_has(serialType) ? ", protocolVersion" : "");
 						}
 					}
 				}
@@ -317,7 +331,7 @@ void parse_struct_entries(const char **in, const char *structName, uint32_t inde
 	(void)offset;
 }
 
-struct EnumEntry parse_struct(char **header, char **source, const char **in, uint32_t indent) {
+struct EnumEntry parse_struct(char **header, char **source, const char **in, uint32_t indent, _Bool versioned) {
 	struct EnumEntry self = {"", NULL};
 	char des[131072] = {0}, *des_end = (**in == 'r' || **in == 'd' || enableLog) ? des : NULL;
 	char ser[131072] = {0}, *ser_end = (**in == 's' || **in == 'd') ? ser : NULL;
@@ -325,10 +339,18 @@ struct EnumEntry parse_struct(char **header, char **source, const char **in, uin
 	*in += 2;
 	if(read_word(in, self.name))
 		fail(*in, "expected struct name");
+	if(versioned)
+		pvBuf_add(self.name);
 	if(skip_char_maybe(in, ' '))
 		self.value = skip_number(in);
 	skip_char(in, '\n');
 
+	if(des_end) {
+		char fn[1024];
+		sprintf(fn, "%s pkt_read%s(", self.name, self.name);
+		if(strstr(source_buf, fn))
+			des_end = NULL;
+	}
 	if(enableLog) {
 		char fn[1024];
 		sprintf(fn, "void pkt_log%s(", self.name);
@@ -345,19 +367,19 @@ struct EnumEntry parse_struct(char **header, char **source, const char **in, uin
 	*header += sprintf(*header, "%s};\n", def);
 
 	if(des_end) {
-		*header += sprintf(*header, "struct %s pkt_read%s(const uint8_t **pkt);\n", self.name, self.name);
+		*header += sprintf(*header, "struct %s pkt_read%s(const uint8_t **pkt%s);\n", self.name, self.name, versioned ? ", uint32_t protocolVersion" : "");
 		if(des_end == des)
-			*source += sprintf(*source, "struct %s pkt_read%s(const uint8_t **pkt) {\n\treturn (struct %s){};\n}\n", self.name, self.name, self.name);
+			*source += sprintf(*source, "struct %s pkt_read%s(const uint8_t **pkt%s) {\n\treturn (struct %s){};\n}\n", self.name, self.name, versioned ? ", uint32_t protocolVersion" : "", self.name);
 		else
-			*source += sprintf(*source, "struct %s pkt_read%s(const uint8_t **pkt) {\n\tstruct %s out;\n%s\treturn out;\n}\n", self.name, self.name, self.name, des);
+			*source += sprintf(*source, "struct %s pkt_read%s(const uint8_t **pkt%s) {\n\tstruct %s out;\n%s\treturn out;\n}\n", self.name, self.name, versioned ? ", uint32_t protocolVersion" : "", self.name, des);
 	}
 	if(ser_end) {
-		*header += sprintf(*header, "void pkt_write%s(uint8_t **pkt, struct %s in);\n", self.name, self.name);
-		*source += sprintf(*source, "void pkt_write%s(uint8_t **pkt, struct %s in) {\n%s}\n", self.name, self.name, ser);
+		*header += sprintf(*header, "void pkt_write%s(uint8_t **pkt, struct %s in%s);\n", self.name, self.name, versioned ? ", uint32_t protocolVersion" : "");
+		*source += sprintf(*source, "void pkt_write%s(uint8_t **pkt, struct %s in%s) {\n%s}\n", self.name, self.name, versioned ? ", uint32_t protocolVersion" : "", ser);
 	}
 	if(log_end) {
-		*header += sprintf(*header, "void pkt_log%s(const char *name, char *buf, char *it, struct %s in);\n", self.name, self.name);
-		*source += sprintf(*source, "void pkt_log%s(const char *name, char *buf, char *it, struct %s in) {\n\tit += sprintf(it, \"%%s.\", name);\n%s}\n", self.name, self.name, log);
+		*header += sprintf(*header, "void pkt_log%s(const char *name, char *buf, char *it, struct %s in%s);\n", self.name, self.name, versioned ? ", uint32_t protocolVersion" : "");
+		*source += sprintf(*source, "void pkt_log%s(const char *name, char *buf, char *it, struct %s in%s) {\n\tit += sprintf(it, \"%%s.\", name);\n%s}\n", self.name, self.name, versioned ? ", uint32_t protocolVersion" : "", log);
 	}
 	return self;
 }
@@ -417,8 +439,9 @@ void parse_source_extra(char **source, const char **in, uint32_t indent) {}
 
 struct EnumEntry parse_value(char **header, char **source, const char **in, uint32_t indent) {
 	struct EnumEntry e = {"", NULL};
+	_Bool versioned = skip_char_maybe(in, 'p');
 	if((**in == 'r' || **in == 's' || **in == 'd' || **in == 'n') && (*in)[1] == ' ') {
-		return parse_struct(header, source, in, indent);
+		return parse_struct(header, source, in, indent, versioned);
 	} else if(strncmp(*in, "u8 ", 3) == 0 || strncmp(*in, "u16 ", 4) == 0 || strncmp(*in, "u32 ", 4) == 0 || strncmp(*in, "i32 ", 4) == 0) {
 		return parse_enum(header, source, in, indent);
 	} else if(skip_string_maybe(in, "z ")) {

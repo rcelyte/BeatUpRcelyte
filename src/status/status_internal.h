@@ -177,10 +177,10 @@ static uint32_t status_resp(const char *source, const char *path, char *buf, uin
 		buf += rq_len, buf_len -= rq_len;
 		if(buf_len && *buf == '/')
 			++buf, --buf_len;
-		if(buf_len && *buf == ' ')
-			return status_text(resp, "200 OK", "application/json", "{\"minimumAppVersion\":\"1.18.3\",\"status\":0,\"maintenanceStartTime\":0,\"maintenanceEndTime\":0,\"userMessage\":{\"localizedMessages\":[{\"language\":\"en\",\"message\":\"Test message from server\"}]}}");
-		else if(buf_len > 17 && memcmp(buf, "mp_override.json ", 17) == 0)
+		if(buf_len > 16 && memcmp(buf, "mp_override.json", 16) == 0)
 			return status_text(resp, "200 OK", "application/json", "{\"quickPlayAvailablePacksOverride\":{\"predefinedPackIds\":[{\"order\":0,\"packId\":\"ALL_LEVEL_PACKS\"},{\"order\":1,\"packId\":\"BUILT_IN_LEVEL_PACKS\"}],\"localizedCustomPacks\":[{\"serializedName\":\"customlevels\",\"order\":2,\"localizedNames\":[{\"language\":0,\"packName\":\"Custom\"}],\"packIds\":[\"custom_levelpack_CustomLevels\"]}]}}");
+		else
+			return status_text(resp, "200 OK", "application/json", "{\"minimumAppVersion\":\"1.18.3\",\"status\":0}");
 		return status_text(resp, "404 Not Found", "text/plain", "");
 	} else {
 		fprintf(stderr, "[%s,web] %.*s\n", source, (int32_t)((char*)memchr(&buf[4], ' ', buf_len) - buf), buf);

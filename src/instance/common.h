@@ -8,7 +8,7 @@
 #define indexof(a, e) (((e) - (a)) / sizeof(*(a)))
 #define String_eq(a, b) ((a).length == (b).length && memcmp((a).data, (b).data, (b).length) == 0)
 
-#define SERIALIZE_RPC(pkt, mtype, dtype, data) { \
+#define SERIALIZE_RPC(pkt, mtype, dtype, data, protocolVersion) { \
 	SERIALIZE_CUSTOM(pkt, InternalMessageType_MultiplayerSession) { \
 		pkt_writeMultiplayerSessionMessageHeader(pkt, (struct MultiplayerSessionMessageHeader){ \
 			.type = MultiplayerSessionMessageType_##mtype##Rpc, \
@@ -16,17 +16,19 @@
 		pkt_write##mtype##RpcHeader(pkt, (struct mtype##RpcHeader){ \
 			.type = mtype##RpcType_##dtype, \
 		}); \
-		pkt_write##dtype(pkt, data); \
+		pkt_write##dtype(pkt, data, protocolVersion); \
 	} \
 }
 
-#define SERIALIZE_MENURPC(pkt, dtype, data) SERIALIZE_RPC(pkt, Menu, dtype, data)
-#define SERIALIZE_GAMEPLAYRPC(pkt, dtype, data) SERIALIZE_RPC(pkt, Gameplay, dtype, data)
+// TODO: explicit protocolVersion
+#define SERIALIZE_MENURPC(pkt, dtype, data, protocolVersion) SERIALIZE_RPC(pkt, Menu, dtype, data, protocolVersion)
+#define SERIALIZE_GAMEPLAYRPC(pkt, dtype, data, protocolVersion) SERIALIZE_RPC(pkt, Gameplay, dtype, data, protocolVersion)
 
 #define CLEAR_BEATMAP (struct BeatmapIdentifierNetSerializable){{0}, {0}, 0}
 #define CLEAR_MODIFIERS (struct GameplayModifiers){EnergyType_Bar, 0, 0, 0, EnabledObstacleType_All, 0, 0, 0, 0, 0, 0, SongSpeed_Normal, 0, 0, 0, 0, 0}
 #define CLEAR_COLORSCHEME (struct ColorSchemeNetSerializable){{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}}
 #define CLEAR_AVATARDATA (struct MultiplayerAvatarData){{0}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, {{0, 0, 0, 1}, {0, 0, 0, 1}}, {0}, {0}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0}, {0}, {0}}
+#define CLEAR_SETTINGS (struct PlayerSpecificSettingsNetSerializable){{0}, {0}, 0, 0, 0, 0, CLEAR_COLORSCHEME}
 
 typedef uint8_t ClientState;
 enum ClientState {

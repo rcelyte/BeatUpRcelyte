@@ -47,6 +47,7 @@ struct NetKeypair {
 
 struct NetSession {
 	struct NetKeypair keys;
+	uint32_t protocolVersion;
 	uint8_t clientRandom[32];
 	uint8_t NET_H_PRIVATE(cookie)[32];
 	struct EncryptionState NET_H_PRIVATE(encryptionState);

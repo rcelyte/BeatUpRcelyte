@@ -135,7 +135,7 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 		case MenuRpcType_RecommendBeatmap: fprintf(stderr, "[INDEX] MenuRpcType_RecommendBeatmap not implemented\n"); abort();
 		case MenuRpcType_ClearRecommendedBeatmap: fprintf(stderr, "[INDEX] MenuRpcType_ClearRecommendedBeatmap not implemented\n"); abort();
 		case MenuRpcType_GetRecommendedBeatmap: {
-			pkt_readGetRecommendedBeatmap(data);
+			pkt_readGetRecommendedBeatmap(data, session->net.protocolVersion);
 			struct RecommendBeatmap r_beatmap;
 			r_beatmap.base.syncTime = get_syncTime();
 			r_beatmap.identifier.levelID.length = sprintf(r_beatmap.identifier.levelID.data, "custom_level_00000000000000000000000000000000");
@@ -145,7 +145,7 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 			for(uint8_t i = 1, *it = session->menu; *it; ++i, it += *it + 1) {
 				resp_end = resp;
 				pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){i, 0, 0});
-				SERIALIZE_MENURPC(&resp_end, RecommendBeatmap, r_beatmap);
+				SERIALIZE_MENURPC(&resp_end, RecommendBeatmap, r_beatmap, session->net.protocolVersion);
 				instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			}
 			break;
@@ -153,19 +153,20 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 		case MenuRpcType_SetSelectedGameplayModifiers: fprintf(stderr, "[INDEX] MenuRpcType_SetSelectedGameplayModifiers not implemented\n"); abort();
 		case MenuRpcType_GetSelectedGameplayModifiers: fprintf(stderr, "[INDEX] MenuRpcType_GetSelectedGameplayModifiers not implemented\n"); abort();
 		case MenuRpcType_RecommendGameplayModifiers: {
-			pkt_readRecommendGameplayModifiers(data);
+			pkt_readRecommendGameplayModifiers(data, session->net.protocolVersion);
 			uint8_t resp[65536], *resp_end = resp;
 			struct SetSelectedGameplayModifiers r_set;
 			r_set.base.syncTime = get_syncTime();
-			memset(&r_set.gameplayModifiers, 0, sizeof(r_set.gameplayModifiers));
+			r_set.flags.hasValue0 = 1;
+			r_set.gameplayModifiers = CLEAR_MODIFIERS;
 			pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
-			SERIALIZE_MENURPC(&resp_end, SetSelectedGameplayModifiers, r_set);
+			SERIALIZE_MENURPC(&resp_end, SetSelectedGameplayModifiers, r_set, session->net.protocolVersion);
 			instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			break;
 		}
 		case MenuRpcType_ClearRecommendedGameplayModifiers: fprintf(stderr, "[INDEX] MenuRpcType_ClearRecommendedGameplayModifiers not implemented\n"); abort();
 		case MenuRpcType_GetRecommendedGameplayModifiers: {
-			pkt_readGetRecommendedGameplayModifiers(data);
+			pkt_readGetRecommendedGameplayModifiers(data, session->net.protocolVersion);
 			struct RecommendGameplayModifiers r_modifiers;
 			r_modifiers.base.syncTime = get_syncTime();
 			memset(&r_modifiers.gameplayModifiers, 0, sizeof(r_modifiers.gameplayModifiers));
@@ -173,7 +174,7 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 			for(uint8_t i = 1, *it = session->menu; *it; ++i, it += *it + 1) {
 				resp_end = resp;
 				pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){i, 0, 0});
-				SERIALIZE_MENURPC(&resp_end, RecommendGameplayModifiers, r_modifiers);
+				SERIALIZE_MENURPC(&resp_end, RecommendGameplayModifiers, r_modifiers, session->net.protocolVersion);
 				instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			}
 			break;
@@ -182,31 +183,33 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 		case MenuRpcType_LevelLoadSuccess: fprintf(stderr, "[INDEX] MenuRpcType_LevelLoadSuccess not implemented\n"); abort();
 		case MenuRpcType_StartLevel: fprintf(stderr, "[INDEX] MenuRpcType_StartLevel not implemented\n"); abort();
 		case MenuRpcType_GetStartedLevel: {
-			pkt_readGetStartedLevel(data);
+			pkt_readGetStartedLevel(data, session->net.protocolVersion);
 			uint8_t resp[65536], *resp_end = resp;
 			struct SetIsStartButtonEnabled r_button;
 			r_button.base.syncTime = get_syncTime();
+			r_button.flags.hasValue0 = 1;
 			r_button.reason = CannotStartGameReason_NoSongSelected;
 			pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
-			SERIALIZE_MENURPC(&resp_end, SetIsStartButtonEnabled, r_button);
+			SERIALIZE_MENURPC(&resp_end, SetIsStartButtonEnabled, r_button, session->net.protocolVersion);
 			instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			break;
 		}
 		case MenuRpcType_CancelLevelStart: fprintf(stderr, "[INDEX] MenuRpcType_CancelLevelStart not implemented\n"); abort();
 		case MenuRpcType_GetMultiplayerGameState: {
-			pkt_readGetMultiplayerGameState(data);
+			pkt_readGetMultiplayerGameState(data, session->net.protocolVersion);
 			uint8_t resp[65536], *resp_end = resp;
 			struct SetMultiplayerGameState r_state;
 			r_state.base.syncTime = get_syncTime();
+			r_state.flags.hasValue0 = 1;
 			r_state.lobbyState = MultiplayerGameState_Lobby;
 			pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
-			SERIALIZE_MENURPC(&resp_end, SetMultiplayerGameState, r_state);
+			SERIALIZE_MENURPC(&resp_end, SetMultiplayerGameState, r_state, session->net.protocolVersion);
 			instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			break;
 		}
 		case MenuRpcType_SetMultiplayerGameState: fprintf(stderr, "[INDEX] MenuRpcType_SetMultiplayerGameState not implemented\n"); abort();
 		case MenuRpcType_GetIsReady: {
-			pkt_readGetIsReady(data);
+			pkt_readGetIsReady(data, session->net.protocolVersion);
 			struct SetIsReady r_ready;
 			r_ready.base.syncTime = get_syncTime();
 			r_ready.isReady = 1;
@@ -214,13 +217,13 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 			for(uint8_t i = 1, *it = session->menu; *it; ++i, it += *it + 1) {
 				resp_end = resp;
 				pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){i, 0, 0});
-				SERIALIZE_MENURPC(&resp_end, SetIsReady, r_ready);
+				SERIALIZE_MENURPC(&resp_end, SetIsReady, r_ready, session->net.protocolVersion);
 				instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			}
 			break;
 		}
 		case MenuRpcType_SetIsReady: {
-			if(pkt_readSetIsReady(data).isReady) {
+			if(pkt_readSetIsReady(data, session->net.protocolVersion).isReady) {
 				fprintf(stderr, "TODO: redirect to lobby here\n");
 			}
 			break;
@@ -228,7 +231,7 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 		case MenuRpcType_SetStartGameTime: fprintf(stderr, "[INDEX] MenuRpcType_SetStartGameTime not implemented\n"); abort();
 		case MenuRpcType_CancelStartGameTime: fprintf(stderr, "[INDEX] MenuRpcType_CancelStartGameTime not implemented\n"); abort();
 		case MenuRpcType_GetIsInLobby: {
-			pkt_readGetIsInLobby(data);
+			pkt_readGetIsInLobby(data, session->net.protocolVersion);
 			struct SetIsInLobby r_back;
 			r_back.base.syncTime = get_syncTime();
 			r_back.isBack = 1;
@@ -236,33 +239,35 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 			for(uint8_t i = 1, *it = session->menu; *it; ++i, it += *it + 1) {
 				resp_end = resp;
 				pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){i, 0, 0});
-				SERIALIZE_MENURPC(&resp_end, SetIsInLobby, r_back);
+				SERIALIZE_MENURPC(&resp_end, SetIsInLobby, r_back, session->net.protocolVersion);
 				instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			}
 			break;
 		}
-		case MenuRpcType_SetIsInLobby: pkt_readSetIsInLobby(data); break;
+		case MenuRpcType_SetIsInLobby: pkt_readSetIsInLobby(data, session->net.protocolVersion); break;
 		case MenuRpcType_GetCountdownEndTime: {
-			pkt_readGetCountdownEndTime(data);
+			pkt_readGetCountdownEndTime(data, session->net.protocolVersion);
 			uint8_t resp[65536], *resp_end = resp;
 			struct SetIsStartButtonEnabled r_button;
 			r_button.base.syncTime = get_syncTime();
+			r_button.flags.hasValue0 = 1;
 			r_button.reason = CannotStartGameReason_NoSongSelected;
 			pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
-			SERIALIZE_MENURPC(&resp_end, SetIsStartButtonEnabled, r_button);
+			SERIALIZE_MENURPC(&resp_end, SetIsStartButtonEnabled, r_button, session->net.protocolVersion);
 			instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			break;
 		}
 		case MenuRpcType_SetCountdownEndTime: fprintf(stderr, "[INDEX] MenuRpcType_SetCountdownEndTime not implemented\n"); abort();
 		case MenuRpcType_CancelCountdown: fprintf(stderr, "[INDEX] MenuRpcType_CancelCountdown not implemented\n"); abort();
 		case MenuRpcType_GetOwnedSongPacks: fprintf(stderr, "[INDEX] MenuRpcType_GetOwnedSongPacks not implemented\n"); abort();
-		case MenuRpcType_SetOwnedSongPacks: pkt_readSetOwnedSongPacks(data); break;
+		case MenuRpcType_SetOwnedSongPacks: pkt_readSetOwnedSongPacks(data, session->net.protocolVersion); break;
 		case MenuRpcType_RequestKickPlayer: fprintf(stderr, "[INDEX] MenuRpcType_RequestKickPlayer not implemented\n"); abort();
 		case MenuRpcType_GetPermissionConfiguration:  {
-			pkt_readGetPermissionConfiguration(data);
+			pkt_readGetPermissionConfiguration(data, session->net.protocolVersion);
 			uint8_t resp[65536], *resp_end = resp;
 			struct SetPermissionConfiguration r_permission;
 			r_permission.base.syncTime = get_syncTime();
+			r_permission.flags.hasValue0 = 1;
 			r_permission.playersPermissionConfiguration.count = 1;
 			r_permission.playersPermissionConfiguration.playersPermission[0].userId = session->userId;
 			r_permission.playersPermissionConfiguration.playersPermission[0].isServerOwner = 1;
@@ -279,7 +284,7 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 				r_permission.playersPermissionConfiguration.playersPermission[r_permission.playersPermissionConfiguration.count].hasInvitePermission = 0;
 			}
 			pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
-			SERIALIZE_MENURPC(&resp_end, SetPermissionConfiguration, r_permission);
+			SERIALIZE_MENURPC(&resp_end, SetPermissionConfiguration, r_permission, session->net.protocolVersion);
 			instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			break;
 		}
@@ -311,10 +316,10 @@ static void handle_PlayerIdentity(struct Context *ctx, struct IndexSession *sess
 	pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
 	struct RemoteProcedureCall base;
 	base.syncTime = get_syncTime();
-	SERIALIZE_MENURPC(&resp_end, GetRecommendedBeatmap, (struct GetRecommendedBeatmap){.base = base});
-	SERIALIZE_MENURPC(&resp_end, GetRecommendedGameplayModifiers, (struct GetRecommendedGameplayModifiers){.base = base});
-	SERIALIZE_MENURPC(&resp_end, GetIsReady, (struct GetIsReady){.base = base});
-	SERIALIZE_MENURPC(&resp_end, GetIsInLobby, (struct GetIsInLobby){.base = base});
+	SERIALIZE_MENURPC(&resp_end, GetRecommendedBeatmap, (struct GetRecommendedBeatmap){.base = base}, session->net.protocolVersion);
+	SERIALIZE_MENURPC(&resp_end, GetRecommendedGameplayModifiers, (struct GetRecommendedGameplayModifiers){.base = base}, session->net.protocolVersion);
+	SERIALIZE_MENURPC(&resp_end, GetIsReady, (struct GetIsReady){.base = base}, session->net.protocolVersion);
+	SERIALIZE_MENURPC(&resp_end, GetIsInLobby, (struct GetIsInLobby){.base = base}, session->net.protocolVersion);
 	instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 }
 

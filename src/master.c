@@ -219,9 +219,11 @@ static void master_send_ack(struct Context *ctx, struct MasterSession *session, 
 	master_send(&ctx->net, session, resp, resp_end - resp, 0);
 }
 
-static void handle_ClientHelloRequest(struct Context *ctx, struct MasterSession *session, const uint8_t **data) {
+static void handle_ClientHelloRequest(struct Context *ctx, struct MasterSession *session, const uint8_t **data, uint32_t protocolVersion) {
 	struct ClientHelloRequest req = pkt_readClientHelloRequest(data);
-	if(session->handshakeStep != 255) {
+	if(session->handshakeStep == 255) {
+		session->net.protocolVersion = protocolVersion;
+	} else {
 		if(net_time() - NetSession_get_lastKeepAlive(&session->net) < 5000) // 5 second timeout to prevent clients from getting "locked out" if their previous session hasn't closed or timed out yet
 			return;
 		net_session_reset(&ctx->net, &session->net); // security or something idk
@@ -381,17 +383,22 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		req.configuration.maxPlayerCount = 126;
 		fprintf(stderr, "ONLY THE BIGGEST OF ROOMS!!!\n");
 		#endif
-		isession = instance_open(&req.code, managerId, &req.configuration, addr, req.secret, req.base.userId, req.base.userName);
+		isession = instance_open(&req.code, managerId, &req.configuration, addr, req.secret, req.base.userId, req.base.userName, session->net.protocolVersion);
 		if(!isession) {
 			r_conn.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers;
 			goto send;
 		}
 	} else {
-		if(!instance_get_isopen(req.code, &managerId, &req.configuration)) {
+		uint32_t protocolVersion;
+		if(!instance_get_isopen(req.code, &managerId, &req.configuration, &protocolVersion)) {
 			r_conn.result = ConnectToServerResponse_Result_InvalidCode;
 			goto send;
 		}
-		isession = instance_resolve_session(req.code, addr, req.secret, req.base.userId, req.base.userName);
+		if(protocolVersion != session->net.protocolVersion) {
+			r_conn.result = ConnectToServerResponse_Result_VersionMismatch;
+			goto send;
+		}
+		isession = instance_resolve_session(req.code, addr, req.secret, req.base.userId, req.base.userName, session->net.protocolVersion);
 		if(!isession) {
 			r_conn.result = ConnectToServerResponse_Result_UnknownError;
 			goto send;
@@ -471,7 +478,7 @@ master_handler(struct Context *ctx) {
 			fprintf(stderr, "[MASTER] DedicatedServerMessageType not implemented\n");
 		} else if(message.type == MessageType_HandshakeMessage) {
 			switch(serial.type) {
-				case HandshakeMessageType_ClientHelloRequest: handle_ClientHelloRequest(ctx, session, &data); break;
+				case HandshakeMessageType_ClientHelloRequest: handle_ClientHelloRequest(ctx, session, &data, message.protocolVersion); break;
 				case HandshakeMessageType_HelloVerifyRequest: fprintf(stderr, "[MASTER] BAD TYPE: HandshakeMessageType_HelloVerifyRequest\n"); break;
 				case HandshakeMessageType_ClientHelloWithCookieRequest: handle_ClientHelloWithCookieRequest(ctx, session, &data); break;
 				case HandshakeMessageType_ServerHelloRequest: fprintf(stderr, "[MASTER] BAD TYPE: HandshakeMessageType_ServerHelloRequest\n"); break;

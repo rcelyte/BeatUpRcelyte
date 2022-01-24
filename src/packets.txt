@@ -217,7 +217,7 @@ u8 Platform
 	z Oculus 1
 d PacketEncryptionLayer
 	b encrypted
-	if(encrypted == 1)
+	if(.encrypted == 1)
 		u32 sequenceId
 		u8[16] iv
 d BaseMasterServerReliableRequest
@@ -401,7 +401,7 @@ u8 PacketProperty
 	d Ack
 		u16 sequence
 		u8.DeliveryMethod channelId
-		if(channelId % 2 == 0)
+		if(.channelId % 2 == 0)
 			u8[9] data
 	r Ping
 		u16 sequence
@@ -516,8 +516,33 @@ u8 InternalMessage Type
 		PlayerStateHash playerState
 	n PlayerAvatarUpdate
 		MultiplayerAvatarData playerAvatar
+	r PingMessage
+		f32 pingTime
+	r PongMessage
+		f32 pingTime
 d RemoteProcedureCall
 	f32 syncTime
+head
+	struct RemoteProcedureCallFlags pkt_readRemoteProcedureCallFlags(const uint8_t **pkt, uint32_t protocolVersion);
+code
+	struct RemoteProcedureCallFlags pkt_readRemoteProcedureCallFlags(const uint8_t **pkt, uint32_t protocolVersion) {
+		struct RemoteProcedureCallFlags out;
+		uint8_t bits = 255;
+		if(protocolVersion > 6)
+			bits = pkt_readUint8(pkt);
+		out.hasValue0 = (bits >> 0) & 1;
+		out.hasValue1 = (bits >> 1) & 1;
+		out.hasValue2 = (bits >> 2) & 1;
+		out.hasValue3 = (bits >> 3) & 1;
+		return out;
+	}
+ps RemoteProcedureCallFlags
+	if(protocolVersion > 6)
+		u8.e bits
+			u1.b hasValue0
+			u1.b hasValue1
+			u1.b hasValue2
+			u1.b hasValue3
 s PlayersMissingEntitlementsNetSerializable
 	i32 count
 	String[128,count] playersWithoutEntitlements
@@ -665,6 +690,19 @@ u8 MultiplayerLevelEndState
 	z HostEndedLevel
 	z ConnectedAfterLevelEnded
 	z Quit
+u8 MultiplayerPlayerLevelEndState
+	z SongFinished
+	z NotFinished
+	z NotStarted
+u8 MultiplayerPlayerLevelEndReason
+	z Cleared
+	z Failed
+	z GivenUp
+	z Quit
+	z HostEndedLevel
+	z WasInactive
+	z StartupFailed
+	z ConnectedAfterLevelEnded
 u8 Rank
 	z E
 	z D
@@ -712,9 +750,13 @@ r LevelCompletionResults
 	f32 maxTimeDeviation
 	f32 averageTimeDeviation
 	f32 endSongTime
-r MultiplayerLevelCompletionResults
-	vi32.MultiplayerLevelEndState levelEndState
-	if(levelEndState < MultiplayerLevelEndState_GivenUp)
+pr MultiplayerLevelCompletionResults
+	if(protocolVersion <= 6)
+		vi32.MultiplayerLevelEndState levelEndState
+	if(protocolVersion > 6)
+		vi32.MultiplayerPlayerLevelEndState playerLevelEndState
+		vi32.MultiplayerPlayerLevelEndReason playerLevelEndReason
+	if(.levelEndState < MultiplayerLevelEndState_GivenUp)
 		LevelCompletionResults levelCompletionResults
 r NodePoseSyncState1
 	PoseSerializable head
@@ -726,144 +768,267 @@ r StandardScoreSyncState
 	vi32 immediateMaxPossibleRawScore
 	vi32 combo
 	vi32 multiplier
+u8 NoteCutDirection
+	z Up
+	z Down
+	z Left
+	z Right
+	z UpLeft
+	z UpRight
+	z DownLeft
+	z DownRight
+	z Any
+	z None
+r NoteSpawnInfoNetSerializable
+	f32 time
+	vi32 lineIndex
+	vi32.NoteLineLayer noteLineLayer
+	vi32.NoteLineLayer beforeJumpNoteLineLayer
+	vi32.ColorType colorType
+	vi32.NoteCutDirection cutDirection
+	f32 timeToNextColorNote
+	f32 timeToPrevColorNote
+	vi32 flipLineIndex
+	vi32 flipYSide
+	Vector3Serializable moveStartPos
+	Vector3Serializable moveEndPos
+	Vector3Serializable jumpEndPos
+	f32 jumpGravity
+	f32 moveDuration
+	f32 jumpDuration
+	f32 rotation
+	f32 cutDirectionAngleOffset
+u8 ObstacleType
+	z FullHeight
+	z Top
+r ObstacleSpawnInfoNetSerializable
+	f32 time
+	vi32 lineIndex
+	vi32.ObstacleType obstacleType
+	f32 duration
+	vi32 width
+	Vector3Serializable moveStartPos
+	Vector3Serializable moveEndPos
+	Vector3Serializable jumpEndPos
+	f32 obstacleHeight
+	f32 moveDuration
+	f32 jumpDuration
+	f32 noteLinesDistance
+	f32 rotation
 u8 MultiplayerSessionMessage Type
 	u8 MenuRpc Type
-		s SetPlayersMissingEntitlementsToLevel
+		ps SetPlayersMissingEntitlementsToLevel
 			RemoteProcedureCall base
-			PlayersMissingEntitlementsNetSerializable playersMissingEntitlements
-		s GetIsEntitledToLevel
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				PlayersMissingEntitlementsNetSerializable playersMissingEntitlements
+		ps GetIsEntitledToLevel
 			RemoteProcedureCall base
-			LongString levelId
-		r SetIsEntitledToLevel
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				LongString levelId
+		pr SetIsEntitledToLevel
 			RemoteProcedureCall base
-			LongString levelId
-			vi32.EntitlementsStatus entitlementStatus
-		n InvalidateLevelEntitlementStatuses
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				LongString levelId
+			if(.flags.hasValue1)
+				vi32.EntitlementsStatus entitlementStatus
+		pn InvalidateLevelEntitlementStatuses
 			RemoteProcedureCall base
-		n SelectLevelPack
+		pn SelectLevelPack
 			RemoteProcedureCall base
-			String levelPackId
-		s SetSelectedBeatmap
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				String levelPackId
+		ps SetSelectedBeatmap
 			RemoteProcedureCall base
-			BeatmapIdentifierNetSerializable identifier
-		n GetSelectedBeatmap
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				BeatmapIdentifierNetSerializable identifier
+		pn GetSelectedBeatmap
 			RemoteProcedureCall base
-		d RecommendBeatmap
+		pd RecommendBeatmap
 			RemoteProcedureCall base
-			BeatmapIdentifierNetSerializable identifier
-		r ClearRecommendedBeatmap
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				BeatmapIdentifierNetSerializable identifier
+		pr ClearRecommendedBeatmap
 			RemoteProcedureCall base
-		d GetRecommendedBeatmap
+		pd GetRecommendedBeatmap
 			RemoteProcedureCall base
-		s SetSelectedGameplayModifiers
+		ps SetSelectedGameplayModifiers
 			RemoteProcedureCall base
-			GameplayModifiers gameplayModifiers
-		n GetSelectedGameplayModifiers
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				GameplayModifiers gameplayModifiers
+		pn GetSelectedGameplayModifiers
 			RemoteProcedureCall base
-		d RecommendGameplayModifiers
+		pd RecommendGameplayModifiers
 			RemoteProcedureCall base
-			GameplayModifiers gameplayModifiers
-		n ClearRecommendedGameplayModifiers
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				GameplayModifiers gameplayModifiers
+		pr ClearRecommendedGameplayModifiers
 			RemoteProcedureCall base
-		d GetRecommendedGameplayModifiers
+		pd GetRecommendedGameplayModifiers
 			RemoteProcedureCall base
-		n LevelLoadError
+		pn LevelLoadError
 			RemoteProcedureCall base
-			LongString levelId
-		n LevelLoadSuccess
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				LongString levelId
+		pn LevelLoadSuccess
 			RemoteProcedureCall base
-			LongString levelId
-		s StartLevel
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				LongString levelId
+		ps StartLevel
 			RemoteProcedureCall base
-			BeatmapIdentifierNetSerializable beatmapId
-			GameplayModifiers gameplayModifiers
-			f32 startTime
-		r GetStartedLevel
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				BeatmapIdentifierNetSerializable beatmapId
+			if(.flags.hasValue1)
+				GameplayModifiers gameplayModifiers
+			if(.flags.hasValue2)
+				f32 startTime
+		pr GetStartedLevel
 			RemoteProcedureCall base
-		s CancelLevelStart
+		ps CancelLevelStart
 			RemoteProcedureCall base
-		r GetMultiplayerGameState
+		pr GetMultiplayerGameState
 			RemoteProcedureCall base
-		s SetMultiplayerGameState
+		ps SetMultiplayerGameState
 			RemoteProcedureCall base
-			vi32.MultiplayerGameState lobbyState
-		d GetIsReady
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				vi32.MultiplayerGameState lobbyState
+		pd GetIsReady
 			RemoteProcedureCall base
-		d SetIsReady
+		pd SetIsReady
 			RemoteProcedureCall base
-			b isReady
-		n SetStartGameTime
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				b isReady
+		pn SetStartGameTime
 			RemoteProcedureCall base
-			f32 newTime
-		n CancelStartGameTime
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				f32 newTime
+		pn CancelStartGameTime
 			RemoteProcedureCall base
-		d GetIsInLobby
+		pd GetIsInLobby
 			RemoteProcedureCall base
-		d SetIsInLobby
+		pd SetIsInLobby
 			RemoteProcedureCall base
-			b isBack
-		r GetCountdownEndTime
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				b isBack
+		pr GetCountdownEndTime
 			RemoteProcedureCall base
-		s SetCountdownEndTime
+		ps SetCountdownEndTime
 			RemoteProcedureCall base
-			f32 newTime
-		s CancelCountdown
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				f32 newTime
+		ps CancelCountdown
 			RemoteProcedureCall base
-		n GetOwnedSongPacks
+		pn GetOwnedSongPacks
 			RemoteProcedureCall base
-		r SetOwnedSongPacks
+		pr SetOwnedSongPacks
 			RemoteProcedureCall base
-			SongPackMask songPackMask
-		n RequestKickPlayer
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				SongPackMask songPackMask
+		pn RequestKickPlayer
 			RemoteProcedureCall base
-			String kickedPlayerId
-		r GetPermissionConfiguration
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				String kickedPlayerId
+		pr GetPermissionConfiguration
 			RemoteProcedureCall base
-		s SetPermissionConfiguration
+		ps SetPermissionConfiguration
 			RemoteProcedureCall base
-			PlayersLobbyPermissionConfigurationNetSerializable playersPermissionConfiguration
-		n GetIsStartButtonEnabled
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				PlayersLobbyPermissionConfigurationNetSerializable playersPermissionConfiguration
+		pn GetIsStartButtonEnabled
 			RemoteProcedureCall base
-		s SetIsStartButtonEnabled
+		ps SetIsStartButtonEnabled
 			RemoteProcedureCall base
-			vi32.CannotStartGameReason reason
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				vi32.CannotStartGameReason reason
 	u8 GameplayRpc Type
-		s SetGameplaySceneSyncFinish
+		ps SetGameplaySceneSyncFinish
 			RemoteProcedureCall base
-			PlayerSpecificSettingsAtStartNetSerializable playersAtGameStart
-			String sessionGameId
-		r SetGameplaySceneReady
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				PlayerSpecificSettingsAtStartNetSerializable playersAtGameStart
+			if(.flags.hasValue1)
+				String sessionGameId
+		pr SetGameplaySceneReady
 			RemoteProcedureCall base
-			PlayerSpecificSettingsNetSerializable playerSpecificSettingsNetSerializable
-		s GetGameplaySceneReady
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				PlayerSpecificSettingsNetSerializable playerSpecificSettingsNetSerializable
+		ps GetGameplaySceneReady
 			RemoteProcedureCall base
-		n SetActivePlayerFailedToConnect
+		pn SetActivePlayerFailedToConnect
 			RemoteProcedureCall base
-			String failedUserId
-			PlayerSpecificSettingsAtStartNetSerializable playersAtGameStartNetSerializable
-			String sessionGameId
-		r SetGameplaySongReady
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				String failedUserId
+			if(.flags.hasValue1)
+				PlayerSpecificSettingsAtStartNetSerializable playersAtGameStartNetSerializable
+			if(.flags.hasValue2)
+				String sessionGameId
+		pr SetGameplaySongReady
 			RemoteProcedureCall base
-		s GetGameplaySongReady
+		ps GetGameplaySongReady
 			RemoteProcedureCall base
-		s SetSongStartTime
+		ps SetSongStartTime
 			RemoteProcedureCall base
-			f32 startTime
-		r NoteCut
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				f32 startTime
+		pr NoteCut
 			RemoteProcedureCall base
-			f32 songTime
-			NoteCutInfoNetSerializable noteCutInfo
-		r NoteMissed
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				f32 songTime
+			if(.flags.hasValue1)
+				NoteCutInfoNetSerializable noteCutInfo
+		pr NoteMissed
 			RemoteProcedureCall base
-			f32 songTime
-			NoteMissInfoNetSerializable noteMissInfo
-		r LevelFinished
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				f32 songTime
+			if(.flags.hasValue1)
+				NoteMissInfoNetSerializable noteMissInfo
+		pr LevelFinished
 			RemoteProcedureCall base
-			MultiplayerLevelCompletionResults results
-		s ReturnToMenu
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				MultiplayerLevelCompletionResults results
+		ps ReturnToMenu
 			RemoteProcedureCall base
-		r RequestReturnToMenu
+		pr RequestReturnToMenu
 			RemoteProcedureCall base
+		pr NoteSpawned
+			RemoteProcedureCall base
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				f32 songTime
+			if(.flags.hasValue1)
+				NoteSpawnInfoNetSerializable noteSpawnInfo
+		pr ObstacleSpawned
+			RemoteProcedureCall base
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				f32 songTime
+			if(.flags.hasValue1)
+				ObstacleSpawnInfoNetSerializable obstacleSpawnInfo
 	r NodePoseSyncState
 		SyncStateId id
 		f32 time
@@ -875,12 +1040,12 @@ u8 MultiplayerSessionMessage Type
 	r NodePoseSyncStateDelta
 		SyncStateId baseId
 		vi32 timeOffsetMs
-		if(baseId.same == 0)
+		if(.baseId.same == 0)
 			NodePoseSyncState1 delta
 	r ScoreSyncStateDelta
 		SyncStateId baseId
 		vi32 timeOffsetMs
-		if(baseId.same == 0)
+		if(.baseId.same == 0)
 			StandardScoreSyncState delta
 	r MpCore 100
 		String packetType
@@ -901,7 +1066,7 @@ u8 UserMessage Type
 	s ConnectToServerResponse 8
 		BaseMasterServerReliableResponse base
 		u8.ConnectToServerResponse_Result result
-		if(result == GetPublicServersResponse_Result_Success)
+		if(.result == GetPublicServersResponse_Result_Success)
 			String userId
 			String userName
 			String secret
@@ -935,7 +1100,7 @@ u8 UserMessage Type
 	n GetPublicServersResponse
 		BaseMasterServerReliableResponse base
 		u8.GetPublicServersResponse_Result result
-		if(result == GetPublicServersResponse_Result_Success)
+		if(.result == GetPublicServersResponse_Result_Success)
 			vu32 publicServerCount
 			PublicServerInfo[8192,publicServerCount] publicServers
 u8 DedicatedServerMessage Type

@@ -586,6 +586,16 @@ struct PlayerStateUpdate pkt_readPlayerStateUpdate(const uint8_t **pkt) {
 	out.playerState = pkt_readPlayerStateHash(pkt);
 	return out;
 }
+struct PingMessage pkt_readPingMessage(const uint8_t **pkt) {
+	struct PingMessage out;
+	out.pingTime = pkt_readFloat32(pkt);
+	return out;
+}
+struct PongMessage pkt_readPongMessage(const uint8_t **pkt) {
+	struct PongMessage out;
+	out.pingTime = pkt_readFloat32(pkt);
+	return out;
+}
 struct RemoteProcedureCall pkt_readRemoteProcedureCall(const uint8_t **pkt) {
 	struct RemoteProcedureCall out;
 	out.syncTime = pkt_readFloat32(pkt);
@@ -593,6 +603,27 @@ struct RemoteProcedureCall pkt_readRemoteProcedureCall(const uint8_t **pkt) {
 }
 void pkt_writeRemoteProcedureCall(uint8_t **pkt, struct RemoteProcedureCall in) {
 	pkt_writeFloat32(pkt, in.syncTime);
+}
+struct RemoteProcedureCallFlags pkt_readRemoteProcedureCallFlags(const uint8_t **pkt, uint32_t protocolVersion) {
+	struct RemoteProcedureCallFlags out;
+	uint8_t bits = 255;
+	if(protocolVersion > 6)
+		bits = pkt_readUint8(pkt);
+	out.hasValue0 = (bits >> 0) & 1;
+	out.hasValue1 = (bits >> 1) & 1;
+	out.hasValue2 = (bits >> 2) & 1;
+	out.hasValue3 = (bits >> 3) & 1;
+	return out;
+}
+void pkt_writeRemoteProcedureCallFlags(uint8_t **pkt, struct RemoteProcedureCallFlags in, uint32_t protocolVersion) {
+	if(protocolVersion > 6) {
+		uint8_t bits = 0;
+		bits |= (in.hasValue0 << 0);
+		bits |= (in.hasValue1 << 1);
+		bits |= (in.hasValue2 << 2);
+		bits |= (in.hasValue3 << 3);
+		pkt_writeUint8(pkt, bits);
+	}
 }
 void pkt_writePlayersMissingEntitlementsNetSerializable(uint8_t **pkt, struct PlayersMissingEntitlementsNetSerializable in) {
 	pkt_writeInt32(pkt, in.count);
@@ -813,9 +844,15 @@ struct LevelCompletionResults pkt_readLevelCompletionResults(const uint8_t **pkt
 	out.endSongTime = pkt_readFloat32(pkt);
 	return out;
 }
-struct MultiplayerLevelCompletionResults pkt_readMultiplayerLevelCompletionResults(const uint8_t **pkt) {
+struct MultiplayerLevelCompletionResults pkt_readMultiplayerLevelCompletionResults(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct MultiplayerLevelCompletionResults out;
-	out.levelEndState = pkt_readVarInt32(pkt);
+	if(protocolVersion <= 6) {
+		out.levelEndState = pkt_readVarInt32(pkt);
+	}
+	if(protocolVersion > 6) {
+		out.playerLevelEndState = pkt_readVarInt32(pkt);
+		out.playerLevelEndReason = pkt_readVarInt32(pkt);
+	}
 	if(out.levelEndState < MultiplayerLevelEndState_GivenUp) {
 		out.levelCompletionResults = pkt_readLevelCompletionResults(pkt);
 	}
@@ -837,212 +874,367 @@ struct StandardScoreSyncState pkt_readStandardScoreSyncState(const uint8_t **pkt
 	out.multiplier = pkt_readVarInt32(pkt);
 	return out;
 }
-void pkt_writeSetPlayersMissingEntitlementsToLevel(uint8_t **pkt, struct SetPlayersMissingEntitlementsToLevel in) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writePlayersMissingEntitlementsNetSerializable(pkt, in.playersMissingEntitlements);
+struct NoteSpawnInfoNetSerializable pkt_readNoteSpawnInfoNetSerializable(const uint8_t **pkt) {
+	struct NoteSpawnInfoNetSerializable out;
+	out.time = pkt_readFloat32(pkt);
+	out.lineIndex = pkt_readVarInt32(pkt);
+	out.noteLineLayer = pkt_readVarInt32(pkt);
+	out.beforeJumpNoteLineLayer = pkt_readVarInt32(pkt);
+	out.colorType = pkt_readVarInt32(pkt);
+	out.cutDirection = pkt_readVarInt32(pkt);
+	out.timeToNextColorNote = pkt_readFloat32(pkt);
+	out.timeToPrevColorNote = pkt_readFloat32(pkt);
+	out.flipLineIndex = pkt_readVarInt32(pkt);
+	out.flipYSide = pkt_readVarInt32(pkt);
+	out.moveStartPos = pkt_readVector3Serializable(pkt);
+	out.moveEndPos = pkt_readVector3Serializable(pkt);
+	out.jumpEndPos = pkt_readVector3Serializable(pkt);
+	out.jumpGravity = pkt_readFloat32(pkt);
+	out.moveDuration = pkt_readFloat32(pkt);
+	out.jumpDuration = pkt_readFloat32(pkt);
+	out.rotation = pkt_readFloat32(pkt);
+	out.cutDirectionAngleOffset = pkt_readFloat32(pkt);
+	return out;
 }
-void pkt_writeGetIsEntitledToLevel(uint8_t **pkt, struct GetIsEntitledToLevel in) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeLongString(pkt, in.levelId);
+struct ObstacleSpawnInfoNetSerializable pkt_readObstacleSpawnInfoNetSerializable(const uint8_t **pkt) {
+	struct ObstacleSpawnInfoNetSerializable out;
+	out.time = pkt_readFloat32(pkt);
+	out.lineIndex = pkt_readVarInt32(pkt);
+	out.obstacleType = pkt_readVarInt32(pkt);
+	out.duration = pkt_readFloat32(pkt);
+	out.width = pkt_readVarInt32(pkt);
+	out.moveStartPos = pkt_readVector3Serializable(pkt);
+	out.moveEndPos = pkt_readVector3Serializable(pkt);
+	out.jumpEndPos = pkt_readVector3Serializable(pkt);
+	out.obstacleHeight = pkt_readFloat32(pkt);
+	out.moveDuration = pkt_readFloat32(pkt);
+	out.jumpDuration = pkt_readFloat32(pkt);
+	out.noteLinesDistance = pkt_readFloat32(pkt);
+	out.rotation = pkt_readFloat32(pkt);
+	return out;
 }
-struct SetIsEntitledToLevel pkt_readSetIsEntitledToLevel(const uint8_t **pkt) {
+void pkt_writeSetPlayersMissingEntitlementsToLevel(uint8_t **pkt, struct SetPlayersMissingEntitlementsToLevel in, uint32_t protocolVersion) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+	if(in.flags.hasValue0) {
+		pkt_writePlayersMissingEntitlementsNetSerializable(pkt, in.playersMissingEntitlements);
+	}
+}
+void pkt_writeGetIsEntitledToLevel(uint8_t **pkt, struct GetIsEntitledToLevel in, uint32_t protocolVersion) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+	if(in.flags.hasValue0) {
+		pkt_writeLongString(pkt, in.levelId);
+	}
+}
+struct SetIsEntitledToLevel pkt_readSetIsEntitledToLevel(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct SetIsEntitledToLevel out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.levelId = pkt_readLongString(pkt);
-	out.entitlementStatus = pkt_readVarInt32(pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	if(out.flags.hasValue0) {
+		out.levelId = pkt_readLongString(pkt);
+	}
+	if(out.flags.hasValue1) {
+		out.entitlementStatus = pkt_readVarInt32(pkt);
+	}
 	return out;
 }
-void pkt_writeSetSelectedBeatmap(uint8_t **pkt, struct SetSelectedBeatmap in) {
+void pkt_writeSetSelectedBeatmap(uint8_t **pkt, struct SetSelectedBeatmap in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeBeatmapIdentifierNetSerializable(pkt, in.identifier);
+	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+	if(in.flags.hasValue0) {
+		pkt_writeBeatmapIdentifierNetSerializable(pkt, in.identifier);
+	}
 }
-struct RecommendBeatmap pkt_readRecommendBeatmap(const uint8_t **pkt) {
+struct RecommendBeatmap pkt_readRecommendBeatmap(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct RecommendBeatmap out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.identifier = pkt_readBeatmapIdentifierNetSerializable(pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	if(out.flags.hasValue0) {
+		out.identifier = pkt_readBeatmapIdentifierNetSerializable(pkt);
+	}
 	return out;
 }
-void pkt_writeRecommendBeatmap(uint8_t **pkt, struct RecommendBeatmap in) {
+void pkt_writeRecommendBeatmap(uint8_t **pkt, struct RecommendBeatmap in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeBeatmapIdentifierNetSerializable(pkt, in.identifier);
+	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+	if(in.flags.hasValue0) {
+		pkt_writeBeatmapIdentifierNetSerializable(pkt, in.identifier);
+	}
 }
-struct ClearRecommendedBeatmap pkt_readClearRecommendedBeatmap(const uint8_t **pkt) {
+struct ClearRecommendedBeatmap pkt_readClearRecommendedBeatmap(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct ClearRecommendedBeatmap out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
 	return out;
 }
-struct GetRecommendedBeatmap pkt_readGetRecommendedBeatmap(const uint8_t **pkt) {
+struct GetRecommendedBeatmap pkt_readGetRecommendedBeatmap(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct GetRecommendedBeatmap out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
 	return out;
 }
-void pkt_writeGetRecommendedBeatmap(uint8_t **pkt, struct GetRecommendedBeatmap in) {
+void pkt_writeGetRecommendedBeatmap(uint8_t **pkt, struct GetRecommendedBeatmap in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
 }
-void pkt_writeSetSelectedGameplayModifiers(uint8_t **pkt, struct SetSelectedGameplayModifiers in) {
+void pkt_writeSetSelectedGameplayModifiers(uint8_t **pkt, struct SetSelectedGameplayModifiers in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeGameplayModifiers(pkt, in.gameplayModifiers);
+	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+	if(in.flags.hasValue0) {
+		pkt_writeGameplayModifiers(pkt, in.gameplayModifiers);
+	}
 }
-struct RecommendGameplayModifiers pkt_readRecommendGameplayModifiers(const uint8_t **pkt) {
+struct RecommendGameplayModifiers pkt_readRecommendGameplayModifiers(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct RecommendGameplayModifiers out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.gameplayModifiers = pkt_readGameplayModifiers(pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	if(out.flags.hasValue0) {
+		out.gameplayModifiers = pkt_readGameplayModifiers(pkt);
+	}
 	return out;
 }
-void pkt_writeRecommendGameplayModifiers(uint8_t **pkt, struct RecommendGameplayModifiers in) {
+void pkt_writeRecommendGameplayModifiers(uint8_t **pkt, struct RecommendGameplayModifiers in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeGameplayModifiers(pkt, in.gameplayModifiers);
+	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+	if(in.flags.hasValue0) {
+		pkt_writeGameplayModifiers(pkt, in.gameplayModifiers);
+	}
 }
-struct GetRecommendedGameplayModifiers pkt_readGetRecommendedGameplayModifiers(const uint8_t **pkt) {
+struct ClearRecommendedGameplayModifiers pkt_readClearRecommendedGameplayModifiers(const uint8_t **pkt, uint32_t protocolVersion) {
+	struct ClearRecommendedGameplayModifiers out;
+	out.base = pkt_readRemoteProcedureCall(pkt);
+	return out;
+}
+struct GetRecommendedGameplayModifiers pkt_readGetRecommendedGameplayModifiers(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct GetRecommendedGameplayModifiers out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
 	return out;
 }
-void pkt_writeGetRecommendedGameplayModifiers(uint8_t **pkt, struct GetRecommendedGameplayModifiers in) {
+void pkt_writeGetRecommendedGameplayModifiers(uint8_t **pkt, struct GetRecommendedGameplayModifiers in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
 }
-void pkt_writeStartLevel(uint8_t **pkt, struct StartLevel in) {
+void pkt_writeStartLevel(uint8_t **pkt, struct StartLevel in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeBeatmapIdentifierNetSerializable(pkt, in.beatmapId);
-	pkt_writeGameplayModifiers(pkt, in.gameplayModifiers);
-	pkt_writeFloat32(pkt, in.startTime);
+	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+	if(in.flags.hasValue0) {
+		pkt_writeBeatmapIdentifierNetSerializable(pkt, in.beatmapId);
+	}
+	if(in.flags.hasValue1) {
+		pkt_writeGameplayModifiers(pkt, in.gameplayModifiers);
+	}
+	if(in.flags.hasValue2) {
+		pkt_writeFloat32(pkt, in.startTime);
+	}
 }
-struct GetStartedLevel pkt_readGetStartedLevel(const uint8_t **pkt) {
+struct GetStartedLevel pkt_readGetStartedLevel(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct GetStartedLevel out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
 	return out;
 }
-void pkt_writeCancelLevelStart(uint8_t **pkt, struct CancelLevelStart in) {
+void pkt_writeCancelLevelStart(uint8_t **pkt, struct CancelLevelStart in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
 }
-struct GetMultiplayerGameState pkt_readGetMultiplayerGameState(const uint8_t **pkt) {
+struct GetMultiplayerGameState pkt_readGetMultiplayerGameState(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct GetMultiplayerGameState out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
 	return out;
 }
-void pkt_writeSetMultiplayerGameState(uint8_t **pkt, struct SetMultiplayerGameState in) {
+void pkt_writeSetMultiplayerGameState(uint8_t **pkt, struct SetMultiplayerGameState in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeVarInt32(pkt, in.lobbyState);
+	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+	if(in.flags.hasValue0) {
+		pkt_writeVarInt32(pkt, in.lobbyState);
+	}
 }
-struct GetIsReady pkt_readGetIsReady(const uint8_t **pkt) {
+struct GetIsReady pkt_readGetIsReady(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct GetIsReady out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
 	return out;
 }
-void pkt_writeGetIsReady(uint8_t **pkt, struct GetIsReady in) {
+void pkt_writeGetIsReady(uint8_t **pkt, struct GetIsReady in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
 }
-struct SetIsReady pkt_readSetIsReady(const uint8_t **pkt) {
+struct SetIsReady pkt_readSetIsReady(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct SetIsReady out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.isReady = pkt_readUint8(pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	if(out.flags.hasValue0) {
+		out.isReady = pkt_readUint8(pkt);
+	}
 	return out;
 }
-void pkt_writeSetIsReady(uint8_t **pkt, struct SetIsReady in) {
+void pkt_writeSetIsReady(uint8_t **pkt, struct SetIsReady in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeUint8(pkt, in.isReady);
+	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+	if(in.flags.hasValue0) {
+		pkt_writeUint8(pkt, in.isReady);
+	}
 }
-struct GetIsInLobby pkt_readGetIsInLobby(const uint8_t **pkt) {
+struct GetIsInLobby pkt_readGetIsInLobby(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct GetIsInLobby out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
 	return out;
 }
-void pkt_writeGetIsInLobby(uint8_t **pkt, struct GetIsInLobby in) {
+void pkt_writeGetIsInLobby(uint8_t **pkt, struct GetIsInLobby in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
 }
-struct SetIsInLobby pkt_readSetIsInLobby(const uint8_t **pkt) {
+struct SetIsInLobby pkt_readSetIsInLobby(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct SetIsInLobby out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.isBack = pkt_readUint8(pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	if(out.flags.hasValue0) {
+		out.isBack = pkt_readUint8(pkt);
+	}
 	return out;
 }
-void pkt_writeSetIsInLobby(uint8_t **pkt, struct SetIsInLobby in) {
+void pkt_writeSetIsInLobby(uint8_t **pkt, struct SetIsInLobby in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeUint8(pkt, in.isBack);
+	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+	if(in.flags.hasValue0) {
+		pkt_writeUint8(pkt, in.isBack);
+	}
 }
-struct GetCountdownEndTime pkt_readGetCountdownEndTime(const uint8_t **pkt) {
+struct GetCountdownEndTime pkt_readGetCountdownEndTime(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct GetCountdownEndTime out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
 	return out;
 }
-void pkt_writeSetCountdownEndTime(uint8_t **pkt, struct SetCountdownEndTime in) {
+void pkt_writeSetCountdownEndTime(uint8_t **pkt, struct SetCountdownEndTime in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeFloat32(pkt, in.newTime);
+	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+	if(in.flags.hasValue0) {
+		pkt_writeFloat32(pkt, in.newTime);
+	}
 }
-void pkt_writeCancelCountdown(uint8_t **pkt, struct CancelCountdown in) {
+void pkt_writeCancelCountdown(uint8_t **pkt, struct CancelCountdown in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
 }
-struct SetOwnedSongPacks pkt_readSetOwnedSongPacks(const uint8_t **pkt) {
+struct SetOwnedSongPacks pkt_readSetOwnedSongPacks(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct SetOwnedSongPacks out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.songPackMask = pkt_readSongPackMask(pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	if(out.flags.hasValue0) {
+		out.songPackMask = pkt_readSongPackMask(pkt);
+	}
 	return out;
 }
-struct GetPermissionConfiguration pkt_readGetPermissionConfiguration(const uint8_t **pkt) {
+struct GetPermissionConfiguration pkt_readGetPermissionConfiguration(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct GetPermissionConfiguration out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
 	return out;
 }
-void pkt_writeSetPermissionConfiguration(uint8_t **pkt, struct SetPermissionConfiguration in) {
+void pkt_writeSetPermissionConfiguration(uint8_t **pkt, struct SetPermissionConfiguration in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writePlayersLobbyPermissionConfigurationNetSerializable(pkt, in.playersPermissionConfiguration);
+	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+	if(in.flags.hasValue0) {
+		pkt_writePlayersLobbyPermissionConfigurationNetSerializable(pkt, in.playersPermissionConfiguration);
+	}
 }
-void pkt_writeSetIsStartButtonEnabled(uint8_t **pkt, struct SetIsStartButtonEnabled in) {
+void pkt_writeSetIsStartButtonEnabled(uint8_t **pkt, struct SetIsStartButtonEnabled in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeVarInt32(pkt, in.reason);
+	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+	if(in.flags.hasValue0) {
+		pkt_writeVarInt32(pkt, in.reason);
+	}
 }
-void pkt_writeSetGameplaySceneSyncFinish(uint8_t **pkt, struct SetGameplaySceneSyncFinish in) {
+void pkt_writeSetGameplaySceneSyncFinish(uint8_t **pkt, struct SetGameplaySceneSyncFinish in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writePlayerSpecificSettingsAtStartNetSerializable(pkt, in.playersAtGameStart);
-	pkt_writeString(pkt, in.sessionGameId);
+	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+	if(in.flags.hasValue0) {
+		pkt_writePlayerSpecificSettingsAtStartNetSerializable(pkt, in.playersAtGameStart);
+	}
+	if(in.flags.hasValue1) {
+		pkt_writeString(pkt, in.sessionGameId);
+	}
 }
-struct SetGameplaySceneReady pkt_readSetGameplaySceneReady(const uint8_t **pkt) {
+struct SetGameplaySceneReady pkt_readSetGameplaySceneReady(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct SetGameplaySceneReady out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.playerSpecificSettingsNetSerializable = pkt_readPlayerSpecificSettingsNetSerializable(pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	if(out.flags.hasValue0) {
+		out.playerSpecificSettingsNetSerializable = pkt_readPlayerSpecificSettingsNetSerializable(pkt);
+	}
 	return out;
 }
-void pkt_writeGetGameplaySceneReady(uint8_t **pkt, struct GetGameplaySceneReady in) {
+void pkt_writeGetGameplaySceneReady(uint8_t **pkt, struct GetGameplaySceneReady in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
 }
-struct SetGameplaySongReady pkt_readSetGameplaySongReady(const uint8_t **pkt) {
+struct SetGameplaySongReady pkt_readSetGameplaySongReady(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct SetGameplaySongReady out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
 	return out;
 }
-void pkt_writeGetGameplaySongReady(uint8_t **pkt, struct GetGameplaySongReady in) {
+void pkt_writeGetGameplaySongReady(uint8_t **pkt, struct GetGameplaySongReady in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
 }
-void pkt_writeSetSongStartTime(uint8_t **pkt, struct SetSongStartTime in) {
+void pkt_writeSetSongStartTime(uint8_t **pkt, struct SetSongStartTime in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeFloat32(pkt, in.startTime);
+	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+	if(in.flags.hasValue0) {
+		pkt_writeFloat32(pkt, in.startTime);
+	}
 }
-struct NoteCut pkt_readNoteCut(const uint8_t **pkt) {
+struct NoteCut pkt_readNoteCut(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct NoteCut out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.songTime = pkt_readFloat32(pkt);
-	out.noteCutInfo = pkt_readNoteCutInfoNetSerializable(pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	if(out.flags.hasValue0) {
+		out.songTime = pkt_readFloat32(pkt);
+	}
+	if(out.flags.hasValue1) {
+		out.noteCutInfo = pkt_readNoteCutInfoNetSerializable(pkt);
+	}
 	return out;
 }
-struct NoteMissed pkt_readNoteMissed(const uint8_t **pkt) {
+struct NoteMissed pkt_readNoteMissed(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct NoteMissed out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.songTime = pkt_readFloat32(pkt);
-	out.noteMissInfo = pkt_readNoteMissInfoNetSerializable(pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	if(out.flags.hasValue0) {
+		out.songTime = pkt_readFloat32(pkt);
+	}
+	if(out.flags.hasValue1) {
+		out.noteMissInfo = pkt_readNoteMissInfoNetSerializable(pkt);
+	}
 	return out;
 }
-struct LevelFinished pkt_readLevelFinished(const uint8_t **pkt) {
+struct LevelFinished pkt_readLevelFinished(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct LevelFinished out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.results = pkt_readMultiplayerLevelCompletionResults(pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	if(out.flags.hasValue0) {
+		out.results = pkt_readMultiplayerLevelCompletionResults(pkt, protocolVersion);
+	}
 	return out;
 }
-void pkt_writeReturnToMenu(uint8_t **pkt, struct ReturnToMenu in) {
+void pkt_writeReturnToMenu(uint8_t **pkt, struct ReturnToMenu in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
 }
-struct RequestReturnToMenu pkt_readRequestReturnToMenu(const uint8_t **pkt) {
+struct RequestReturnToMenu pkt_readRequestReturnToMenu(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct RequestReturnToMenu out;
 	out.base = pkt_readRemoteProcedureCall(pkt);
+	return out;
+}
+struct NoteSpawned pkt_readNoteSpawned(const uint8_t **pkt, uint32_t protocolVersion) {
+	struct NoteSpawned out;
+	out.base = pkt_readRemoteProcedureCall(pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	if(out.flags.hasValue0) {
+		out.songTime = pkt_readFloat32(pkt);
+	}
+	if(out.flags.hasValue1) {
+		out.noteSpawnInfo = pkt_readNoteSpawnInfoNetSerializable(pkt);
+	}
+	return out;
+}
+struct ObstacleSpawned pkt_readObstacleSpawned(const uint8_t **pkt, uint32_t protocolVersion) {
+	struct ObstacleSpawned out;
+	out.base = pkt_readRemoteProcedureCall(pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	if(out.flags.hasValue0) {
+		out.songTime = pkt_readFloat32(pkt);
+	}
+	if(out.flags.hasValue1) {
+		out.obstacleSpawnInfo = pkt_readObstacleSpawnInfoNetSerializable(pkt);
+	}
 	return out;
 }
 struct NodePoseSyncState pkt_readNodePoseSyncState(const uint8_t **pkt) {
