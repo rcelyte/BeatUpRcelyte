@@ -110,7 +110,7 @@ struct Room {
 	struct NetKeypair keys;
 	struct String managerId;
 	struct GameplayServerConfiguration configuration;
-	float syncBase;
+	float syncBase, levelStartTime;
 
 	struct Counter128 inLobby;
 	struct Counter128 levelFinished;
@@ -334,7 +334,7 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 			break;
 		}
 		case ServerState_LoadingScene: {
-			float startTime = room->lobby.countdownEnd;
+			room->levelStartTime = room->lobby.countdownEnd;
 			Counter128_clear(&room->levelFinished);
 			room->loadingScene.timeout = room_get_syncTime(room) + LOAD_TIMEOUT;
 			Counter128_clear(&room->loadingScene.isLoaded);
@@ -347,7 +347,7 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 			r_start.flags.hasValue2 = r_start.flags.hasValue1 = r_start.flags.hasValue0 = r_modifiers.flags.hasValue0 = r_beatmap.flags.hasValue0 = 1;
 			r_start.beatmapId = r_beatmap.identifier = room->selectedBeatmap;
 			r_start.gameplayModifiers = r_modifiers.gameplayModifiers = room->selectedModifiers;
-			r_start.startTime = startTime;
+			r_start.startTime = room->levelStartTime;
 			FOR_ALL_PLAYERS(room, id) {
 				if(PER_PLAYER_DIFFICULTY) { // The "gaslighting" approach
 					if(String_eq(room->players[id].lobby.recommendedBeatmap.levelID, room->selectedBeatmap.levelID)) {
@@ -672,7 +672,25 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 		case MenuRpcType_GetStartedLevel: {
 			pkt_readGetStartedLevel(data, session->net.protocolVersion);
 			if(room->state != ServerState_Lobby) {
-				fprintf(stderr, "[INSTANCE] MenuRpcType_GetStartedLevel not implemented\n"); abort();
+				struct StartLevel r_start;
+				r_start.base.syncTime = room_get_syncTime(room);
+				r_start.flags.hasValue2 = r_start.flags.hasValue1 = r_start.flags.hasValue0 = 1;
+				r_start.beatmapId = room->selectedBeatmap;
+				r_start.gameplayModifiers = room->selectedModifiers;
+				r_start.startTime = room->levelStartTime;
+				if(PER_PLAYER_DIFFICULTY) { // The "gaslighting" approach
+					if(String_eq(session->lobby.recommendedBeatmap.levelID, room->selectedBeatmap.levelID)) {
+						r_start.beatmapId.beatmapCharacteristicSerializedName = session->lobby.recommendedBeatmap.beatmapCharacteristicSerializedName;
+						r_start.beatmapId.difficulty = session->lobby.recommendedBeatmap.difficulty;
+					} else {
+						r_start.beatmapId.beatmapCharacteristicSerializedName = room->selectedBeatmap.beatmapCharacteristicSerializedName;
+						r_start.beatmapId.difficulty = room->selectedBeatmap.difficulty;
+					}
+				}
+				uint8_t resp[65536], *resp_end = resp;
+				pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
+				SERIALIZE_MENURPC(&resp_end, StartLevel, r_start, session->net.protocolVersion);
+				instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			} else {
 				uint8_t resp[65536], *resp_end = resp;
 				struct SetIsStartButtonEnabled r_button;
