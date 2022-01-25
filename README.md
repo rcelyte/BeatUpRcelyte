@@ -55,7 +55,7 @@ Search for "useCustomServerEnvironment".
 
 Set `useCustomServerEnvironment` to `true`, and `customServerHostName` to your server's hostname. The file should look something like this:
 ```
-...ₒₜh":4.0,"useCustomServerEnvironment":false,"customServerHostName":"my.server.com","voₗᵤ...
+...ₒₜh":4.0,"useCustomServerEnvironment":true,"customServerHostName":"my.server.com","voₗᵤ...
 ```
 
 Hosting
