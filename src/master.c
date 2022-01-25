@@ -8,6 +8,7 @@
 #include <pthread.h>
 #endif
 #include "debug.h"
+#include "pool.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -168,8 +169,6 @@ static void master_send(struct NetContext *ctx, struct MasterSession *session, c
 	}
 	if(message.type == MessageType_UserMessage)
 		serial.type = UserMessageType_UserMultipartMessage;
-	else if(message.type == MessageType_DedicatedServerMessage)
-		serial.type = DedicatedServerMessageType_DedicatedServerMultipartMessage;
 	else if(message.type == MessageType_HandshakeMessage)
 		serial.type = HandshakeMessageType_HandshakeMultipartMessage;
 	else
@@ -374,6 +373,9 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 	struct String managerId = req.base.userId;
 	struct SS addr = *NetSession_get_addr(&session->net);
 	struct NetSession *isession;
+
+	struct RoomHandle room;
+	struct WireRoomHandle handle;
 	if(req.code == StringToServerCode(NULL, 0)) {
 		if(req.selectionMask.difficulties != BeatmapDifficultyMask_All && req.selectionMask.modifiers == GameplayModifierMask_NoFail && req.configuration.maxPlayerCount == 5 && req.configuration.discoveryPolicy == DiscoveryPolicy_Public && req.configuration.invitePolicy == InvitePolicy_AnyoneCanInvite && req.configuration.gameplayServerMode == GameplayServerMode_Countdown && req.configuration.songSelectionMode == SongSelectionMode_Vote && req.configuration.gameplayServerControlSettings == GameplayServerControlSettings_None) {
 			r_conn.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers; // Quick Play not yet available
@@ -383,24 +385,20 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		req.configuration.maxPlayerCount = 126;
 		fprintf(stderr, "ONLY THE BIGGEST OF ROOMS!!!\n");
 		#endif
-		isession = instance_open(&req.code, managerId, &req.configuration, addr, req.secret, req.base.userId, req.base.userName, session->net.protocolVersion);
-		if(!isession) {
+		if(pool_request_room(&room, &handle, managerId, req.configuration)) {
 			r_conn.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers;
 			goto send;
 		}
+		req.code = pool_room_code(room);
 	} else {
-		uint32_t protocolVersion;
-		if(!instance_get_isopen(req.code, &managerId, &req.configuration, &protocolVersion)) {
+		if(pool_find_room(req.code, &room, &handle)) {
 			r_conn.result = ConnectToServerResponse_Result_InvalidCode;
 			goto send;
 		}
-		if(protocolVersion != session->net.protocolVersion) {
+		managerId = wire_room_get_managerId(handle);
+		req.configuration = wire_room_get_configuration(handle);
+		if(wire_room_get_protocolVersion(handle) != session->net.protocolVersion) {
 			r_conn.result = ConnectToServerResponse_Result_VersionMismatch;
-			goto send;
-		}
-		isession = instance_resolve_session(req.code, addr, req.secret, req.base.userId, req.base.userName, session->net.protocolVersion);
-		if(!isession) {
-			r_conn.result = ConnectToServerResponse_Result_UnknownError;
 			goto send;
 		}
 	}
@@ -408,7 +406,12 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 	req.selectionMask.songPacks.bloomFilter.d0 |= customs.d0;
 	req.selectionMask.songPacks.bloomFilter.d1 |= customs.d1;*/
 	{
-		struct NetContext *net = instance_get_net(req.code);
+		isession = TEMPwire_room_resolve_session(handle, addr, req.secret, req.base.userId, req.base.userName, session->net.protocolVersion);
+		if(!isession) { // TODO: the room should close implicitly if the first user to connect fails
+			r_conn.result = ConnectToServerResponse_Result_UnknownError;
+			goto send;
+		}
+		struct NetContext *net = TEMPwire_block_get_net(handle.block);
 		memcpy(isession->clientRandom, req.base.random, 32);
 		memcpy(r_conn.random, NetKeypair_get_random(&isession->keys), 32);
 		r_conn.publicKey.length = sizeof(r_conn.publicKey.data);
@@ -425,7 +428,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		r_conn.secret = req.secret;
 		r_conn.selectionMask = req.selectionMask;
 		r_conn.flags = 3;
-		r_conn.remoteEndPoint = instance_get_address(req.code, addr.ss.ss_family != AF_INET6 || memcmp(addr.in6.sin6_addr.s6_addr, (const uint8_t[]){0,0,0,0,0,0,0,0,0,0,255,255}, 12) == 0);
+		r_conn.remoteEndPoint = wire_block_get_endpoint(handle.block, addr.ss.ss_family != AF_INET6 || memcmp(addr.in6.sin6_addr.s6_addr, (const uint8_t[]){0,0,0,0,0,0,0,0,0,0,255,255}, 12) == 0);
 		r_conn.code = req.code;
 		r_conn.configuration = req.configuration;
 		r_conn.managerId = managerId;
@@ -474,8 +477,6 @@ master_handler(struct Context *ctx) {
 				case UserMessageType_GetPublicServersResponse: fprintf(stderr, "[MASTER] UserMessageType_GetPublicServersResponse not implemented\n"); return 0;
 				default: fprintf(stderr, "[MASTER] BAD USER MESSAGE TYPE\n");
 			}
-		} else if(message.type == MessageType_DedicatedServerMessage) {
-			fprintf(stderr, "[MASTER] DedicatedServerMessageType not implemented\n");
 		} else if(message.type == MessageType_HandshakeMessage) {
 			switch(serial.type) {
 				case HandshakeMessageType_ClientHelloRequest: handle_ClientHelloRequest(ctx, session, &data, message.protocolVersion); break;
@@ -495,6 +496,10 @@ master_handler(struct Context *ctx) {
 				case HandshakeMessageType_HandshakeMultipartMessage: fprintf(stderr, "[MASTER] BAD TYPE: HandshakeMessageType_HandshakeMultipartMessage\n"); break;
 				default: fprintf(stderr, "[MASTER] BAD HANDSHAKE MESSAGE TYPE\n");
 			}
+		} else if(message.type == MessageType_DedicatedServerMessage) {
+			fprintf(stderr, "[MASTER] DedicatedServerMessageType not implemented\n");
+		} else if(message.type == MessageType_GameLiftMessage) {
+			fprintf(stderr, "[MASTER] GameLiftMessage not implemented\n");
 		} else {
 			fprintf(stderr, "[MASTER] BAD MESSAGE TYPE\n");
 		}

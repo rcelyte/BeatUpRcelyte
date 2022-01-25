@@ -238,6 +238,9 @@ code
 	static void pkt_logString(const char *name, char *buf, char *it, struct String in) {
 		fprintf(stderr, "%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
 	}
+	static void pkt_logLongString(const char *name, char *buf, char *it, struct LongString in) {
+		fprintf(stderr, "%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
+	}
 	#endif
 d String
 	u32 length
@@ -1124,6 +1127,11 @@ u8 UserMessage Type
 u8 DedicatedServerMessage Type
 	z DedicatedServerMessageReceivedAcknowledge 13
 	z DedicatedServerMultipartMessage 14
+u8 GameLiftMessage Type
+	z AuthenticateUserRequest
+	z AuthenticateUserResponse
+	z GameLiftMessageReceivedAcknowledge
+	z GameLiftMultipartMessage
 u8 HandshakeMessage Type
 	r ClientHelloRequest
 		BaseMasterServerReliableRequest base
@@ -1157,11 +1165,12 @@ u8 HandshakeMessage Type
 
 head
 	#ifdef reflect
-	static const char *const reflect_MessageType = "{MessageType_UserMessage=1,MessageType_DedicatedServerMessage=2,MessageType_HandshakeMessage=3192347326,}";
+	static const char *const reflect_MessageType = "{MessageType_UserMessage=1,MessageType_DedicatedServerMessage=2,MessageType_GameLiftMessage=3,MessageType_HandshakeMessage=3192347326,}";
 	#endif
 	typedef uint32_t MessageType;
 	#define MessageType_UserMessage 1
 	#define MessageType_DedicatedServerMessage 2
+	#define MessageType_GameLiftMessage 3
 	#define MessageType_HandshakeMessage 3192347326u
 code
 	void pkt_logMessageType(const char *name, char *buf, char *it, MessageType in) {

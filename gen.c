@@ -267,7 +267,7 @@ void parse_struct_entries(const char **in, const char *structName, uint32_t inde
 						char length_name[1024];
 						read_word((const char*[]){length}, length_name);
 						*des += sprintf(tabs(des, outdent), "if(%s > %u) {\n", length, count);
-						*des += sprintf(tabs(des, outdent + 1), "%s = 0, *pkt = _trap, fprintf(stderr, \"Buffer overflow in read of %s.%s: %%u > %u\\n\", (uint32_t)%s);\n", length_name, structName, name, count, length);
+						*des += sprintf(tabs(des, outdent + 1), "fprintf(stderr, \"Buffer overflow in read of %s.%s: %%u > %u\\n\", (uint32_t)%s), %s = 0, *pkt = _trap;\n", structName, name, count, length, length_name);
 						*des += sprintf(tabs(des, outdent++), "} else {\n");
 					}
 					if(count && width == 8) {

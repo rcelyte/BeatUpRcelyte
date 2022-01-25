@@ -45,9 +45,9 @@ int main(int argc, char const *argv[]) {
 		if(status_init(cfg.status_path, cfg.status_port))
 			goto fail1;
 	}
-	pool_init();
 	if(instance_init(cfg.host_domain, cfg.host_domainIPv4))
 		goto fail2;
+	pool_init();
 	if(master_init(&cfg.master_cert, &cfg.master_key, cfg.master_port))
 		goto fail3;
 	if(headless) {

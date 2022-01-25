@@ -1,5 +1,4 @@
 #include "pool.h"
-#include "wire.h"
 #include "scramble.h"
 #include "packets.h"
 #include <stddef.h>
@@ -27,12 +26,13 @@ static struct RoomHandle RoomHandle_code(ServerCode code) {
 }
 
 static _Bool pool_reserve_room(ServerCode code) { // DO NOT RESERVE MORE THAN 15 ROOMS
-	struct RoomHandle h;
-	pool_find_room(code, &h);
-	if(rooms[h.block].idle == 0xffff)
-		if(wire_request_block(&rooms[h.block].handle))
+	struct RoomHandle room;
+	struct WireRoomHandle handle;
+	pool_find_room(code, &room, &handle);
+	if(rooms[room.block].idle == 0xffff)
+		if(wire_request_block(&rooms[room.block].handle, room.block))
 			return 1;
-	rooms[h.block].idle &= ~(1 << h.sub);
+	rooms[room.block].idle &= ~(1 << room.sub);
 	return 0;
 }
 
@@ -49,10 +49,11 @@ _Bool pool_init() {
 	};
 	for(uint32_t a = 1; a < lengthof(codes); ++a) {
 		for(uint32_t b = a; b < lengthof(codes); ++b) {
-			struct RoomHandle ha, hb;
-			pool_find_room(codes[a-1], &ha);
-			pool_find_room(codes[b], &hb);
-			if(ha.block == hb.block && ha.sub == hb.sub)
+			struct RoomHandle roomA, roomB;
+			struct WireRoomHandle handle;
+			pool_find_room(codes[a-1], &roomA, &handle);
+			pool_find_room(codes[b], &roomB, &handle);
+			if(roomA.block == roomB.block && roomA.sub == roomB.sub)
 				goto reshuffle;
 		}
 	}
@@ -62,38 +63,46 @@ _Bool pool_init() {
 	return 0;
 }
 
-_Bool pool_request_room(struct RoomHandle *out) {
+_Bool pool_request_room(struct RoomHandle *room_out, struct WireRoomHandle *handle_out, struct String managerId, struct GameplayServerConfiguration configuration) {
 	uint16_t block = alloc[count];
 	if(rooms[block].idle == 0xffff)
-		if(wire_request_block(&rooms[block].handle))
+		if(wire_request_block(&rooms[block].handle, block))
 			return 1;
-	out->block = block;
-	out->sub = __builtin_ctz(rooms[out->block].idle);
-	out->high = rooms[out->block].high[out->sub];
-	rooms[out->block].idle &= rooms[out->block].idle - 1;
-	count += (rooms[out->block].idle == 0);
-	return 0;
+	room_out->block = block;
+	handle_out->block = rooms[block].handle;
+	handle_out->sub = room_out->sub = __builtin_ctz(rooms[room_out->block].idle);
+	room_out->high = rooms[room_out->block].high[room_out->sub];
+	rooms[room_out->block].idle &= rooms[room_out->block].idle - 1;
+	count += (rooms[room_out->block].idle == 0);
+	fprintf(stderr, "room\n");
+	return wire_room_open(*handle_out, managerId, configuration);
 }
 
-void pool_room_close(struct RoomHandle h) {
-	++rooms[h.block].high[h.sub];
-	if(pool_room_code(h) > MAX_SERVER_CODE)
-		rooms[h.block].high[h.sub] = 0;
-	if(rooms[h.block].idle == 0)
-		alloc[--count] = h.block;
-	rooms[h.block].idle |= 1 << h.sub;
-	if(rooms[h.block].idle == 0xffff)
-		wire_block_release(rooms[h.block].handle);
+void pool_room_close(struct RoomHandle room) {
+	wire_room_close((struct WireRoomHandle){rooms[room.block].handle, room.sub});
+	pool_room_close_notify(room);
 }
 
-ServerCode pool_room_code(struct RoomHandle h) {
-	return ((h.high * POOL_BLOCK_COUNT + h.block) << 4) | h.sub;
+void pool_room_close_notify(struct RoomHandle room) {
+	++rooms[room.block].high[room.sub];
+	if(pool_room_code(room) > MAX_SERVER_CODE)
+		rooms[room.block].high[room.sub] = 0;
+	if(rooms[room.block].idle == 0)
+		alloc[--count] = room.block;
+	rooms[room.block].idle |= 1 << room.sub;
+	if(rooms[room.block].idle == 0xffff)
+		wire_block_release(rooms[room.block].handle);
 }
 
-_Bool pool_find_room(ServerCode code, struct RoomHandle *out) {
-	out->sub = code & 15;
+ServerCode pool_room_code(struct RoomHandle room) {
+	return ((room.high * POOL_BLOCK_COUNT + room.block) << 4) | room.sub;
+}
+
+_Bool pool_find_room(ServerCode code, struct RoomHandle *room_out, struct WireRoomHandle *handle_out) {
+	handle_out->sub = room_out->sub = code & 15;
 	code >>= 4;
-	out->high = code / POOL_BLOCK_COUNT;
-	out->block = code - out->high * POOL_BLOCK_COUNT;
-	return out->high != rooms[out->block].high[out->sub];
+	room_out->high = code / POOL_BLOCK_COUNT;
+	room_out->block = code - room_out->high * POOL_BLOCK_COUNT;
+	handle_out->block = rooms[room_out->block].handle;
+	return ((rooms[room_out->block].idle >> room_out->sub) & 1) || room_out->high != rooms[room_out->block].high[room_out->sub];
 }

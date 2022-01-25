@@ -1188,6 +1188,12 @@ ENUM(uint8_t, DedicatedServerMessageType, {
 	DedicatedServerMessageType_DedicatedServerMessageReceivedAcknowledge = 13,
 	DedicatedServerMessageType_DedicatedServerMultipartMessage = 14,
 })
+ENUM(uint8_t, GameLiftMessageType, {
+	GameLiftMessageType_AuthenticateUserRequest,
+	GameLiftMessageType_AuthenticateUserResponse,
+	GameLiftMessageType_GameLiftMessageReceivedAcknowledge,
+	GameLiftMessageType_GameLiftMultipartMessage,
+})
 struct ClientHelloRequest {
 	struct BaseMasterServerReliableRequest base;
 	uint8_t random[32];
@@ -1239,11 +1245,12 @@ ENUM(uint8_t, HandshakeMessageType, {
 	HandshakeMessageType_HandshakeMultipartMessage,
 })
 #ifdef reflect
-static const char *const reflect_MessageType = "{MessageType_UserMessage=1,MessageType_DedicatedServerMessage=2,MessageType_HandshakeMessage=3192347326,}";
+static const char *const reflect_MessageType = "{MessageType_UserMessage=1,MessageType_DedicatedServerMessage=2,MessageType_GameLiftMessage=3,MessageType_HandshakeMessage=3192347326,}";
 #endif
 typedef uint32_t MessageType;
 #define MessageType_UserMessage 1
 #define MessageType_DedicatedServerMessage 2
+#define MessageType_GameLiftMessage 3
 #define MessageType_HandshakeMessage 3192347326u
 struct MessageHeader {
 	MessageType type;

@@ -222,7 +222,7 @@ struct ByteArrayNetSerializable pkt_readByteArrayNetSerializable(const uint8_t *
 	struct ByteArrayNetSerializable out;
 	out.length = pkt_readVarUint32(pkt);
 	if(out.length > 4096) {
-		out.length = 0, *pkt = _trap, fprintf(stderr, "Buffer overflow in read of ByteArrayNetSerializable.data: %u > 4096\n", (uint32_t)out.length);
+		fprintf(stderr, "Buffer overflow in read of ByteArrayNetSerializable.data: %u > 4096\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
 	} else {
 		pkt_readUint8Array(pkt, out.data, out.length);
 	}
@@ -236,12 +236,15 @@ void pkt_writeByteArrayNetSerializable(uint8_t **pkt, struct ByteArrayNetSeriali
 static void pkt_logString(const char *name, char *buf, char *it, struct String in) {
 	fprintf(stderr, "%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
 }
+static void pkt_logLongString(const char *name, char *buf, char *it, struct LongString in) {
+	fprintf(stderr, "%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
+}
 #endif
 struct String pkt_readString(const uint8_t **pkt) {
 	struct String out;
 	out.length = pkt_readUint32(pkt);
 	if(out.length > 60) {
-		out.length = 0, *pkt = _trap, fprintf(stderr, "Buffer overflow in read of String.data: %u > 60\n", (uint32_t)out.length);
+		fprintf(stderr, "Buffer overflow in read of String.data: %u > 60\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
 	} else {
 		pkt_readInt8Array(pkt, out.data, out.length);
 	}
@@ -255,7 +258,7 @@ struct LongString pkt_readLongString(const uint8_t **pkt) {
 	struct LongString out;
 	out.length = pkt_readUint32(pkt);
 	if(out.length > 4096) {
-		out.length = 0, *pkt = _trap, fprintf(stderr, "Buffer overflow in read of LongString.data: %u > 4096\n", (uint32_t)out.length);
+		fprintf(stderr, "Buffer overflow in read of LongString.data: %u > 4096\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
 	} else {
 		pkt_readInt8Array(pkt, out.data, out.length);
 	}
@@ -416,7 +419,7 @@ struct ConnectRequest pkt_readConnectRequest(const uint8_t **pkt) {
 	out.connectId = pkt_readUint64(pkt);
 	out.addrlen = pkt_readUint8(pkt);
 	if(out.addrlen > 38) {
-		out.addrlen = 0, *pkt = _trap, fprintf(stderr, "Buffer overflow in read of ConnectRequest.address: %u > 38\n", (uint32_t)out.addrlen);
+		fprintf(stderr, "Buffer overflow in read of ConnectRequest.address: %u > 38\n", (uint32_t)out.addrlen), out.addrlen = 0, *pkt = _trap;
 	} else {
 		pkt_readUint8Array(pkt, out.address, out.addrlen);
 	}
@@ -440,7 +443,7 @@ struct MtuCheck pkt_readMtuCheck(const uint8_t **pkt) {
 	struct MtuCheck out;
 	out.newMtu0 = pkt_readUint32(pkt);
 	if(out.newMtu0-9 > 1423) {
-		out.newMtu0 = 0, *pkt = _trap, fprintf(stderr, "Buffer overflow in read of MtuCheck.pad: %u > 1423\n", (uint32_t)out.newMtu0-9);
+		fprintf(stderr, "Buffer overflow in read of MtuCheck.pad: %u > 1423\n", (uint32_t)out.newMtu0-9), out.newMtu0 = 0, *pkt = _trap;
 	} else {
 		pkt_readUint8Array(pkt, out.pad, out.newMtu0-9);
 	}

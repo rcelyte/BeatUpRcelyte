@@ -262,8 +262,7 @@ void net_session_init(struct NetContext *ctx, struct NetSession *session, struct
 
 void net_session_free(struct NetSession *session) {
 	EncryptionState_free(&session->encryptionState);
-	mbedtls_mpi_free(&session->keys.secret);
-	mbedtls_ecp_point_free(&session->keys.public);
+	net_keypair_free(&session->keys);
 }
 
 void net_keypair_init(struct NetContext *ctx, struct NetKeypair *keys) {
@@ -272,6 +271,11 @@ void net_keypair_init(struct NetContext *ctx, struct NetKeypair *keys) {
 		fprintf(stderr, "mbedtls_ecp_gen_keypair() failed\n");
 		abort();
 	}
+}
+
+void net_keypair_free(struct NetKeypair *keys) {
+	mbedtls_mpi_free(&keys->secret);
+	mbedtls_ecp_point_free(&keys->public);
 }
 
 void net_session_reset(struct NetContext *ctx, struct NetSession *session) {

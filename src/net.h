@@ -74,6 +74,7 @@ struct NetContext {
 };
 
 void net_keypair_init(struct NetContext *ctx, struct NetKeypair *keys);
+void net_keypair_free(struct NetKeypair *keys);
 const uint8_t *NetKeypair_get_random(const struct NetKeypair *keys);
 _Bool NetKeypair_write_key(const struct NetKeypair *keys, struct NetContext *ctx, uint8_t *out, uint32_t *out_len);
 

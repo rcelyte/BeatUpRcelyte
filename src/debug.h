@@ -115,10 +115,28 @@ static const uint8_t *debug_logRouting(const uint8_t *pkt, const uint8_t *data, 
 						}
 						break;
 					}
+					#if 0
 					case MultiplayerSessionMessageType_NodePoseSyncState: pkt_logNodePoseSyncState("\tNodePoseSyncState", buf, buf, pkt_readNodePoseSyncState(&sub)); break;
 					case MultiplayerSessionMessageType_ScoreSyncState: pkt_logScoreSyncState("\tScoreSyncState", buf, buf, pkt_readScoreSyncState(&sub)); break;
 					case MultiplayerSessionMessageType_NodePoseSyncStateDelta: pkt_logNodePoseSyncStateDelta("\tNodePoseSyncStateDelta", buf, buf, pkt_readNodePoseSyncStateDelta(&sub)); break;
 					case MultiplayerSessionMessageType_ScoreSyncStateDelta: pkt_logScoreSyncStateDelta("\tScoreSyncStateDelta", buf, buf, pkt_readScoreSyncStateDelta(&sub)); break;
+					#else
+					case MultiplayerSessionMessageType_NodePoseSyncState: pkt_readNodePoseSyncState(&sub); break;
+					case MultiplayerSessionMessageType_ScoreSyncState: pkt_readScoreSyncState(&sub); break;
+					case MultiplayerSessionMessageType_NodePoseSyncStateDelta: pkt_readNodePoseSyncStateDelta(&sub); break;
+					case MultiplayerSessionMessageType_ScoreSyncStateDelta: pkt_readScoreSyncStateDelta(&sub); break;
+					#endif
+					case MultiplayerSessionMessageType_MpCore: {
+						struct MpCore mpHeader = pkt_readMpCore(&sub);
+						if(mpHeader.packetType.length == 15 && memcmp(mpHeader.packetType.data, "MpBeatmapPacket", 15) == 0) {
+							pkt_logMpBeatmapPacket("\tMpBeatmapPacket", buf, buf, pkt_readMpBeatmapPacket(&sub));
+						} else if(mpHeader.packetType.length == 12 && memcmp(mpHeader.packetType.data, "MpPlayerData", 12) == 0) {
+							pkt_logMpPlayerData("\tMpPlayerData", buf, buf, pkt_readMpPlayerData(&sub));
+						} else {
+							fprintf(stderr, "[INSTANCE] BAD MPCORE MESSAGE TYPE: '%.*s'\n", mpHeader.packetType.length, mpHeader.packetType.data);
+						}
+						break;
+					}
 					default: fprintf(stderr, "BAD MULTIPLAYER SESSION MESSAGE TYPE\n");
 				}
 			}  break;
