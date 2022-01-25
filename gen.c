@@ -216,10 +216,11 @@ void parse_struct_entries(const char **in, const char *structName, uint32_t inde
 				fail(*in, "bitfields cannot contain conditionals");
 			_Bool member = skip_char_maybe(in, '.');
 			const char *start = *in;
-			while(**in && **in != ')' && **in != '\n')
-				++(*in);
-			uint32_t len = *in - start;
-			skip_char(in, ')');
+			for(uint32_t pc = 1; **in && pc && **in != '\n'; ++(*in)) {
+				pc += (**in == '(');
+				pc -= (**in == ')');
+			}
+			uint32_t len = *in - start - 1;
 			skip_char(in, '\n');
 
 			if(*des)

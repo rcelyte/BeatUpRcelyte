@@ -929,11 +929,13 @@ static void handle_MultiplayerSession(struct Context *ctx, struct Room *room, st
 		case MultiplayerSessionMessageType_MpCore: {
 			struct MpCore mpHeader = pkt_readMpCore(data);
 			if(mpHeader.packetType.length == 15 && memcmp(mpHeader.packetType.data, "MpBeatmapPacket", 15) == 0) {
-				fprintf(stderr, "[INSTANCE] 'MpBeatmapPacket' not implemented\n");
-				abort();
+				pkt_readMpBeatmapPacket(data);
+			} else if(mpHeader.packetType.length == 12 && memcmp(mpHeader.packetType.data, "MpPlayerData", 12) == 0) {
+				pkt_readMpPlayerData(data);
 			} else {
 				fprintf(stderr, "[INSTANCE] BAD MPCORE MESSAGE TYPE: '%.*s'\n", mpHeader.packetType.length, mpHeader.packetType.data);
 			}
+			break;
 		}
 		default: fprintf(stderr, "[INSTANCE] BAD MULTIPLAYER SESSION MESSAGE TYPE\n");
 	}

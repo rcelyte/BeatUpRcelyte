@@ -853,7 +853,7 @@ struct MultiplayerLevelCompletionResults pkt_readMultiplayerLevelCompletionResul
 		out.playerLevelEndState = pkt_readVarInt32(pkt);
 		out.playerLevelEndReason = pkt_readVarInt32(pkt);
 	}
-	if(out.levelEndState < MultiplayerLevelEndState_GivenUp) {
+	if((protocolVersion <= 6 && out.levelEndState < MultiplayerLevelEndState_GivenUp) || (protocolVersion > 6 && out.playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted)) {
 		out.levelCompletionResults = pkt_readLevelCompletionResults(pkt);
 	}
 	return out;
@@ -1297,6 +1297,25 @@ struct GameplayRpcHeader pkt_readGameplayRpcHeader(const uint8_t **pkt) {
 }
 void pkt_writeGameplayRpcHeader(uint8_t **pkt, struct GameplayRpcHeader in) {
 	pkt_writeUint8(pkt, in.type);
+}
+struct MpBeatmapPacket pkt_readMpBeatmapPacket(const uint8_t **pkt) {
+	struct MpBeatmapPacket out;
+	out.levelHash = pkt_readString(pkt);
+	out.songName = pkt_readLongString(pkt);
+	out.songSubName = pkt_readLongString(pkt);
+	out.songAuthorName = pkt_readLongString(pkt);
+	out.levelAuthorName = pkt_readLongString(pkt);
+	out.beatsPerMinute = pkt_readFloat32(pkt);
+	out.songDuration = pkt_readFloat32(pkt);
+	out.characteristic = pkt_readString(pkt);
+	out.difficulty = pkt_readUint32(pkt);
+	return out;
+}
+struct MpPlayerData pkt_readMpPlayerData(const uint8_t **pkt) {
+	struct MpPlayerData out;
+	out.platformId = pkt_readString(pkt);
+	out.platform = pkt_readInt32(pkt);
+	return out;
 }
 struct AuthenticateUserRequest pkt_readAuthenticateUserRequest(const uint8_t **pkt) {
 	struct AuthenticateUserRequest out;

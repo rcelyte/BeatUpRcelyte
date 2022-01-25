@@ -1115,6 +1115,30 @@ struct GameplayRpcHeader {
 };
 struct GameplayRpcHeader pkt_readGameplayRpcHeader(const uint8_t **pkt);
 void pkt_writeGameplayRpcHeader(uint8_t **pkt, struct GameplayRpcHeader in);
+struct MpBeatmapPacket {
+	struct String levelHash;
+	struct LongString songName;
+	struct LongString songSubName;
+	struct LongString songAuthorName;
+	struct LongString levelAuthorName;
+	float beatsPerMinute;
+	float songDuration;
+	struct String characteristic;
+	BeatmapDifficulty difficulty;
+};
+struct MpBeatmapPacket pkt_readMpBeatmapPacket(const uint8_t **pkt);
+ENUM(int32_t, MpPlatform, {
+	MpPlatform_Unknown,
+	MpPlatform_Steam,
+	MpPlatform_OculusPC,
+	MpPlatform_OculusQuest,
+	MpPlatform_PS4,
+})
+struct MpPlayerData {
+	struct String platformId;
+	MpPlatform platform;
+};
+struct MpPlayerData pkt_readMpPlayerData(const uint8_t **pkt);
 struct AuthenticateUserRequest {
 	struct BaseMasterServerReliableResponse base;
 	struct AuthenticationToken authenticationToken;

@@ -756,7 +756,7 @@ pr MultiplayerLevelCompletionResults
 	if(protocolVersion > 6)
 		vi32.MultiplayerPlayerLevelEndState playerLevelEndState
 		vi32.MultiplayerPlayerLevelEndReason playerLevelEndReason
-	if(.levelEndState < MultiplayerLevelEndState_GivenUp)
+	if((protocolVersion <= 6 && out.levelEndState < MultiplayerLevelEndState_GivenUp) || (protocolVersion > 6 && out.playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted))
 		LevelCompletionResults levelCompletionResults
 r NodePoseSyncState1
 	PoseSerializable head
@@ -1055,7 +1055,25 @@ d MenuRpcHeader
 	u8.MenuRpcType type
 d GameplayRpcHeader
 	u8.GameplayRpcType type
-
+r MpBeatmapPacket
+	String levelHash
+	LongString songName
+	LongString songSubName
+	LongString songAuthorName
+	LongString levelAuthorName
+	f32 beatsPerMinute
+	f32 songDuration
+	String characteristic
+	u32.BeatmapDifficulty difficulty
+i32 MpPlatform
+	z Unknown
+	z Steam
+	z OculusPC
+	z OculusQuest
+	z PS4
+r MpPlayerData
+	String platformId
+	i32.MpPlatform platform
 u8 UserMessage Type
 	r AuthenticateUserRequest
 		BaseMasterServerReliableResponse base
