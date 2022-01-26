@@ -443,6 +443,7 @@ static DWORD WINAPI
 static void*
 #endif
 index_handler(struct Context *ctx) {
+	net_lock(&ctx->net);
 	fprintf(stderr, "[INDEX] Started\n");
 	uint8_t buf[262144];
 	memset(buf, 0, sizeof(buf));
@@ -452,6 +453,7 @@ index_handler(struct Context *ctx) {
 	while((len = net_recv(&ctx->net, buf, sizeof(buf), (struct NetSession**)&session, &pkt, NULL))) {
 		handle_packet(ctx, session, pkt, len); // TODO: needs mutex
 	}
+	net_unlock(&ctx->net);
 	return 0;
 }
 

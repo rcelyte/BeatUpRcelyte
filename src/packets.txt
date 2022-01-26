@@ -936,7 +936,7 @@ u8 MultiplayerSessionMessage Type
 				f32 newTime
 		ps CancelCountdown
 			RemoteProcedureCall base
-		pn GetOwnedSongPacks
+		ps GetOwnedSongPacks
 			RemoteProcedureCall base
 		pr SetOwnedSongPacks
 			RemoteProcedureCall base

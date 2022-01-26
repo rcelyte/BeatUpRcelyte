@@ -13,7 +13,6 @@ void wire_block_release(struct WireBlockHandle block) {}
 _Bool wire_room_open(struct WireRoomHandle handle, struct String managerId, struct GameplayServerConfiguration configuration) {
 	if(handle.block.host != 0 || handle.block.thread != 0)
 		return 1;
-	fprintf(stderr, "wire\n");
 	return instance_room_open(handle.block.thread, handle.block.group, handle.sub, managerId, configuration);
 }
 

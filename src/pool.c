@@ -74,7 +74,6 @@ _Bool pool_request_room(struct RoomHandle *room_out, struct WireRoomHandle *hand
 	room_out->high = rooms[room_out->block].high[room_out->sub];
 	rooms[room_out->block].idle &= rooms[room_out->block].idle - 1;
 	count += (rooms[room_out->block].idle == 0);
-	fprintf(stderr, "room\n");
 	return wire_room_open(*handle_out, managerId, configuration);
 }
 

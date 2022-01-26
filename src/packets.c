@@ -1110,6 +1110,9 @@ void pkt_writeSetCountdownEndTime(uint8_t **pkt, struct SetCountdownEndTime in, 
 void pkt_writeCancelCountdown(uint8_t **pkt, struct CancelCountdown in, uint32_t protocolVersion) {
 	pkt_writeRemoteProcedureCall(pkt, in.base);
 }
+void pkt_writeGetOwnedSongPacks(uint8_t **pkt, struct GetOwnedSongPacks in, uint32_t protocolVersion) {
+	pkt_writeRemoteProcedureCall(pkt, in.base);
+}
 struct SetOwnedSongPacks pkt_readSetOwnedSongPacks(const uint8_t **pkt, uint32_t protocolVersion) {
 	struct SetOwnedSongPacks out;
 	out.base = pkt_readRemoteProcedureCall(pkt);

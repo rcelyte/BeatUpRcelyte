@@ -133,6 +133,8 @@ struct InstanceSession {
 	struct Channels channels;
 	struct PlayerStateHash stateHash;
 	struct MultiplayerAvatarData avatar;
+	uint8_t random[32];
+	struct ByteArrayNetSerializable publicEncryptionKey;
 
 	union {
 		struct {
@@ -266,7 +268,7 @@ static void refresh_button(struct Context *ctx, struct Room *room) {
 		r_button.reason = CannotStartGameReason_AllPlayersNotInLobby;
 	if(!room->selectedBeatmap.beatmapCharacteristicSerializedName.length)
 		r_button.reason = CannotStartGameReason_NoSongSelected;
-	else if(room->lobby.buzzkills.count)
+	else if(room->lobby.buzzkills.count || !Counter128_contains(room->lobby.isEntitled, room->playerSort))
 		r_button.reason = CannotStartGameReason_DoNotOwnSong;
 	else if(Counter128_contains(room->lobby.isSpectating, room->playerSort))
 		r_button.reason = CannotStartGameReason_AllPlayersSpectating;
@@ -588,6 +590,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 					pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
 					SERIALIZE_MENURPC(&resp_end, SetPlayersMissingEntitlementsToLevel, r_missing, room->players[id].net.protocolVersion);
 					instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+					fprintf(stderr, "ENTITLEMENT SET\n");
 				}
 				refresh_button(ctx, room);
 			}
@@ -894,6 +897,11 @@ static void handle_PlayerIdentity(struct Context *ctx, struct Room *room, struct
 	session->stateHash = identity.playerState;
 	session_refresh_stateHash(ctx, room, session);
 	session->avatar = identity.playerAvatar;
+	if(identity.random.length == sizeof(session->random))
+		memcpy(session->random, identity.random.data, sizeof(session->random));
+	else
+		memset(session->random, 0, sizeof(session->random));
+	session->publicEncryptionKey = identity.publicEncryptionKey;
 	if(session->clientState != ClientState_accepted)
 		return;
 	session->clientState = ClientState_connected;
@@ -922,40 +930,6 @@ static void handle_PlayerIdentity(struct Context *ctx, struct Room *room, struct
 			instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 	}
 
-	FOR_EXCLUDING_PLAYER(room, session, id) {
-		struct PlayerConnected r_connected;
-		r_connected.remoteConnectionId = id + 1;
-		r_connected.userId = room->players[id].permissions.userId;
-		r_connected.userName = room->players[id].userName;
-		r_connected.isConnectionOwner = 0;
-		resp_end = resp;
-		pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
-		SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerConnected)
-			pkt_writePlayerConnected(&resp_end, r_connected);
-		instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
-
-		struct PlayerSortOrderUpdate r_sort;
-		r_sort.userId = room->players[id].permissions.userId;
-		r_sort.sortIndex = id;
-		resp_end = resp;
-		pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
-		SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerSortOrderUpdate)
-			pkt_writePlayerSortOrderUpdate(&resp_end, r_sort);
-		instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
-
-		struct PlayerIdentity r_identity;
-		r_identity.playerState = room->players[id].stateHash;
-		r_identity.playerAvatar = room->players[id].avatar;
-		r_identity.random.length = 0;
-		r_identity.publicEncryptionKey.length = 0;
-		fprintf(stderr, "TODO: do we need to include the encrytion key?\n");
-		resp_end = resp;
-		pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
-		SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerSortOrderUpdate)
-			pkt_writePlayerIdentity(&resp_end, r_identity);
-		instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
-	}
-
 	struct RemoteProcedureCall base;
 	base.syncTime = room_get_syncTime(room);
 	FOR_ALL_PLAYERS(room, id) {
@@ -963,8 +937,7 @@ static void handle_PlayerIdentity(struct Context *ctx, struct Room *room, struct
 		pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
 		SERIALIZE_MENURPC(&resp_end, GetRecommendedBeatmap, (struct GetRecommendedBeatmap){.base = base}, room->players[id].net.protocolVersion);
 		SERIALIZE_MENURPC(&resp_end, GetRecommendedGameplayModifiers, (struct GetRecommendedGameplayModifiers){.base = base}, room->players[id].net.protocolVersion);
-		SERIALIZE_MENURPC(&resp_end, GetIsReady, (struct GetIsReady){.base = base}, room->players[id].net.protocolVersion);
-		SERIALIZE_MENURPC(&resp_end, GetIsInLobby, (struct GetIsInLobby){.base = base}, room->players[id].net.protocolVersion);
+		SERIALIZE_MENURPC(&resp_end, GetOwnedSongPacks, (struct GetOwnedSongPacks){.base = base}, room->players[id].net.protocolVersion);
 		instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 	}
 	fprintf(stderr, "TODO: are these necessary?\n");
@@ -1132,6 +1105,41 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 		pkt_writeSyncTime(&resp_end, r_sync);
 	instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 
+	FOR_EXCLUDING_PLAYER(room, session, id) {
+		struct PlayerConnected r_connected;
+		r_connected.remoteConnectionId = id + 1;
+		r_connected.userId = room->players[id].permissions.userId;
+		r_connected.userName = room->players[id].userName;
+		r_connected.isConnectionOwner = 0;
+		resp_end = resp;
+		pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
+		SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerConnected)
+			pkt_writePlayerConnected(&resp_end, r_connected);
+		instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+
+		struct PlayerSortOrderUpdate r_sort;
+		r_sort.userId = room->players[id].permissions.userId;
+		r_sort.sortIndex = id;
+		resp_end = resp;
+		pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
+		SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerSortOrderUpdate)
+			pkt_writePlayerSortOrderUpdate(&resp_end, r_sort);
+		instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+
+		struct PlayerIdentity r_identity;
+		r_identity.playerState = room->players[id].stateHash;
+		r_identity.playerAvatar = room->players[id].avatar;
+		r_identity.random.length = 32;
+		memcpy(r_identity.random.data, session->random, sizeof(session->random));
+		r_identity.publicEncryptionKey = session->publicEncryptionKey;
+		fprintf(stderr, "TODO: do we need to include the encrytion key?\n");
+		resp_end = resp;
+		pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){id + 1, 0, 0});
+		SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerIdentity)
+			pkt_writePlayerIdentity(&resp_end, r_identity);
+		instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+	}
+
 	resp_end = resp;
 	pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
 	struct PlayerIdentity r_identity;
@@ -1192,7 +1200,7 @@ static void handle_packet(struct Context *ctx, struct Room **room, struct Instan
 			case PacketProperty_Empty: fprintf(stderr, "[INSTANCE] PacketProperty_Empty not implemented\n"); break;
 			default: fprintf(stderr, "[INSTANCE] BAD PACKET PROPERTY\n");
 		}
-		if(sub != data)
+		if(sub != data && len + sub > data)
 			fprintf(stderr, "[INSTANCE] BAD PACKET LENGTH (expected %u, read %zu)\n", len, len + sub - data);
 	}
 }
@@ -1203,6 +1211,7 @@ static DWORD WINAPI
 static void*
 #endif
 instance_handler(struct Context *ctx) {
+	net_lock(&ctx->net);
 	fprintf(stderr, "[INSTANCE] Started\n");
 	uint8_t buf[262144];
 	memset(buf, 0, sizeof(buf));
@@ -1223,6 +1232,7 @@ instance_handler(struct Context *ctx) {
 		#endif
 		handle_packet(ctx, room, session, pkt, &pkt[len]); // TODO: needs mutex
 	}
+	net_unlock(&ctx->net);
 	return 0;
 }
 
@@ -1243,7 +1253,7 @@ _Bool instance_init(const char *domain, const char *domainIPv4) {
 	instance_domainIPv4 = domainIPv4;
 	memset(instance_threads, 0, sizeof(instance_threads));
 	for(uint32_t i = 0; i < lengthof(instance_threads); ++i) {
-		if(net_init(&contexts[i].net, 0)) {
+		if(net_init(&contexts[i].net, 5000)) {
 			fprintf(stderr, "net_init() failed\n");
 			return 1;
 		}
@@ -1313,19 +1323,26 @@ struct IPEndPoint instance_get_endpoint(_Bool ipv4) {
 
 _Bool instance_request_block(uint16_t thread, uint16_t *group_out, uint16_t notify) {
 	uint8_t group;
+	net_lock(&contexts[thread].net);
 	if(Counter16_set_next(&contexts[thread].blockAlloc, &group, 1)) {
 		*group_out = group;
 		contexts[thread].notify[group] = notify;
+		net_unlock(&contexts[thread].net);
 		return 0;
 	}
+	net_unlock(&contexts[thread].net);
 	fprintf(stderr, "THREAD FULL\n");
 	return 1;
 }
 
 _Bool instance_room_open(uint16_t thread, uint16_t group, uint8_t sub, struct String managerId, struct GameplayServerConfiguration configuration) {
+	net_lock(&contexts[thread].net);
 	fprintf(stderr, "[INSTANCE] opening room (%hu,%hu,%hhu)\n", thread, group, sub);
-	if(contexts[thread].rooms[group][sub])
+	if(contexts[thread].rooms[group][sub]) {
+		net_unlock(&contexts[thread].net);
+		fprintf(stderr, "[INSTANCE] Room already open!\n");
 		return 1;
+	}
 	struct Room *room = malloc(sizeof(struct Room) + configuration.maxPlayerCount * sizeof(*room->players));
 	if(!room) {
 		fprintf(stderr, "alloc error\n");
@@ -1339,34 +1356,48 @@ _Bool instance_room_open(uint16_t thread, uint16_t group, uint8_t sub, struct St
 	Counter128_clear(&room->playerSort);
 	room_set_state(&contexts[thread], room, ServerState_Lobby);
 	contexts[thread].rooms[group][sub] = room;
+	net_unlock(&contexts[thread].net);
 	return 0;
 }
 
 void instance_room_close(uint16_t thread, uint16_t group, uint8_t sub) {
+	net_lock(&contexts[thread].net);
 	room_close(&contexts[thread], &contexts[thread].rooms[group][sub]);
+	net_unlock(&contexts[thread].net);
 }
 
 struct String instance_room_get_managerId(uint16_t thread, uint16_t group, uint8_t sub) {
-	return contexts[thread].rooms[group][sub]->managerId;
+	net_lock(&contexts[thread].net);
+	struct String out = contexts[thread].rooms[group][sub]->managerId;
+	net_unlock(&contexts[thread].net);
+	return out;
 }
 
 struct GameplayServerConfiguration instance_room_get_configuration(uint16_t thread, uint16_t group, uint8_t sub) {
-	return contexts[thread].rooms[group][sub]->configuration;
+	net_lock(&contexts[thread].net);
+	struct GameplayServerConfiguration out = contexts[thread].rooms[group][sub]->configuration;
+	net_unlock(&contexts[thread].net);
+	return out;
 }
 
 uint32_t instance_room_get_protocolVersion(uint16_t thread, uint16_t group, uint8_t sub) {
 	uint32_t out = 6;
+	net_lock(&contexts[thread].net);
 	FOR_ALL_PLAYERS(contexts[thread].rooms[group][sub], id)
 		if(contexts[thread].rooms[group][sub]->players[id].net.protocolVersion > out)
 			out = contexts[thread].rooms[group][sub]->players[id].net.protocolVersion;
+	net_unlock(&contexts[thread].net);
 	return out;
 }
 
 struct NetSession *instance_room_resolve_session(uint16_t thread, uint16_t group, uint8_t sub, struct SS addr, struct String secret, struct String userId, struct String userName, uint32_t protocolVersion) {
 	struct Context *ctx = &contexts[thread];
+	net_lock(&ctx->net);
 	struct Room *room = ctx->rooms[group][sub];
-	if(!room)
+	if(!room) {
+		net_unlock(&ctx->net);
 		return NULL;
+	}
 	struct InstanceSession *session = NULL;
 	FOR_ALL_PLAYERS(room, id) {
 		if(addrs_are_equal(&addr, NetSession_get_addr(&room->players[id].net))) {
@@ -1379,6 +1410,7 @@ struct NetSession *instance_room_resolve_session(uint16_t thread, uint16_t group
 		struct Counter128 tmp = room->playerSort;
 		uint32_t id = 0;
 		if((!Counter128_set_next(&tmp, &id, 1)) || id >= room->configuration.maxPlayerCount) {
+			net_unlock(&ctx->net);
 			fprintf(stderr, "ROOM FULL\n");
 			return NULL;
 		}
@@ -1412,5 +1444,6 @@ struct NetSession *instance_room_resolve_session(uint16_t thread, uint16_t group
 		for(uint32_t b = 0; b < sizeof(*room->playerSort.bits) * 8; ++b)
 			fprintf(stderr, "%u", (room->playerSort.bits[i] >> b) & 1);
 	fprintf(stderr, "\n");
+	net_unlock(&ctx->net);
 	return &session->net;
 }

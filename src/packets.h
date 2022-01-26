@@ -912,6 +912,10 @@ struct CancelCountdown {
 	struct RemoteProcedureCall base;
 };
 void pkt_writeCancelCountdown(uint8_t **pkt, struct CancelCountdown in, uint32_t protocolVersion);
+struct GetOwnedSongPacks {
+	struct RemoteProcedureCall base;
+};
+void pkt_writeGetOwnedSongPacks(uint8_t **pkt, struct GetOwnedSongPacks in, uint32_t protocolVersion);
 struct SetOwnedSongPacks {
 	struct RemoteProcedureCall base;
 	struct RemoteProcedureCallFlags flags;

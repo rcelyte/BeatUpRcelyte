@@ -6,6 +6,7 @@
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/entropy.h>
 #include <stdatomic.h>
+#include <pthread.h>
 
 #ifdef WINDOWS
 #include <winsock2.h>
@@ -63,6 +64,7 @@ struct Context;
 struct NetContext {
 	int32_t NET_H_PRIVATE(sockfd);
 	atomic_bool NET_H_PRIVATE(run);
+	pthread_mutex_t NET_H_PRIVATE(mutex);
 	mbedtls_ctr_drbg_context NET_H_PRIVATE(ctr_drbg);
 	mbedtls_entropy_context NET_H_PRIVATE(entropy);
 	mbedtls_ecp_group NET_H_PRIVATE(grp);
@@ -87,8 +89,8 @@ const struct SS *NetSession_get_addr(struct NetSession *session);
 _Bool net_init(struct NetContext *ctx, uint16_t port);
 void net_stop(struct NetContext *ctx);
 void net_cleanup(struct NetContext *ctx);
-/*struct NetSession *net_resolve_session(struct NetContext *ctx, struct SS addr);
-struct NetSession *net_create_session(struct NetContext *ctx, struct SS addr);*/
+void net_lock(struct NetContext *ctx);
+void net_unlock(struct NetContext *ctx);
 void net_session_init(struct NetContext *ctx, struct NetSession *session, struct SS addr);
 void net_session_reset(struct NetContext *ctx, struct NetSession *session);
 void net_session_free(struct NetSession *session);

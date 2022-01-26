@@ -412,17 +412,21 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 			goto send;
 		}
 		struct NetContext *net = TEMPwire_block_get_net(handle.block);
+		net_lock(net);
 		memcpy(isession->clientRandom, req.base.random, 32);
 		memcpy(r_conn.random, NetKeypair_get_random(&isession->keys), 32);
 		r_conn.publicKey.length = sizeof(r_conn.publicKey.data);
 		if(NetKeypair_write_key(&isession->keys, net, r_conn.publicKey.data, &r_conn.publicKey.length)) {
+			net_unlock(net);
 			r_conn.result = ConnectToServerResponse_Result_UnknownError;
 			goto send;
 		}
 		if(NetSession_set_clientPublicKey(isession, net, &req.base.publicKey)) {
+			net_unlock(net);
 			r_conn.result = ConnectToServerResponse_Result_UnknownError;
 			goto send;
 		}
+		net_unlock(net);
 		r_conn.userId.length = sprintf(r_conn.userId.data, "dtxJlHm56k6ZXcnxhbyfiA");
 		r_conn.userName.length = 0;
 		r_conn.secret = req.secret;
@@ -433,6 +437,8 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		r_conn.configuration = req.configuration;
 		r_conn.managerId = managerId;
 		r_conn.result = ConnectToServerResponse_Result_Success;
+		char scode[8];
+		fprintf(stderr, "Sending player to room `%s`\n", ServerCodeToString(scode, req.code));
 	}
 	send:;
 	uint8_t resp[65536], *resp_end = resp;
@@ -446,6 +452,7 @@ static DWORD WINAPI
 static void*
 #endif
 master_handler(struct Context *ctx) {
+	net_lock(&ctx->net);
 	fprintf(stderr, "[MASTER] Started\n");
 	uint8_t buf[262144];
 	memset(buf, 0, sizeof(buf));
@@ -506,6 +513,7 @@ master_handler(struct Context *ctx) {
 		if(data != end)
 			fprintf(stderr, "[MASTER] BAD PACKET LENGTH (expected %u, read %zu)\n", len, data - pkt);
 	}
+	net_unlock(&ctx->net);
 	return 0;
 }
 

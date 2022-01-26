@@ -246,6 +246,10 @@ _Bool net_init(struct NetContext *ctx, uint16_t port) {
 		fprintf(stderr, "mbedtls_ecp_group_load() failed\n");
 		return 1;
 	}
+	if(pthread_mutex_init(&ctx->mutex, NULL)) {
+		fprintf(stderr, "pthread_mutex_init() failed\n");
+		return 1;
+	}
 	ctx->run = 1;
 	ctx->sessionList = NULL;
 	ctx->dirt = NULL;
@@ -300,10 +304,24 @@ void net_stop(struct NetContext *ctx) {
 }
 
 void net_cleanup(struct NetContext *ctx) {
+	if(pthread_mutex_destroy(&ctx->mutex))
+		fprintf(stderr, "pthread_mutex_destroy() failed\n");
 	mbedtls_entropy_free(&ctx->entropy);
 	mbedtls_ctr_drbg_free(&ctx->ctr_drbg);
 	close(ctx->sockfd);
 	ctx->sockfd = -1;
+}
+
+void net_lock(struct NetContext *ctx) {
+	#if 1
+	if(pthread_mutex_trylock(&ctx->mutex) == 0)
+		return;
+	fprintf(stderr, "block\n");
+	#endif
+	pthread_mutex_lock(&ctx->mutex);
+}
+void net_unlock(struct NetContext *ctx) {
+	pthread_mutex_unlock(&ctx->mutex);
 }
 
 uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct NetSession **session, const uint8_t **pkt, void **userdata_out) {
@@ -319,14 +337,18 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct
 	fd_set fds;
 	FD_ZERO(&fds);
 	FD_SET(ctx->sockfd, &fds);
-	if(select(ctx->sockfd+1, &fds, NULL, NULL, &timeout) == 0)
+	net_unlock(ctx);
+	if(select(ctx->sockfd+1, &fds, NULL, NULL, &timeout) == 0) {
+		net_lock(ctx);
 		goto retry;
+	}
 	struct SS addr = {sizeof(struct sockaddr_storage)};
 	#ifdef WINSOCK_VERSION
 	ssize_t size = recvfrom(ctx->sockfd, (char*)buf, buf_len, 0, &addr.sa, &addr.len);
 	#else
 	ssize_t size = recvfrom(ctx->sockfd, buf, buf_len, 0, &addr.sa, &addr.len);
 	#endif
+	net_lock(ctx);
 	if(size <= 0) {
 		if(ctx->run)
 			goto retry;
