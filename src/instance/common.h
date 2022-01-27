@@ -37,13 +37,12 @@ enum ClientState {
 	ClientState_connected,
 };
 
-typedef uint8_t ServerState;
-enum ServerState {
+ENUM(uint8_t, ServerState, {
 	ServerState_Lobby,
 	ServerState_LoadingScene,
 	ServerState_LoadingSong,
 	ServerState_Game,
-};
+})
 
 struct InstancePacket {
 	uint16_t len;

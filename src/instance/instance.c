@@ -352,6 +352,7 @@ static void session_refresh_state(struct Context *ctx, struct Room *room, struct
 
 static void room_set_state(struct Context *ctx, struct Room *room, ServerState state) {
 	room->state = state;
+	fprintf(stderr, "state change: %s\n", reflect(ServerState, state));
 	switch(state) {
 		case ServerState_Lobby: {
 			room->selectedBeatmap = CLEAR_BEATMAP;
@@ -797,14 +798,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 		}
 		case MenuRpcType_GetCountdownEndTime: {
 			pkt_readGetCountdownEndTime(data, session->net.protocolVersion);
-			uint8_t resp[65536], *resp_end = resp;
-			struct SetIsStartButtonEnabled r_button;
-			r_button.base.syncTime = room_get_syncTime(room);
-			r_button.flags.hasValue0 = 1;
-			r_button.reason = CannotStartGameReason_NoSongSelected;
-			pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
-			SERIALIZE_MENURPC(&resp_end, SetIsStartButtonEnabled, r_button, session->net.protocolVersion);
-			instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+			refresh_button(ctx, room);
 			break;
 		}
 		case MenuRpcType_SetCountdownEndTime: fprintf(stderr, "[INSTANCE] BAD TYPE: MenuRpcType_SetCountdownEndTime\n"); break;
@@ -938,6 +932,8 @@ static void handle_PlayerIdentity(struct Context *ctx, struct Room *room, struct
 		SERIALIZE_MENURPC(&resp_end, GetRecommendedBeatmap, (struct GetRecommendedBeatmap){.base = base}, room->players[id].net.protocolVersion);
 		SERIALIZE_MENURPC(&resp_end, GetRecommendedGameplayModifiers, (struct GetRecommendedGameplayModifiers){.base = base}, room->players[id].net.protocolVersion);
 		SERIALIZE_MENURPC(&resp_end, GetOwnedSongPacks, (struct GetOwnedSongPacks){.base = base}, room->players[id].net.protocolVersion);
+		SERIALIZE_MENURPC(&resp_end, GetIsReady, (struct GetIsReady){.base = base}, room->players[id].net.protocolVersion);
+		SERIALIZE_MENURPC(&resp_end, GetIsInLobby, (struct GetIsInLobby){.base = base}, room->players[id].net.protocolVersion);
 		instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 	}
 	fprintf(stderr, "TODO: are these necessary?\n");
@@ -1175,8 +1171,16 @@ static void handle_packet(struct Context *ctx, struct Room **room, struct Instan
 		data += len;
 		if(session->clientState == ClientState_disconnected && header.property != PacketProperty_ConnectRequest)
 			return;
+		if(len == 0) {
+			fprintf(stderr, "[INSTANCE] ZERO LENGTH PACKET\n");
+			return;
+		}
+		if(data > end) {
+			fprintf(stderr, "[INSTANCE] OVERFLOW\n");
+			return;
+		}
 		if(header.isFragmented && header.property != PacketProperty_Channeled) {
-			fprintf(stderr, "MALFORMED HEADER\n");
+			fprintf(stderr, "[INSTANCE] MALFORMED HEADER\n");
 			return;
 		}
 		switch(header.property) {
@@ -1200,7 +1204,7 @@ static void handle_packet(struct Context *ctx, struct Room **room, struct Instan
 			case PacketProperty_Empty: fprintf(stderr, "[INSTANCE] PacketProperty_Empty not implemented\n"); break;
 			default: fprintf(stderr, "[INSTANCE] BAD PACKET PROPERTY\n");
 		}
-		if(sub != data && len + sub > data)
+		if(sub != data)
 			fprintf(stderr, "[INSTANCE] BAD PACKET LENGTH (expected %u, read %zu)\n", len, len + sub - data);
 	}
 }
