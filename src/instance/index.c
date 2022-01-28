@@ -100,7 +100,7 @@ static struct IndexSession *index_disconnect(struct IndexSession *session) {
 	return next;
 }
 
-static void index_onResend(struct Context *ctx, uint32_t currentTime, uint32_t *nextTick) { // TODO: needs mutex
+static void index_onResend(struct Context *ctx, uint32_t currentTime, uint32_t *nextTick) {
 	for(struct IndexSession **sp = &ctx->sessionList; *sp;) {
 		uint32_t kickTime = NetSession_get_lastKeepAlive(&(*sp)->net) + 10000;
 		if(currentTime > kickTime) {
@@ -451,7 +451,7 @@ index_handler(struct Context *ctx) {
 	struct IndexSession *session;
 	const uint8_t *pkt;
 	while((len = net_recv(&ctx->net, buf, sizeof(buf), (struct NetSession**)&session, &pkt, NULL))) {
-		handle_packet(ctx, session, pkt, len); // TODO: needs mutex
+		handle_packet(ctx, session, pkt, len);
 	}
 	net_unlock(&ctx->net);
 	return 0;
@@ -471,7 +471,7 @@ _Bool index_init() {
 	context.net.user = &context;
 	context.net.onResolve = index_onResolve;
 	context.net.onResend = index_onResend;
-	net_keypair_init(&context.net, &context.keys);
+	net_keypair_gen(&context.net, &context.keys);
 
 	#ifdef WINDOWS
 	index_thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)index_handler, &context, 0, NULL);

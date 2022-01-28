@@ -22,7 +22,7 @@
 	}); \
 	pkt_writeMessageHeader(pkt, (struct MessageHeader){ \
 		.type = MessageType_##mtype, \
-		.protocolVersion = 6, \
+		.protocolVersion = 5, \
 	}); \
 	SERIALIZE_CUSTOM(pkt, mtype##Type_##stype) \
 		pkt_write##dtype(pkt, data); \

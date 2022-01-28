@@ -5,7 +5,7 @@
 #define LOAD_TIMEOUT 15
 
 #define lengthof(x) (sizeof(x)/sizeof(*x))
-#define indexof(a, e) (((e) - (a)) / sizeof(*(a)))
+#define indexof(a, e) ((e) - (a))
 #define String_eq(a, b) ((a).length == (b).length && memcmp((a).data, (b).data, (b).length) == 0)
 
 #define SERIALIZE_RPC(pkt, mtype, dtype, data, protocolVersion) { \
@@ -59,6 +59,8 @@ struct ReliableChannel {
 	uint16_t localSeqence, remoteSequence;
 	uint16_t localWindowStart, remoteWindowStart;
 	struct InstanceResendPacket resend[NET_WINDOW_SIZE];
+	struct InstancePacketList *backlog;
+	struct InstancePacketList **backlogEnd;
 };
 struct ReliableUnorderedChannel {
 	struct ReliableChannel base;
@@ -81,6 +83,10 @@ struct IncomingFragments {
 	uint32_t size;
 	struct InstancePacket fragments[];
 };
+struct InstancePacketList {
+	struct InstancePacketList *next;
+	struct InstancePacket pkt;
+};
 struct Channels {
 	struct ReliableUnorderedChannel ru;
 	struct ReliableOrderedChannel ro;
@@ -91,7 +97,7 @@ struct Channels {
 typedef void (*ChanneledHandler)(void *ctx, void *room, void *session, const uint8_t **data, const uint8_t *end, DeliveryMethod channelId);
 
 void instance_channels_init(struct Channels *channels);
-void instance_send_channeled(struct Channels *channels, uint8_t *buf, uint32_t len, DeliveryMethod method);
+void instance_send_channeled(struct Channels *channels, const uint8_t *buf, uint32_t len, DeliveryMethod method);
 void handle_Ack(struct Channels *channels, const uint8_t **data);
 void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct NetSession *session, struct Channels *channels, void *p_ctx, void *p_room, void *p_session, const uint8_t **data, const uint8_t *end, _Bool isFragmented);
 void handle_Ping(struct NetContext *net, struct NetSession *session, struct Pong *pong, const uint8_t **data);

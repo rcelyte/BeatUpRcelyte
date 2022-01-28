@@ -38,6 +38,7 @@ int main(int argc, char const *argv[]) {
 	struct Config cfg;
 	if(config_load(&cfg, config_path))
 		goto fail0;
+	status_internal_init();
 	if(cfg.status_tls) {
 		if(status_ssl_init(&cfg.status_cert, &cfg.status_key, cfg.status_path, cfg.status_port))
 			goto fail1;

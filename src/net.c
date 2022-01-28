@@ -259,8 +259,7 @@ _Bool net_init(struct NetContext *ctx, uint16_t port) {
 void net_session_init(struct NetContext *ctx, struct NetSession *session, struct SS addr) {
 	session->addr = addr;
 	session->encryptionState.initialized = 0;
-	mbedtls_mpi_init(&session->keys.secret);
-	mbedtls_ecp_point_init(&session->keys.public);
+	net_keypair_init(&session->keys);
 	net_session_reset(ctx, session);
 }
 
@@ -269,7 +268,12 @@ void net_session_free(struct NetSession *session) {
 	net_keypair_free(&session->keys);
 }
 
-void net_keypair_init(struct NetContext *ctx, struct NetKeypair *keys) {
+void net_keypair_init(struct NetKeypair *keys) {
+	mbedtls_mpi_init(&keys->secret);
+	mbedtls_ecp_point_init(&keys->public);
+}
+
+void net_keypair_gen(struct NetContext *ctx, struct NetKeypair *keys) {
 	net_cookie(&ctx->ctr_drbg, keys->random);
 	if(mbedtls_ecp_gen_keypair(&ctx->grp, &keys->secret, &keys->public, mbedtls_ctr_drbg_random, &ctx->ctr_drbg)) {
 		fprintf(stderr, "mbedtls_ecp_gen_keypair() failed\n");
@@ -293,7 +297,7 @@ void net_session_reset(struct NetContext *ctx, struct NetSession *session) {
 	session->mtuIdx = 0;
 	session->mergeData_end = session->mergeData;
 	net_flush_merged(ctx, session);
-	net_keypair_init(ctx, &session->keys);
+	net_keypair_gen(ctx, &session->keys);
 }
 
 void net_stop(struct NetContext *ctx) {

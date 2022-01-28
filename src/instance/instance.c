@@ -191,7 +191,7 @@ struct Context {
 	uint16_t notify[16];
 } static contexts[THREAD_COUNT];
 
-static struct NetSession *instance_onResolve(struct Context *ctx, struct SS addr, void **userdata_out) { // TODO: needs mutex
+static struct NetSession *instance_onResolve(struct Context *ctx, struct SS addr, void **userdata_out) {
 	FOR_ALL_ROOMS(ctx, room) {
 		FOR_ALL_PLAYERS(*room, id) {
 			if(addrs_are_equal(&addr, NetSession_get_addr(&(*room)->players[id].net))) {
@@ -357,6 +357,8 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 		case ServerState_Lobby: {
 			room->selectedBeatmap = CLEAR_BEATMAP;
 			room->selectedModifiers = CLEAR_MODIFIERS;
+			room->selectedModifiers.demoNoFail = 1;
+			// room->selectedModifiers.noFailOn0Energy = 1;
 			room->lobby.countdownEnd = 0;
 			Counter128_clear(&room->lobby.isReady);
 			Counter128_clear(&room->lobby.isEntitled);
@@ -467,7 +469,7 @@ static void room_disconnect(struct Context *ctx, struct Room **room, struct Inst
 	session->clientState = ClientState_disconnected;
 	char addrstr[INET6_ADDRSTRLEN + 8];
 	net_tostr(NetSession_get_addr(&session->net), addrstr);
-	fprintf(stderr, "[INSTANCE] %sconnect %s\n", ctx ? "re" : "dis", addrstr);
+	fprintf(stderr, "[INSTANCE] %sconnect %s\n", (mode & DC_RESET) ? "re" : "dis", addrstr);
 	if(mode & DC_RESET)
 		net_session_reset(&ctx->net, &session->net);
 	else
@@ -493,7 +495,7 @@ static void room_disconnect(struct Context *ctx, struct Room **room, struct Inst
 		r_disconnect.disconnectedReason = DisconnectedReason_ClientConnectionClosed;
 
 		uint8_t resp[65536], *resp_end = resp;
-		pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 0, 0});
+		pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){indexof((*room)->players, session), 0, 0});
 		SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerDisconnected)
 			pkt_writePlayerDisconnected(&resp_end, r_disconnect);
 		FOR_EXCLUDING_PLAYER(*room, session, id)
@@ -505,14 +507,14 @@ static void room_disconnect(struct Context *ctx, struct Room **room, struct Inst
 	free(*room);
 	*room = NULL;
 	uint16_t group = indexof(*ctx->rooms, room) / lengthof(*ctx->rooms);
-	pool_room_close_notify((struct RoomHandle){
+	pool_room_close_notify((struct RoomHandle){ // TODO: needs mutex
 		.block = ctx->notify[group],
 		.sub = indexof(ctx->rooms[group], room) % lengthof(*ctx->rooms),
 	});
 	fprintf(stderr, "[INSTANCE] closing room\n");
 }
 
-static void instance_onResend(struct Context *ctx, uint32_t currentTime, uint32_t *nextTick) { // TODO: needs mutex
+static void instance_onResend(struct Context *ctx, uint32_t currentTime, uint32_t *nextTick) {
 	FOR_ALL_ROOMS(ctx, room) {
 		FOR_ALL_PLAYERS(*room, id) {
 			struct InstanceSession *session = &(*room)->players[id];
@@ -922,6 +924,13 @@ static void handle_PlayerIdentity(struct Context *ctx, struct Room *room, struct
 			pkt_writePlayerSortOrderUpdate(&resp_end, r_sort);
 		FOR_ALL_PLAYERS(room, id)
 			instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+
+		resp_end = resp;
+		pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){indexof(room->players, session) + 1, 0, 0});
+		SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerIdentity)
+			pkt_writePlayerIdentity(&resp_end, identity);
+		FOR_ALL_PLAYERS(room, id)
+			instance_send_channeled(&room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 	}
 
 	struct RemoteProcedureCall base;
@@ -1101,7 +1110,10 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 		pkt_writeSyncTime(&resp_end, r_sync);
 	instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 
+	fprintf(stderr, "CONNECT[%zu]: %.*s\n", indexof(room->players, session), session->userName.length, session->userName.data);
+
 	FOR_EXCLUDING_PLAYER(room, session, id) {
+		fprintf(stderr, "ENUMERATING: [%u] %.*s\n", id, room->players[id].userName.length, room->players[id].userName.data);
 		struct PlayerConnected r_connected;
 		r_connected.remoteConnectionId = id + 1;
 		r_connected.userId = room->players[id].permissions.userId;
@@ -1234,7 +1246,7 @@ instance_handler(struct Context *ctx) {
 			}
 		}
 		#endif
-		handle_packet(ctx, room, session, pkt, &pkt[len]); // TODO: needs mutex
+		handle_packet(ctx, room, session, pkt, &pkt[len]);
 	}
 	net_unlock(&ctx->net);
 	return 0;
@@ -1352,7 +1364,8 @@ _Bool instance_room_open(uint16_t thread, uint16_t group, uint8_t sub, struct St
 		fprintf(stderr, "alloc error\n");
 		abort();
 	}
-	net_keypair_init(&contexts[0].net, &room->keys);
+	net_keypair_init(&room->keys);
+	net_keypair_gen(&contexts[0].net, &room->keys);
 	room->managerId = managerId;
 	room->configuration = configuration;
 	room->syncBase = 0;

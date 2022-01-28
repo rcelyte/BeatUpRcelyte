@@ -3,6 +3,48 @@
 
 #define lengthof(x) (sizeof(x)/sizeof(*x))
 
+struct LevelList {
+	ServerCode code;
+	uint16_t playerNPms, levelNPms;
+	uint8_t playerCount, playerCap;
+	char levelName[246];
+};
+
+static struct LevelList list[16384];
+static uint16_t count = 0, alloc[16384];
+
+void status_internal_init() {
+	for(uint32_t i = 0; i < lengthof(alloc); ++i) {
+		list[i].code = StringToServerCode(NULL, 0);
+		alloc[i] = i;
+	}
+}
+
+StatusHandle status_entry_new(ServerCode code, uint8_t playerCap) {
+	StatusHandle index = alloc[count++];
+	list[index].code = code;
+	list[index].playerNPms = 0;
+	list[index].levelNPms = 0;
+	list[index].playerCount = 0;
+	list[index].playerCap = playerCap;
+	*list[index].levelName = 0;
+	return index;
+}
+
+void status_entry_set_playerCount(StatusHandle index, uint8_t count) {
+	list[index].playerCount = count;
+}
+
+void status_entry_set_level(StatusHandle index, const char *name, float nps) {
+	list[index].levelNPms = nps * 1000;
+	snprintf(list[index].levelName, sizeof(list->levelName), "%s", name);
+}
+
+void status_entry_free(StatusHandle index) {
+	list[index].code = StringToServerCode(NULL, 0);
+	alloc[--count] = index;
+}
+
 static uint32_t status_head(char *buf, const char *code, const char *mime, size_t len) {
 	return sprintf(buf,
 		"HTTP/1.1 %s\r\n"
@@ -21,26 +63,6 @@ static uint32_t status_bin(char *buf, const char *code, const char *mime, const 
 	return head_len + resp_len;
 }
 #define status_text(buf, code, mime, resp) status_bin(buf, code, mime, (const uint8_t*)resp, sizeof(resp)-sizeof(char))
-
-struct TEMPList {
-	ServerCode code;
-	char levelName[256];
-	uint32_t playerCount, playerCap;
-	float playerNPS, levelNPS;
-} static tempList[2] = {{
-	.levelName = "In-Game Room Listing",
-	.playerCount = 0,
-	.playerCap = 0xffffffff,
-	.playerNPS = 0,
-	.levelNPS = 0,
-}, {
-	.code = 385792,
-	.levelName = "rcelyte ''Serializers'' Summary & VIPs 02 [RCCD-0017] (C94) - 11. rcelyte — Exit This Thread's Stack Space (rcelyte's ''OVERFLOWING--200MB'' Generator)",
-	.playerCount = 0,
-	.playerCap = 10,
-	.playerNPS = 14.52,
-	.levelNPS = 16.33,
-}};
 
 static size_t escape(uint8_t *out, size_t limit, const uint8_t *in, size_t in_len) {
 	uint8_t *start = out;
@@ -68,7 +90,7 @@ static size_t escape(uint8_t *out, size_t limit, const uint8_t *in, size_t in_le
 
 static uint32_t status_web(char *buf, ServerCode code) {
 	_Bool index = (code == StringToServerCode(NULL, 0));
-	tempList[0].code = StringToServerCode("INDEX", 5);
+	list[0].code = StringToServerCode("INDEX", 5);
 	char page[65536];
 	uint32_t len = sprintf(page,
 		"<!DOCTYPE html>"
@@ -116,18 +138,18 @@ static uint32_t status_web(char *buf, ServerCode code) {
 						"</tr>"
 					"</thead>"
 					"<tbody>");
-		for(uint32_t i = 0; i < lengthof(tempList); ++i) {
+		for(uint32_t i = 0; i < count; ++i) {
 			char scode[8], plim[16] = "∞", level[256];
-			if(tempList[i].playerCap < 0xffffffff)
-				sprintf(plim, "%u", tempList[i].playerCap);
-			ServerCodeToString(scode, tempList[i].code);
-			uint32_t level_len = escape((uint8_t*)level, sizeof(level), (const uint8_t*)tempList[i].levelName, strlen(tempList[i].levelName));
+			if(list[i].playerCap < 0xff)
+				sprintf(plim, "%u", list[i].playerCap);
+			ServerCodeToString(scode, list[i].code);
+			uint32_t level_len = escape((uint8_t*)level, sizeof(level), (const uint8_t*)list[i].levelName, strlen(list[i].levelName));
 			len += sprintf(&page[len], "<tr>");
 			len += sprintf(&page[len], "<th><a href=\"%s\"><code>%s</code></a></th>", scode, scode);
-			len += sprintf(&page[len], "<td><a href=\"%s\"><div class=\"ln\"%s><span>%.*s</span><br><div>|%.*s||%.*s|</div></div></a></td>", scode, (tempList[i].code == StringToServerCode("INDEX", 5)) ? " style=\"color:#ff0;font-weight:bold\"" : "", level_len, level, level_len, level, level_len, level);
-			len += sprintf(&page[len], "<th><a href=\"%s\">%u / %s</a></th>", scode, tempList[i].playerCount, plim);
+			len += sprintf(&page[len], "<td><a href=\"%s\"><div class=\"ln\"%s><span>%.*s</span><br><div>|%.*s||%.*s|</div></div></a></td>", scode, (list[i].code == StringToServerCode("INDEX", 5)) ? " style=\"color:#ff0;font-weight:bold\"" : "", level_len, level, level_len, level, level_len, level);
+			len += sprintf(&page[len], "<th><a href=\"%s\">%u / %s</a></th>", scode, list[i].playerCount, plim);
 			len += sprintf(&page[len], "<th><a href=\"%s\">Vanilla 1.19.1</a></th>", scode);
-			len += sprintf(&page[len], "<th><a href=\"%s\">%.2f / %.2f</a></th>", scode, tempList[i].playerNPS, tempList[i].levelNPS);
+			len += sprintf(&page[len], "<th><a href=\"%s\">%.2f / %.2f</a></th>", scode, list[i].playerNPms / 1000.f, list[i].levelNPms / 1000.f);
 			len += sprintf(&page[len], "<th><a href=\"%s\"></a></th>", scode);
 			len += sprintf(&page[len], "</tr>");
 		}
@@ -164,7 +186,7 @@ static _Bool status_identify(const char *buf, uint32_t buf_len) {
 	return memcmp(&it[1], "\r\n", 2) == 0;
 }
 
-static uint32_t status_resp(const char *source, const char *path, char *buf, uint32_t buf_len) {
+uint32_t status_resp(const char *source, const char *path, char *buf, uint32_t buf_len) {
 	if(buf_len > 16 && memcmp(buf, "GET /robots.txt ", 16) == 0)
 		return status_text(buf, "200 OK", "text/plain", "User-agent: *\nDisallow: /\n");
 	if(status_identify(buf, buf_len)) {

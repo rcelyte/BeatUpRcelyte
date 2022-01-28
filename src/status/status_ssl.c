@@ -1,5 +1,5 @@
 #include "../net.h"
-#include "status_internal.h"
+#include "internal.h"
 #ifdef WINDOWS
 #include <processthreadsapi.h>
 #define SHUT_RD SD_RECEIVE
