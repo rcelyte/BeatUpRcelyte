@@ -357,8 +357,8 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 		case ServerState_Lobby: {
 			room->selectedBeatmap = CLEAR_BEATMAP;
 			room->selectedModifiers = CLEAR_MODIFIERS;
-			room->selectedModifiers.demoNoFail = 1;
-			// room->selectedModifiers.noFailOn0Energy = 1;
+			// room->selectedModifiers.demoNoFail = 1;
+			room->selectedModifiers.noFailOn0Energy = 1;
 			room->lobby.countdownEnd = 0;
 			Counter128_clear(&room->lobby.isReady);
 			Counter128_clear(&room->lobby.isEntitled);
@@ -442,7 +442,7 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 			struct SetSongStartTime r_start;
 			r_start.base.syncTime = room_get_syncTime(room);
 			r_start.flags.hasValue0 = 1;
-			r_start.startTime = r_start.base.syncTime + .5;
+			r_start.startTime = r_start.base.syncTime + .25;
 			FOR_ALL_PLAYERS(room, id) {
 				uint8_t resp[65536], *resp_end = resp;
 				pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){0, 127, 0});
@@ -581,8 +581,9 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 				break;
 			if(Counter128_set(&room->lobby.isEntitled, indexof(room->players, session), 1))
 				break;
-			if(entitlement.flags.hasValue1 == 0 || entitlement.entitlementStatus != EntitlementsStatus_Ok)
+			if(entitlement.flags.hasValue1 == 0 || (entitlement.entitlementStatus != EntitlementsStatus_Ok && entitlement.entitlementStatus != EntitlementsStatus_NotDownloaded))
 				room->lobby.buzzkills.playersWithoutEntitlements[room->lobby.buzzkills.count++] = session->permissions.userId;
+			fprintf(stderr, "entitlement[%.*s]: %s\n", session->userName.length, session->userName.data, reflect(EntitlementsStatus, entitlement.entitlementStatus));
 			if(Counter128_contains(room->lobby.isEntitled, room->playerSort)) {
 				struct SetPlayersMissingEntitlementsToLevel r_missing;
 				r_missing.base.syncTime = room_get_syncTime(room);

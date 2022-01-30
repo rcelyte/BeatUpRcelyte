@@ -383,6 +383,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		}
 		#ifdef FORCE_MASSIVE_LOBBIES
 		req.configuration.maxPlayerCount = 126;
+		req.configuration.songSelectionMode = SongSelectionMode_Vote;
 		fprintf(stderr, "ONLY THE BIGGEST OF ROOMS!!!\n");
 		#endif
 		if(pool_request_room(&room, &handle, managerId, req.configuration)) {

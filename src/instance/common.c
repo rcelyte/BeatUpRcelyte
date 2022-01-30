@@ -55,7 +55,7 @@ void instance_send_channeled(struct Channels *channels, const uint8_t *buf, uint
 		channels->ro.base.backlogEnd = &(*channels->ro.base.backlogEnd)->next;
 	} else {
 		resend_add(channel, buf, len, method);
-		fprintf(stderr, " send[%i]: %hu\n", RelativeSequenceNumber(channel->localSeqence, channel->localWindowStart), channel->localSeqence);
+		// fprintf(stderr, " send[%i]: %hu\n", RelativeSequenceNumber(channel->localSeqence, channel->localWindowStart), channel->localSeqence);
 	}
 	/*{
 		const uint8_t *read = buf;
@@ -91,32 +91,25 @@ void handle_Ack(struct Channels *channels, const uint8_t **data) {
 	}
 	struct ReliableChannel *channel = (ack.channelId == DeliveryMethod_ReliableUnordered) ? &channels->ru.base : &channels->ro.base;
 	int32_t windowRel = RelativeSequenceNumber(channel->localWindowStart, ack.sequence);
-	if(ack.sequence >= NET_MAX_SEQUENCE || windowRel < 0 || windowRel >= NET_WINDOW_SIZE) { // [PA]Bad window start
-		if(windowRel < 0)
-			fprintf(stderr, "Low window start: %d (%d - %d)\n", windowRel, ack.sequence, channel->localWindowStart);
-		else if(windowRel >= NET_WINDOW_SIZE)
-			fprintf(stderr, "High window start: %d (%d - %d)\n", windowRel, ack.sequence, channel->localWindowStart);
-		else
-			fprintf(stderr, "Bad window start: %d\n", ack.sequence);
+	if(ack.sequence >= NET_MAX_SEQUENCE || windowRel < 0 || windowRel >= NET_WINDOW_SIZE) // [PA]Bad window start
 		return;
-	}
 	for(uint16_t pendingSeq = channel->localWindowStart; pendingSeq != channel->localSeqence; pendingSeq = (pendingSeq + 1) % NET_MAX_SEQUENCE) {
 		if(RelativeSequenceNumber(pendingSeq, ack.sequence) >= NET_WINDOW_SIZE)
 			break;
 		uint16_t pendingIdx = pendingSeq % NET_WINDOW_SIZE;
-		if((ack.data[pendingIdx / 8] & (1 << (pendingIdx % 8))) == 0) //Skip false ack
-			continue;
-		channel->resend[pendingIdx].len = 0;
-		fprintf(stderr, "  ack[%i]: %hu\n", RelativeSequenceNumber(channel->localSeqence, channel->localWindowStart), pendingSeq);
-		if(pendingSeq == channel->localWindowStart) { //Move window
-			channel->localWindowStart = (channel->localWindowStart + 1) % NET_MAX_SEQUENCE;
-			fprintf(stderr, "clear[%i]: %hu\n", RelativeSequenceNumber(channel->localSeqence, channel->localWindowStart), pendingSeq);
+		if((ack.data[pendingIdx / 8] >> (pendingIdx % 8)) & 1) {
+			// fprintf(stderr, "  ack[%i]: %hu\n", RelativeSequenceNumber(channel->localSeqence, channel->localWindowStart), pendingSeq);
+			if(pendingSeq == channel->localWindowStart) { //Move window
+				channel->localWindowStart = (channel->localWindowStart + 1) % NET_MAX_SEQUENCE;
+				// fprintf(stderr, "clear[%i]: %hu\n", RelativeSequenceNumber(channel->localSeqence, channel->localWindowStart), pendingSeq);
+			}
+			channel->resend[pendingIdx].len = 0;
 		}
 	}
 	while(channel->backlog) {
 		if(RelativeSequenceNumber(channel->localSeqence, channel->localWindowStart) >= NET_WINDOW_SIZE)
 			return;
-		fprintf(stderr, " late[%i]: %hu\n", RelativeSequenceNumber(channel->localSeqence, channel->localWindowStart), channel->localSeqence);
+		// fprintf(stderr, " late[%i]: %hu\n", RelativeSequenceNumber(channel->localSeqence, channel->localWindowStart), channel->localSeqence);
 		resend_add(channel, channel->backlog->pkt.data, channel->backlog->pkt.len, ack.channelId);
 		struct InstancePacketList *e = channel->backlog;
 		channel->backlog = channel->backlog->next;
