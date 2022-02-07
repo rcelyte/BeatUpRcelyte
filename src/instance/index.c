@@ -13,7 +13,7 @@ struct IndexSession {
 	struct IndexSession *next;
 	ClientState clientState;
 	struct String secret, userName, userId;
-	struct Pong pong;
+	struct PingPong tableTennis;
 	struct Channels channels;
 	uint8_t menu[65536];
 };
@@ -409,7 +409,7 @@ static void handle_packet(struct Context *ctx, struct IndexSession *session, con
 		case PacketProperty_Unreliable: data = end; break;
 		case PacketProperty_Channeled: handle_Channeled((ChanneledHandler)process_Channeled, &ctx->net, &session->net, &session->channels, ctx, NULL, session, &data, end, header.isFragmented); break;
 		case PacketProperty_Ack: handle_Ack(&session->channels, &data); break;
-		case PacketProperty_Ping: handle_Ping(&ctx->net, &session->net, &session->pong, &data); break;
+		case PacketProperty_Ping: handle_Ping(&ctx->net, &session->net, &session->tableTennis, &data); break;
 		case PacketProperty_Pong: break;
 		case PacketProperty_ConnectRequest: handle_ConnectRequest(ctx, session, &data); break;
 		case PacketProperty_ConnectAccept: break;
@@ -523,7 +523,7 @@ struct NetSession *index_create_session(struct SS addr, struct String secret, st
 	session->secret = secret;
 	session->userName = userName;
 	session->userId = userId;
-	session->pong.sequence = 0;
+	instance_pingpong_init(&session->tableTennis);
 	instance_channels_init(&session->channels);
 	session->menu[0] = 0;
 	session->next = context.sessionList;

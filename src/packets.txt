@@ -406,9 +406,9 @@ u8 PacketProperty
 		u8.DeliveryMethod channelId
 		if(.channelId % 2 == 0)
 			u8[9] data
-	r Ping
+	d Ping
 		u16 sequence
-	s Pong
+	d Pong
 		u16 sequence
 		u64 time
 	r ConnectRequest
@@ -504,7 +504,7 @@ u8 InternalMessage Type
 		MultiplayerAvatarData playerAvatar
 		ByteArrayNetSerializable random
 		ByteArrayNetSerializable publicEncryptionKey
-	n PlayerLatencyUpdate
+	s PlayerLatencyUpdate
 		f32 latency
 	s PlayerDisconnected
 		vi32.DisconnectedReason disconnectedReason

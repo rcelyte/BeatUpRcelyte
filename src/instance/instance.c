@@ -129,7 +129,7 @@ struct InstanceSession {
 	struct String secret, userName;
 	struct PlayerLobbyPermissionConfigurationNetSerializable permissions;
 
-	struct Pong pong;
+	struct PingPong tableTennis;
 	struct Channels channels;
 	struct PlayerStateHash stateHash;
 	struct MultiplayerAvatarData avatar;
@@ -470,6 +470,7 @@ static void room_disconnect(struct Context *ctx, struct Room **room, struct Inst
 	char addrstr[INET6_ADDRSTRLEN + 8];
 	net_tostr(NetSession_get_addr(&session->net), addrstr);
 	fprintf(stderr, "[INSTANCE] %sconnect %s\n", (mode & DC_RESET) ? "re" : "dis", addrstr);
+	instance_channels_free(&session->channels);
 	if(mode & DC_RESET)
 		net_session_reset(&ctx->net, &session->net);
 	else
@@ -495,7 +496,7 @@ static void room_disconnect(struct Context *ctx, struct Room **room, struct Inst
 		r_disconnect.disconnectedReason = DisconnectedReason_ClientConnectionClosed;
 
 		uint8_t resp[65536], *resp_end = resp;
-		pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){indexof((*room)->players, session), 0, 0});
+		pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){indexof((*room)->players, session) + 1, 0, 0});
 		SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerDisconnected)
 			pkt_writePlayerDisconnected(&resp_end, r_disconnect);
 		FOR_EXCLUDING_PLAYER(*room, session, id)
@@ -557,7 +558,7 @@ static void instance_onResend(struct Context *ctx, uint32_t currentTime, uint32_
 					if(*nextTick - currentTime > ctick)
 						*nextTick = currentTime + ctick;
 				} else {
-					room_set_state(ctx, *room, (*room)->state + 1);
+					room_set_state(ctx, *room, !(*room)->state); // return to lobby on load timeout
 				}
 				break;
 			}
@@ -1114,7 +1115,6 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 	fprintf(stderr, "CONNECT[%zu]: %.*s\n", indexof(room->players, session), session->userName.length, session->userName.data);
 
 	FOR_EXCLUDING_PLAYER(room, session, id) {
-		fprintf(stderr, "ENUMERATING: [%u] %.*s\n", id, room->players[id].userName.length, room->players[id].userName.data);
 		struct PlayerConnected r_connected;
 		r_connected.remoteConnectionId = id + 1;
 		r_connected.userId = room->players[id].permissions.userId;
@@ -1162,6 +1162,8 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 	SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerIdentity)
 		pkt_writePlayerIdentity(&resp_end, r_identity);
 	instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+
+	refresh_button(ctx, room);
 }
 static void handle_Disconnect(struct Context *ctx, struct Room **room, struct InstanceSession *session, const uint8_t **data) {
 	pkt_readDisconnect(data);
@@ -1200,8 +1202,20 @@ static void handle_packet(struct Context *ctx, struct Room **room, struct Instan
 			case PacketProperty_Unreliable: handle_Unreliable(ctx, *room, session, &sub, data); break;
 			case PacketProperty_Channeled: handle_Channeled((ChanneledHandler)process_Channeled, &ctx->net, &session->net, &session->channels, ctx, *room, session, &sub, data, header.isFragmented); break;
 			case PacketProperty_Ack: handle_Ack(&session->channels, &sub); break;
-			case PacketProperty_Ping: handle_Ping(&ctx->net, &session->net, &session->pong, &sub); break;
-			case PacketProperty_Pong: fprintf(stderr, "[INSTANCE] PacketProperty_Pong not implemented\n"); break;
+			case PacketProperty_Ping: handle_Ping(&ctx->net, &session->net, &session->tableTennis, &sub); break;
+			case PacketProperty_Pong: {
+				struct PlayerLatencyUpdate r_latency;
+				r_latency.latency = handle_Pong(&ctx->net, &session->net, &session->tableTennis, &sub);
+				if(r_latency.latency != 0) {
+					uint8_t resp[65536], *resp_end = resp;
+					pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){indexof((*room)->players, session) + 1, 0, 0});
+					SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerLatencyUpdate)
+						pkt_writePlayerLatencyUpdate(&resp_end, r_latency);
+					FOR_EXCLUDING_PLAYER(*room, session, id)
+						instance_send_channeled(&(*room)->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+				}
+				break;
+			}
 			case PacketProperty_ConnectRequest: handle_ConnectRequest(ctx, *room, session, &sub); break;
 			case PacketProperty_ConnectAccept: fprintf(stderr, "[INSTANCE] BAD PROPERTY: PacketProperty_ConnectAccept\n"); break;
 			case PacketProperty_Disconnect: handle_Disconnect(ctx, room, session, &sub); return;
@@ -1447,7 +1461,7 @@ struct NetSession *instance_room_resolve_session(uint16_t thread, uint16_t group
 	session->permissions.hasKickVotePermission = session->permissions.isServerOwner;
 	session->permissions.hasInvitePermission = (room->configuration.invitePolicy == InvitePolicy_AnyoneCanInvite) || (session->permissions.isServerOwner && room->configuration.invitePolicy == InvitePolicy_OnlyConnectionOwnerCanInvite);
 
-	session->pong.sequence = 0;
+	instance_pingpong_init(&session->tableTennis);
 	instance_channels_init(&session->channels);
 	session->stateHash.bloomFilter = (struct BitMask128){0, 0};
 	session->avatar = CLEAR_AVATARDATA;

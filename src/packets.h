@@ -270,10 +270,12 @@ struct Ping {
 	uint16_t sequence;
 };
 struct Ping pkt_readPing(const uint8_t **pkt);
+void pkt_writePing(uint8_t **pkt, struct Ping in);
 struct Pong {
 	uint16_t sequence;
 	uint64_t time;
 };
+struct Pong pkt_readPong(const uint8_t **pkt);
 void pkt_writePong(uint8_t **pkt, struct Pong in);
 struct ConnectRequest {
 	uint32_t protocolId;
@@ -412,6 +414,10 @@ struct PlayerIdentity {
 };
 struct PlayerIdentity pkt_readPlayerIdentity(const uint8_t **pkt);
 void pkt_writePlayerIdentity(uint8_t **pkt, struct PlayerIdentity in);
+struct PlayerLatencyUpdate {
+	float latency;
+};
+void pkt_writePlayerLatencyUpdate(uint8_t **pkt, struct PlayerLatencyUpdate in);
 struct PlayerDisconnected {
 	DisconnectedReason disconnectedReason;
 };

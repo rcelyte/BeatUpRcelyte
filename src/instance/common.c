@@ -5,6 +5,13 @@
 #include <stdlib.h>
 #include <time.h>
 
+void instance_pingpong_init(struct PingPong *pingpong) {
+	pingpong->lastPing = 0;
+	pingpong->waiting = 0;
+	pingpong->ping.sequence = 0;
+	pingpong->pong.sequence = 0;
+}
+
 void instance_channels_init(struct Channels *channels) {
 	memset(&channels->ru, 0, sizeof(channels->ru));
 	memset(&channels->ro, 0, sizeof(channels->ro));
@@ -16,6 +23,19 @@ void instance_channels_init(struct Channels *channels) {
 	channels->ru.base.backlogEnd = &channels->ru.base.backlog;
 	channels->ro.base.backlog = NULL;
 	channels->ro.base.backlogEnd = &channels->ro.base.backlog;
+}
+
+void instance_channels_free(struct Channels *channels) {
+	while(channels->ru.base.backlog) {
+		struct InstancePacketList *e = channels->ru.base.backlog;
+		channels->ru.base.backlog = channels->ru.base.backlog->next;
+		free(e);
+	}
+	while(channels->ro.base.backlog) {
+		struct InstancePacketList *e = channels->ro.base.backlog;
+		channels->ro.base.backlog = channels->ro.base.backlog->next;
+		free(e);
+	}
 }
 
 static void resend_add(struct ReliableChannel *channel, const uint8_t *buf, uint32_t len, DeliveryMethod method) {
@@ -185,8 +205,6 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 	switch(channeled.channelId) {
 		case DeliveryMethod_ReliableUnordered: channel = &channels->ru.base;
 		case DeliveryMethod_ReliableOrdered: {
-			if(channeled.sequence >= NET_MAX_SEQUENCE)
-				return;
 			int32_t relate = RelativeSequenceNumber(channeled.sequence, channel->remoteWindowStart);
 			if(RelativeSequenceNumber(channeled.sequence, channel->remoteSequence) > NET_WINDOW_SIZE)
 				return;
@@ -256,18 +274,40 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 	return;
 }
 
-void handle_Ping(struct NetContext *net, struct NetSession *session, struct Pong *pong, const uint8_t **data) {
+uint64_t get_time() {
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	return (uint64_t)now.tv_sec * 10000000LLU + (uint64_t)now.tv_nsec / 100LLU;
+}
+
+void handle_Ping(struct NetContext *net, struct NetSession *session, struct PingPong *pingpong, const uint8_t **data) {
 	struct Ping ping = pkt_readPing(data);
-	if(RelativeSequenceNumber(ping.sequence, pong->sequence) > 0) {
-		struct timespec now;
-		clock_gettime(CLOCK_MONOTONIC, &now);
-		pong->sequence = ping.sequence;
-		pong->time = (uint64_t)now.tv_sec * 10000000LLU + (uint64_t)now.tv_nsec / 100LLU;
+	uint64_t time = get_time();
+	if(RelativeSequenceNumber(ping.sequence, pingpong->pong.sequence) > 0) {
+		pingpong->pong.sequence = ping.sequence;
+		pingpong->pong.time = time;
 		uint8_t resp[65536], *resp_end = resp;
 		pkt_writeNetPacketHeader(&resp_end, (struct NetPacketHeader){PacketProperty_Pong, 0, 0});
-		pkt_writePong(&resp_end, *pong);
+		pkt_writePong(&resp_end, pingpong->pong);
 		net_send_internal(net, session, resp, resp_end - resp, 1);
 	}
+	if((time - pingpong->lastPing > 5000000LLU && !pingpong->waiting) || time - pingpong->lastPing > 30000000LLU) {
+		pingpong->lastPing = time;
+		pingpong->waiting = 1;
+		++pingpong->ping.sequence;
+		uint8_t resp[65536], *resp_end = resp;
+		pkt_writeNetPacketHeader(&resp_end, (struct NetPacketHeader){PacketProperty_Ping, 0, 0});
+		pkt_writePing(&resp_end, pingpong->ping);
+		net_send_internal(net, session, resp, resp_end - resp, 1);
+	}
+}
+
+float handle_Pong(struct NetContext *net, struct NetSession *session, struct PingPong *pingpong, const uint8_t **data) {
+	struct Pong pong = pkt_readPong(data);
+	if(pong.sequence != pingpong->ping.sequence)
+		return 0;
+	pingpong->waiting = 0;
+	return (get_time() - pingpong->lastPing) / 10000000.f;
 }
 
 void handle_MtuCheck(struct NetContext *net, struct NetSession *session, const uint8_t **data) {

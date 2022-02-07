@@ -93,14 +93,23 @@ struct Channels {
 	struct SequencedChannel rs;
 	struct IncomingFragments *incomingFragmentsList;
 };
+struct PingPong {
+	uint64_t lastPing;
+	_Bool waiting;
+	struct Ping ping;
+	struct Pong pong;
+};
 
 typedef void (*ChanneledHandler)(void *ctx, void *room, void *session, const uint8_t **data, const uint8_t *end, DeliveryMethod channelId);
 
+void instance_pingpong_init(struct PingPong *pingpong);
 void instance_channels_init(struct Channels *channels);
+void instance_channels_free(struct Channels *channels);
 void instance_send_channeled(struct Channels *channels, const uint8_t *buf, uint32_t len, DeliveryMethod method);
 void handle_Ack(struct Channels *channels, const uint8_t **data);
 void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct NetSession *session, struct Channels *channels, void *p_ctx, void *p_room, void *p_session, const uint8_t **data, const uint8_t *end, _Bool isFragmented);
-void handle_Ping(struct NetContext *net, struct NetSession *session, struct Pong *pong, const uint8_t **data);
+void handle_Ping(struct NetContext *net, struct NetSession *session, struct PingPong *pingpong, const uint8_t **data);
+float handle_Pong(struct NetContext *net, struct NetSession *session, struct PingPong *pingpong, const uint8_t **data);
 void handle_MtuCheck(struct NetContext *net, struct NetSession *session, const uint8_t **data);
 void try_resend(struct NetContext *net, struct NetSession *session, struct InstanceResendPacket *p, uint32_t currentTime);
 void flush_ack(struct NetContext *net, struct NetSession *session, struct Ack *ack);

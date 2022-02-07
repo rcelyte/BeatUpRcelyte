@@ -409,6 +409,15 @@ struct Ping pkt_readPing(const uint8_t **pkt) {
 	out.sequence = pkt_readUint16(pkt);
 	return out;
 }
+void pkt_writePing(uint8_t **pkt, struct Ping in) {
+	pkt_writeUint16(pkt, in.sequence);
+}
+struct Pong pkt_readPong(const uint8_t **pkt) {
+	struct Pong out;
+	out.sequence = pkt_readUint16(pkt);
+	out.time = pkt_readUint64(pkt);
+	return out;
+}
 void pkt_writePong(uint8_t **pkt, struct Pong in) {
 	pkt_writeUint16(pkt, in.sequence);
 	pkt_writeUint64(pkt, in.time);
@@ -576,6 +585,9 @@ void pkt_writePlayerIdentity(uint8_t **pkt, struct PlayerIdentity in) {
 	pkt_writeMultiplayerAvatarData(pkt, in.playerAvatar);
 	pkt_writeByteArrayNetSerializable(pkt, in.random);
 	pkt_writeByteArrayNetSerializable(pkt, in.publicEncryptionKey);
+}
+void pkt_writePlayerLatencyUpdate(uint8_t **pkt, struct PlayerLatencyUpdate in) {
+	pkt_writeFloat32(pkt, in.latency);
 }
 void pkt_writePlayerDisconnected(uint8_t **pkt, struct PlayerDisconnected in) {
 	pkt_writeVarInt32(pkt, in.disconnectedReason);
