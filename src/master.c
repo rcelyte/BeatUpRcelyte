@@ -28,7 +28,7 @@
 		pkt_write##dtype(pkt, data); \
 }
 
-struct MasterResendPacket {
+struct MasterPacket {
 	uint32_t len;
 	uint8_t data[512];
 };
@@ -42,7 +42,14 @@ struct MasterResendSparsePtr {
 struct MasterResend {
 	uint32_t count;
 	struct MasterResendSparsePtr index[NET_WINDOW_SIZE];
-	struct MasterResendPacket data[NET_WINDOW_SIZE];
+	struct MasterPacket data[NET_WINDOW_SIZE];
+};
+struct MasterMultipartList {
+	struct MasterMultipartList *next;
+	uint32_t id;
+	uint32_t totalLength;
+	uint16_t count;
+	uint8_t data[];
 };
 struct MasterSession {
 	struct NetSession net;
@@ -52,6 +59,7 @@ struct MasterSession {
 	uint32_t ClientHelloWithCookieRequest_requestId;
 	HandshakeMessageType handshakeStep;
 	struct MasterResend resend;
+	struct MasterMultipartList *multipartList;
 };
 
 struct Context {
@@ -76,6 +84,7 @@ static struct NetSession *master_onResolve(struct Context *ctx, struct SS addr, 
 	session->resend.count = 0;
 	for(uint32_t i = 0; i < NET_WINDOW_SIZE; ++i)
 		session->resend.index[i].data = i;
+	session->multipartList = NULL;
 	session->next = ctx->sessionList;
 	ctx->sessionList = session;
 
@@ -90,6 +99,11 @@ static struct MasterSession *master_disconnect(struct MasterSession *session) {
 	char addrstr[INET6_ADDRSTRLEN + 8];
 	net_tostr(NetSession_get_addr(&session->net), addrstr);
 	fprintf(stderr, "[MASTER] disconnect %s\n", addrstr);
+	while(session->multipartList) {
+		struct MasterMultipartList *e = session->multipartList;
+		session->multipartList = session->multipartList->next;
+		free(e);
+	}
 	net_session_free(&session->net);
 	free(session);
 	return next;
@@ -447,6 +461,98 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 	master_send(&ctx->net, session, resp, resp_end - resp, 1);
 }
 
+static void handle_packet(struct Context *ctx, struct MasterSession *session, const uint8_t *data, const uint8_t *end);
+static void handle_BaseMasterServerMultipartMessage(struct Context *ctx, struct MasterSession *session, const uint8_t **data) {
+	struct BaseMasterServerMultipartMessage msg = pkt_readBaseMasterServerMultipartMessage(data);
+	if(!msg.totalLength) {
+		fprintf(stderr, "[MASTER] INVALID MULTIPART LENGTH\n");
+		return;
+	}
+	struct MasterMultipartList **multipart = &session->multipartList;
+	for(; *multipart; multipart = &(*multipart)->next) {
+		if((*multipart)->id == msg.multipartMessageId) {
+			if((*multipart)->totalLength != msg.totalLength) {
+				fprintf(stderr, "[MASTER] BAD MULTIPART LENGTH\n");
+				return;
+			}
+			break;
+		}
+	}
+	if(!*multipart) {
+		*multipart = malloc(sizeof(struct MasterMultipartList) + msg.totalLength);
+		if(!*multipart) {
+			fprintf(stderr, "alloc error\n");
+			abort();
+		}
+		(*multipart)->next = NULL;
+		(*multipart)->id = msg.multipartMessageId;
+		(*multipart)->totalLength = msg.totalLength;
+		(*multipart)->count = 0;
+		memset((*multipart)->data, 0, msg.totalLength);
+	}
+	if(msg.offset + msg.length > msg.totalLength) {
+		fprintf(stderr, "[MASTER] INVALID MULTIPART LENGTH\n");
+		return;
+	}
+	memcpy(&(*multipart)->data[msg.offset], msg.data, msg.length);
+	if(++(*multipart)->count >= (msg.totalLength + sizeof(msg.data) - 1) / sizeof(msg.data)) {
+		handle_packet(ctx, session, (*multipart)->data, &(*multipart)->data[msg.totalLength]);
+		struct MasterMultipartList *e = *multipart;
+		*multipart = (*multipart)->next;
+		free(e);
+	}
+}
+
+static void handle_packet(struct Context *ctx, struct MasterSession *session, const uint8_t *data, const uint8_t *end) {
+	size_t len = end - data;
+	struct MessageHeader message = pkt_readMessageHeader(&data);
+	struct SerializeHeader serial = pkt_readSerializeHeader(&data);
+	if(message.type == MessageType_UserMessage) {
+		switch(serial.type) {
+			case UserMessageType_AuthenticateUserRequest: handle_AuthenticateUserRequest(ctx, session, &data); break;
+			case UserMessageType_AuthenticateUserResponse: fprintf(stderr, "[MASTER] BAD TYPE: UserMessageType_AuthenticateUserResponse\n"); break;
+			case UserMessageType_ConnectToServerResponse: fprintf(stderr, "[MASTER] BAD TYPE: UserMessageType_ConnectToServerResponse\n"); break;
+			case UserMessageType_ConnectToServerRequest: handle_ConnectToServerRequest(ctx, session, &data); break;
+			case UserMessageType_UserMessageReceivedAcknowledge: {
+				master_handle_ack(session, &message, &serial, pkt_readBaseMasterServerAcknowledgeMessage(&data).base.responseId);
+				break;
+			}
+			case UserMessageType_UserMultipartMessage: handle_BaseMasterServerMultipartMessage(ctx, session, &data); break;
+			case UserMessageType_SessionKeepaliveMessage: break;
+			case UserMessageType_GetPublicServersRequest: fprintf(stderr, "[MASTER] UserMessageType_GetPublicServersRequest not implemented\n"); abort();
+			case UserMessageType_GetPublicServersResponse: fprintf(stderr, "[MASTER] UserMessageType_GetPublicServersResponse not implemented\n"); abort();
+			default: fprintf(stderr, "[MASTER] BAD USER MESSAGE TYPE\n");
+		}
+	} else if(message.type == MessageType_HandshakeMessage) {
+		switch(serial.type) {
+			case HandshakeMessageType_ClientHelloRequest: handle_ClientHelloRequest(ctx, session, &data, message.protocolVersion); break;
+			case HandshakeMessageType_HelloVerifyRequest: fprintf(stderr, "[MASTER] BAD TYPE: HandshakeMessageType_HelloVerifyRequest\n"); break;
+			case HandshakeMessageType_ClientHelloWithCookieRequest: handle_ClientHelloWithCookieRequest(ctx, session, &data); break;
+			case HandshakeMessageType_ServerHelloRequest: fprintf(stderr, "[MASTER] BAD TYPE: HandshakeMessageType_ServerHelloRequest\n"); break;
+			case HandshakeMessageType_ServerCertificateRequest: fprintf(stderr, "[MASTER] BAD TYPE: HandshakeMessageType_ServerCertificateRequest\n"); break;
+			case HandshakeMessageType_ClientKeyExchangeRequest: handle_ClientKeyExchangeRequest(ctx, session, &data); break;
+			case HandshakeMessageType_ChangeCipherSpecRequest: fprintf(stderr, "[MASTER] BAD TYPE: HandshakeMessageType_ChangeCipherSpecRequest\n"); break;
+			case HandshakeMessageType_HandshakeMessageReceivedAcknowledge: {
+				if(master_handle_ack(session, &message, &serial, pkt_readBaseMasterServerAcknowledgeMessage(&data).base.responseId)) {
+					if(message.type == MessageType_HandshakeMessage && serial.type == HandshakeMessageType_ServerCertificateRequest)
+						handle_ServerCertificateRequest_ack(ctx, session);
+				}
+				break;
+			}
+			case HandshakeMessageType_HandshakeMultipartMessage: fprintf(stderr, "[MASTER] BAD TYPE: HandshakeMessageType_HandshakeMultipartMessage\n"); break;
+			default: fprintf(stderr, "[MASTER] BAD HANDSHAKE MESSAGE TYPE\n");
+		}
+	} else if(message.type == MessageType_DedicatedServerMessage) {
+		fprintf(stderr, "[MASTER] DedicatedServerMessageType not implemented\n");
+	} else if(message.type == MessageType_GameLiftMessage) {
+		fprintf(stderr, "[MASTER] GameLiftMessage not implemented\n");
+	} else {
+		fprintf(stderr, "[MASTER] BAD MESSAGE TYPE\n");
+	}
+	if(data != end)
+		fprintf(stderr, "[MASTER] BAD PACKET LENGTH (expected %zu, read %zu)\n", len, len + data - end);
+}
+
 #ifdef WINDOWS
 static DWORD WINAPI
 #else
@@ -467,52 +573,7 @@ master_handler(struct Context *ctx) {
 			fprintf(stderr, "[MASTER] Unsupported packet type: %s\n", reflect(PacketProperty, header.property));
 			continue;
 		}
-		struct MessageHeader message = pkt_readMessageHeader(&data);
-		struct SerializeHeader serial = pkt_readSerializeHeader(&data);
-		if(message.type == MessageType_UserMessage) {
-			switch(serial.type) {
-				case UserMessageType_AuthenticateUserRequest: handle_AuthenticateUserRequest(ctx, session, &data); break;
-				case UserMessageType_AuthenticateUserResponse: fprintf(stderr, "[MASTER] BAD TYPE: UserMessageType_AuthenticateUserResponse\n"); break;
-				case UserMessageType_ConnectToServerResponse: fprintf(stderr, "[MASTER] BAD TYPE: UserMessageType_ConnectToServerResponse\n"); break;
-				case UserMessageType_ConnectToServerRequest: handle_ConnectToServerRequest(ctx, session, &data); break;
-				case UserMessageType_UserMessageReceivedAcknowledge: {
-					master_handle_ack(session, &message, &serial, pkt_readBaseMasterServerAcknowledgeMessage(&data).base.responseId);
-					break;
-				}
-				case UserMessageType_UserMultipartMessage: fprintf(stderr, "[MASTER] UserMessageType_UserMultipartMessage not implemented\n"); return 0;
-				case UserMessageType_SessionKeepaliveMessage: break;
-				case UserMessageType_GetPublicServersRequest: fprintf(stderr, "[MASTER] UserMessageType_GetPublicServersRequest not implemented\n"); return 0;
-				case UserMessageType_GetPublicServersResponse: fprintf(stderr, "[MASTER] UserMessageType_GetPublicServersResponse not implemented\n"); return 0;
-				default: fprintf(stderr, "[MASTER] BAD USER MESSAGE TYPE\n");
-			}
-		} else if(message.type == MessageType_HandshakeMessage) {
-			switch(serial.type) {
-				case HandshakeMessageType_ClientHelloRequest: handle_ClientHelloRequest(ctx, session, &data, message.protocolVersion); break;
-				case HandshakeMessageType_HelloVerifyRequest: fprintf(stderr, "[MASTER] BAD TYPE: HandshakeMessageType_HelloVerifyRequest\n"); break;
-				case HandshakeMessageType_ClientHelloWithCookieRequest: handle_ClientHelloWithCookieRequest(ctx, session, &data); break;
-				case HandshakeMessageType_ServerHelloRequest: fprintf(stderr, "[MASTER] BAD TYPE: HandshakeMessageType_ServerHelloRequest\n"); break;
-				case HandshakeMessageType_ServerCertificateRequest: fprintf(stderr, "[MASTER] BAD TYPE: HandshakeMessageType_ServerCertificateRequest\n"); break;
-				case HandshakeMessageType_ClientKeyExchangeRequest: handle_ClientKeyExchangeRequest(ctx, session, &data); break;
-				case HandshakeMessageType_ChangeCipherSpecRequest: fprintf(stderr, "[MASTER] BAD TYPE: HandshakeMessageType_ChangeCipherSpecRequest\n"); break;
-				case HandshakeMessageType_HandshakeMessageReceivedAcknowledge: {
-					if(master_handle_ack(session, &message, &serial, pkt_readBaseMasterServerAcknowledgeMessage(&data).base.responseId)) {
-						if(message.type == MessageType_HandshakeMessage && serial.type == HandshakeMessageType_ServerCertificateRequest)
-							handle_ServerCertificateRequest_ack(ctx, session);
-					}
-					break;
-				}
-				case HandshakeMessageType_HandshakeMultipartMessage: fprintf(stderr, "[MASTER] BAD TYPE: HandshakeMessageType_HandshakeMultipartMessage\n"); break;
-				default: fprintf(stderr, "[MASTER] BAD HANDSHAKE MESSAGE TYPE\n");
-			}
-		} else if(message.type == MessageType_DedicatedServerMessage) {
-			fprintf(stderr, "[MASTER] DedicatedServerMessageType not implemented\n");
-		} else if(message.type == MessageType_GameLiftMessage) {
-			fprintf(stderr, "[MASTER] GameLiftMessage not implemented\n");
-		} else {
-			fprintf(stderr, "[MASTER] BAD MESSAGE TYPE\n");
-		}
-		if(data != end)
-			fprintf(stderr, "[MASTER] BAD PACKET LENGTH (expected %u, read %zu)\n", len, data - pkt);
+		handle_packet(ctx, session, data, end);
 	}
 	net_unlock(&ctx->net);
 	return 0;

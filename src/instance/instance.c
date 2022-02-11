@@ -609,7 +609,15 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 			struct RecommendBeatmap beatmap = pkt_readRecommendBeatmap(data, session->net.protocolVersion);
 			if(room->state != ServerState_Lobby)
 				break;
+			#if 1
 			session->lobby.recommendedBeatmap = beatmap.flags.hasValue0 ? beatmap.identifier : CLEAR_BEATMAP;
+			#else
+			(void)beatmap;
+			session->lobby.recommendedBeatmap.levelID.length = sprintf(session->lobby.recommendedBeatmap.levelID.data, "custom_level_A2EE3D6E6C82B89B10B9395BEBF47CF05F316B10");
+			// session->lobby.recommendedBeatmap.levelID.length = sprintf(session->lobby.recommendedBeatmap.levelID.data, "A2EE3D6E6C82B89B10B9395BEBF47CF05F316B10");
+			session->lobby.recommendedBeatmap.beatmapCharacteristicSerializedName.length = sprintf(session->lobby.recommendedBeatmap.beatmapCharacteristicSerializedName.data, "Standard");
+			session->lobby.recommendedBeatmap.difficulty = BeatmapDifficulty_ExpertPlus;
+			#endif
 			if(0) {
 				case MenuRpcType_ClearRecommendedBeatmap:
 				pkt_readClearRecommendedBeatmap(data, session->net.protocolVersion);
@@ -1207,8 +1215,12 @@ static void handle_packet(struct Context *ctx, struct Room **room, struct Instan
 				struct PlayerLatencyUpdate r_latency;
 				r_latency.latency = handle_Pong(&ctx->net, &session->net, &session->tableTennis, &sub);
 				if(r_latency.latency != 0) {
+					struct SyncTime r_sync;
+					r_sync.syncTime = room_get_syncTime(*room);
 					uint8_t resp[65536], *resp_end = resp;
 					pkt_writeRoutingHeader(&resp_end, (struct RoutingHeader){indexof((*room)->players, session) + 1, 0, 0});
+					SERIALIZE_CUSTOM(&resp_end, InternalMessageType_SyncTime)
+						pkt_writeSyncTime(&resp_end, r_sync);
 					SERIALIZE_CUSTOM(&resp_end, InternalMessageType_PlayerLatencyUpdate)
 						pkt_writePlayerLatencyUpdate(&resp_end, r_latency);
 					FOR_EXCLUDING_PLAYER(*room, session, id)

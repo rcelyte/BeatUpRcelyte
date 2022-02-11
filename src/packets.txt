@@ -253,7 +253,7 @@ r AuthenticationToken
 	String userId
 	String userName
 	ByteArrayNetSerializable sessionToken
-s BaseMasterServerMultipartMessage
+d BaseMasterServerMultipartMessage
 	BaseMasterServerReliableRequest base
 	u32 multipartMessageId
 	vu32 offset
@@ -405,7 +405,8 @@ u8 PacketProperty
 		u16 sequence
 		u8.DeliveryMethod channelId
 		if(.channelId % 2 == 0)
-			u8[9] data
+			u8[8] data
+			u8 _pad0
 	d Ping
 		u16 sequence
 	d Pong

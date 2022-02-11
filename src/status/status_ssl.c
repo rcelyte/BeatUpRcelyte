@@ -123,7 +123,7 @@ _Bool status_ssl_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, const cha
 			.sin6_scope_id = 0,
 		};
 		if(bind(ctx.listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
-			fprintf(stderr, "Cannot bind socket: %s\n", strerror(errno));
+			fprintf(stderr, "Cannot bind socket to port %hu: %s\n", port, strerror(errno));
 			close(ctx.listenfd);
 			ctx.listenfd = -1;
 			return 1;

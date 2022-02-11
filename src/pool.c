@@ -83,9 +83,9 @@ void pool_room_close(struct RoomHandle room) {
 }
 
 void pool_room_close_notify(struct RoomHandle room) {
-	++rooms[room.block].high[room.sub];
+	/*++rooms[room.block].high[room.sub];
 	if(pool_room_code(room) > MAX_SERVER_CODE)
-		rooms[room.block].high[room.sub] = 0;
+		rooms[room.block].high[room.sub] = 0;*/
 	if(rooms[room.block].idle == 0)
 		alloc[--count] = room.block;
 	rooms[room.block].idle |= 1 << room.sub;

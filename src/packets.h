@@ -127,6 +127,7 @@ struct BaseMasterServerMultipartMessage {
 	uint32_t totalLength;
 	uint8_t data[384];
 };
+struct BaseMasterServerMultipartMessage pkt_readBaseMasterServerMultipartMessage(const uint8_t **pkt);
 void pkt_writeBaseMasterServerMultipartMessage(uint8_t **pkt, struct BaseMasterServerMultipartMessage in);
 struct BitMask128 {
 	uint64_t d0;
@@ -262,7 +263,8 @@ void pkt_writeChanneled(uint8_t **pkt, struct Channeled in);
 struct Ack {
 	uint16_t sequence;
 	DeliveryMethod channelId;
-	uint8_t data[9];
+	uint8_t data[8];
+	uint8_t _pad0;
 };
 struct Ack pkt_readAck(const uint8_t **pkt);
 void pkt_writeAck(uint8_t **pkt, struct Ack in);

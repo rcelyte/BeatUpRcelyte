@@ -96,6 +96,8 @@ void instance_send_channeled(struct Channels *channels, const uint8_t *buf, uint
 	}*/
 }
 
+#define bitsize(e) (sizeof(e) * 8)
+
 void handle_Ack(struct Channels *channels, const uint8_t **data) {
 	struct Ack ack = pkt_readAck(data);
 	/*if(rand() > RAND_MAX / 500) {
@@ -117,7 +119,7 @@ void handle_Ack(struct Channels *channels, const uint8_t **data) {
 		if(RelativeSequenceNumber(pendingSeq, ack.sequence) >= NET_WINDOW_SIZE)
 			break;
 		uint16_t pendingIdx = pendingSeq % NET_WINDOW_SIZE;
-		if((ack.data[pendingIdx / 8] >> (pendingIdx % 8)) & 1) {
+		if((ack.data[pendingIdx / bitsize(*ack.data)] >> (pendingIdx % bitsize(*ack.data))) & 1) {
 			// fprintf(stderr, "  ack[%i]: %hu\n", RelativeSequenceNumber(channel->localSeqence, channel->localWindowStart), pendingSeq);
 			if(pendingSeq == channel->localWindowStart) { //Move window
 				channel->localWindowStart = (channel->localWindowStart + 1) % NET_MAX_SEQUENCE;
@@ -215,14 +217,14 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 				channel->ack.sequence = newWindowStart;
 				while(channel->remoteWindowStart != newWindowStart) {
 					uint16_t ackIdx = channel->remoteWindowStart % NET_WINDOW_SIZE;
-					channel->ack.data[ackIdx / 8] &= ~(1 << (ackIdx % 8));
+					channel->ack.data[ackIdx / bitsize(*channel->ack.data)] &= ~(1 << (ackIdx % bitsize(*channel->ack.data)));
 					channel->remoteWindowStart = (channel->remoteWindowStart + 1) % NET_MAX_SEQUENCE;
 				}
 			}
 			uint16_t ackIdx = channeled.sequence % NET_WINDOW_SIZE;
-			if(channel->ack.data[ackIdx / 8] & (1 << (ackIdx % 8)))
+			if(channel->ack.data[ackIdx / bitsize(*channel->ack.data)] & (1 << (ackIdx % bitsize(*channel->ack.data))))
 				return;
-			channel->ack.data[ackIdx / 8] |= 1 << (ackIdx % 8);
+			channel->ack.data[ackIdx / bitsize(*channel->ack.data)] |= 1 << (ackIdx % bitsize(*channel->ack.data));
 			if(channeled.sequence == channel->remoteSequence) {
 				process_Reliable(handler, session, channels, p_ctx, p_room, p_session, data, end, channeled.channelId, isFragmented);
 				channel->remoteSequence = (channel->remoteSequence + 1) % NET_MAX_SEQUENCE;
@@ -336,7 +338,7 @@ void flush_ack(struct NetContext *net, struct NetSession *session, struct Ack *a
 			pkt_writeNetPacketHeader(&resp_end, (struct NetPacketHeader){PacketProperty_Ack, 0, 0});
 			pkt_writeAck(&resp_end, *ack);
 			net_queue_merged(net, session, resp, resp_end - resp);
-			memset(ack->data, 0, sizeof(ack->data));
+			// memset(ack->data, 0, sizeof(ack->data));
 			return;
 		}
 	}

@@ -276,6 +276,20 @@ struct AuthenticationToken pkt_readAuthenticationToken(const uint8_t **pkt) {
 	out.sessionToken = pkt_readByteArrayNetSerializable(pkt);
 	return out;
 }
+struct BaseMasterServerMultipartMessage pkt_readBaseMasterServerMultipartMessage(const uint8_t **pkt) {
+	struct BaseMasterServerMultipartMessage out;
+	out.base = pkt_readBaseMasterServerReliableRequest(pkt);
+	out.multipartMessageId = pkt_readUint32(pkt);
+	out.offset = pkt_readVarUint32(pkt);
+	out.length = pkt_readVarUint32(pkt);
+	out.totalLength = pkt_readVarUint32(pkt);
+	if(out.length > 384) {
+		fprintf(stderr, "Buffer overflow in read of BaseMasterServerMultipartMessage.data: %u > 384\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
+	} else {
+		pkt_readUint8Array(pkt, out.data, out.length);
+	}
+	return out;
+}
 void pkt_writeBaseMasterServerMultipartMessage(uint8_t **pkt, struct BaseMasterServerMultipartMessage in) {
 	pkt_writeBaseMasterServerReliableRequest(pkt, in.base);
 	pkt_writeUint32(pkt, in.multipartMessageId);
@@ -393,7 +407,8 @@ struct Ack pkt_readAck(const uint8_t **pkt) {
 	out.sequence = pkt_readUint16(pkt);
 	out.channelId = pkt_readUint8(pkt);
 	if(out.channelId % 2 == 0) {
-		pkt_readUint8Array(pkt, out.data, 9);
+		pkt_readUint8Array(pkt, out.data, 8);
+		out._pad0 = pkt_readUint8(pkt);
 	}
 	return out;
 }
@@ -401,7 +416,8 @@ void pkt_writeAck(uint8_t **pkt, struct Ack in) {
 	pkt_writeUint16(pkt, in.sequence);
 	pkt_writeUint8(pkt, in.channelId);
 	if(in.channelId % 2 == 0) {
-		pkt_writeUint8Array(pkt, in.data, 9);
+		pkt_writeUint8Array(pkt, in.data, 8);
+		pkt_writeUint8(pkt, in._pad0);
 	}
 }
 struct Ping pkt_readPing(const uint8_t **pkt) {
