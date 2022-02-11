@@ -209,9 +209,9 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 		case DeliveryMethod_ReliableOrdered: {
 			int32_t relate = RelativeSequenceNumber(channeled.sequence, channel->remoteWindowStart);
 			if(RelativeSequenceNumber(channeled.sequence, channel->remoteSequence) > NET_WINDOW_SIZE)
-				return;
+				break;
 			if(relate < 0 || relate >= NET_WINDOW_SIZE * 2)
-				return;
+				break;
 			if(relate >= NET_WINDOW_SIZE) {
 				uint16_t newWindowStart = (channel->remoteWindowStart + relate - NET_WINDOW_SIZE + 1) % NET_MAX_SEQUENCE;
 				channel->ack.sequence = newWindowStart;
@@ -223,7 +223,7 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 			}
 			uint16_t ackIdx = channeled.sequence % NET_WINDOW_SIZE;
 			if(channel->ack.data[ackIdx / bitsize(*channel->ack.data)] & (1 << (ackIdx % bitsize(*channel->ack.data))))
-				return;
+				break;
 			channel->ack.data[ackIdx / bitsize(*channel->ack.data)] |= 1 << (ackIdx % bitsize(*channel->ack.data));
 			if(channeled.sequence == channel->remoteSequence) {
 				process_Reliable(handler, session, channels, p_ctx, p_room, p_session, data, end, channeled.channelId, isFragmented);
@@ -245,6 +245,7 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 						channel->remoteSequence = (channel->remoteSequence + 1) % NET_MAX_SEQUENCE;
 					}
 				}
+				return;
 			} else if(channeled.channelId == DeliveryMethod_ReliableOrdered) {
 				channels->ro.receivedPackets[ackIdx].len = end - *data;
 				channels->ro.receivedPackets[ackIdx].isFragmented = isFragmented;
@@ -253,13 +254,14 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 			} else {
 				channels->ru.earlyReceived[ackIdx] = 1;
 				process_Reliable(handler, session, channels, p_ctx, p_room, p_session, data, end, DeliveryMethod_ReliableUnordered, isFragmented);
+				return;
 			}
 		}
-		case DeliveryMethod_Sequenced: return;
+		case DeliveryMethod_Sequenced: break;
 		case DeliveryMethod_ReliableSequenced: {
 			if(isFragmented) {
 				fprintf(stderr, "MALFORMED PACKET\n");
-				return;
+				break;
 			}
 			int32_t relative = RelativeSequenceNumber(channeled.sequence, channels->rs.ack.sequence);
 			if(channeled.sequence < NET_MAX_SEQUENCE && relative > 0) {
@@ -270,9 +272,11 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 			pkt_writeNetPacketHeader(&resp_end, (struct NetPacketHeader){PacketProperty_Ack, 0, 0});
 			pkt_writeAck(&resp_end, channels->rs.ack);
 			net_queue_merged(net, session, resp, resp_end - resp);
+			return;
 		}
 		default:;
 	}
+	*data = end;
 	return;
 }
 
