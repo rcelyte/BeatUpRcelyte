@@ -14,7 +14,7 @@
 
 #define lengthof(x) (sizeof(x)/sizeof(*x))
 
-#define MASTER_SERIALIZE(pkt, mtype, stype, dtype, data) { \
+#define MASTER_SERIALIZE(pkt, session, mtype, stype, dtype, data) { \
 	pkt_writeNetPacketHeader(&resp_end, (struct NetPacketHeader){ \
 		.property = PacketProperty_UnconnectedMessage, \
 		.connectionNumber = 0, \
@@ -22,7 +22,7 @@
 	}); \
 	pkt_writeMessageHeader(pkt, (struct MessageHeader){ \
 		.type = MessageType_##mtype, \
-		.protocolVersion = 5, \
+		.protocolVersion = session->net.protocolVersion, \
 	}); \
 	SERIALIZE_CUSTOM(pkt, mtype##Type_##stype) \
 		pkt_write##dtype(pkt, data); \
@@ -224,11 +224,11 @@ static void master_send_ack(struct Context *ctx, struct MasterSession *session, 
 	r_ack.messageHandled = 1;
 	uint8_t resp[65536], *resp_end = resp;
 	if(type == MessageType_UserMessage)
-		MASTER_SERIALIZE(&resp_end, UserMessage, UserMessageReceivedAcknowledge, BaseMasterServerAcknowledgeMessage, r_ack)
+		MASTER_SERIALIZE(&resp_end, session, UserMessage, UserMessageReceivedAcknowledge, BaseMasterServerAcknowledgeMessage, r_ack)
 	else if(type == MessageType_DedicatedServerMessage)
-		MASTER_SERIALIZE(&resp_end, DedicatedServerMessage, DedicatedServerMessageReceivedAcknowledge, BaseMasterServerAcknowledgeMessage, r_ack)
+		MASTER_SERIALIZE(&resp_end, session, DedicatedServerMessage, DedicatedServerMessageReceivedAcknowledge, BaseMasterServerAcknowledgeMessage, r_ack)
 	else if(type == MessageType_HandshakeMessage)
-		MASTER_SERIALIZE(&resp_end, HandshakeMessage, HandshakeMessageReceivedAcknowledge, BaseMasterServerAcknowledgeMessage, r_ack)
+		MASTER_SERIALIZE(&resp_end, session, HandshakeMessage, HandshakeMessageReceivedAcknowledge, BaseMasterServerAcknowledgeMessage, r_ack)
 	master_send(&ctx->net, session, resp, resp_end - resp, 0);
 }
 
@@ -249,7 +249,7 @@ static void handle_ClientHelloRequest(struct Context *ctx, struct MasterSession 
 	r_hello.base.responseId = req.base.requestId;
 	memcpy(r_hello.cookie, NetSession_get_cookie(&session->net), sizeof(r_hello.cookie));
 	uint8_t resp[65536], *resp_end = resp;
-	MASTER_SERIALIZE(&resp_end, HandshakeMessage, HelloVerifyRequest, HelloVerifyRequest, r_hello);
+	MASTER_SERIALIZE(&resp_end, session, HandshakeMessage, HelloVerifyRequest, HelloVerifyRequest, r_hello);
 	master_send(&ctx->net, session, resp, resp_end - resp, 0);
 	session->handshakeStep = HandshakeMessageType_ClientHelloRequest;
 }
@@ -275,7 +275,7 @@ static void handle_ClientHelloWithCookieRequest(struct Context *ctx, struct Mast
 		++r_cert.certificateCount;
 	}
 	uint8_t resp[65536], *resp_end = resp;
-	MASTER_SERIALIZE(&resp_end, HandshakeMessage, ServerCertificateRequest, ServerCertificateRequest, r_cert);
+	MASTER_SERIALIZE(&resp_end, session, HandshakeMessage, ServerCertificateRequest, ServerCertificateRequest, r_cert);
 	master_send(&ctx->net, session, resp, resp_end - resp, 1);
 	session->handshakeStep = HandshakeMessageType_ClientHelloWithCookieRequest;
 }
@@ -299,7 +299,7 @@ static void handle_ServerCertificateRequest_ack(struct Context *ctx, struct Mast
 	}
 
 	uint8_t resp[65536], *resp_end = resp;
-	MASTER_SERIALIZE(&resp_end, HandshakeMessage, ServerHelloRequest, ServerHelloRequest, r_hello);
+	MASTER_SERIALIZE(&resp_end, session, HandshakeMessage, ServerHelloRequest, ServerHelloRequest, r_hello);
 	master_send(&ctx->net, session, resp, resp_end - resp, 1);
 	session->handshakeStep = HandshakeMessageType_ServerCertificateRequest;
 }
@@ -315,7 +315,7 @@ static void handle_ClientKeyExchangeRequest(struct Context *ctx, struct MasterSe
 	r_spec.base.requestId = master_getNextRequestId(session);
 	r_spec.base.responseId = req.base.requestId;
 	uint8_t resp[65536], *resp_end = resp;
-	MASTER_SERIALIZE(&resp_end, HandshakeMessage, ChangeCipherSpecRequest, ChangeCipherSpecRequest, r_spec);
+	MASTER_SERIALIZE(&resp_end, session, HandshakeMessage, ChangeCipherSpecRequest, ChangeCipherSpecRequest, r_spec);
 	master_send(&ctx->net, session, resp, resp_end - resp, 1);
 	session->handshakeStep = HandshakeMessageType_ClientKeyExchangeRequest;
 }
@@ -328,7 +328,7 @@ static void handle_AuthenticateUserRequest(struct Context *ctx, struct MasterSes
 	r_auth.base.responseId = req.base.requestId;
 	r_auth.result = AuthenticateUserResponse_Result_Success;
 	uint8_t resp[65536], *resp_end = resp;
-	MASTER_SERIALIZE(&resp_end, UserMessage, AuthenticateUserResponse, AuthenticateUserResponse, r_auth);
+	MASTER_SERIALIZE(&resp_end, session, UserMessage, AuthenticateUserResponse, AuthenticateUserResponse, r_auth);
 	master_send(&ctx->net, session, resp, resp_end - resp, 1);
 }
 
@@ -457,7 +457,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 	}
 	send:;
 	uint8_t resp[65536], *resp_end = resp;
-	MASTER_SERIALIZE(&resp_end, UserMessage, ConnectToServerResponse, ConnectToServerResponse, r_conn);
+	MASTER_SERIALIZE(&resp_end, session, UserMessage, ConnectToServerResponse, ConnectToServerResponse, r_conn);
 	master_send(&ctx->net, session, resp, resp_end - resp, 1);
 }
 
