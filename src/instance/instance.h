@@ -10,8 +10,8 @@ _Bool instance_room_open(uint16_t thread, uint16_t group, uint8_t sub, struct St
 void instance_room_close(uint16_t thread, uint16_t group, uint8_t sub);
 struct String instance_room_get_managerId(uint16_t thread, uint16_t group, uint8_t sub);
 struct GameplayServerConfiguration instance_room_get_configuration(uint16_t thread, uint16_t group, uint8_t sub);
-uint32_t instance_room_get_protocolVersion(uint16_t thread, uint16_t group, uint8_t sub);
+struct PacketContext instance_room_get_protocol(uint16_t thread, uint16_t group, uint8_t sub);
 struct IPEndPoint instance_get_endpoint(_Bool ipv4);
 
-struct NetSession *instance_room_resolve_session(uint16_t thread, uint16_t group, uint8_t sub, struct SS addr, struct String secret, struct String userId, struct String userName, uint32_t protocolVersion);
+struct NetSession *instance_room_resolve_session(uint16_t thread, uint16_t group, uint8_t sub, struct SS addr, struct String secret, struct String userId, struct String userName, struct PacketContext version);
 struct NetContext *instance_get_net(uint16_t thread);

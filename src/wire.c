@@ -28,16 +28,16 @@ struct GameplayServerConfiguration wire_room_get_configuration(struct WireRoomHa
 	return instance_room_get_configuration(handle.block.thread, handle.block.group, handle.sub);
 }
 
-uint32_t wire_room_get_protocolVersion(struct WireRoomHandle handle) {
-	return instance_room_get_protocolVersion(handle.block.thread, handle.block.group, handle.sub);
+struct PacketContext wire_room_get_protocol(struct WireRoomHandle handle) {
+	return instance_room_get_protocol(handle.block.thread, handle.block.group, handle.sub);
 }
 
 struct IPEndPoint wire_block_get_endpoint(struct WireBlockHandle block, _Bool ipv4) {
 	return instance_get_endpoint(ipv4);
 }
 
-struct NetSession *TEMPwire_room_resolve_session(struct WireRoomHandle handle, struct SS addr, struct String secret, struct String userId, struct String userName, uint32_t protocolVersion) {
-	return instance_room_resolve_session(handle.block.thread, handle.block.group, handle.sub, addr, secret, userId, userName, protocolVersion);
+struct NetSession *TEMPwire_room_resolve_session(struct WireRoomHandle handle, struct SS addr, struct String secret, struct String userId, struct String userName, struct PacketContext version) {
+	return instance_room_resolve_session(handle.block.thread, handle.block.group, handle.sub, addr, secret, userId, userName, version);
 }
 
 struct NetContext *TEMPwire_block_get_net(struct WireBlockHandle block) {

@@ -42,8 +42,8 @@ static void resend_add(struct ReliableChannel *channel, const uint8_t *buf, uint
 	struct InstanceResendPacket *resend = &channel->resend[channel->localSeqence % NET_WINDOW_SIZE];
 	resend->timeStamp = net_time() - NET_RESEND_DELAY;
 	uint8_t *data_end = resend->data;
-	pkt_writeNetPacketHeader(&data_end, (struct NetPacketHeader){PacketProperty_Channeled, 0, 0});
-	pkt_writeChanneled(&data_end, (struct Channeled){
+	pkt_writeNetPacketHeader(PV_LEGACY_DEFAULT, &data_end, (struct NetPacketHeader){PacketProperty_Channeled, 0, 0});
+	pkt_writeChanneled(PV_LEGACY_DEFAULT, &data_end, (struct Channeled){
 		.sequence = channel->localSeqence,
 		.channelId = method,
 	});
@@ -51,7 +51,7 @@ static void resend_add(struct ReliableChannel *channel, const uint8_t *buf, uint
 		fprintf(stderr, "Fragmenting not implemented\n");
 		abort();
 	}
-	pkt_writeUint8Array(&data_end, buf, len);
+	pkt_writeUint8Array(PV_LEGACY_DEFAULT, &data_end, buf, len);
 	resend->len = data_end - resend->data;
 	channel->localSeqence = (channel->localSeqence + 1) % NET_MAX_SEQUENCE;
 }
@@ -99,7 +99,7 @@ void instance_send_channeled(struct Channels *channels, const uint8_t *buf, uint
 #define bitsize(e) (sizeof(e) * 8)
 
 void handle_Ack(struct Channels *channels, const uint8_t **data) {
-	struct Ack ack = pkt_readAck(data);
+	struct Ack ack = pkt_readAck(PV_LEGACY_DEFAULT, data);
 	/*if(rand() > RAND_MAX / 500) {
 		// fprintf(stderr, "nope.\n");
 		return;
@@ -145,7 +145,7 @@ static void process_Reliable(ChanneledHandler handler, struct NetSession *sessio
 		handler(p_ctx, p_room, p_session, data, end, channelId);
 		return;
 	}
-	struct FragmentedHeader header = pkt_readFragmentedHeader(data);
+	struct FragmentedHeader header = pkt_readFragmentedHeader(PV_LEGACY_DEFAULT, data);
 	struct IncomingFragments **incoming = &channels->incomingFragmentsList;
 	do {
 		if(!*incoming) {
@@ -178,9 +178,9 @@ static void process_Reliable(ChanneledHandler handler, struct NetSession *sessio
 			const uint8_t *pkt_it = pkt;
 			for(uint32_t i = 0; i < (*incoming)->total; ++i) {
 				if(i == header.fragmentPart)
-					pkt_writeUint8Array(&pkt_end, *data, end - *data), *data = end;
+					pkt_writeUint8Array(PV_LEGACY_DEFAULT, &pkt_end, *data, end - *data), *data = end;
 				else
-					pkt_writeUint8Array(&pkt_end, (*incoming)->fragments[i].data, (*incoming)->fragments[i].len);
+					pkt_writeUint8Array(PV_LEGACY_DEFAULT, &pkt_end, (*incoming)->fragments[i].data, (*incoming)->fragments[i].len);
 			}
 			#ifdef PACKET_LOGGING_FUNCS
 			{
@@ -200,7 +200,7 @@ static void process_Reliable(ChanneledHandler handler, struct NetSession *sessio
 }
 
 void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct NetSession *session, struct Channels *channels, void *p_ctx, void *p_room, void *p_session, const uint8_t **data, const uint8_t *end, _Bool isFragmented) {
-	struct Channeled channeled = pkt_readChanneled(data);
+	struct Channeled channeled = pkt_readChanneled(PV_LEGACY_DEFAULT, data);
 	if(channeled.sequence >= NET_MAX_SEQUENCE)
 		return;
 	struct ReliableChannel *channel = &channels->ro.base;
@@ -269,8 +269,8 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 				handler(p_ctx, p_room, p_session, data, end, DeliveryMethod_ReliableSequenced);
 			}
 			uint8_t resp[65536], *resp_end = resp;
-			pkt_writeNetPacketHeader(&resp_end, (struct NetPacketHeader){PacketProperty_Ack, 0, 0});
-			pkt_writeAck(&resp_end, channels->rs.ack);
+			pkt_writeNetPacketHeader(PV_LEGACY_DEFAULT, &resp_end, (struct NetPacketHeader){PacketProperty_Ack, 0, 0});
+			pkt_writeAck(PV_LEGACY_DEFAULT, &resp_end, channels->rs.ack);
 			net_queue_merged(net, session, resp, resp_end - resp);
 			return;
 		}
@@ -287,14 +287,14 @@ uint64_t get_time() {
 }
 
 void handle_Ping(struct NetContext *net, struct NetSession *session, struct PingPong *pingpong, const uint8_t **data) {
-	struct Ping ping = pkt_readPing(data);
+	struct Ping ping = pkt_readPing(PV_LEGACY_DEFAULT, data);
 	uint64_t time = get_time();
 	if(RelativeSequenceNumber(ping.sequence, pingpong->pong.sequence) > 0) {
 		pingpong->pong.sequence = ping.sequence;
 		pingpong->pong.time = time;
 		uint8_t resp[65536], *resp_end = resp;
-		pkt_writeNetPacketHeader(&resp_end, (struct NetPacketHeader){PacketProperty_Pong, 0, 0});
-		pkt_writePong(&resp_end, pingpong->pong);
+		pkt_writeNetPacketHeader(PV_LEGACY_DEFAULT, &resp_end, (struct NetPacketHeader){PacketProperty_Pong, 0, 0});
+		pkt_writePong(PV_LEGACY_DEFAULT, &resp_end, pingpong->pong);
 		net_send_internal(net, session, resp, resp_end - resp, 1);
 	}
 	if((time - pingpong->lastPing > 5000000LLU && !pingpong->waiting) || time - pingpong->lastPing > 30000000LLU) {
@@ -302,14 +302,14 @@ void handle_Ping(struct NetContext *net, struct NetSession *session, struct Ping
 		pingpong->waiting = 1;
 		++pingpong->ping.sequence;
 		uint8_t resp[65536], *resp_end = resp;
-		pkt_writeNetPacketHeader(&resp_end, (struct NetPacketHeader){PacketProperty_Ping, 0, 0});
-		pkt_writePing(&resp_end, pingpong->ping);
+		pkt_writeNetPacketHeader(PV_LEGACY_DEFAULT, &resp_end, (struct NetPacketHeader){PacketProperty_Ping, 0, 0});
+		pkt_writePing(PV_LEGACY_DEFAULT, &resp_end, pingpong->ping);
 		net_send_internal(net, session, resp, resp_end - resp, 1);
 	}
 }
 
 float handle_Pong(struct NetContext *net, struct NetSession *session, struct PingPong *pingpong, const uint8_t **data) {
-	struct Pong pong = pkt_readPong(data);
+	struct Pong pong = pkt_readPong(PV_LEGACY_DEFAULT, data);
 	if(pong.sequence != pingpong->ping.sequence)
 		return 0;
 	pingpong->waiting = 0;
@@ -317,10 +317,10 @@ float handle_Pong(struct NetContext *net, struct NetSession *session, struct Pin
 }
 
 void handle_MtuCheck(struct NetContext *net, struct NetSession *session, const uint8_t **data) {
-	struct MtuCheck req = pkt_readMtuCheck(data);
+	struct MtuCheck req = pkt_readMtuCheck(PV_LEGACY_DEFAULT, data);
 	uint8_t resp[65536], *resp_end = resp;
-	pkt_writeNetPacketHeader(&resp_end, (struct NetPacketHeader){PacketProperty_MtuOk, 0, 0});
-	pkt_writeMtuOk(&resp_end, (struct MtuOk){
+	pkt_writeNetPacketHeader(PV_LEGACY_DEFAULT, &resp_end, (struct NetPacketHeader){PacketProperty_MtuOk, 0, 0});
+	pkt_writeMtuOk(PV_LEGACY_DEFAULT, &resp_end, (struct MtuOk){
 		.newMtu0 = req.newMtu0,
 		.newMtu1 = req.newMtu1,
 	});
@@ -339,8 +339,8 @@ void flush_ack(struct NetContext *net, struct NetSession *session, struct Ack *a
 	for(uint_fast8_t i = 0; i < lengthof(ack->data); ++i) {
 		if(ack->data[i]) {
 			uint8_t resp[65536], *resp_end = resp;
-			pkt_writeNetPacketHeader(&resp_end, (struct NetPacketHeader){PacketProperty_Ack, 0, 0});
-			pkt_writeAck(&resp_end, *ack);
+			pkt_writeNetPacketHeader(PV_LEGACY_DEFAULT, &resp_end, (struct NetPacketHeader){PacketProperty_Ack, 0, 0});
+			pkt_writeAck(PV_LEGACY_DEFAULT, &resp_end, *ack);
 			net_queue_merged(net, session, resp, resp_end - resp);
 			// memset(ack->data, 0, sizeof(ack->data));
 			return;

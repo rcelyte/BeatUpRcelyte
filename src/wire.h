@@ -17,8 +17,8 @@ _Bool wire_room_open(struct WireRoomHandle handle, struct String managerId, stru
 void wire_room_close(struct WireRoomHandle handle);
 struct String wire_room_get_managerId(struct WireRoomHandle handle);
 struct GameplayServerConfiguration wire_room_get_configuration(struct WireRoomHandle handle);
-uint32_t wire_room_get_protocolVersion(struct WireRoomHandle handle);
+struct PacketContext wire_room_get_protocol(struct WireRoomHandle handle);
 struct IPEndPoint wire_block_get_endpoint(struct WireBlockHandle block, _Bool ipv4);
 
-struct NetSession *TEMPwire_room_resolve_session(struct WireRoomHandle handle, struct SS addr, struct String secret, struct String userId, struct String userName, uint32_t protocolVersion);
+struct NetSession *TEMPwire_room_resolve_session(struct WireRoomHandle handle, struct SS addr, struct String secret, struct String userId, struct String userName, struct PacketContext version);
 struct NetContext *TEMPwire_block_get_net(struct WireBlockHandle block);

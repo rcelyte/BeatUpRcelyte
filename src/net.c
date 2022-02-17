@@ -158,7 +158,7 @@ void net_send_internal(struct NetContext *ctx, struct NetSession *session, const
 		EncryptionState_encrypt(&session->encryptionState, &layer, &ctx->ctr_drbg, buf, len, body, &len);
 	else
 		memcpy(body, buf, len); // const correctness ._.
-	pkt_writePacketEncryptionLayer(&head_end, layer);
+	pkt_writePacketEncryptionLayer(session->version, &head_end, layer);
 	#ifdef WINSOCK_VERSION
 	WSABUF iov[] = {
 		{.len = head_end - head, .buf = (char*)head},
@@ -257,6 +257,7 @@ _Bool net_init(struct NetContext *ctx, uint16_t port) {
 }
 
 void net_session_init(struct NetContext *ctx, struct NetSession *session, struct SS addr) {
+	session->version = PV_LEGACY_DEFAULT;
 	session->addr = addr;
 	session->encryptionState.initialized = 0;
 	net_keypair_init(&session->keys);
@@ -383,7 +384,7 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct
 		goto retry;
 	// fprintf(stderr, "[NET] recvfrom[%zi]\n", size);
 	uint8_t *head = buf;
-	struct PacketEncryptionLayer layer = pkt_readPacketEncryptionLayer((const uint8_t**)&head);
+	struct PacketEncryptionLayer layer = pkt_readPacketEncryptionLayer((*session)->version, (const uint8_t**)&head);
 	if(layer.encrypted == 1) { // TODO: filter unencrypted?
 		uint32_t length = &buf[size] - head;
 		if(EncryptionState_decrypt(&(*session)->encryptionState, layer, head, &length)) {
@@ -403,7 +404,7 @@ void net_flush_merged(struct NetContext *ctx, struct NetSession *session) {
 	if(session->mergeData_end - session->mergeData > 3)
 		net_send_internal(ctx, session, session->mergeData, session->mergeData_end - session->mergeData, 1);
 	session->mergeData_end = session->mergeData;
-	pkt_writeNetPacketHeader(&session->mergeData_end, (struct NetPacketHeader){
+	pkt_writeNetPacketHeader(session->version, &session->mergeData_end, (struct NetPacketHeader){
 		.property = PacketProperty_Merged,
 		.connectionNumber = 0,
 		.isFragmented = 0,
@@ -412,6 +413,6 @@ void net_flush_merged(struct NetContext *ctx, struct NetSession *session) {
 void net_queue_merged(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint16_t len) {
 	if((session->mergeData_end - session->mergeData) + len + 2 > session->mtu)
 		net_flush_merged(ctx, session);
-	pkt_writeUint16(&session->mergeData_end, len);
-	pkt_writeUint8Array(&session->mergeData_end, buf, len);
+	pkt_writeUint16(session->version, &session->mergeData_end, len);
+	pkt_writeUint8Array(session->version, &session->mergeData_end, buf, len);
 }

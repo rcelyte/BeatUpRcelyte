@@ -184,37 +184,50 @@ void write_warning(char **out) {
 		" */\n\n");
 }
 
-char *tabs(char **s, uint32_t count) {
+char **tabs(char **s, uint32_t count) {
 	for(uint32_t i = 0; i < count; ++i)
 		*(*s)++ = '\t';
-	return *s;
+	return s;
 }
 
-static uint8_t pvBuf[131072] = {0}, *pvBuf_end = pvBuf;
-void pvBuf_add(const char *name) {
-	*pvBuf_end = sprintf((char*)&pvBuf_end[1], "%s", name);
-	pvBuf_end += *pvBuf_end + 1;
-}
-_Bool pvBuf_has(const char *name) {
-	uint8_t len = strlen(name);
-	for(const uint8_t *it = pvBuf; it < pvBuf_end; it += *it + 1)
-		if(*it == len && memcmp(&it[1], name, len) == 0)
-			return 1;
-	return 0;
-}
+struct HeaderData {
+	char *enums;
+	char *structs;
+	char *funcs;
+};
 
 struct EnumEntry {
 	char name[128];
 	const char *value;
-} parse_value(char **header, char **source, const char **in, uint32_t indent);
+} parse_value(struct HeaderData *header, char **source, const char **in, uint32_t indent);
 
-void parse_struct_entries(const char **in, const char *structName, uint32_t indent, uint32_t outdent, const char *parent, char **def, char **des, char **ser, char **log) {
+const void *memmem(const uint8_t *ptr, const uint8_t *sub, size_t count, size_t subcount) {
+	for(; count >= subcount; ++ptr, --count) {
+		for(const uint8_t *a = ptr, *b = sub; b < &sub[subcount]; ++a, ++b)
+			if(*a != *b)
+				goto next;
+		return ptr;
+		next:
+	}
+	return NULL;
+}
+
+void write_ifsub(char **out, const char *str, uint32_t len, const char *sub) {
+	write_fmt(out, "if(");
+	for(--str; len; --len) {
+		if(str[1] == '.' && (str[0] == '(' || str[0] == ' '))
+			write_fmt(out, "%s", sub);
+		*(*out)++ = *++str;
+	}
+	write_fmt(out, ") {\n");
+}
+
+void parse_struct_entries(const char **in, const char *structName, uint32_t indent, uint32_t outdent, const char *parent, char *def_start, char **def, char **des, char **ser, char **log) {
 	uint32_t offset = 0;
 	while(skip_tabs_maybe(in, indent)) {
 		if(skip_string_maybe(in, "if(")) {
 			if(parent)
 				fail(*in, "bitfields cannot contain conditionals");
-			_Bool member = skip_char_maybe(in, '.');
 			const char *start = *in;
 			for(uint32_t pc = 1; **in && pc && **in != '\n'; ++(*in)) {
 				pc += (**in == '(');
@@ -224,18 +237,18 @@ void parse_struct_entries(const char **in, const char *structName, uint32_t inde
 			skip_char(in, '\n');
 
 			if(*des)
-				*des += sprintf(tabs(des, outdent), "if(%s%.*s) {\n", member ? "out." : "", len, start);
+				write_ifsub(tabs(des, outdent), start, len, "out");
 			if(*ser)
-				*ser += sprintf(tabs(ser, outdent), "if(%s%.*s) {\n", member ? "in." : "", len, start);
+				write_ifsub(tabs(ser, outdent), start, len, "in");
 			if(*log)
-				*log += sprintf(tabs(log, outdent), "if(%s%.*s) {\n", member ? "in." : "", len, start);
-			parse_struct_entries(in, structName, indent + 1, outdent + 1, parent, def, des, ser, log);
+				write_ifsub(tabs(log, outdent), start, len, "in");
+			parse_struct_entries(in, structName, indent + 1, outdent + 1, parent, def_start, def, des, ser, log);
 			if(*des)
-				*des += sprintf(tabs(des, outdent), "}\n");
+				*des += sprintf(*tabs(des, outdent), "}\n");
 			if(*ser)
-				*ser += sprintf(tabs(ser, outdent), "}\n");
+				*ser += sprintf(*tabs(ser, outdent), "}\n");
 			if(*log)
-				*log += sprintf(tabs(log, outdent), "}\n");
+				*log += sprintf(*tabs(log, outdent), "}\n");
 		} else {
 			char serialType[128], dataType[128], logType[128], name[128], length[128] = "out.";
 			uint32_t count = 0;
@@ -256,40 +269,43 @@ void parse_struct_entries(const char **in, const char *structName, uint32_t inde
 				skip_char(in, '\n');
 
 				if((width & EPHEMERAL_BIT) == 0) {
+					char *tempDef = *def, *cmp = &(*def)[strlen(dataType)+1];
 					if(count)
-						*def += sprintf(*def, "\t%s %s[%u];\n", dataType, name, count);
+						tempDef += sprintf(tempDef, "\t%s %s[%u];\n", dataType, name, count);
 					else
-						*def += sprintf(*def, "\t%s %s;\n", dataType, name);
+						tempDef += sprintf(tempDef, "\t%s %s;\n", dataType, name);
+					if(memmem(def_start, cmp, *def - def_start, tempDef - cmp) == NULL)
+						*def = tempDef;
 				}
 
 				if(*des) {
 					if(rangecheck) {
 						char length_name[1024];
 						read_word((const char*[]){length}, length_name);
-						*des += sprintf(tabs(des, outdent), "if(%s > %u) {\n", length, count);
-						*des += sprintf(tabs(des, outdent + 1), "fprintf(stderr, \"Buffer overflow in read of %s.%s: %%u > %u\\n\", (uint32_t)%s), %s = 0, *pkt = _trap;\n", structName, name, count, length, length_name);
-						*des += sprintf(tabs(des, outdent++), "} else {\n");
+						*des += sprintf(*tabs(des, outdent), "if(%s > %u) {\n", length, count);
+						*des += sprintf(*tabs(des, outdent + 1), "fprintf(stderr, \"Buffer overflow in read of %s.%s: %%u > %u\\n\", (uint32_t)%s), %s = 0, *pkt = _trap;\n", structName, name, count, length, length_name);
+						*des += sprintf(*tabs(des, outdent++), "} else {\n");
 					}
 					if(count && width == 8) {
-						*des += sprintf(tabs(des, outdent), "pkt_read%sArray(pkt, out.%s, %s);\n", serialType, name, length);
+						*des += sprintf(*tabs(des, outdent), "pkt_read%sArray(pkt, out.%s, %s);\n", serialType, name, length);
 					} else {
 						if(width & EPHEMERAL_BIT) {
-							*des += sprintf(tabs(des, outdent), "%s %s", dataType, name);
+							*des += sprintf(*tabs(des, outdent), "%s %s", dataType, name);
 						} else {
 							if(count) {
-								*des += sprintf(tabs(des, outdent), "for(uint32_t i = 0; i < %s; ++i)\n", length);
-								*des += sprintf(tabs(des, outdent + 1), "out.%s[i]", name);
+								*des += sprintf(*tabs(des, outdent), "for(uint32_t i = 0; i < %s; ++i)\n", length);
+								*des += sprintf(*tabs(des, outdent + 1), "out.%s[i]", name);
 							} else {
-								*des += sprintf(tabs(des, outdent), "out.%s", name);
+								*des += sprintf(*tabs(des, outdent), "out.%s", name);
 							}
 						}
 						if(parent)
 							*des += sprintf(*des, " = (%s >> %u) & %u;\n", parent, offset, (1 << width) - 1);
 						else
-							*des += sprintf(*des, " = pkt_read%s(pkt%s);\n", serialType, pvBuf_has(serialType) ? ", protocolVersion" : "");
+							*des += sprintf(*des, " = pkt_read%s(ctx, pkt);\n", serialType);
 					}
 					if(rangecheck)
-						*des += sprintf(tabs(des, --outdent), "}\n");
+						*des += sprintf(*tabs(des, --outdent), "}\n");
 				}
 
 				char *length_in = length;
@@ -299,29 +315,29 @@ void parse_struct_entries(const char **in, const char *structName, uint32_t inde
 				}
 				if(*log && (width & EPHEMERAL_BIT) == 0) {
 					if(count && width == 8) {
-						*log += sprintf(tabs(log, outdent), "pkt_log%sArray(\"%s\", buf, it, in.%s, %s);\n", logType, name, name, length_in);
+						*log += sprintf(*tabs(log, outdent), "pkt_log%sArray(ctx, \"%s\", buf, it, in.%s, %s);\n", logType, name, name, length_in);
 					} else {
 						if(count)
-							*log += sprintf(tabs(log, outdent), "for(uint32_t i = 0; i < %s; ++i)\n\t", length_in);
-						*log += sprintf(tabs(log, outdent), "pkt_log%s(\"%s%s\", buf, it, in.%s%s%s);\n", logType, name, count ? "[]" : "", name, count ? "[i]" : "", pvBuf_has(logType) ? ", protocolVersion" : "");
+							*log += sprintf(*tabs(log, outdent), "for(uint32_t i = 0; i < %s; ++i)\n\t", length_in);
+						*log += sprintf(*tabs(log, outdent), "pkt_log%s(ctx, \"%s%s\", buf, it, in.%s%s);\n", logType, name, count ? "[]" : "", name, count ? "[i]" : "");
 					}
 				}
 
 				if(*ser && (width & EPHEMERAL_BIT))
-					*ser += sprintf(tabs(ser, outdent), "%s %s = 0;\n", dataType, name);
+					*ser += sprintf(*tabs(ser, outdent), "%s %s = 0;\n", dataType, name);
 
-				parse_struct_entries(in, structName, indent + 1, outdent, name, def, des, ser, log);
+				parse_struct_entries(in, structName, indent + 1, outdent, name, def_start, def, des, ser, log);
 
 				if(*ser) {
 					if(parent) {
-						*ser += sprintf(tabs(ser, outdent), "%s |= (in.%s << %u);\n", parent, name, offset);
+						*ser += sprintf(*tabs(ser, outdent), "%s |= (in.%s << %u);\n", parent, name, offset);
 					} else {
 						if(count && width == 8) {
-							*ser += sprintf(tabs(ser, outdent), "pkt_write%sArray(pkt, %s%s, %s);\n", serialType, (width & EPHEMERAL_BIT) ? "" : "in.", name, length_in);
+							*ser += sprintf(*tabs(ser, outdent), "pkt_write%sArray(ctx, pkt, %s%s, %s);\n", serialType, (width & EPHEMERAL_BIT) ? "" : "in.", name, length_in);
 						} else {
 							if(count)
-								*ser += sprintf(tabs(ser, outdent), "for(uint32_t i = 0; i < %s; ++i)\n\t", length_in);
-							*ser += sprintf(tabs(ser, outdent), "pkt_write%s(pkt, %s%s%s%s);\n", serialType, (width & EPHEMERAL_BIT) ? "" : "in.", name, count ? "[i]" : "", pvBuf_has(serialType) ? ", protocolVersion" : "");
+								*ser += sprintf(*tabs(ser, outdent), "for(uint32_t i = 0; i < %s; ++i)\n\t", length_in);
+							*ser += sprintf(*tabs(ser, outdent), "pkt_write%s(ctx, pkt, %s%s%s);\n", serialType, (width & EPHEMERAL_BIT) ? "" : "in.", name, count ? "[i]" : "");
 						}
 					}
 				}
@@ -332,7 +348,7 @@ void parse_struct_entries(const char **in, const char *structName, uint32_t inde
 	(void)offset;
 }
 
-struct EnumEntry parse_struct(char **header, char **source, const char **in, uint32_t indent, _Bool versioned) {
+struct EnumEntry parse_struct(struct HeaderData *header, char **source, const char **in, uint32_t indent) {
 	struct EnumEntry self = {"", NULL};
 	char des[131072] = {0}, *des_end = (**in == 'r' || **in == 'd' || enableLog) ? des : NULL;
 	char ser[131072] = {0}, *ser_end = (**in == 's' || **in == 'd') ? ser : NULL;
@@ -340,8 +356,6 @@ struct EnumEntry parse_struct(char **header, char **source, const char **in, uin
 	*in += 2;
 	if(read_word(in, self.name))
 		fail(*in, "expected struct name");
-	if(versioned)
-		pvBuf_add(self.name);
 	if(skip_char_maybe(in, ' '))
 		self.value = skip_number(in);
 	skip_char(in, '\n');
@@ -364,28 +378,28 @@ struct EnumEntry parse_struct(char **header, char **source, const char **in, uin
 
 	char def[131072], *def_end = def;
 	def_end += sprintf(def_end, "struct %s {\n", self.name);
-	parse_struct_entries(in, self.name, indent + 1, 1, NULL, &def_end, &des_end, &ser_end, &log_end);
-	*header += sprintf(*header, "%s};\n", def);
+	parse_struct_entries(in, self.name, indent + 1, 1, NULL, def, &def_end, &des_end, &ser_end, &log_end);
+	header->structs += sprintf(header->structs, "%s};\n", def);
 
 	if(des_end) {
-		*header += sprintf(*header, "struct %s pkt_read%s(const uint8_t **pkt%s);\n", self.name, self.name, versioned ? ", uint32_t protocolVersion" : "");
+		header->funcs += sprintf(header->funcs, "struct %s pkt_read%s(struct PacketContext ctx, const uint8_t **pkt);\n", self.name, self.name);
 		if(des_end == des)
-			*source += sprintf(*source, "struct %s pkt_read%s(const uint8_t **pkt%s) {\n\treturn (struct %s){};\n}\n", self.name, self.name, versioned ? ", uint32_t protocolVersion" : "", self.name);
+			*source += sprintf(*source, "struct %s pkt_read%s(struct PacketContext ctx, const uint8_t **pkt) {\n\treturn (struct %s){};\n}\n", self.name, self.name, self.name);
 		else
-			*source += sprintf(*source, "struct %s pkt_read%s(const uint8_t **pkt%s) {\n\tstruct %s out;\n%s\treturn out;\n}\n", self.name, self.name, versioned ? ", uint32_t protocolVersion" : "", self.name, des);
+			*source += sprintf(*source, "struct %s pkt_read%s(struct PacketContext ctx, const uint8_t **pkt) {\n\tstruct %s out;\n%s\treturn out;\n}\n", self.name, self.name, self.name, des);
 	}
 	if(ser_end) {
-		*header += sprintf(*header, "void pkt_write%s(uint8_t **pkt, struct %s in%s);\n", self.name, self.name, versioned ? ", uint32_t protocolVersion" : "");
-		*source += sprintf(*source, "void pkt_write%s(uint8_t **pkt, struct %s in%s) {\n%s}\n", self.name, self.name, versioned ? ", uint32_t protocolVersion" : "", ser);
+		header->funcs += sprintf(header->funcs, "void pkt_write%s(struct PacketContext ctx, uint8_t **pkt, struct %s in);\n", self.name, self.name);
+		*source += sprintf(*source, "void pkt_write%s(struct PacketContext ctx, uint8_t **pkt, struct %s in) {\n%s}\n", self.name, self.name, ser);
 	}
 	if(log_end) {
-		*header += sprintf(*header, "void pkt_log%s(const char *name, char *buf, char *it, struct %s in%s);\n", self.name, self.name, versioned ? ", uint32_t protocolVersion" : "");
-		*source += sprintf(*source, "void pkt_log%s(const char *name, char *buf, char *it, struct %s in%s) {\n\tit += sprintf(it, \"%%s.\", name);\n%s}\n", self.name, self.name, versioned ? ", uint32_t protocolVersion" : "", log);
+		header->funcs += sprintf(header->funcs, "void pkt_log%s(struct PacketContext ctx, const char *name, char *buf, char *it, struct %s in);\n", self.name, self.name);
+		*source += sprintf(*source, "void pkt_log%s(struct PacketContext ctx, const char *name, char *buf, char *it, struct %s in) {\n\tit += sprintf(it, \"%%s.\", name);\n%s}\n", self.name, self.name, log);
 	}
 	return self;
 }
 
-struct EnumEntry parse_enum(char **header, char **source, const char **in, uint32_t indent) {
+struct EnumEntry parse_enum(struct HeaderData *header, char **source, const char **in, uint32_t indent) {
 	struct EnumEntry self = {"", NULL};
 	char type[128], suffix[128] = {0};
 	read_type(in, type, TYPE_DATA_ENUM);
@@ -413,14 +427,14 @@ struct EnumEntry parse_enum(char **header, char **source, const char **in, uint3
 		}
 	}
 	if(start == buf_end)
-		*header += sprintf(*header, "typedef %s %s%s;\n", type, self.name, suffix);
+		header->enums += sprintf(header->enums, "typedef %s %s%s;\n", type, self.name, suffix);
 	else
-		*header += sprintf(*header, "%s})\n", buf);
+		header->enums += sprintf(header->enums, "%s})\n", buf);
 	if(enableLog) {
 		char fn[1024];
 		sprintf(fn, "void pkt_log%s%s(", self.name, suffix);
 		if(strstr(source_buf, fn) == 0) {
-			*source += sprintf(*source, "void pkt_log%s%s(const char *name, char *buf, char *it, %s%s in) {", self.name, suffix, self.name, suffix);
+			*source += sprintf(*source, "void pkt_log%s%s(struct PacketContext ctx, const char *name, char *buf, char *it, %s%s in) {", self.name, suffix, self.name, suffix);
 			if(start != buf_end)
 				*source += sprintf(*source, "\n\tfprintf(stderr, \"%%.*s%%s=%%u (%%s)\\n\", (uint32_t)(it - buf), buf, name, in, reflect(%s%s, in));\n", self.name, suffix);
 			*source += sprintf(*source, "}\n");
@@ -438,11 +452,10 @@ void parse_extra(char **out, const char **in, uint32_t indent) {
 }
 void parse_source_extra(char **source, const char **in, uint32_t indent) {}
 
-struct EnumEntry parse_value(char **header, char **source, const char **in, uint32_t indent) {
+struct EnumEntry parse_value(struct HeaderData *header, char **source, const char **in, uint32_t indent) {
 	struct EnumEntry e = {"", NULL};
-	_Bool versioned = skip_char_maybe(in, 'p');
 	if((**in == 'r' || **in == 's' || **in == 'd' || **in == 'n') && (*in)[1] == ' ') {
-		return parse_struct(header, source, in, indent, versioned);
+		return parse_struct(header, source, in, indent);
 	} else if(strncmp(*in, "u8 ", 3) == 0 || strncmp(*in, "u16 ", 4) == 0 || strncmp(*in, "u32 ", 4) == 0 || strncmp(*in, "i32 ", 4) == 0) {
 		return parse_enum(header, source, in, indent);
 	} else if(skip_string_maybe(in, "z ")) {
@@ -451,8 +464,11 @@ struct EnumEntry parse_value(char **header, char **source, const char **in, uint
 		if(skip_char_maybe(in, ' '))
 			e.value = skip_number(in);
 		skip_char(in, '\n');
+	} else if(skip_string_maybe(in, "enum\n")) {
+		parse_extra(&header->enums, in, indent + 1);
+		return parse_value(header, source, in, indent);
 	} else if(skip_string_maybe(in, "head\n")) {
-		parse_extra(header, in, indent + 1);
+		parse_extra(&header->funcs, in, indent + 1);
 		return parse_value(header, source, in, indent);
 	} else if(skip_string_maybe(in, "code\n")) {
 		parse_extra(source, in, indent + 1);
@@ -485,13 +501,26 @@ int main(int argc, char const *argv[]) {
 	desc = in, descName = argv[1];
 	in[infile_len] = 0;
 
-	char header[524288], *header_end = header;
-	write_fmt(&header_end, "#ifndef PACKETS_H\n#define PACKETS_H\n\n");
-	write_warning(&header_end);
-	write_fmt(&header_end, "#include \"enum.h\"\n");
-	write_fmt(&header_end, "#include <stdint.h>\n\n");
+	char header_enums[524288];
+	char header_structs[524288];
+	char header_funcs[196608];
+	struct HeaderData header_end = {
+		.enums = header_enums,
+		.structs = header_structs,
+		.funcs = header_funcs,
+	};
+	write_fmt(&header_end.enums, "#ifndef PACKETS_H\n#define PACKETS_H\n\n");
+	write_warning(&header_end.enums);
+	write_fmt(&header_end.enums, "#include \"enum.h\"\n");
+	write_fmt(&header_end.enums, "#include <stdint.h>\n\n");
 	if(enableLog)
-		write_fmt(&header_end, "#define PACKET_LOGGING_FUNCS\n\n");
+		write_fmt(&header_end.enums, "#define PACKET_LOGGING_FUNCS\n\n");
+	write_fmt(&header_end.enums,
+		"struct PacketContext {\n"
+		"\tuint32_t netVersion;\n"
+		"\tuint32_t protocolVersion;\n"
+		"};\n"
+		"#define PV_LEGACY_DEFAULT (struct PacketContext){11, 6}\n\n");
 
 	char source[524288], *source_end = source;
 	source_buf = source;
@@ -503,10 +532,12 @@ int main(int argc, char const *argv[]) {
 	while(*in_end)
 		parse_value(&header_end, &source_end, &in_end, 0);
 
-	write_fmt(&header_end, "#endif // PACKETS_H\n");
+	write_fmt(&header_end.funcs, "#endif // PACKETS_H\n");
 
 	FILE *outfile = fopen(argv[2], "wb");
-	if(fwrite(header, 1, header_end - header, outfile) != header_end - header) {
+	if(fwrite(header_enums, 1, header_end.enums - header_enums, outfile) != header_end.enums - header_enums ||
+	   fwrite(header_structs, 1, header_end.structs - header_structs, outfile) != header_end.structs - header_structs ||
+	   fwrite(header_funcs, 1, header_end.funcs - header_funcs, outfile) != header_end.funcs - header_funcs) {
 		fclose(outfile);
 		fprintf(stderr, "Failed to write to %s\n", argv[2]);
 		return -1;

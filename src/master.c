@@ -15,17 +15,17 @@
 #define lengthof(x) (sizeof(x)/sizeof(*x))
 
 #define MASTER_SERIALIZE(pkt, session, mtype, stype, dtype, data) { \
-	pkt_writeNetPacketHeader(&resp_end, (struct NetPacketHeader){ \
+	pkt_writeNetPacketHeader(PV_LEGACY_DEFAULT, &resp_end, (struct NetPacketHeader){ \
 		.property = PacketProperty_UnconnectedMessage, \
 		.connectionNumber = 0, \
 		.isFragmented = 0, \
 	}); \
-	pkt_writeMessageHeader(pkt, (struct MessageHeader){ \
+	pkt_writeMessageHeader(PV_LEGACY_DEFAULT, pkt, (struct MessageHeader){ \
 		.type = MessageType_##mtype, \
-		.protocolVersion = session->net.protocolVersion, \
+		.protocolVersion = session->net.version.protocolVersion, \
 	}); \
-	SERIALIZE_CUSTOM(pkt, mtype##Type_##stype) \
-		pkt_write##dtype(pkt, data); \
+	SERIALIZE_CUSTOM(PV_LEGACY_DEFAULT, pkt, mtype##Type_##stype) \
+		pkt_write##dtype(PV_LEGACY_DEFAULT, pkt, data); \
 }
 
 struct MasterPacket {
@@ -145,8 +145,8 @@ static _Bool master_handle_ack(struct MasterSession *session, struct MessageHead
 			session->resend.index[i] = session->resend.index[session->resend.count];
 			session->resend.index[session->resend.count].data = data;
 			const uint8_t *msg = session->resend.data[data].data;
-			*message_out = pkt_readMessageHeader(&msg);
-			*serial_out = pkt_readSerializeHeader(&msg);
+			*message_out = pkt_readMessageHeader(PV_LEGACY_DEFAULT, &msg);
+			*serial_out = pkt_readSerializeHeader(PV_LEGACY_DEFAULT, &msg);
 			return 1;
 		}
 	}
@@ -171,12 +171,12 @@ static void master_net_send_reliable(struct NetContext *ctx, struct MasterSessio
 
 static void master_send(struct NetContext *ctx, struct MasterSession *session, const uint8_t *buf, uint32_t len, _Bool reliable) {
 	const uint8_t *data = buf, *end = &buf[len];
-	pkt_readNetPacketHeader(&data);
-	struct MessageHeader message = pkt_readMessageHeader(&data);
-	struct SerializeHeader serial = pkt_readSerializeHeader(&data);
+	pkt_readNetPacketHeader(PV_LEGACY_DEFAULT, &data);
+	struct MessageHeader message = pkt_readMessageHeader(PV_LEGACY_DEFAULT, &data);
+	struct SerializeHeader serial = pkt_readSerializeHeader(PV_LEGACY_DEFAULT, &data);
 	if(len <= 414) {
 		if(reliable)
-			master_net_send_reliable(ctx, session, buf, len, pkt_readBaseMasterServerReliableRequest(&data).requestId, 1, message.type != MessageType_HandshakeMessage);
+			master_net_send_reliable(ctx, session, buf, len, pkt_readBaseMasterServerReliableRequest(PV_LEGACY_DEFAULT, &data).requestId, 1, message.type != MessageType_HandshakeMessage);
 		else
 			net_send_internal(ctx, &session->net, buf, len, message.type != MessageType_HandshakeMessage);
 		return;
@@ -187,11 +187,11 @@ static void master_send(struct NetContext *ctx, struct MasterSession *session, c
 		serial.type = HandshakeMessageType_HandshakeMultipartMessage;
 	else
 		return;
-	pkt_readNetPacketHeader(&buf);
+	pkt_readNetPacketHeader(PV_LEGACY_DEFAULT, &buf);
 	len = end - buf;
 
 	struct BaseMasterServerMultipartMessage mp;
-	mp.multipartMessageId = pkt_readBaseMasterServerReliableRequest((const uint8_t*[]){data}).requestId;
+	mp.multipartMessageId = pkt_readBaseMasterServerReliableRequest(PV_LEGACY_DEFAULT, (const uint8_t*[]){data}).requestId;
 	mp.offset = 0;
 	mp.length = 384;
 	mp.totalLength = len;
@@ -201,17 +201,17 @@ static void master_send(struct NetContext *ctx, struct MasterSession *session, c
 			mp.length = len - mp.offset;
 		uint8_t mpbuf[512], *mpbuf_end = mpbuf;
 		memcpy(mp.data, &buf[mp.offset], mp.length);
-		pkt_writeNetPacketHeader(&mpbuf_end, (struct NetPacketHeader){
+		pkt_writeNetPacketHeader(PV_LEGACY_DEFAULT, &mpbuf_end, (struct NetPacketHeader){
 			.property = PacketProperty_UnconnectedMessage,
 			.connectionNumber = 0,
 			.isFragmented = 0,
 		});
-		pkt_writeMessageHeader(&mpbuf_end, message);
+		pkt_writeMessageHeader(PV_LEGACY_DEFAULT, &mpbuf_end, message);
 		uint8_t *msg_end = mpbuf_end;
-		pkt_writeBaseMasterServerMultipartMessage(&msg_end, mp);
+		pkt_writeBaseMasterServerMultipartMessage(PV_LEGACY_DEFAULT, &msg_end, mp);
 		serial.length = msg_end + 1 - mpbuf_end;
-		pkt_writeSerializeHeader(&mpbuf_end, serial);
-		pkt_writeBaseMasterServerMultipartMessage(&mpbuf_end, mp);
+		pkt_writeSerializeHeader(PV_LEGACY_DEFAULT, &mpbuf_end, serial);
+		pkt_writeBaseMasterServerMultipartMessage(PV_LEGACY_DEFAULT, &mpbuf_end, mp);
 		master_net_send_reliable(ctx, session, mpbuf, mpbuf_end - mpbuf, mp.base.requestId, 1, message.type != MessageType_HandshakeMessage);
 		mp.offset += 384;
 	} while(mp.offset < len);
@@ -233,9 +233,9 @@ static void master_send_ack(struct Context *ctx, struct MasterSession *session, 
 }
 
 static void handle_ClientHelloRequest(struct Context *ctx, struct MasterSession *session, const uint8_t **data, uint32_t protocolVersion) {
-	struct ClientHelloRequest req = pkt_readClientHelloRequest(data);
+	struct ClientHelloRequest req = pkt_readClientHelloRequest(PV_LEGACY_DEFAULT, data);
 	if(session->handshakeStep == 255) {
-		session->net.protocolVersion = protocolVersion;
+		session->net.version.protocolVersion = protocolVersion;
 	} else {
 		if(net_time() - NetSession_get_lastKeepAlive(&session->net) < 5000) // 5 second timeout to prevent clients from getting "locked out" if their previous session hasn't closed or timed out yet
 			return;
@@ -255,7 +255,7 @@ static void handle_ClientHelloRequest(struct Context *ctx, struct MasterSession 
 }
 
 static void handle_ClientHelloWithCookieRequest(struct Context *ctx, struct MasterSession *session, const uint8_t **data) {
-	struct ClientHelloWithCookieRequest req = pkt_readClientHelloWithCookieRequest(data);
+	struct ClientHelloWithCookieRequest req = pkt_readClientHelloWithCookieRequest(PV_LEGACY_DEFAULT, data);
 	master_send_ack(ctx, session, MessageType_HandshakeMessage, req.base.requestId);
 	if(session->handshakeStep != HandshakeMessageType_ClientHelloRequest)
 		return;
@@ -305,7 +305,7 @@ static void handle_ServerCertificateRequest_ack(struct Context *ctx, struct Mast
 }
 
 static void handle_ClientKeyExchangeRequest(struct Context *ctx, struct MasterSession *session, const uint8_t **data) {
-	struct ClientKeyExchangeRequest req = pkt_readClientKeyExchangeRequest(data);
+	struct ClientKeyExchangeRequest req = pkt_readClientKeyExchangeRequest(PV_LEGACY_DEFAULT, data);
 	master_send_ack(ctx, session, MessageType_HandshakeMessage, req.base.requestId);
 	if(session->handshakeStep != HandshakeMessageType_ServerCertificateRequest)
 		return;
@@ -321,7 +321,7 @@ static void handle_ClientKeyExchangeRequest(struct Context *ctx, struct MasterSe
 }
 
 static void handle_AuthenticateUserRequest(struct Context *ctx, struct MasterSession *session, const uint8_t **data) {
-	struct AuthenticateUserRequest req = pkt_readAuthenticateUserRequest(data);
+	struct AuthenticateUserRequest req = pkt_readAuthenticateUserRequest(PV_LEGACY_DEFAULT, data);
 	master_send_ack(ctx, session, MessageType_UserMessage, req.base.requestId);
 	struct AuthenticateUserResponse r_auth;
 	r_auth.base.requestId = master_getNextRequestId(session);
@@ -374,7 +374,7 @@ static void handle_AuthenticateUserRequest(struct Context *ctx, struct MasterSes
 }*/
 
 static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSession *session, const uint8_t **data) {
-	struct ConnectToServerRequest req = pkt_readConnectToServerRequest(data);
+	struct ConnectToServerRequest req = pkt_readConnectToServerRequest(PV_LEGACY_DEFAULT, data);
 	master_send_ack(ctx, session, MessageType_UserMessage, req.base.base.requestId);
 	// TODO: deduplicate this request
 	struct ConnectToServerResponse r_conn;
@@ -412,7 +412,8 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		}
 		managerId = wire_room_get_managerId(handle);
 		req.configuration = wire_room_get_configuration(handle);
-		/*if(wire_room_get_protocolVersion(handle) != session->net.protocolVersion) {
+
+		/*if(wire_room_get_protocol(handle).protocolVersion != session->net.version.protocolVersion) {
 			r_conn.result = ConnectToServerResponse_Result_VersionMismatch;
 			goto send;
 		}*/
@@ -421,7 +422,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 	req.selectionMask.songPacks.bloomFilter.d0 |= customs.d0;
 	req.selectionMask.songPacks.bloomFilter.d1 |= customs.d1;*/
 	{
-		isession = TEMPwire_room_resolve_session(handle, addr, req.secret, req.base.userId, req.base.userName, session->net.protocolVersion);
+		isession = TEMPwire_room_resolve_session(handle, addr, req.secret, req.base.userId, req.base.userName, session->net.version);
 		if(!isession) { // TODO: the room should close implicitly if the first user to connect fails
 			r_conn.result = ConnectToServerResponse_Result_UnknownError;
 			goto send;
@@ -463,7 +464,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 
 static void handle_packet(struct Context *ctx, struct MasterSession *session, const uint8_t *data, const uint8_t *end);
 static void handle_BaseMasterServerMultipartMessage(struct Context *ctx, struct MasterSession *session, const uint8_t **data) {
-	struct BaseMasterServerMultipartMessage msg = pkt_readBaseMasterServerMultipartMessage(data);
+	struct BaseMasterServerMultipartMessage msg = pkt_readBaseMasterServerMultipartMessage(PV_LEGACY_DEFAULT, data);
 	if(!msg.totalLength) {
 		fprintf(stderr, "[MASTER] INVALID MULTIPART LENGTH\n");
 		return;
@@ -505,8 +506,8 @@ static void handle_BaseMasterServerMultipartMessage(struct Context *ctx, struct 
 
 static void handle_packet(struct Context *ctx, struct MasterSession *session, const uint8_t *data, const uint8_t *end) {
 	size_t len = end - data;
-	struct MessageHeader message = pkt_readMessageHeader(&data);
-	struct SerializeHeader serial = pkt_readSerializeHeader(&data);
+	struct MessageHeader message = pkt_readMessageHeader(PV_LEGACY_DEFAULT, &data);
+	struct SerializeHeader serial = pkt_readSerializeHeader(PV_LEGACY_DEFAULT, &data);
 	if(message.type == MessageType_UserMessage) {
 		switch(serial.type) {
 			case UserMessageType_AuthenticateUserRequest: handle_AuthenticateUserRequest(ctx, session, &data); break;
@@ -514,7 +515,7 @@ static void handle_packet(struct Context *ctx, struct MasterSession *session, co
 			case UserMessageType_ConnectToServerResponse: fprintf(stderr, "[MASTER] BAD TYPE: UserMessageType_ConnectToServerResponse\n"); break;
 			case UserMessageType_ConnectToServerRequest: handle_ConnectToServerRequest(ctx, session, &data); break;
 			case UserMessageType_UserMessageReceivedAcknowledge: {
-				master_handle_ack(session, &message, &serial, pkt_readBaseMasterServerAcknowledgeMessage(&data).base.responseId);
+				master_handle_ack(session, &message, &serial, pkt_readBaseMasterServerAcknowledgeMessage(PV_LEGACY_DEFAULT, &data).base.responseId);
 				break;
 			}
 			case UserMessageType_UserMultipartMessage: handle_BaseMasterServerMultipartMessage(ctx, session, &data); break;
@@ -533,7 +534,7 @@ static void handle_packet(struct Context *ctx, struct MasterSession *session, co
 			case HandshakeMessageType_ClientKeyExchangeRequest: handle_ClientKeyExchangeRequest(ctx, session, &data); break;
 			case HandshakeMessageType_ChangeCipherSpecRequest: fprintf(stderr, "[MASTER] BAD TYPE: HandshakeMessageType_ChangeCipherSpecRequest\n"); break;
 			case HandshakeMessageType_HandshakeMessageReceivedAcknowledge: {
-				if(master_handle_ack(session, &message, &serial, pkt_readBaseMasterServerAcknowledgeMessage(&data).base.responseId)) {
+				if(master_handle_ack(session, &message, &serial, pkt_readBaseMasterServerAcknowledgeMessage(PV_LEGACY_DEFAULT, &data).base.responseId)) {
 					if(message.type == MessageType_HandshakeMessage && serial.type == HandshakeMessageType_ServerCertificateRequest)
 						handle_ServerCertificateRequest_ack(ctx, session);
 				}
@@ -568,7 +569,7 @@ master_handler(struct Context *ctx) {
 	const uint8_t *pkt;
 	while((len = net_recv(&ctx->net, buf, sizeof(buf), (struct NetSession**)&session, &pkt, NULL))) {
 		const uint8_t *data = pkt, *end = &pkt[len];
-		struct NetPacketHeader header = pkt_readNetPacketHeader(&data);
+		struct NetPacketHeader header = pkt_readNetPacketHeader(PV_LEGACY_DEFAULT, &data);
 		if(header.property != PacketProperty_UnconnectedMessage) {
 			fprintf(stderr, "[MASTER] Unsupported packet type: %s\n", reflect(PacketProperty, header.property));
 			continue;

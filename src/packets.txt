@@ -1,49 +1,49 @@
 head
 	#define CONCAT1(a, b) a##b
 	#define CONCAT0(a, b) CONCAT1(a, b)
-	#define SERIALIZE_CUSTOM(pkt, stype) \
+	#define SERIALIZE_CUSTOM(ctx, pkt, stype) \
 		for(uint8_t *start = *pkt; start;) \
 			if(*pkt != start) { \
 				struct SerializeHeader serial; \
 				serial.length = *pkt + 1 - start; \
 				serial.type = stype; \
 				*pkt = start, start = NULL; \
-				pkt_writeSerializeHeader(pkt, serial); \
+				pkt_writeSerializeHeader(ctx, pkt, serial); \
 				fprintf(stderr, "serialize " #stype "\n"); \
 				goto CONCAT0(_body_, __LINE__); \
 			} else CONCAT0(_body_, __LINE__):
-	uint8_t pkt_readUint8(const uint8_t **pkt);
-	uint16_t pkt_readUint16(const uint8_t **pkt);
-	uint32_t pkt_readUint32(const uint8_t **pkt);
-	uint64_t pkt_readUint64(const uint8_t **pkt);
-	#define pkt_readInt8(pkt) (int8_t)pkt_readUint8(pkt)
-	#define pkt_readInt16(pkt) (int16_t)pkt_readUint16(pkt)
-	#define pkt_readInt32(pkt) (int32_t)pkt_readUint32(pkt)
-	#define pkt_readInt64(pkt) (int64_t)pkt_readUint64(pkt)
-	uint64_t pkt_readVarUint64(const uint8_t **pkt);
-	uint64_t pkt_readVarUint64(const uint8_t **pkt);
-	int64_t pkt_readVarInt64(const uint8_t **pkt);
-	uint32_t pkt_readVarUint32(const uint8_t **pkt);
-	int32_t pkt_readVarInt32(const uint8_t **pkt);
+	uint8_t pkt_readUint8(struct PacketContext ctx, const uint8_t **pkt);
+	uint16_t pkt_readUint16(struct PacketContext ctx, const uint8_t **pkt);
+	uint32_t pkt_readUint32(struct PacketContext ctx, const uint8_t **pkt);
+	uint64_t pkt_readUint64(struct PacketContext ctx, const uint8_t **pkt);
+	#define pkt_readInt8(ctx, pkt) (int8_t)pkt_readUint8(ctx, pkt)
+	#define pkt_readInt16(ctx, pkt) (int16_t)pkt_readUint16(ctx, pkt)
+	#define pkt_readInt32(ctx, pkt) (int32_t)pkt_readUint32(ctx, pkt)
+	#define pkt_readInt64(ctx, pkt) (int64_t)pkt_readUint64(ctx, pkt)
+	uint64_t pkt_readVarUint64(struct PacketContext ctx, const uint8_t **pkt);
+	uint64_t pkt_readVarUint64(struct PacketContext ctx, const uint8_t **pkt);
+	int64_t pkt_readVarInt64(struct PacketContext ctx, const uint8_t **pkt);
+	uint32_t pkt_readVarUint32(struct PacketContext ctx, const uint8_t **pkt);
+	int32_t pkt_readVarInt32(struct PacketContext ctx, const uint8_t **pkt);
 	void pkt_readUint8Array(const uint8_t **pkt, uint8_t *out, uint32_t count);
-	float pkt_readFloat32(const uint8_t **pkt);
-	double pkt_readFloat64(const uint8_t **pkt);
-	void pkt_writeUint8(uint8_t **pkt, uint8_t v);
-	void pkt_writeUint16(uint8_t **pkt, uint16_t v);
-	void pkt_writeUint32(uint8_t **pkt, uint32_t v);
-	void pkt_writeUint64(uint8_t **pkt, uint64_t v);
-	#define pkt_writeInt8(pkt, v) pkt_writeUint8(pkt, (int8_t)v)
-	#define pkt_writeInt16(pkt, v) pkt_writeUint16(pkt, (int16_t)v)
-	#define pkt_writeInt32(pkt, v) pkt_writeUint32(pkt, (int32_t)v)
-	#define pkt_writeInt64(pkt, v) pkt_writeUint64(pkt, (int64_t)v)
-	void pkt_writeVarUint64(uint8_t **pkt, uint64_t v);
-	void pkt_writeVarInt64(uint8_t **pkt, int64_t v);
-	void pkt_writeVarUint32(uint8_t **pkt, uint32_t v);
-	void pkt_writeVarInt32(uint8_t **pkt, int32_t v);
-	#define pkt_writeInt8Array(pkt, out, count) pkt_writeUint8Array(pkt, (uint8_t*)out, count)
-	void pkt_writeUint8Array(uint8_t **pkt, const uint8_t *in, uint32_t count);
-	void pkt_writeFloat32(uint8_t **pkt, float v);
-	void pkt_writeFloat64(uint8_t **pkt, double v);
+	float pkt_readFloat32(struct PacketContext ctx, const uint8_t **pkt);
+	double pkt_readFloat64(struct PacketContext ctx, const uint8_t **pkt);
+	void pkt_writeUint8(struct PacketContext ctx, uint8_t **pkt, uint8_t v);
+	void pkt_writeUint16(struct PacketContext ctx, uint8_t **pkt, uint16_t v);
+	void pkt_writeUint32(struct PacketContext ctx, uint8_t **pkt, uint32_t v);
+	void pkt_writeUint64(struct PacketContext ctx, uint8_t **pkt, uint64_t v);
+	#define pkt_writeInt8(ctx, pkt, v) pkt_writeUint8(ctx, pkt, (int8_t)v)
+	#define pkt_writeInt16(ctx, pkt, v) pkt_writeUint16(ctx, pkt, (int16_t)v)
+	#define pkt_writeInt32(ctx, pkt, v) pkt_writeUint32(ctx, pkt, (int32_t)v)
+	#define pkt_writeInt64(ctx, pkt, v) pkt_writeUint64(ctx, pkt, (int64_t)v)
+	void pkt_writeVarUint64(struct PacketContext ctx, uint8_t **pkt, uint64_t v);
+	void pkt_writeVarInt64(struct PacketContext ctx, uint8_t **pkt, int64_t v);
+	void pkt_writeVarUint32(struct PacketContext ctx, uint8_t **pkt, uint32_t v);
+	void pkt_writeVarInt32(struct PacketContext ctx, uint8_t **pkt, int32_t v);
+	#define pkt_writeInt8Array(ctx, pkt, out, count) pkt_writeUint8Array(ctx, pkt, (uint8_t*)out, count)
+	void pkt_writeUint8Array(struct PacketContext ctx, uint8_t **pkt, const uint8_t *in, uint32_t count);
+	void pkt_writeFloat32(struct PacketContext ctx, uint8_t **pkt, float v);
+	void pkt_writeFloat64(struct PacketContext ctx, uint8_t **pkt, double v);
 
 code
 	#include "scramble.h"
@@ -51,34 +51,34 @@ code
 	#include <stdlib.h>
 	#include <string.h>
 	#include <inttypes.h>
-	uint8_t pkt_readUint8(const uint8_t **pkt) {
+	uint8_t pkt_readUint8(struct PacketContext ctx, const uint8_t **pkt) {
 		uint8_t v = (*pkt)[0];
 		*pkt += sizeof(v);
 		return v;
 	}
-	uint16_t pkt_readUint16(const uint8_t **pkt) {
+	uint16_t pkt_readUint16(struct PacketContext ctx, const uint8_t **pkt) {
 		uint16_t v = (*pkt)[0] | (*pkt)[1] << 8;
 		*pkt += sizeof(v);
 		return v;
 	}
-	uint32_t pkt_readUint32(const uint8_t **pkt) {
+	uint32_t pkt_readUint32(struct PacketContext ctx, const uint8_t **pkt) {
 		uint32_t v = (*pkt)[0] | (*pkt)[1] << 8 | (*pkt)[2] << 16 | (*pkt)[3] << 24;
 		*pkt += sizeof(v);
 		return v;
 	}
-	uint64_t pkt_readUint64(const uint8_t **pkt) {
+	uint64_t pkt_readUint64(struct PacketContext ctx, const uint8_t **pkt) {
 		uint64_t v = (uint64_t)(*pkt)[0] | (uint64_t)(*pkt)[1] << 8 | (uint64_t)(*pkt)[2] << 16 | (uint64_t)(*pkt)[3] << 24 | (uint64_t)(*pkt)[4] << 32 | (uint64_t)(*pkt)[5] << 40 | (uint64_t)(*pkt)[6] << 48 | (uint64_t)(*pkt)[7] << 56;
 		*pkt += sizeof(v);
 		return v;
 	}
-	/*uint64_t pkt_readVarUint64(const uint8_t **pkt) {
+	/*uint64_t pkt_readVarUint64(struct PacketContext ctx, const uint8_t **pkt) {
 		uint64_t byte, value = 0;
 		uint32_t shift = 0;
-		for(; (byte = (uint64_t)pkt_readUint8(pkt)) & 128; shift += 7)
+		for(; (byte = (uint64_t)pkt_readUint8(ctx, pkt)) & 128; shift += 7)
 			value |= (byte & 127) << shift;
 		return value | byte << shift;
 	}*/
-	uint64_t pkt_readVarUint64(const uint8_t **pkt) {
+	uint64_t pkt_readVarUint64(struct PacketContext ctx, const uint8_t **pkt) {
 		uint64_t byte, value = 0;
 		uint8_t shift = 0;
 		do {
@@ -87,56 +87,56 @@ code
 				*pkt = _trap;
 				return 0;
 			}
-			byte = pkt_readUint8(pkt);
+			byte = pkt_readUint8(ctx, pkt);
 			value |= (byte & 127) << shift;
 			shift += 7;
 		} while(byte & 128);
 		return value;
 	}
-	int64_t pkt_readVarInt64(const uint8_t **pkt) {
-		int64_t varULong = (int64_t)pkt_readVarUint64(pkt);
+	int64_t pkt_readVarInt64(struct PacketContext ctx, const uint8_t **pkt) {
+		int64_t varULong = (int64_t)pkt_readVarUint64(ctx, pkt);
 		if((varULong & 1L) != 1L)
 			return varULong >> 1;
 		return -(varULong >> 1) + 1L;
 	}
-	uint32_t pkt_readVarUint32(const uint8_t **pkt) {
-		return (uint32_t)pkt_readVarUint64(pkt);
+	uint32_t pkt_readVarUint32(struct PacketContext ctx, const uint8_t **pkt) {
+		return (uint32_t)pkt_readVarUint64(ctx, pkt);
 	}
-	int32_t pkt_readVarInt32(const uint8_t **pkt) {
-		return (int32_t)pkt_readVarInt64(pkt);
+	int32_t pkt_readVarInt32(struct PacketContext ctx, const uint8_t **pkt) {
+		return (int32_t)pkt_readVarInt64(ctx, pkt);
 	}
 	#define pkt_readInt8Array(pkt, out, count) pkt_readUint8Array(pkt, (uint8_t*)out, count)
 	void pkt_readUint8Array(const uint8_t **pkt, uint8_t *out, uint32_t count) {
 		memcpy(out, *pkt, count);
 		*pkt += count;
 	}
-	float pkt_readFloat32(const uint8_t **pkt) {
+	float pkt_readFloat32(struct PacketContext ctx, const uint8_t **pkt) {
 		float v = *(const float*)*pkt;
 		*pkt += 4;
 		return v;
 	}
-	double pkt_readFloat64(const uint8_t **pkt) {
+	double pkt_readFloat64(struct PacketContext ctx, const uint8_t **pkt) {
 		double v = *(const double*)*pkt;
 		*pkt += 8;
 		return v;
 	}
-	void pkt_writeUint8(uint8_t **pkt, uint8_t v) {
+	void pkt_writeUint8(struct PacketContext ctx, uint8_t **pkt, uint8_t v) {
 		(*pkt)[0] = v;
 		*pkt += sizeof(v);
 	}
-	void pkt_writeUint16(uint8_t **pkt, uint16_t v) {
+	void pkt_writeUint16(struct PacketContext ctx, uint8_t **pkt, uint16_t v) {
 		(*pkt)[0] = v & 255;
 		(*pkt)[1] = v >> 8 & 255;
 		*pkt += sizeof(v);
 	}
-	void pkt_writeUint32(uint8_t **pkt, uint32_t v) {
+	void pkt_writeUint32(struct PacketContext ctx, uint8_t **pkt, uint32_t v) {
 		(*pkt)[0] = v & 255;
 		(*pkt)[1] = v >> 8 & 255;
 		(*pkt)[2] = v >> 16 & 255;
 		(*pkt)[3] = v >> 24 & 255;
 		*pkt += sizeof(v);
 	}
-	void pkt_writeUint64(uint8_t **pkt, uint64_t v) {
+	void pkt_writeUint64(struct PacketContext ctx, uint8_t **pkt, uint64_t v) {
 		(*pkt)[0] = v & 255;
 		(*pkt)[1] = v >> 8 & 255;
 		(*pkt)[2] = v >> 16 & 255;
@@ -147,62 +147,62 @@ code
 		(*pkt)[7] = v >> 56 & 255;
 		*pkt += sizeof(v);
 	}
-	void pkt_writeVarUint64(uint8_t **pkt, uint64_t v) {
+	void pkt_writeVarUint64(struct PacketContext ctx, uint8_t **pkt, uint64_t v) {
 		do {
 			uint8_t byte = v & 127;
 			v >>= 7;
 			if(v)
 				byte |= 128;
-			pkt_writeUint8(pkt, byte);
+			pkt_writeUint8(ctx, pkt, byte);
 		} while(v);
 	}
-	void pkt_writeVarInt64(uint8_t **pkt, int64_t v) {
+	void pkt_writeVarInt64(struct PacketContext ctx, uint8_t **pkt, int64_t v) {
 		if(v < 0)
-			pkt_writeVarUint64(pkt, (-(v + 1L) << 1) + 1L);
+			pkt_writeVarUint64(ctx, pkt, (-(v + 1L) << 1) + 1L);
 		else
-			pkt_writeVarUint64(pkt, v << 1);
+			pkt_writeVarUint64(ctx, pkt, v << 1);
 	}
-	void pkt_writeVarUint32(uint8_t **pkt, uint32_t v) {
-		pkt_writeVarUint64(pkt, v);
+	void pkt_writeVarUint32(struct PacketContext ctx, uint8_t **pkt, uint32_t v) {
+		pkt_writeVarUint64(ctx, pkt, v);
 	}
-	void pkt_writeVarInt32(uint8_t **pkt, int32_t v) {
-		pkt_writeVarInt64(pkt, v);
+	void pkt_writeVarInt32(struct PacketContext ctx, uint8_t **pkt, int32_t v) {
+		pkt_writeVarInt64(ctx, pkt, v);
 	}
-	void pkt_writeUint8Array(uint8_t **pkt, const uint8_t *in, uint32_t count) {
+	void pkt_writeUint8Array(struct PacketContext ctx, uint8_t **pkt, const uint8_t *in, uint32_t count) {
 		memcpy(*pkt, in, count);
 		*pkt += count;
 	}
-	void pkt_writeFloat32(uint8_t **pkt, float v) {
+	void pkt_writeFloat32(struct PacketContext ctx, uint8_t **pkt, float v) {
 		*(float*)*pkt = v;
 		*pkt += 4;
 	}
-	void pkt_writeFloat64(uint8_t **pkt, double v) {
+	void pkt_writeFloat64(struct PacketContext ctx, uint8_t **pkt, double v) {
 		*(double*)*pkt = v;
 		*pkt += 8;
 	}
-	#define pkt_logUint8(name, buf, it, v) pkt_logUint64(name, buf, it, (uint64_t)v)
-	#define pkt_logUint16(name, buf, it, v) pkt_logUint64(name, buf, it, (uint64_t)v)
-	#define pkt_logUint32(name, buf, it, v) pkt_logUint64(name, buf, it, (uint64_t)v)
-	#define pkt_logInt32(name, buf, it, v) pkt_logInt64(name, buf, it, (int64_t)v)
+	#define pkt_logUint8(ctx, name, buf, it, v) pkt_logUint64(ctx, name, buf, it, (uint64_t)v)
+	#define pkt_logUint16(ctx, name, buf, it, v) pkt_logUint64(ctx, name, buf, it, (uint64_t)v)
+	#define pkt_logUint32(ctx, name, buf, it, v) pkt_logUint64(ctx, name, buf, it, (uint64_t)v)
+	#define pkt_logInt32(ctx, name, buf, it, v) pkt_logInt64(ctx, name, buf, it, (int64_t)v)
 	#define pkt_logVarUint64 pkt_logUint64
 	#define pkt_logVarInt64 pkt_logInt64
 	#define pkt_logVarUint32 pkt_logUint32
 	#define pkt_logVarInt32 pkt_logInt32
-	static void pkt_logUint64(const char *name, char *buf, char *it, uint64_t v) {
+	static void pkt_logUint64(struct PacketContext ctx, const char *name, char *buf, char *it, uint64_t v) {
 		fprintf(stderr, "%.*s%s=%" PRIu64 "\n", (uint32_t)(it - buf), buf, name, v);
 	}
-	static void pkt_logInt64(const char *name, char *buf, char *it, int64_t v) {
+	static void pkt_logInt64(struct PacketContext ctx, const char *name, char *buf, char *it, int64_t v) {
 		fprintf(stderr, "%.*s%s=%" PRId64 "\n", (uint32_t)(it - buf), buf, name, v);
 	}
-	#define pkt_logInt8Array(name, buf, it, in, count) pkt_logUint8Array(name, buf, it, (const uint8_t*)in, count)
-	static void pkt_logUint8Array(const char *name, char *buf, char *it, const uint8_t *in, uint32_t count) {
+	#define pkt_logInt8Array(ctx, name, buf, it, in, count) pkt_logUint8Array(ctx, name, buf, it, (const uint8_t*)in, count)
+	static void pkt_logUint8Array(struct PacketContext ctx, const char *name, char *buf, char *it, const uint8_t *in, uint32_t count) {
 		fprintf(stderr, "%.*s%s=", (uint32_t)(it - buf), buf, name);
 		for(uint32_t i = 0; i < count; ++i)
 			fprintf(stderr, "%02hhx", in[i]);
 		fprintf(stderr, "\n");
 	}
 	#define pkt_logFloat32 pkt_logFloat64
-	static void pkt_logFloat64(const char *name, char *buf, char *it, double v) {
+	static void pkt_logFloat64(struct PacketContext ctx, const char *name, char *buf, char *it, double v) {
 		fprintf(stderr, "%.*s%s=%f\n", (uint32_t)(it - buf), buf, name, v);
 	}
 
@@ -233,21 +233,81 @@ d BaseMasterServerAcknowledgeMessage
 d ByteArrayNetSerializable
 	vu32 length
 	u8[4096,length] data
+enum
+	struct String {
+		uint32_t length;
+		_Bool isNull;
+		char data[60];
+	};
+	struct LongString {
+		uint32_t length;
+		_Bool isNull;
+		char data[4096];
+	};
+head
+	struct String pkt_readString(struct PacketContext ctx, const uint8_t **pkt);
+	struct LongString pkt_readLongString(struct PacketContext ctx, const uint8_t **pkt);
+	void pkt_writeString(struct PacketContext ctx, uint8_t **pkt, struct String in);
+	void pkt_writeLongString(struct PacketContext ctx, uint8_t **pkt, struct LongString in);
 code
+	struct String pkt_readString(struct PacketContext ctx, const uint8_t **pkt) {
+		struct String out;
+		if(ctx.netVersion >= 12) {
+			out.length = pkt_readUint16(ctx, pkt);
+			out.isNull = (out.length != 0);
+			if(out.length)
+				--out.length;
+		} else {
+			out.length = pkt_readUint32(ctx, pkt);
+			out.isNull = 0;
+		}
+		if(out.length > 60) {
+			fprintf(stderr, "Buffer overflow in read of String.data: %u > 60\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
+		} else {
+			pkt_readInt8Array(pkt, out.data, out.length);
+		}
+		return out;
+	}
+	struct LongString pkt_readLongString(struct PacketContext ctx, const uint8_t **pkt) {
+		struct LongString out;
+		if(ctx.netVersion >= 12) {
+			out.length = pkt_readUint16(ctx, pkt);
+			out.isNull = (out.length != 0);
+			if(out.length)
+				--out.length;
+		} else {
+			out.length = pkt_readUint32(ctx, pkt);
+			out.isNull = 0;
+		}
+		if(out.length > 4096) {
+			fprintf(stderr, "Buffer overflow in read of LongString.data: %u > 4096\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
+		} else {
+			pkt_readInt8Array(pkt, out.data, out.length);
+		}
+		return out;
+	}
+	void pkt_writeString(struct PacketContext ctx, uint8_t **pkt, struct String in) {
+		if(ctx.netVersion >= 12)
+			pkt_writeUint16(ctx, pkt, in.length + !in.isNull);
+		else
+			pkt_writeUint32(ctx, pkt, in.length);
+		pkt_writeInt8Array(ctx, pkt, in.data, in.length);
+	}
+	void pkt_writeLongString(struct PacketContext ctx, uint8_t **pkt, struct LongString in) {
+		if(ctx.netVersion >= 12)
+			pkt_writeUint16(ctx, pkt, in.length + !in.isNull);
+		else
+			pkt_writeUint32(ctx, pkt, in.length);
+		pkt_writeInt8Array(ctx, pkt, in.data, in.length);
+	}
 	#ifdef PACKET_LOGGING_FUNCS
-	static void pkt_logString(const char *name, char *buf, char *it, struct String in) {
+	static void pkt_logString(struct PacketContext ctx, const char *name, char *buf, char *it, struct String in) {
 		fprintf(stderr, "%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
 	}
-	static void pkt_logLongString(const char *name, char *buf, char *it, struct LongString in) {
+	static void pkt_logLongString(struct PacketContext ctx, const char *name, char *buf, char *it, struct LongString in) {
 		fprintf(stderr, "%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
 	}
 	#endif
-d String
-	u32 length
-	c[60,length] data
-d LongString
-	u32 length
-	c[4096,length] data
 r AuthenticationToken
 	u8.Platform platform
 	String userId
@@ -340,18 +400,18 @@ code
 		*s = 0;
 		return out;
 	}
-	static ServerCode pkt_readServerCode(const uint8_t **pkt) {
-		struct String str = pkt_readString(pkt);
+	static ServerCode pkt_readServerCode(struct PacketContext ctx, const uint8_t **pkt) {
+		struct String str = pkt_readString(ctx, pkt);
 		return StringToServerCode(str.data, str.length);
 	}
-	static void pkt_writeServerCode(uint8_t **pkt, ServerCode in) {
+	static void pkt_writeServerCode(struct PacketContext ctx, uint8_t **pkt, ServerCode in) {
 		struct String str = {.length = 0};
 		for(in = scramble_encode(in); in; in /= 36)
 			str.data[str.length++] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--in % 36];
-		pkt_writeString(pkt, str);
+		pkt_writeString(ctx, pkt, str);
 	}
 	#ifdef PACKET_LOGGING_FUNCS
-	static void pkt_logServerCode(const char *name, char *buf, char *it, ServerCode in) {
+	static void pkt_logServerCode(struct PacketContext ctx, const char *name, char *buf, char *it, ServerCode in) {
 		fprintf(stderr, "%.*s%s=%u (\"", (uint32_t)(it - buf), buf, name, in);
 		for(; in; in /= 36)
 			fprintf(stderr, "%c", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--in % 36]);
@@ -414,7 +474,9 @@ u8 PacketProperty
 		u64 time
 	r ConnectRequest
 		u32 protocolId
-		u64 connectId
+		u64 connectTime
+		if((ctx.netVersion = .protocolId) >= 12)
+			i32 peerId
 		u8 addrlen
 		u8[38,addrlen] address
 		String secret
@@ -422,9 +484,11 @@ u8 PacketProperty
 		String userName
 		b isConnectionOwner
 	s ConnectAccept
-		u64 connectId
+		u64 connectTime
 		u8 connectNum
 		b reusedPeer
+		if(ctx.netVersion >= 12)
+			i32 peerId
 	r Disconnect
 		u8[8] _pad0
 	z UnconnectedMessage
@@ -527,21 +591,21 @@ u8 InternalMessage Type
 d RemoteProcedureCall
 	f32 syncTime
 head
-	struct RemoteProcedureCallFlags pkt_readRemoteProcedureCallFlags(const uint8_t **pkt, uint32_t protocolVersion);
+	struct RemoteProcedureCallFlags pkt_readRemoteProcedureCallFlags(struct PacketContext ctx, const uint8_t **pkt);
 code
-	struct RemoteProcedureCallFlags pkt_readRemoteProcedureCallFlags(const uint8_t **pkt, uint32_t protocolVersion) {
+	struct RemoteProcedureCallFlags pkt_readRemoteProcedureCallFlags(struct PacketContext ctx, const uint8_t **pkt) {
 		struct RemoteProcedureCallFlags out;
 		uint8_t bits = 255;
-		if(protocolVersion > 6)
-			bits = pkt_readUint8(pkt);
+		if(ctx.protocolVersion > 6)
+			bits = pkt_readUint8(ctx, pkt);
 		out.hasValue0 = (bits >> 0) & 1;
 		out.hasValue1 = (bits >> 1) & 1;
 		out.hasValue2 = (bits >> 2) & 1;
 		out.hasValue3 = (bits >> 3) & 1;
 		return out;
 	}
-ps RemoteProcedureCallFlags
-	if(protocolVersion > 6)
+s RemoteProcedureCallFlags
+	if(ctx.protocolVersion > 6)
 		u8.e bits
 			u1.b hasValue0
 			u1.b hasValue1
@@ -754,13 +818,13 @@ r LevelCompletionResults
 	f32 maxTimeDeviation
 	f32 averageTimeDeviation
 	f32 endSongTime
-pr MultiplayerLevelCompletionResults
-	if(protocolVersion <= 6)
+r MultiplayerLevelCompletionResults
+	if(ctx.protocolVersion <= 6)
 		vi32.MultiplayerLevelEndState levelEndState
-	if(protocolVersion > 6)
+	if(ctx.protocolVersion > 6)
 		vi32.MultiplayerPlayerLevelEndState playerLevelEndState
 		vi32.MultiplayerPlayerLevelEndReason playerLevelEndReason
-	if((protocolVersion <= 6 && out.levelEndState < MultiplayerLevelEndState_GivenUp) || (protocolVersion > 6 && out.playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted))
+	if((ctx.protocolVersion <= 6 && .levelEndState < MultiplayerLevelEndState_GivenUp) || (ctx.protocolVersion > 6 && .playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted))
 		LevelCompletionResults levelCompletionResults
 r NodePoseSyncState1
 	PoseSerializable head
@@ -821,73 +885,73 @@ r ObstacleSpawnInfoNetSerializable
 	f32 rotation
 u8 MultiplayerSessionMessage Type
 	u8 MenuRpc Type
-		ps SetPlayersMissingEntitlementsToLevel
+		s SetPlayersMissingEntitlementsToLevel
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				PlayersMissingEntitlementsNetSerializable playersMissingEntitlements
-		ps GetIsEntitledToLevel
+		s GetIsEntitledToLevel
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				LongString levelId
-		pr SetIsEntitledToLevel
+		r SetIsEntitledToLevel
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				LongString levelId
 			if(.flags.hasValue1)
 				vi32.EntitlementsStatus entitlementStatus
-		pn InvalidateLevelEntitlementStatuses
+		n InvalidateLevelEntitlementStatuses
 			RemoteProcedureCall base
-		pn SelectLevelPack
+		n SelectLevelPack
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				String levelPackId
-		ps SetSelectedBeatmap
+		s SetSelectedBeatmap
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				BeatmapIdentifierNetSerializable identifier
-		pn GetSelectedBeatmap
+		n GetSelectedBeatmap
 			RemoteProcedureCall base
-		pd RecommendBeatmap
+		d RecommendBeatmap
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				BeatmapIdentifierNetSerializable identifier
-		pr ClearRecommendedBeatmap
+		r ClearRecommendedBeatmap
 			RemoteProcedureCall base
-		pd GetRecommendedBeatmap
+		d GetRecommendedBeatmap
 			RemoteProcedureCall base
-		ps SetSelectedGameplayModifiers
-			RemoteProcedureCall base
-			RemoteProcedureCallFlags flags
-			if(.flags.hasValue0)
-				GameplayModifiers gameplayModifiers
-		pn GetSelectedGameplayModifiers
-			RemoteProcedureCall base
-		pd RecommendGameplayModifiers
+		s SetSelectedGameplayModifiers
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				GameplayModifiers gameplayModifiers
-		pr ClearRecommendedGameplayModifiers
+		n GetSelectedGameplayModifiers
 			RemoteProcedureCall base
-		pd GetRecommendedGameplayModifiers
+		d RecommendGameplayModifiers
 			RemoteProcedureCall base
-		pn LevelLoadError
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				GameplayModifiers gameplayModifiers
+		r ClearRecommendedGameplayModifiers
+			RemoteProcedureCall base
+		d GetRecommendedGameplayModifiers
+			RemoteProcedureCall base
+		n LevelLoadError
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				LongString levelId
-		pn LevelLoadSuccess
+		n LevelLoadSuccess
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				LongString levelId
-		ps StartLevel
+		s StartLevel
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
@@ -896,89 +960,89 @@ u8 MultiplayerSessionMessage Type
 				GameplayModifiers gameplayModifiers
 			if(.flags.hasValue2)
 				f32 startTime
-		pr GetStartedLevel
+		r GetStartedLevel
 			RemoteProcedureCall base
-		ps CancelLevelStart
+		s CancelLevelStart
 			RemoteProcedureCall base
-		pr GetMultiplayerGameState
+		r GetMultiplayerGameState
 			RemoteProcedureCall base
-		ps SetMultiplayerGameState
+		s SetMultiplayerGameState
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				vi32.MultiplayerGameState lobbyState
-		pd GetIsReady
+		d GetIsReady
 			RemoteProcedureCall base
-		pd SetIsReady
+		d SetIsReady
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				b isReady
-		pn SetStartGameTime
+		n SetStartGameTime
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				f32 newTime
-		pn CancelStartGameTime
+		n CancelStartGameTime
 			RemoteProcedureCall base
-		pd GetIsInLobby
+		d GetIsInLobby
 			RemoteProcedureCall base
-		pd SetIsInLobby
+		d SetIsInLobby
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				b isBack
-		pr GetCountdownEndTime
+		r GetCountdownEndTime
 			RemoteProcedureCall base
-		ps SetCountdownEndTime
+		s SetCountdownEndTime
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				f32 newTime
-		ps CancelCountdown
+		s CancelCountdown
 			RemoteProcedureCall base
-		ps GetOwnedSongPacks
+		s GetOwnedSongPacks
 			RemoteProcedureCall base
-		pr SetOwnedSongPacks
+		r SetOwnedSongPacks
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				SongPackMask songPackMask
-		pn RequestKickPlayer
+		n RequestKickPlayer
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				String kickedPlayerId
-		pr GetPermissionConfiguration
+		r GetPermissionConfiguration
 			RemoteProcedureCall base
-		ps SetPermissionConfiguration
+		s SetPermissionConfiguration
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				PlayersLobbyPermissionConfigurationNetSerializable playersPermissionConfiguration
-		pn GetIsStartButtonEnabled
+		n GetIsStartButtonEnabled
 			RemoteProcedureCall base
-		ps SetIsStartButtonEnabled
+		s SetIsStartButtonEnabled
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				vi32.CannotStartGameReason reason
 	u8 GameplayRpc Type
-		ps SetGameplaySceneSyncFinish
+		s SetGameplaySceneSyncFinish
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				PlayerSpecificSettingsAtStartNetSerializable playersAtGameStart
 			if(.flags.hasValue1)
 				String sessionGameId
-		pr SetGameplaySceneReady
+		r SetGameplaySceneReady
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				PlayerSpecificSettingsNetSerializable playerSpecificSettingsNetSerializable
-		ps GetGameplaySceneReady
+		s GetGameplaySceneReady
 			RemoteProcedureCall base
-		pn SetActivePlayerFailedToConnect
+		n SetActivePlayerFailedToConnect
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
@@ -987,46 +1051,46 @@ u8 MultiplayerSessionMessage Type
 				PlayerSpecificSettingsAtStartNetSerializable playersAtGameStartNetSerializable
 			if(.flags.hasValue2)
 				String sessionGameId
-		pr SetGameplaySongReady
+		r SetGameplaySongReady
 			RemoteProcedureCall base
-		ps GetGameplaySongReady
+		s GetGameplaySongReady
 			RemoteProcedureCall base
-		ps SetSongStartTime
+		s SetSongStartTime
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				f32 startTime
-		pr NoteCut
+		r NoteCut
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				f32 songTime
 			if(.flags.hasValue1)
 				NoteCutInfoNetSerializable noteCutInfo
-		pr NoteMissed
+		r NoteMissed
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				f32 songTime
 			if(.flags.hasValue1)
 				NoteMissInfoNetSerializable noteMissInfo
-		pr LevelFinished
+		r LevelFinished
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				MultiplayerLevelCompletionResults results
-		ps ReturnToMenu
+		s ReturnToMenu
 			RemoteProcedureCall base
-		pr RequestReturnToMenu
+		r RequestReturnToMenu
 			RemoteProcedureCall base
-		pr NoteSpawned
+		r NoteSpawned
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				f32 songTime
 			if(.flags.hasValue1)
 				NoteSpawnInfoNetSerializable noteSpawnInfo
-		pr ObstacleSpawned
+		r ObstacleSpawned
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
@@ -1164,7 +1228,7 @@ u8 HandshakeMessage Type
 	n HandshakeMultipartMessage
 		BaseMasterServerMultipartMessage base
 
-head
+enum
 	#ifdef reflect
 	static const char *const reflect_MessageType = "{MessageType_UserMessage=1,MessageType_DedicatedServerMessage=2,MessageType_GameLiftMessage=3,MessageType_HandshakeMessage=3192347326,}";
 	#endif
@@ -1174,7 +1238,7 @@ head
 	#define MessageType_GameLiftMessage 3
 	#define MessageType_HandshakeMessage 3192347326u
 code
-	void pkt_logMessageType(const char *name, char *buf, char *it, MessageType in) {
+	void pkt_logMessageType(struct PacketContext ctx, const char *name, char *buf, char *it, MessageType in) {
 		fprintf(stderr, "%.*s%s=%u (%s)\n", (uint32_t)(it - buf), buf, name, in, reflect(MessageType, in));
 	}
 d MessageHeader

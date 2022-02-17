@@ -28,7 +28,7 @@ beatupserver.%: $(OBJS)
 	@echo "[cc $@]"
 	$(CC) $(OBJS) $(LDFLAGS) -o "$@"
 
-$(OBJDIR)/%.c.o: %.c $(OBJDIR)/libs.mk mbedtls/.git makefile
+$(OBJDIR)/%.c.o: %.c src/packets.h $(OBJDIR)/libs.mk mbedtls/.git makefile
 	@echo "[cc $(notdir $@)]"
 	@mkdir -p "$(@D)"
 	$(CC) $(CFLAGS) -c "$<" -o "$@" -MMD -MP

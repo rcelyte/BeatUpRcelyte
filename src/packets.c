@@ -12,34 +12,34 @@ static const uint8_t _trap[128] = {~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
-uint8_t pkt_readUint8(const uint8_t **pkt) {
+uint8_t pkt_readUint8(struct PacketContext ctx, const uint8_t **pkt) {
 	uint8_t v = (*pkt)[0];
 	*pkt += sizeof(v);
 	return v;
 }
-uint16_t pkt_readUint16(const uint8_t **pkt) {
+uint16_t pkt_readUint16(struct PacketContext ctx, const uint8_t **pkt) {
 	uint16_t v = (*pkt)[0] | (*pkt)[1] << 8;
 	*pkt += sizeof(v);
 	return v;
 }
-uint32_t pkt_readUint32(const uint8_t **pkt) {
+uint32_t pkt_readUint32(struct PacketContext ctx, const uint8_t **pkt) {
 	uint32_t v = (*pkt)[0] | (*pkt)[1] << 8 | (*pkt)[2] << 16 | (*pkt)[3] << 24;
 	*pkt += sizeof(v);
 	return v;
 }
-uint64_t pkt_readUint64(const uint8_t **pkt) {
+uint64_t pkt_readUint64(struct PacketContext ctx, const uint8_t **pkt) {
 	uint64_t v = (uint64_t)(*pkt)[0] | (uint64_t)(*pkt)[1] << 8 | (uint64_t)(*pkt)[2] << 16 | (uint64_t)(*pkt)[3] << 24 | (uint64_t)(*pkt)[4] << 32 | (uint64_t)(*pkt)[5] << 40 | (uint64_t)(*pkt)[6] << 48 | (uint64_t)(*pkt)[7] << 56;
 	*pkt += sizeof(v);
 	return v;
 }
-/*uint64_t pkt_readVarUint64(const uint8_t **pkt) {
+/*uint64_t pkt_readVarUint64(struct PacketContext ctx, const uint8_t **pkt) {
 	uint64_t byte, value = 0;
 	uint32_t shift = 0;
-	for(; (byte = (uint64_t)pkt_readUint8(pkt)) & 128; shift += 7)
+	for(; (byte = (uint64_t)pkt_readUint8(ctx, pkt)) & 128; shift += 7)
 		value |= (byte & 127) << shift;
 	return value | byte << shift;
 }*/
-uint64_t pkt_readVarUint64(const uint8_t **pkt) {
+uint64_t pkt_readVarUint64(struct PacketContext ctx, const uint8_t **pkt) {
 	uint64_t byte, value = 0;
 	uint8_t shift = 0;
 	do {
@@ -48,56 +48,56 @@ uint64_t pkt_readVarUint64(const uint8_t **pkt) {
 			*pkt = _trap;
 			return 0;
 		}
-		byte = pkt_readUint8(pkt);
+		byte = pkt_readUint8(ctx, pkt);
 		value |= (byte & 127) << shift;
 		shift += 7;
 	} while(byte & 128);
 	return value;
 }
-int64_t pkt_readVarInt64(const uint8_t **pkt) {
-	int64_t varULong = (int64_t)pkt_readVarUint64(pkt);
+int64_t pkt_readVarInt64(struct PacketContext ctx, const uint8_t **pkt) {
+	int64_t varULong = (int64_t)pkt_readVarUint64(ctx, pkt);
 	if((varULong & 1L) != 1L)
 		return varULong >> 1;
 	return -(varULong >> 1) + 1L;
 }
-uint32_t pkt_readVarUint32(const uint8_t **pkt) {
-	return (uint32_t)pkt_readVarUint64(pkt);
+uint32_t pkt_readVarUint32(struct PacketContext ctx, const uint8_t **pkt) {
+	return (uint32_t)pkt_readVarUint64(ctx, pkt);
 }
-int32_t pkt_readVarInt32(const uint8_t **pkt) {
-	return (int32_t)pkt_readVarInt64(pkt);
+int32_t pkt_readVarInt32(struct PacketContext ctx, const uint8_t **pkt) {
+	return (int32_t)pkt_readVarInt64(ctx, pkt);
 }
 #define pkt_readInt8Array(pkt, out, count) pkt_readUint8Array(pkt, (uint8_t*)out, count)
 void pkt_readUint8Array(const uint8_t **pkt, uint8_t *out, uint32_t count) {
 	memcpy(out, *pkt, count);
 	*pkt += count;
 }
-float pkt_readFloat32(const uint8_t **pkt) {
+float pkt_readFloat32(struct PacketContext ctx, const uint8_t **pkt) {
 	float v = *(const float*)*pkt;
 	*pkt += 4;
 	return v;
 }
-double pkt_readFloat64(const uint8_t **pkt) {
+double pkt_readFloat64(struct PacketContext ctx, const uint8_t **pkt) {
 	double v = *(const double*)*pkt;
 	*pkt += 8;
 	return v;
 }
-void pkt_writeUint8(uint8_t **pkt, uint8_t v) {
+void pkt_writeUint8(struct PacketContext ctx, uint8_t **pkt, uint8_t v) {
 	(*pkt)[0] = v;
 	*pkt += sizeof(v);
 }
-void pkt_writeUint16(uint8_t **pkt, uint16_t v) {
+void pkt_writeUint16(struct PacketContext ctx, uint8_t **pkt, uint16_t v) {
 	(*pkt)[0] = v & 255;
 	(*pkt)[1] = v >> 8 & 255;
 	*pkt += sizeof(v);
 }
-void pkt_writeUint32(uint8_t **pkt, uint32_t v) {
+void pkt_writeUint32(struct PacketContext ctx, uint8_t **pkt, uint32_t v) {
 	(*pkt)[0] = v & 255;
 	(*pkt)[1] = v >> 8 & 255;
 	(*pkt)[2] = v >> 16 & 255;
 	(*pkt)[3] = v >> 24 & 255;
 	*pkt += sizeof(v);
 }
-void pkt_writeUint64(uint8_t **pkt, uint64_t v) {
+void pkt_writeUint64(struct PacketContext ctx, uint8_t **pkt, uint64_t v) {
 	(*pkt)[0] = v & 255;
 	(*pkt)[1] = v >> 8 & 255;
 	(*pkt)[2] = v >> 16 & 255;
@@ -108,119 +108,119 @@ void pkt_writeUint64(uint8_t **pkt, uint64_t v) {
 	(*pkt)[7] = v >> 56 & 255;
 	*pkt += sizeof(v);
 }
-void pkt_writeVarUint64(uint8_t **pkt, uint64_t v) {
+void pkt_writeVarUint64(struct PacketContext ctx, uint8_t **pkt, uint64_t v) {
 	do {
 		uint8_t byte = v & 127;
 		v >>= 7;
 		if(v)
 			byte |= 128;
-		pkt_writeUint8(pkt, byte);
+		pkt_writeUint8(ctx, pkt, byte);
 	} while(v);
 }
-void pkt_writeVarInt64(uint8_t **pkt, int64_t v) {
+void pkt_writeVarInt64(struct PacketContext ctx, uint8_t **pkt, int64_t v) {
 	if(v < 0)
-		pkt_writeVarUint64(pkt, (-(v + 1L) << 1) + 1L);
+		pkt_writeVarUint64(ctx, pkt, (-(v + 1L) << 1) + 1L);
 	else
-		pkt_writeVarUint64(pkt, v << 1);
+		pkt_writeVarUint64(ctx, pkt, v << 1);
 }
-void pkt_writeVarUint32(uint8_t **pkt, uint32_t v) {
-	pkt_writeVarUint64(pkt, v);
+void pkt_writeVarUint32(struct PacketContext ctx, uint8_t **pkt, uint32_t v) {
+	pkt_writeVarUint64(ctx, pkt, v);
 }
-void pkt_writeVarInt32(uint8_t **pkt, int32_t v) {
-	pkt_writeVarInt64(pkt, v);
+void pkt_writeVarInt32(struct PacketContext ctx, uint8_t **pkt, int32_t v) {
+	pkt_writeVarInt64(ctx, pkt, v);
 }
-void pkt_writeUint8Array(uint8_t **pkt, const uint8_t *in, uint32_t count) {
+void pkt_writeUint8Array(struct PacketContext ctx, uint8_t **pkt, const uint8_t *in, uint32_t count) {
 	memcpy(*pkt, in, count);
 	*pkt += count;
 }
-void pkt_writeFloat32(uint8_t **pkt, float v) {
+void pkt_writeFloat32(struct PacketContext ctx, uint8_t **pkt, float v) {
 	*(float*)*pkt = v;
 	*pkt += 4;
 }
-void pkt_writeFloat64(uint8_t **pkt, double v) {
+void pkt_writeFloat64(struct PacketContext ctx, uint8_t **pkt, double v) {
 	*(double*)*pkt = v;
 	*pkt += 8;
 }
-#define pkt_logUint8(name, buf, it, v) pkt_logUint64(name, buf, it, (uint64_t)v)
-#define pkt_logUint16(name, buf, it, v) pkt_logUint64(name, buf, it, (uint64_t)v)
-#define pkt_logUint32(name, buf, it, v) pkt_logUint64(name, buf, it, (uint64_t)v)
-#define pkt_logInt32(name, buf, it, v) pkt_logInt64(name, buf, it, (int64_t)v)
+#define pkt_logUint8(ctx, name, buf, it, v) pkt_logUint64(ctx, name, buf, it, (uint64_t)v)
+#define pkt_logUint16(ctx, name, buf, it, v) pkt_logUint64(ctx, name, buf, it, (uint64_t)v)
+#define pkt_logUint32(ctx, name, buf, it, v) pkt_logUint64(ctx, name, buf, it, (uint64_t)v)
+#define pkt_logInt32(ctx, name, buf, it, v) pkt_logInt64(ctx, name, buf, it, (int64_t)v)
 #define pkt_logVarUint64 pkt_logUint64
 #define pkt_logVarInt64 pkt_logInt64
 #define pkt_logVarUint32 pkt_logUint32
 #define pkt_logVarInt32 pkt_logInt32
-static void pkt_logUint64(const char *name, char *buf, char *it, uint64_t v) {
+static void pkt_logUint64(struct PacketContext ctx, const char *name, char *buf, char *it, uint64_t v) {
 	fprintf(stderr, "%.*s%s=%" PRIu64 "\n", (uint32_t)(it - buf), buf, name, v);
 }
-static void pkt_logInt64(const char *name, char *buf, char *it, int64_t v) {
+static void pkt_logInt64(struct PacketContext ctx, const char *name, char *buf, char *it, int64_t v) {
 	fprintf(stderr, "%.*s%s=%" PRId64 "\n", (uint32_t)(it - buf), buf, name, v);
 }
-#define pkt_logInt8Array(name, buf, it, in, count) pkt_logUint8Array(name, buf, it, (const uint8_t*)in, count)
-static void pkt_logUint8Array(const char *name, char *buf, char *it, const uint8_t *in, uint32_t count) {
+#define pkt_logInt8Array(ctx, name, buf, it, in, count) pkt_logUint8Array(ctx, name, buf, it, (const uint8_t*)in, count)
+static void pkt_logUint8Array(struct PacketContext ctx, const char *name, char *buf, char *it, const uint8_t *in, uint32_t count) {
 	fprintf(stderr, "%.*s%s=", (uint32_t)(it - buf), buf, name);
 	for(uint32_t i = 0; i < count; ++i)
 		fprintf(stderr, "%02hhx", in[i]);
 	fprintf(stderr, "\n");
 }
 #define pkt_logFloat32 pkt_logFloat64
-static void pkt_logFloat64(const char *name, char *buf, char *it, double v) {
+static void pkt_logFloat64(struct PacketContext ctx, const char *name, char *buf, char *it, double v) {
 	fprintf(stderr, "%.*s%s=%f\n", (uint32_t)(it - buf), buf, name, v);
 }
-struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(const uint8_t **pkt) {
+struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(struct PacketContext ctx, const uint8_t **pkt) {
 	struct PacketEncryptionLayer out;
-	out.encrypted = pkt_readUint8(pkt);
+	out.encrypted = pkt_readUint8(ctx, pkt);
 	if(out.encrypted == 1) {
-		out.sequenceId = pkt_readUint32(pkt);
+		out.sequenceId = pkt_readUint32(ctx, pkt);
 		pkt_readUint8Array(pkt, out.iv, 16);
 	}
 	return out;
 }
-void pkt_writePacketEncryptionLayer(uint8_t **pkt, struct PacketEncryptionLayer in) {
-	pkt_writeUint8(pkt, in.encrypted);
+void pkt_writePacketEncryptionLayer(struct PacketContext ctx, uint8_t **pkt, struct PacketEncryptionLayer in) {
+	pkt_writeUint8(ctx, pkt, in.encrypted);
 	if(in.encrypted == 1) {
-		pkt_writeUint32(pkt, in.sequenceId);
-		pkt_writeUint8Array(pkt, in.iv, 16);
+		pkt_writeUint32(ctx, pkt, in.sequenceId);
+		pkt_writeUint8Array(ctx, pkt, in.iv, 16);
 	}
 }
-struct BaseMasterServerReliableRequest pkt_readBaseMasterServerReliableRequest(const uint8_t **pkt) {
+struct BaseMasterServerReliableRequest pkt_readBaseMasterServerReliableRequest(struct PacketContext ctx, const uint8_t **pkt) {
 	struct BaseMasterServerReliableRequest out;
-	out.requestId = pkt_readUint32(pkt);
+	out.requestId = pkt_readUint32(ctx, pkt);
 	return out;
 }
-void pkt_writeBaseMasterServerReliableRequest(uint8_t **pkt, struct BaseMasterServerReliableRequest in) {
-	pkt_writeUint32(pkt, in.requestId);
+void pkt_writeBaseMasterServerReliableRequest(struct PacketContext ctx, uint8_t **pkt, struct BaseMasterServerReliableRequest in) {
+	pkt_writeUint32(ctx, pkt, in.requestId);
 }
-struct BaseMasterServerResponse pkt_readBaseMasterServerResponse(const uint8_t **pkt) {
+struct BaseMasterServerResponse pkt_readBaseMasterServerResponse(struct PacketContext ctx, const uint8_t **pkt) {
 	struct BaseMasterServerResponse out;
-	out.responseId = pkt_readUint32(pkt);
+	out.responseId = pkt_readUint32(ctx, pkt);
 	return out;
 }
-void pkt_writeBaseMasterServerResponse(uint8_t **pkt, struct BaseMasterServerResponse in) {
-	pkt_writeUint32(pkt, in.responseId);
+void pkt_writeBaseMasterServerResponse(struct PacketContext ctx, uint8_t **pkt, struct BaseMasterServerResponse in) {
+	pkt_writeUint32(ctx, pkt, in.responseId);
 }
-struct BaseMasterServerReliableResponse pkt_readBaseMasterServerReliableResponse(const uint8_t **pkt) {
+struct BaseMasterServerReliableResponse pkt_readBaseMasterServerReliableResponse(struct PacketContext ctx, const uint8_t **pkt) {
 	struct BaseMasterServerReliableResponse out;
-	out.requestId = pkt_readUint32(pkt);
-	out.responseId = pkt_readUint32(pkt);
+	out.requestId = pkt_readUint32(ctx, pkt);
+	out.responseId = pkt_readUint32(ctx, pkt);
 	return out;
 }
-void pkt_writeBaseMasterServerReliableResponse(uint8_t **pkt, struct BaseMasterServerReliableResponse in) {
-	pkt_writeUint32(pkt, in.requestId);
-	pkt_writeUint32(pkt, in.responseId);
+void pkt_writeBaseMasterServerReliableResponse(struct PacketContext ctx, uint8_t **pkt, struct BaseMasterServerReliableResponse in) {
+	pkt_writeUint32(ctx, pkt, in.requestId);
+	pkt_writeUint32(ctx, pkt, in.responseId);
 }
-struct BaseMasterServerAcknowledgeMessage pkt_readBaseMasterServerAcknowledgeMessage(const uint8_t **pkt) {
+struct BaseMasterServerAcknowledgeMessage pkt_readBaseMasterServerAcknowledgeMessage(struct PacketContext ctx, const uint8_t **pkt) {
 	struct BaseMasterServerAcknowledgeMessage out;
-	out.base = pkt_readBaseMasterServerResponse(pkt);
-	out.messageHandled = pkt_readUint8(pkt);
+	out.base = pkt_readBaseMasterServerResponse(ctx, pkt);
+	out.messageHandled = pkt_readUint8(ctx, pkt);
 	return out;
 }
-void pkt_writeBaseMasterServerAcknowledgeMessage(uint8_t **pkt, struct BaseMasterServerAcknowledgeMessage in) {
-	pkt_writeBaseMasterServerResponse(pkt, in.base);
-	pkt_writeUint8(pkt, in.messageHandled);
+void pkt_writeBaseMasterServerAcknowledgeMessage(struct PacketContext ctx, uint8_t **pkt, struct BaseMasterServerAcknowledgeMessage in) {
+	pkt_writeBaseMasterServerResponse(ctx, pkt, in.base);
+	pkt_writeUint8(ctx, pkt, in.messageHandled);
 }
-struct ByteArrayNetSerializable pkt_readByteArrayNetSerializable(const uint8_t **pkt) {
+struct ByteArrayNetSerializable pkt_readByteArrayNetSerializable(struct PacketContext ctx, const uint8_t **pkt) {
 	struct ByteArrayNetSerializable out;
-	out.length = pkt_readVarUint32(pkt);
+	out.length = pkt_readVarUint32(ctx, pkt);
 	if(out.length > 4096) {
 		fprintf(stderr, "Buffer overflow in read of ByteArrayNetSerializable.data: %u > 4096\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
 	} else {
@@ -228,21 +228,21 @@ struct ByteArrayNetSerializable pkt_readByteArrayNetSerializable(const uint8_t *
 	}
 	return out;
 }
-void pkt_writeByteArrayNetSerializable(uint8_t **pkt, struct ByteArrayNetSerializable in) {
-	pkt_writeVarUint32(pkt, in.length);
-	pkt_writeUint8Array(pkt, in.data, in.length);
+void pkt_writeByteArrayNetSerializable(struct PacketContext ctx, uint8_t **pkt, struct ByteArrayNetSerializable in) {
+	pkt_writeVarUint32(ctx, pkt, in.length);
+	pkt_writeUint8Array(ctx, pkt, in.data, in.length);
 }
-#ifdef PACKET_LOGGING_FUNCS
-static void pkt_logString(const char *name, char *buf, char *it, struct String in) {
-	fprintf(stderr, "%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
-}
-static void pkt_logLongString(const char *name, char *buf, char *it, struct LongString in) {
-	fprintf(stderr, "%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
-}
-#endif
-struct String pkt_readString(const uint8_t **pkt) {
+struct String pkt_readString(struct PacketContext ctx, const uint8_t **pkt) {
 	struct String out;
-	out.length = pkt_readUint32(pkt);
+	if(ctx.netVersion >= 12) {
+		out.length = pkt_readUint16(ctx, pkt);
+		out.isNull = (out.length != 0);
+		if(out.length)
+			--out.length;
+	} else {
+		out.length = pkt_readUint32(ctx, pkt);
+		out.isNull = 0;
+	}
 	if(out.length > 60) {
 		fprintf(stderr, "Buffer overflow in read of String.data: %u > 60\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
 	} else {
@@ -250,13 +250,17 @@ struct String pkt_readString(const uint8_t **pkt) {
 	}
 	return out;
 }
-void pkt_writeString(uint8_t **pkt, struct String in) {
-	pkt_writeUint32(pkt, in.length);
-	pkt_writeInt8Array(pkt, in.data, in.length);
-}
-struct LongString pkt_readLongString(const uint8_t **pkt) {
+struct LongString pkt_readLongString(struct PacketContext ctx, const uint8_t **pkt) {
 	struct LongString out;
-	out.length = pkt_readUint32(pkt);
+	if(ctx.netVersion >= 12) {
+		out.length = pkt_readUint16(ctx, pkt);
+		out.isNull = (out.length != 0);
+		if(out.length)
+			--out.length;
+	} else {
+		out.length = pkt_readUint32(ctx, pkt);
+		out.isNull = 0;
+	}
 	if(out.length > 4096) {
 		fprintf(stderr, "Buffer overflow in read of LongString.data: %u > 4096\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
 	} else {
@@ -264,25 +268,43 @@ struct LongString pkt_readLongString(const uint8_t **pkt) {
 	}
 	return out;
 }
-void pkt_writeLongString(uint8_t **pkt, struct LongString in) {
-	pkt_writeUint32(pkt, in.length);
-	pkt_writeInt8Array(pkt, in.data, in.length);
+void pkt_writeString(struct PacketContext ctx, uint8_t **pkt, struct String in) {
+	if(ctx.netVersion >= 12)
+		pkt_writeUint16(ctx, pkt, in.length + !in.isNull);
+	else
+		pkt_writeUint32(ctx, pkt, in.length);
+	pkt_writeInt8Array(ctx, pkt, in.data, in.length);
 }
-struct AuthenticationToken pkt_readAuthenticationToken(const uint8_t **pkt) {
+void pkt_writeLongString(struct PacketContext ctx, uint8_t **pkt, struct LongString in) {
+	if(ctx.netVersion >= 12)
+		pkt_writeUint16(ctx, pkt, in.length + !in.isNull);
+	else
+		pkt_writeUint32(ctx, pkt, in.length);
+	pkt_writeInt8Array(ctx, pkt, in.data, in.length);
+}
+#ifdef PACKET_LOGGING_FUNCS
+static void pkt_logString(struct PacketContext ctx, const char *name, char *buf, char *it, struct String in) {
+	fprintf(stderr, "%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
+}
+static void pkt_logLongString(struct PacketContext ctx, const char *name, char *buf, char *it, struct LongString in) {
+	fprintf(stderr, "%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
+}
+#endif
+struct AuthenticationToken pkt_readAuthenticationToken(struct PacketContext ctx, const uint8_t **pkt) {
 	struct AuthenticationToken out;
-	out.platform = pkt_readUint8(pkt);
-	out.userId = pkt_readString(pkt);
-	out.userName = pkt_readString(pkt);
-	out.sessionToken = pkt_readByteArrayNetSerializable(pkt);
+	out.platform = pkt_readUint8(ctx, pkt);
+	out.userId = pkt_readString(ctx, pkt);
+	out.userName = pkt_readString(ctx, pkt);
+	out.sessionToken = pkt_readByteArrayNetSerializable(ctx, pkt);
 	return out;
 }
-struct BaseMasterServerMultipartMessage pkt_readBaseMasterServerMultipartMessage(const uint8_t **pkt) {
+struct BaseMasterServerMultipartMessage pkt_readBaseMasterServerMultipartMessage(struct PacketContext ctx, const uint8_t **pkt) {
 	struct BaseMasterServerMultipartMessage out;
-	out.base = pkt_readBaseMasterServerReliableRequest(pkt);
-	out.multipartMessageId = pkt_readUint32(pkt);
-	out.offset = pkt_readVarUint32(pkt);
-	out.length = pkt_readVarUint32(pkt);
-	out.totalLength = pkt_readVarUint32(pkt);
+	out.base = pkt_readBaseMasterServerReliableRequest(ctx, pkt);
+	out.multipartMessageId = pkt_readUint32(ctx, pkt);
+	out.offset = pkt_readVarUint32(ctx, pkt);
+	out.length = pkt_readVarUint32(ctx, pkt);
+	out.totalLength = pkt_readVarUint32(ctx, pkt);
 	if(out.length > 384) {
 		fprintf(stderr, "Buffer overflow in read of BaseMasterServerMultipartMessage.data: %u > 384\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
 	} else {
@@ -290,61 +312,61 @@ struct BaseMasterServerMultipartMessage pkt_readBaseMasterServerMultipartMessage
 	}
 	return out;
 }
-void pkt_writeBaseMasterServerMultipartMessage(uint8_t **pkt, struct BaseMasterServerMultipartMessage in) {
-	pkt_writeBaseMasterServerReliableRequest(pkt, in.base);
-	pkt_writeUint32(pkt, in.multipartMessageId);
-	pkt_writeVarUint32(pkt, in.offset);
-	pkt_writeVarUint32(pkt, in.length);
-	pkt_writeVarUint32(pkt, in.totalLength);
-	pkt_writeUint8Array(pkt, in.data, in.length);
+void pkt_writeBaseMasterServerMultipartMessage(struct PacketContext ctx, uint8_t **pkt, struct BaseMasterServerMultipartMessage in) {
+	pkt_writeBaseMasterServerReliableRequest(ctx, pkt, in.base);
+	pkt_writeUint32(ctx, pkt, in.multipartMessageId);
+	pkt_writeVarUint32(ctx, pkt, in.offset);
+	pkt_writeVarUint32(ctx, pkt, in.length);
+	pkt_writeVarUint32(ctx, pkt, in.totalLength);
+	pkt_writeUint8Array(ctx, pkt, in.data, in.length);
 }
-struct BitMask128 pkt_readBitMask128(const uint8_t **pkt) {
+struct BitMask128 pkt_readBitMask128(struct PacketContext ctx, const uint8_t **pkt) {
 	struct BitMask128 out;
-	out.d0 = pkt_readUint64(pkt);
-	out.d1 = pkt_readUint64(pkt);
+	out.d0 = pkt_readUint64(ctx, pkt);
+	out.d1 = pkt_readUint64(ctx, pkt);
 	return out;
 }
-void pkt_writeBitMask128(uint8_t **pkt, struct BitMask128 in) {
-	pkt_writeUint64(pkt, in.d0);
-	pkt_writeUint64(pkt, in.d1);
+void pkt_writeBitMask128(struct PacketContext ctx, uint8_t **pkt, struct BitMask128 in) {
+	pkt_writeUint64(ctx, pkt, in.d0);
+	pkt_writeUint64(ctx, pkt, in.d1);
 }
-struct SongPackMask pkt_readSongPackMask(const uint8_t **pkt) {
+struct SongPackMask pkt_readSongPackMask(struct PacketContext ctx, const uint8_t **pkt) {
 	struct SongPackMask out;
-	out.bloomFilter = pkt_readBitMask128(pkt);
+	out.bloomFilter = pkt_readBitMask128(ctx, pkt);
 	return out;
 }
-void pkt_writeSongPackMask(uint8_t **pkt, struct SongPackMask in) {
-	pkt_writeBitMask128(pkt, in.bloomFilter);
+void pkt_writeSongPackMask(struct PacketContext ctx, uint8_t **pkt, struct SongPackMask in) {
+	pkt_writeBitMask128(ctx, pkt, in.bloomFilter);
 }
-struct BeatmapLevelSelectionMask pkt_readBeatmapLevelSelectionMask(const uint8_t **pkt) {
+struct BeatmapLevelSelectionMask pkt_readBeatmapLevelSelectionMask(struct PacketContext ctx, const uint8_t **pkt) {
 	struct BeatmapLevelSelectionMask out;
-	out.difficulties = pkt_readUint8(pkt);
-	out.modifiers = pkt_readUint32(pkt);
-	out.songPacks = pkt_readSongPackMask(pkt);
+	out.difficulties = pkt_readUint8(ctx, pkt);
+	out.modifiers = pkt_readUint32(ctx, pkt);
+	out.songPacks = pkt_readSongPackMask(ctx, pkt);
 	return out;
 }
-void pkt_writeBeatmapLevelSelectionMask(uint8_t **pkt, struct BeatmapLevelSelectionMask in) {
-	pkt_writeUint8(pkt, in.difficulties);
-	pkt_writeUint32(pkt, in.modifiers);
-	pkt_writeSongPackMask(pkt, in.songPacks);
+void pkt_writeBeatmapLevelSelectionMask(struct PacketContext ctx, uint8_t **pkt, struct BeatmapLevelSelectionMask in) {
+	pkt_writeUint8(ctx, pkt, in.difficulties);
+	pkt_writeUint32(ctx, pkt, in.modifiers);
+	pkt_writeSongPackMask(ctx, pkt, in.songPacks);
 }
-struct GameplayServerConfiguration pkt_readGameplayServerConfiguration(const uint8_t **pkt) {
+struct GameplayServerConfiguration pkt_readGameplayServerConfiguration(struct PacketContext ctx, const uint8_t **pkt) {
 	struct GameplayServerConfiguration out;
-	out.maxPlayerCount = pkt_readVarInt32(pkt);
-	out.discoveryPolicy = pkt_readVarInt32(pkt);
-	out.invitePolicy = pkt_readVarInt32(pkt);
-	out.gameplayServerMode = pkt_readVarInt32(pkt);
-	out.songSelectionMode = pkt_readVarInt32(pkt);
-	out.gameplayServerControlSettings = pkt_readVarInt32(pkt);
+	out.maxPlayerCount = pkt_readVarInt32(ctx, pkt);
+	out.discoveryPolicy = pkt_readVarInt32(ctx, pkt);
+	out.invitePolicy = pkt_readVarInt32(ctx, pkt);
+	out.gameplayServerMode = pkt_readVarInt32(ctx, pkt);
+	out.songSelectionMode = pkt_readVarInt32(ctx, pkt);
+	out.gameplayServerControlSettings = pkt_readVarInt32(ctx, pkt);
 	return out;
 }
-void pkt_writeGameplayServerConfiguration(uint8_t **pkt, struct GameplayServerConfiguration in) {
-	pkt_writeVarInt32(pkt, in.maxPlayerCount);
-	pkt_writeVarInt32(pkt, in.discoveryPolicy);
-	pkt_writeVarInt32(pkt, in.invitePolicy);
-	pkt_writeVarInt32(pkt, in.gameplayServerMode);
-	pkt_writeVarInt32(pkt, in.songSelectionMode);
-	pkt_writeVarInt32(pkt, in.gameplayServerControlSettings);
+void pkt_writeGameplayServerConfiguration(struct PacketContext ctx, uint8_t **pkt, struct GameplayServerConfiguration in) {
+	pkt_writeVarInt32(ctx, pkt, in.maxPlayerCount);
+	pkt_writeVarInt32(ctx, pkt, in.discoveryPolicy);
+	pkt_writeVarInt32(ctx, pkt, in.invitePolicy);
+	pkt_writeVarInt32(ctx, pkt, in.gameplayServerMode);
+	pkt_writeVarInt32(ctx, pkt, in.songSelectionMode);
+	pkt_writeVarInt32(ctx, pkt, in.gameplayServerControlSettings);
 }
 ServerCode StringToServerCode(const char *in, uint32_t len) {
 	static const uint8_t readTable[128] = {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,27,28,29,30,31,32,33,34,35,36,1,1,1,1,1,1,1,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1};
@@ -361,321 +383,327 @@ char *ServerCodeToString(char *out, ServerCode in) {
 	*s = 0;
 	return out;
 }
-static ServerCode pkt_readServerCode(const uint8_t **pkt) {
-	struct String str = pkt_readString(pkt);
+static ServerCode pkt_readServerCode(struct PacketContext ctx, const uint8_t **pkt) {
+	struct String str = pkt_readString(ctx, pkt);
 	return StringToServerCode(str.data, str.length);
 }
-static void pkt_writeServerCode(uint8_t **pkt, ServerCode in) {
+static void pkt_writeServerCode(struct PacketContext ctx, uint8_t **pkt, ServerCode in) {
 	struct String str = {.length = 0};
 	for(in = scramble_encode(in); in; in /= 36)
 		str.data[str.length++] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--in % 36];
-	pkt_writeString(pkt, str);
+	pkt_writeString(ctx, pkt, str);
 }
 #ifdef PACKET_LOGGING_FUNCS
-static void pkt_logServerCode(const char *name, char *buf, char *it, ServerCode in) {
+static void pkt_logServerCode(struct PacketContext ctx, const char *name, char *buf, char *it, ServerCode in) {
 	fprintf(stderr, "%.*s%s=%u (\"", (uint32_t)(it - buf), buf, name, in);
 	for(; in; in /= 36)
 		fprintf(stderr, "%c", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--in % 36]);
 	fprintf(stderr, "\")\n");
 }
 #endif
-void pkt_writeIPEndPoint(uint8_t **pkt, struct IPEndPoint in) {
-	pkt_writeString(pkt, in.address);
-	pkt_writeUint32(pkt, in.port);
+void pkt_writeIPEndPoint(struct PacketContext ctx, uint8_t **pkt, struct IPEndPoint in) {
+	pkt_writeString(ctx, pkt, in.address);
+	pkt_writeUint32(ctx, pkt, in.port);
 }
-struct BaseConnectToServerRequest pkt_readBaseConnectToServerRequest(const uint8_t **pkt) {
+struct BaseConnectToServerRequest pkt_readBaseConnectToServerRequest(struct PacketContext ctx, const uint8_t **pkt) {
 	struct BaseConnectToServerRequest out;
-	out.base = pkt_readBaseMasterServerReliableRequest(pkt);
-	out.userId = pkt_readString(pkt);
-	out.userName = pkt_readString(pkt);
+	out.base = pkt_readBaseMasterServerReliableRequest(ctx, pkt);
+	out.userId = pkt_readString(ctx, pkt);
+	out.userName = pkt_readString(ctx, pkt);
 	pkt_readUint8Array(pkt, out.random, 32);
-	out.publicKey = pkt_readByteArrayNetSerializable(pkt);
+	out.publicKey = pkt_readByteArrayNetSerializable(ctx, pkt);
 	return out;
 }
-struct Channeled pkt_readChanneled(const uint8_t **pkt) {
+struct Channeled pkt_readChanneled(struct PacketContext ctx, const uint8_t **pkt) {
 	struct Channeled out;
-	out.sequence = pkt_readUint16(pkt);
-	out.channelId = pkt_readUint8(pkt);
+	out.sequence = pkt_readUint16(ctx, pkt);
+	out.channelId = pkt_readUint8(ctx, pkt);
 	return out;
 }
-void pkt_writeChanneled(uint8_t **pkt, struct Channeled in) {
-	pkt_writeUint16(pkt, in.sequence);
-	pkt_writeUint8(pkt, in.channelId);
+void pkt_writeChanneled(struct PacketContext ctx, uint8_t **pkt, struct Channeled in) {
+	pkt_writeUint16(ctx, pkt, in.sequence);
+	pkt_writeUint8(ctx, pkt, in.channelId);
 }
-struct Ack pkt_readAck(const uint8_t **pkt) {
+struct Ack pkt_readAck(struct PacketContext ctx, const uint8_t **pkt) {
 	struct Ack out;
-	out.sequence = pkt_readUint16(pkt);
-	out.channelId = pkt_readUint8(pkt);
+	out.sequence = pkt_readUint16(ctx, pkt);
+	out.channelId = pkt_readUint8(ctx, pkt);
 	if(out.channelId % 2 == 0) {
 		pkt_readUint8Array(pkt, out.data, 8);
-		out._pad0 = pkt_readUint8(pkt);
+		out._pad0 = pkt_readUint8(ctx, pkt);
 	}
 	return out;
 }
-void pkt_writeAck(uint8_t **pkt, struct Ack in) {
-	pkt_writeUint16(pkt, in.sequence);
-	pkt_writeUint8(pkt, in.channelId);
+void pkt_writeAck(struct PacketContext ctx, uint8_t **pkt, struct Ack in) {
+	pkt_writeUint16(ctx, pkt, in.sequence);
+	pkt_writeUint8(ctx, pkt, in.channelId);
 	if(in.channelId % 2 == 0) {
-		pkt_writeUint8Array(pkt, in.data, 8);
-		pkt_writeUint8(pkt, in._pad0);
+		pkt_writeUint8Array(ctx, pkt, in.data, 8);
+		pkt_writeUint8(ctx, pkt, in._pad0);
 	}
 }
-struct Ping pkt_readPing(const uint8_t **pkt) {
+struct Ping pkt_readPing(struct PacketContext ctx, const uint8_t **pkt) {
 	struct Ping out;
-	out.sequence = pkt_readUint16(pkt);
+	out.sequence = pkt_readUint16(ctx, pkt);
 	return out;
 }
-void pkt_writePing(uint8_t **pkt, struct Ping in) {
-	pkt_writeUint16(pkt, in.sequence);
+void pkt_writePing(struct PacketContext ctx, uint8_t **pkt, struct Ping in) {
+	pkt_writeUint16(ctx, pkt, in.sequence);
 }
-struct Pong pkt_readPong(const uint8_t **pkt) {
+struct Pong pkt_readPong(struct PacketContext ctx, const uint8_t **pkt) {
 	struct Pong out;
-	out.sequence = pkt_readUint16(pkt);
-	out.time = pkt_readUint64(pkt);
+	out.sequence = pkt_readUint16(ctx, pkt);
+	out.time = pkt_readUint64(ctx, pkt);
 	return out;
 }
-void pkt_writePong(uint8_t **pkt, struct Pong in) {
-	pkt_writeUint16(pkt, in.sequence);
-	pkt_writeUint64(pkt, in.time);
+void pkt_writePong(struct PacketContext ctx, uint8_t **pkt, struct Pong in) {
+	pkt_writeUint16(ctx, pkt, in.sequence);
+	pkt_writeUint64(ctx, pkt, in.time);
 }
-struct ConnectRequest pkt_readConnectRequest(const uint8_t **pkt) {
+struct ConnectRequest pkt_readConnectRequest(struct PacketContext ctx, const uint8_t **pkt) {
 	struct ConnectRequest out;
-	out.protocolId = pkt_readUint32(pkt);
-	out.connectId = pkt_readUint64(pkt);
-	out.addrlen = pkt_readUint8(pkt);
+	out.protocolId = pkt_readUint32(ctx, pkt);
+	out.connectTime = pkt_readUint64(ctx, pkt);
+	if((ctx.netVersion = out.protocolId) >= 12) {
+		out.peerId = pkt_readInt32(ctx, pkt);
+	}
+	out.addrlen = pkt_readUint8(ctx, pkt);
 	if(out.addrlen > 38) {
 		fprintf(stderr, "Buffer overflow in read of ConnectRequest.address: %u > 38\n", (uint32_t)out.addrlen), out.addrlen = 0, *pkt = _trap;
 	} else {
 		pkt_readUint8Array(pkt, out.address, out.addrlen);
 	}
-	out.secret = pkt_readString(pkt);
-	out.userId = pkt_readString(pkt);
-	out.userName = pkt_readString(pkt);
-	out.isConnectionOwner = pkt_readUint8(pkt);
+	out.secret = pkt_readString(ctx, pkt);
+	out.userId = pkt_readString(ctx, pkt);
+	out.userName = pkt_readString(ctx, pkt);
+	out.isConnectionOwner = pkt_readUint8(ctx, pkt);
 	return out;
 }
-void pkt_writeConnectAccept(uint8_t **pkt, struct ConnectAccept in) {
-	pkt_writeUint64(pkt, in.connectId);
-	pkt_writeUint8(pkt, in.connectNum);
-	pkt_writeUint8(pkt, in.reusedPeer);
+void pkt_writeConnectAccept(struct PacketContext ctx, uint8_t **pkt, struct ConnectAccept in) {
+	pkt_writeUint64(ctx, pkt, in.connectTime);
+	pkt_writeUint8(ctx, pkt, in.connectNum);
+	pkt_writeUint8(ctx, pkt, in.reusedPeer);
+	if(ctx.netVersion >= 12) {
+		pkt_writeInt32(ctx, pkt, in.peerId);
+	}
 }
-struct Disconnect pkt_readDisconnect(const uint8_t **pkt) {
+struct Disconnect pkt_readDisconnect(struct PacketContext ctx, const uint8_t **pkt) {
 	struct Disconnect out;
 	pkt_readUint8Array(pkt, out._pad0, 8);
 	return out;
 }
-struct MtuCheck pkt_readMtuCheck(const uint8_t **pkt) {
+struct MtuCheck pkt_readMtuCheck(struct PacketContext ctx, const uint8_t **pkt) {
 	struct MtuCheck out;
-	out.newMtu0 = pkt_readUint32(pkt);
+	out.newMtu0 = pkt_readUint32(ctx, pkt);
 	if(out.newMtu0-9 > 1423) {
 		fprintf(stderr, "Buffer overflow in read of MtuCheck.pad: %u > 1423\n", (uint32_t)out.newMtu0-9), out.newMtu0 = 0, *pkt = _trap;
 	} else {
 		pkt_readUint8Array(pkt, out.pad, out.newMtu0-9);
 	}
-	out.newMtu1 = pkt_readUint32(pkt);
+	out.newMtu1 = pkt_readUint32(ctx, pkt);
 	return out;
 }
-void pkt_writeMtuOk(uint8_t **pkt, struct MtuOk in) {
-	pkt_writeUint32(pkt, in.newMtu0);
-	pkt_writeUint8Array(pkt, in.pad, in.newMtu0-9);
-	pkt_writeUint32(pkt, in.newMtu1);
+void pkt_writeMtuOk(struct PacketContext ctx, uint8_t **pkt, struct MtuOk in) {
+	pkt_writeUint32(ctx, pkt, in.newMtu0);
+	pkt_writeUint8Array(ctx, pkt, in.pad, in.newMtu0-9);
+	pkt_writeUint32(ctx, pkt, in.newMtu1);
 }
-struct NetPacketHeader pkt_readNetPacketHeader(const uint8_t **pkt) {
+struct NetPacketHeader pkt_readNetPacketHeader(struct PacketContext ctx, const uint8_t **pkt) {
 	struct NetPacketHeader out;
-	uint8_t bits = pkt_readUint8(pkt);
+	uint8_t bits = pkt_readUint8(ctx, pkt);
 	out.property = (bits >> 0) & 31;
 	out.connectionNumber = (bits >> 5) & 3;
 	out.isFragmented = (bits >> 7) & 1;
 	return out;
 }
-void pkt_writeNetPacketHeader(uint8_t **pkt, struct NetPacketHeader in) {
+void pkt_writeNetPacketHeader(struct PacketContext ctx, uint8_t **pkt, struct NetPacketHeader in) {
 	uint8_t bits = 0;
 	bits |= (in.property << 0);
 	bits |= (in.connectionNumber << 5);
 	bits |= (in.isFragmented << 7);
-	pkt_writeUint8(pkt, bits);
+	pkt_writeUint8(ctx, pkt, bits);
 }
-struct FragmentedHeader pkt_readFragmentedHeader(const uint8_t **pkt) {
+struct FragmentedHeader pkt_readFragmentedHeader(struct PacketContext ctx, const uint8_t **pkt) {
 	struct FragmentedHeader out;
-	out.fragmentId = pkt_readUint16(pkt);
-	out.fragmentPart = pkt_readUint16(pkt);
-	out.fragmentsTotal = pkt_readUint16(pkt);
+	out.fragmentId = pkt_readUint16(ctx, pkt);
+	out.fragmentPart = pkt_readUint16(ctx, pkt);
+	out.fragmentsTotal = pkt_readUint16(ctx, pkt);
 	return out;
 }
-struct PlayerStateHash pkt_readPlayerStateHash(const uint8_t **pkt) {
+struct PlayerStateHash pkt_readPlayerStateHash(struct PacketContext ctx, const uint8_t **pkt) {
 	struct PlayerStateHash out;
-	out.bloomFilter = pkt_readBitMask128(pkt);
+	out.bloomFilter = pkt_readBitMask128(ctx, pkt);
 	return out;
 }
-void pkt_writePlayerStateHash(uint8_t **pkt, struct PlayerStateHash in) {
-	pkt_writeBitMask128(pkt, in.bloomFilter);
+void pkt_writePlayerStateHash(struct PacketContext ctx, uint8_t **pkt, struct PlayerStateHash in) {
+	pkt_writeBitMask128(ctx, pkt, in.bloomFilter);
 }
-struct Color32 pkt_readColor32(const uint8_t **pkt) {
+struct Color32 pkt_readColor32(struct PacketContext ctx, const uint8_t **pkt) {
 	struct Color32 out;
-	out.r = pkt_readUint8(pkt);
-	out.g = pkt_readUint8(pkt);
-	out.b = pkt_readUint8(pkt);
-	out.a = pkt_readUint8(pkt);
+	out.r = pkt_readUint8(ctx, pkt);
+	out.g = pkt_readUint8(ctx, pkt);
+	out.b = pkt_readUint8(ctx, pkt);
+	out.a = pkt_readUint8(ctx, pkt);
 	return out;
 }
-void pkt_writeColor32(uint8_t **pkt, struct Color32 in) {
-	pkt_writeUint8(pkt, in.r);
-	pkt_writeUint8(pkt, in.g);
-	pkt_writeUint8(pkt, in.b);
-	pkt_writeUint8(pkt, in.a);
+void pkt_writeColor32(struct PacketContext ctx, uint8_t **pkt, struct Color32 in) {
+	pkt_writeUint8(ctx, pkt, in.r);
+	pkt_writeUint8(ctx, pkt, in.g);
+	pkt_writeUint8(ctx, pkt, in.b);
+	pkt_writeUint8(ctx, pkt, in.a);
 }
-struct MultiplayerAvatarData pkt_readMultiplayerAvatarData(const uint8_t **pkt) {
+struct MultiplayerAvatarData pkt_readMultiplayerAvatarData(struct PacketContext ctx, const uint8_t **pkt) {
 	struct MultiplayerAvatarData out;
-	out.headTopId = pkt_readString(pkt);
-	out.headTopPrimaryColor = pkt_readColor32(pkt);
-	out.handsColor = pkt_readColor32(pkt);
-	out.clothesId = pkt_readString(pkt);
-	out.clothesPrimaryColor = pkt_readColor32(pkt);
-	out.clothesSecondaryColor = pkt_readColor32(pkt);
-	out.clothesDetailColor = pkt_readColor32(pkt);
+	out.headTopId = pkt_readString(ctx, pkt);
+	out.headTopPrimaryColor = pkt_readColor32(ctx, pkt);
+	out.handsColor = pkt_readColor32(ctx, pkt);
+	out.clothesId = pkt_readString(ctx, pkt);
+	out.clothesPrimaryColor = pkt_readColor32(ctx, pkt);
+	out.clothesSecondaryColor = pkt_readColor32(ctx, pkt);
+	out.clothesDetailColor = pkt_readColor32(ctx, pkt);
 	for(uint32_t i = 0; i < 2; ++i)
-		out._unused[i] = pkt_readColor32(pkt);
-	out.eyesId = pkt_readString(pkt);
-	out.mouthId = pkt_readString(pkt);
-	out.glassesColor = pkt_readColor32(pkt);
-	out.facialHairColor = pkt_readColor32(pkt);
-	out.headTopSecondaryColor = pkt_readColor32(pkt);
-	out.glassesId = pkt_readString(pkt);
-	out.facialHairId = pkt_readString(pkt);
-	out.handsId = pkt_readString(pkt);
+		out._unused[i] = pkt_readColor32(ctx, pkt);
+	out.eyesId = pkt_readString(ctx, pkt);
+	out.mouthId = pkt_readString(ctx, pkt);
+	out.glassesColor = pkt_readColor32(ctx, pkt);
+	out.facialHairColor = pkt_readColor32(ctx, pkt);
+	out.headTopSecondaryColor = pkt_readColor32(ctx, pkt);
+	out.glassesId = pkt_readString(ctx, pkt);
+	out.facialHairId = pkt_readString(ctx, pkt);
+	out.handsId = pkt_readString(ctx, pkt);
 	return out;
 }
-void pkt_writeMultiplayerAvatarData(uint8_t **pkt, struct MultiplayerAvatarData in) {
-	pkt_writeString(pkt, in.headTopId);
-	pkt_writeColor32(pkt, in.headTopPrimaryColor);
-	pkt_writeColor32(pkt, in.handsColor);
-	pkt_writeString(pkt, in.clothesId);
-	pkt_writeColor32(pkt, in.clothesPrimaryColor);
-	pkt_writeColor32(pkt, in.clothesSecondaryColor);
-	pkt_writeColor32(pkt, in.clothesDetailColor);
+void pkt_writeMultiplayerAvatarData(struct PacketContext ctx, uint8_t **pkt, struct MultiplayerAvatarData in) {
+	pkt_writeString(ctx, pkt, in.headTopId);
+	pkt_writeColor32(ctx, pkt, in.headTopPrimaryColor);
+	pkt_writeColor32(ctx, pkt, in.handsColor);
+	pkt_writeString(ctx, pkt, in.clothesId);
+	pkt_writeColor32(ctx, pkt, in.clothesPrimaryColor);
+	pkt_writeColor32(ctx, pkt, in.clothesSecondaryColor);
+	pkt_writeColor32(ctx, pkt, in.clothesDetailColor);
 	for(uint32_t i = 0; i < 2; ++i)
-		pkt_writeColor32(pkt, in._unused[i]);
-	pkt_writeString(pkt, in.eyesId);
-	pkt_writeString(pkt, in.mouthId);
-	pkt_writeColor32(pkt, in.glassesColor);
-	pkt_writeColor32(pkt, in.facialHairColor);
-	pkt_writeColor32(pkt, in.headTopSecondaryColor);
-	pkt_writeString(pkt, in.glassesId);
-	pkt_writeString(pkt, in.facialHairId);
-	pkt_writeString(pkt, in.handsId);
+		pkt_writeColor32(ctx, pkt, in._unused[i]);
+	pkt_writeString(ctx, pkt, in.eyesId);
+	pkt_writeString(ctx, pkt, in.mouthId);
+	pkt_writeColor32(ctx, pkt, in.glassesColor);
+	pkt_writeColor32(ctx, pkt, in.facialHairColor);
+	pkt_writeColor32(ctx, pkt, in.headTopSecondaryColor);
+	pkt_writeString(ctx, pkt, in.glassesId);
+	pkt_writeString(ctx, pkt, in.facialHairId);
+	pkt_writeString(ctx, pkt, in.handsId);
 }
-struct RoutingHeader pkt_readRoutingHeader(const uint8_t **pkt) {
+struct RoutingHeader pkt_readRoutingHeader(struct PacketContext ctx, const uint8_t **pkt) {
 	struct RoutingHeader out;
-	out.remoteConnectionId = pkt_readUint8(pkt);
-	uint8_t bits = pkt_readUint8(pkt);
+	out.remoteConnectionId = pkt_readUint8(ctx, pkt);
+	uint8_t bits = pkt_readUint8(ctx, pkt);
 	out.connectionId = (bits >> 0) & 127;
 	out.encrypted = (bits >> 7) & 1;
 	return out;
 }
-void pkt_writeRoutingHeader(uint8_t **pkt, struct RoutingHeader in) {
-	pkt_writeUint8(pkt, in.remoteConnectionId);
+void pkt_writeRoutingHeader(struct PacketContext ctx, uint8_t **pkt, struct RoutingHeader in) {
+	pkt_writeUint8(ctx, pkt, in.remoteConnectionId);
 	uint8_t bits = 0;
 	bits |= (in.connectionId << 0);
 	bits |= (in.encrypted << 7);
-	pkt_writeUint8(pkt, bits);
+	pkt_writeUint8(ctx, pkt, bits);
 }
-void pkt_writeSyncTime(uint8_t **pkt, struct SyncTime in) {
-	pkt_writeFloat32(pkt, in.syncTime);
+void pkt_writeSyncTime(struct PacketContext ctx, uint8_t **pkt, struct SyncTime in) {
+	pkt_writeFloat32(ctx, pkt, in.syncTime);
 }
-void pkt_writePlayerConnected(uint8_t **pkt, struct PlayerConnected in) {
-	pkt_writeUint8(pkt, in.remoteConnectionId);
-	pkt_writeString(pkt, in.userId);
-	pkt_writeString(pkt, in.userName);
-	pkt_writeUint8(pkt, in.isConnectionOwner);
+void pkt_writePlayerConnected(struct PacketContext ctx, uint8_t **pkt, struct PlayerConnected in) {
+	pkt_writeUint8(ctx, pkt, in.remoteConnectionId);
+	pkt_writeString(ctx, pkt, in.userId);
+	pkt_writeString(ctx, pkt, in.userName);
+	pkt_writeUint8(ctx, pkt, in.isConnectionOwner);
 }
-struct PlayerIdentity pkt_readPlayerIdentity(const uint8_t **pkt) {
+struct PlayerIdentity pkt_readPlayerIdentity(struct PacketContext ctx, const uint8_t **pkt) {
 	struct PlayerIdentity out;
-	out.playerState = pkt_readPlayerStateHash(pkt);
-	out.playerAvatar = pkt_readMultiplayerAvatarData(pkt);
-	out.random = pkt_readByteArrayNetSerializable(pkt);
-	out.publicEncryptionKey = pkt_readByteArrayNetSerializable(pkt);
+	out.playerState = pkt_readPlayerStateHash(ctx, pkt);
+	out.playerAvatar = pkt_readMultiplayerAvatarData(ctx, pkt);
+	out.random = pkt_readByteArrayNetSerializable(ctx, pkt);
+	out.publicEncryptionKey = pkt_readByteArrayNetSerializable(ctx, pkt);
 	return out;
 }
-void pkt_writePlayerIdentity(uint8_t **pkt, struct PlayerIdentity in) {
-	pkt_writePlayerStateHash(pkt, in.playerState);
-	pkt_writeMultiplayerAvatarData(pkt, in.playerAvatar);
-	pkt_writeByteArrayNetSerializable(pkt, in.random);
-	pkt_writeByteArrayNetSerializable(pkt, in.publicEncryptionKey);
+void pkt_writePlayerIdentity(struct PacketContext ctx, uint8_t **pkt, struct PlayerIdentity in) {
+	pkt_writePlayerStateHash(ctx, pkt, in.playerState);
+	pkt_writeMultiplayerAvatarData(ctx, pkt, in.playerAvatar);
+	pkt_writeByteArrayNetSerializable(ctx, pkt, in.random);
+	pkt_writeByteArrayNetSerializable(ctx, pkt, in.publicEncryptionKey);
 }
-void pkt_writePlayerLatencyUpdate(uint8_t **pkt, struct PlayerLatencyUpdate in) {
-	pkt_writeFloat32(pkt, in.latency);
+void pkt_writePlayerLatencyUpdate(struct PacketContext ctx, uint8_t **pkt, struct PlayerLatencyUpdate in) {
+	pkt_writeFloat32(ctx, pkt, in.latency);
 }
-void pkt_writePlayerDisconnected(uint8_t **pkt, struct PlayerDisconnected in) {
-	pkt_writeVarInt32(pkt, in.disconnectedReason);
+void pkt_writePlayerDisconnected(struct PacketContext ctx, uint8_t **pkt, struct PlayerDisconnected in) {
+	pkt_writeVarInt32(ctx, pkt, in.disconnectedReason);
 }
-void pkt_writePlayerSortOrderUpdate(uint8_t **pkt, struct PlayerSortOrderUpdate in) {
-	pkt_writeString(pkt, in.userId);
-	pkt_writeVarInt32(pkt, in.sortIndex);
+void pkt_writePlayerSortOrderUpdate(struct PacketContext ctx, uint8_t **pkt, struct PlayerSortOrderUpdate in) {
+	pkt_writeString(ctx, pkt, in.userId);
+	pkt_writeVarInt32(ctx, pkt, in.sortIndex);
 }
-struct PlayerStateUpdate pkt_readPlayerStateUpdate(const uint8_t **pkt) {
+struct PlayerStateUpdate pkt_readPlayerStateUpdate(struct PacketContext ctx, const uint8_t **pkt) {
 	struct PlayerStateUpdate out;
-	out.playerState = pkt_readPlayerStateHash(pkt);
+	out.playerState = pkt_readPlayerStateHash(ctx, pkt);
 	return out;
 }
-struct PingMessage pkt_readPingMessage(const uint8_t **pkt) {
+struct PingMessage pkt_readPingMessage(struct PacketContext ctx, const uint8_t **pkt) {
 	struct PingMessage out;
-	out.pingTime = pkt_readFloat32(pkt);
+	out.pingTime = pkt_readFloat32(ctx, pkt);
 	return out;
 }
-struct PongMessage pkt_readPongMessage(const uint8_t **pkt) {
+struct PongMessage pkt_readPongMessage(struct PacketContext ctx, const uint8_t **pkt) {
 	struct PongMessage out;
-	out.pingTime = pkt_readFloat32(pkt);
+	out.pingTime = pkt_readFloat32(ctx, pkt);
 	return out;
 }
-struct RemoteProcedureCall pkt_readRemoteProcedureCall(const uint8_t **pkt) {
+struct RemoteProcedureCall pkt_readRemoteProcedureCall(struct PacketContext ctx, const uint8_t **pkt) {
 	struct RemoteProcedureCall out;
-	out.syncTime = pkt_readFloat32(pkt);
+	out.syncTime = pkt_readFloat32(ctx, pkt);
 	return out;
 }
-void pkt_writeRemoteProcedureCall(uint8_t **pkt, struct RemoteProcedureCall in) {
-	pkt_writeFloat32(pkt, in.syncTime);
+void pkt_writeRemoteProcedureCall(struct PacketContext ctx, uint8_t **pkt, struct RemoteProcedureCall in) {
+	pkt_writeFloat32(ctx, pkt, in.syncTime);
 }
-struct RemoteProcedureCallFlags pkt_readRemoteProcedureCallFlags(const uint8_t **pkt, uint32_t protocolVersion) {
+struct RemoteProcedureCallFlags pkt_readRemoteProcedureCallFlags(struct PacketContext ctx, const uint8_t **pkt) {
 	struct RemoteProcedureCallFlags out;
 	uint8_t bits = 255;
-	if(protocolVersion > 6)
-		bits = pkt_readUint8(pkt);
+	if(ctx.protocolVersion > 6)
+		bits = pkt_readUint8(ctx, pkt);
 	out.hasValue0 = (bits >> 0) & 1;
 	out.hasValue1 = (bits >> 1) & 1;
 	out.hasValue2 = (bits >> 2) & 1;
 	out.hasValue3 = (bits >> 3) & 1;
 	return out;
 }
-void pkt_writeRemoteProcedureCallFlags(uint8_t **pkt, struct RemoteProcedureCallFlags in, uint32_t protocolVersion) {
-	if(protocolVersion > 6) {
+void pkt_writeRemoteProcedureCallFlags(struct PacketContext ctx, uint8_t **pkt, struct RemoteProcedureCallFlags in) {
+	if(ctx.protocolVersion > 6) {
 		uint8_t bits = 0;
 		bits |= (in.hasValue0 << 0);
 		bits |= (in.hasValue1 << 1);
 		bits |= (in.hasValue2 << 2);
 		bits |= (in.hasValue3 << 3);
-		pkt_writeUint8(pkt, bits);
+		pkt_writeUint8(ctx, pkt, bits);
 	}
 }
-void pkt_writePlayersMissingEntitlementsNetSerializable(uint8_t **pkt, struct PlayersMissingEntitlementsNetSerializable in) {
-	pkt_writeInt32(pkt, in.count);
+void pkt_writePlayersMissingEntitlementsNetSerializable(struct PacketContext ctx, uint8_t **pkt, struct PlayersMissingEntitlementsNetSerializable in) {
+	pkt_writeInt32(ctx, pkt, in.count);
 	for(uint32_t i = 0; i < in.count; ++i)
-		pkt_writeString(pkt, in.playersWithoutEntitlements[i]);
+		pkt_writeString(ctx, pkt, in.playersWithoutEntitlements[i]);
 }
-struct BeatmapIdentifierNetSerializable pkt_readBeatmapIdentifierNetSerializable(const uint8_t **pkt) {
+struct BeatmapIdentifierNetSerializable pkt_readBeatmapIdentifierNetSerializable(struct PacketContext ctx, const uint8_t **pkt) {
 	struct BeatmapIdentifierNetSerializable out;
-	out.levelID = pkt_readLongString(pkt);
-	out.beatmapCharacteristicSerializedName = pkt_readString(pkt);
-	out.difficulty = pkt_readVarUint32(pkt);
+	out.levelID = pkt_readLongString(ctx, pkt);
+	out.beatmapCharacteristicSerializedName = pkt_readString(ctx, pkt);
+	out.difficulty = pkt_readVarUint32(ctx, pkt);
 	return out;
 }
-void pkt_writeBeatmapIdentifierNetSerializable(uint8_t **pkt, struct BeatmapIdentifierNetSerializable in) {
-	pkt_writeLongString(pkt, in.levelID);
-	pkt_writeString(pkt, in.beatmapCharacteristicSerializedName);
-	pkt_writeVarUint32(pkt, in.difficulty);
+void pkt_writeBeatmapIdentifierNetSerializable(struct PacketContext ctx, uint8_t **pkt, struct BeatmapIdentifierNetSerializable in) {
+	pkt_writeLongString(ctx, pkt, in.levelID);
+	pkt_writeString(ctx, pkt, in.beatmapCharacteristicSerializedName);
+	pkt_writeVarUint32(ctx, pkt, in.difficulty);
 }
-struct GameplayModifiers pkt_readGameplayModifiers(const uint8_t **pkt) {
+struct GameplayModifiers pkt_readGameplayModifiers(struct PacketContext ctx, const uint8_t **pkt) {
 	struct GameplayModifiers out;
-	int32_t bits = pkt_readInt32(pkt);
+	int32_t bits = pkt_readInt32(ctx, pkt);
 	out.energyType = (bits >> 0) & 15;
 	out.demoNoFail = (bits >> 5) & 1;
 	out.instaFail = (bits >> 6) & 1;
@@ -695,7 +723,7 @@ struct GameplayModifiers pkt_readGameplayModifiers(const uint8_t **pkt) {
 	out.smallCubes = (bits >> 26) & 1;
 	return out;
 }
-void pkt_writeGameplayModifiers(uint8_t **pkt, struct GameplayModifiers in) {
+void pkt_writeGameplayModifiers(struct PacketContext ctx, uint8_t **pkt, struct GameplayModifiers in) {
 	int32_t bits = 0;
 	bits |= (in.energyType << 0);
 	bits |= (in.demoNoFail << 5);
@@ -714,738 +742,738 @@ void pkt_writeGameplayModifiers(uint8_t **pkt, struct GameplayModifiers in) {
 	bits |= (in.proMode << 24);
 	bits |= (in.zenMode << 25);
 	bits |= (in.smallCubes << 26);
-	pkt_writeInt32(pkt, bits);
+	pkt_writeInt32(ctx, pkt, bits);
 }
-void pkt_writePlayerLobbyPermissionConfigurationNetSerializable(uint8_t **pkt, struct PlayerLobbyPermissionConfigurationNetSerializable in) {
-	pkt_writeString(pkt, in.userId);
+void pkt_writePlayerLobbyPermissionConfigurationNetSerializable(struct PacketContext ctx, uint8_t **pkt, struct PlayerLobbyPermissionConfigurationNetSerializable in) {
+	pkt_writeString(ctx, pkt, in.userId);
 	uint8_t bits = 0;
 	bits |= (in.isServerOwner << 0);
 	bits |= (in.hasRecommendBeatmapsPermission << 1);
 	bits |= (in.hasRecommendGameplayModifiersPermission << 2);
 	bits |= (in.hasKickVotePermission << 3);
 	bits |= (in.hasInvitePermission << 4);
-	pkt_writeUint8(pkt, bits);
+	pkt_writeUint8(ctx, pkt, bits);
 }
-void pkt_writePlayersLobbyPermissionConfigurationNetSerializable(uint8_t **pkt, struct PlayersLobbyPermissionConfigurationNetSerializable in) {
-	pkt_writeInt32(pkt, in.count);
+void pkt_writePlayersLobbyPermissionConfigurationNetSerializable(struct PacketContext ctx, uint8_t **pkt, struct PlayersLobbyPermissionConfigurationNetSerializable in) {
+	pkt_writeInt32(ctx, pkt, in.count);
 	for(uint32_t i = 0; i < in.count; ++i)
-		pkt_writePlayerLobbyPermissionConfigurationNetSerializable(pkt, in.playersPermission[i]);
+		pkt_writePlayerLobbyPermissionConfigurationNetSerializable(ctx, pkt, in.playersPermission[i]);
 }
-struct SyncStateId pkt_readSyncStateId(const uint8_t **pkt) {
+struct SyncStateId pkt_readSyncStateId(struct PacketContext ctx, const uint8_t **pkt) {
 	struct SyncStateId out;
-	uint8_t bits = pkt_readUint8(pkt);
+	uint8_t bits = pkt_readUint8(ctx, pkt);
 	out.id = (bits >> 0) & 127;
 	out.same = (bits >> 7) & 1;
 	return out;
 }
-struct Vector3Serializable pkt_readVector3Serializable(const uint8_t **pkt) {
+struct Vector3Serializable pkt_readVector3Serializable(struct PacketContext ctx, const uint8_t **pkt) {
 	struct Vector3Serializable out;
-	out.x = pkt_readVarInt32(pkt);
-	out.y = pkt_readVarInt32(pkt);
-	out.z = pkt_readVarInt32(pkt);
+	out.x = pkt_readVarInt32(ctx, pkt);
+	out.y = pkt_readVarInt32(ctx, pkt);
+	out.z = pkt_readVarInt32(ctx, pkt);
 	return out;
 }
-struct QuaternionSerializable pkt_readQuaternionSerializable(const uint8_t **pkt) {
+struct QuaternionSerializable pkt_readQuaternionSerializable(struct PacketContext ctx, const uint8_t **pkt) {
 	struct QuaternionSerializable out;
-	out.a = pkt_readVarInt32(pkt);
-	out.b = pkt_readVarInt32(pkt);
-	out.c = pkt_readVarInt32(pkt);
+	out.a = pkt_readVarInt32(ctx, pkt);
+	out.b = pkt_readVarInt32(ctx, pkt);
+	out.c = pkt_readVarInt32(ctx, pkt);
 	return out;
 }
-struct PoseSerializable pkt_readPoseSerializable(const uint8_t **pkt) {
+struct PoseSerializable pkt_readPoseSerializable(struct PacketContext ctx, const uint8_t **pkt) {
 	struct PoseSerializable out;
-	out.position = pkt_readVector3Serializable(pkt);
-	out.rotation = pkt_readQuaternionSerializable(pkt);
+	out.position = pkt_readVector3Serializable(ctx, pkt);
+	out.rotation = pkt_readQuaternionSerializable(ctx, pkt);
 	return out;
 }
-struct ColorNoAlphaSerializable pkt_readColorNoAlphaSerializable(const uint8_t **pkt) {
+struct ColorNoAlphaSerializable pkt_readColorNoAlphaSerializable(struct PacketContext ctx, const uint8_t **pkt) {
 	struct ColorNoAlphaSerializable out;
-	out.r = pkt_readFloat32(pkt);
-	out.g = pkt_readFloat32(pkt);
-	out.b = pkt_readFloat32(pkt);
+	out.r = pkt_readFloat32(ctx, pkt);
+	out.g = pkt_readFloat32(ctx, pkt);
+	out.b = pkt_readFloat32(ctx, pkt);
 	return out;
 }
-void pkt_writeColorNoAlphaSerializable(uint8_t **pkt, struct ColorNoAlphaSerializable in) {
-	pkt_writeFloat32(pkt, in.r);
-	pkt_writeFloat32(pkt, in.g);
-	pkt_writeFloat32(pkt, in.b);
+void pkt_writeColorNoAlphaSerializable(struct PacketContext ctx, uint8_t **pkt, struct ColorNoAlphaSerializable in) {
+	pkt_writeFloat32(ctx, pkt, in.r);
+	pkt_writeFloat32(ctx, pkt, in.g);
+	pkt_writeFloat32(ctx, pkt, in.b);
 }
-struct ColorSchemeNetSerializable pkt_readColorSchemeNetSerializable(const uint8_t **pkt) {
+struct ColorSchemeNetSerializable pkt_readColorSchemeNetSerializable(struct PacketContext ctx, const uint8_t **pkt) {
 	struct ColorSchemeNetSerializable out;
-	out.saberAColor = pkt_readColorNoAlphaSerializable(pkt);
-	out.saberBColor = pkt_readColorNoAlphaSerializable(pkt);
-	out.obstaclesColor = pkt_readColorNoAlphaSerializable(pkt);
-	out.environmentColor0 = pkt_readColorNoAlphaSerializable(pkt);
-	out.environmentColor1 = pkt_readColorNoAlphaSerializable(pkt);
-	out.environmentColor0Boost = pkt_readColorNoAlphaSerializable(pkt);
-	out.environmentColor1Boost = pkt_readColorNoAlphaSerializable(pkt);
+	out.saberAColor = pkt_readColorNoAlphaSerializable(ctx, pkt);
+	out.saberBColor = pkt_readColorNoAlphaSerializable(ctx, pkt);
+	out.obstaclesColor = pkt_readColorNoAlphaSerializable(ctx, pkt);
+	out.environmentColor0 = pkt_readColorNoAlphaSerializable(ctx, pkt);
+	out.environmentColor1 = pkt_readColorNoAlphaSerializable(ctx, pkt);
+	out.environmentColor0Boost = pkt_readColorNoAlphaSerializable(ctx, pkt);
+	out.environmentColor1Boost = pkt_readColorNoAlphaSerializable(ctx, pkt);
 	return out;
 }
-void pkt_writeColorSchemeNetSerializable(uint8_t **pkt, struct ColorSchemeNetSerializable in) {
-	pkt_writeColorNoAlphaSerializable(pkt, in.saberAColor);
-	pkt_writeColorNoAlphaSerializable(pkt, in.saberBColor);
-	pkt_writeColorNoAlphaSerializable(pkt, in.obstaclesColor);
-	pkt_writeColorNoAlphaSerializable(pkt, in.environmentColor0);
-	pkt_writeColorNoAlphaSerializable(pkt, in.environmentColor1);
-	pkt_writeColorNoAlphaSerializable(pkt, in.environmentColor0Boost);
-	pkt_writeColorNoAlphaSerializable(pkt, in.environmentColor1Boost);
+void pkt_writeColorSchemeNetSerializable(struct PacketContext ctx, uint8_t **pkt, struct ColorSchemeNetSerializable in) {
+	pkt_writeColorNoAlphaSerializable(ctx, pkt, in.saberAColor);
+	pkt_writeColorNoAlphaSerializable(ctx, pkt, in.saberBColor);
+	pkt_writeColorNoAlphaSerializable(ctx, pkt, in.obstaclesColor);
+	pkt_writeColorNoAlphaSerializable(ctx, pkt, in.environmentColor0);
+	pkt_writeColorNoAlphaSerializable(ctx, pkt, in.environmentColor1);
+	pkt_writeColorNoAlphaSerializable(ctx, pkt, in.environmentColor0Boost);
+	pkt_writeColorNoAlphaSerializable(ctx, pkt, in.environmentColor1Boost);
 }
-struct PlayerSpecificSettingsNetSerializable pkt_readPlayerSpecificSettingsNetSerializable(const uint8_t **pkt) {
+struct PlayerSpecificSettingsNetSerializable pkt_readPlayerSpecificSettingsNetSerializable(struct PacketContext ctx, const uint8_t **pkt) {
 	struct PlayerSpecificSettingsNetSerializable out;
-	out.userId = pkt_readString(pkt);
-	out.userName = pkt_readString(pkt);
-	out.leftHanded = pkt_readUint8(pkt);
-	out.automaticPlayerHeight = pkt_readUint8(pkt);
-	out.playerHeight = pkt_readFloat32(pkt);
-	out.headPosToPlayerHeightOffset = pkt_readFloat32(pkt);
-	out.colorScheme = pkt_readColorSchemeNetSerializable(pkt);
+	out.userId = pkt_readString(ctx, pkt);
+	out.userName = pkt_readString(ctx, pkt);
+	out.leftHanded = pkt_readUint8(ctx, pkt);
+	out.automaticPlayerHeight = pkt_readUint8(ctx, pkt);
+	out.playerHeight = pkt_readFloat32(ctx, pkt);
+	out.headPosToPlayerHeightOffset = pkt_readFloat32(ctx, pkt);
+	out.colorScheme = pkt_readColorSchemeNetSerializable(ctx, pkt);
 	return out;
 }
-void pkt_writePlayerSpecificSettingsNetSerializable(uint8_t **pkt, struct PlayerSpecificSettingsNetSerializable in) {
-	pkt_writeString(pkt, in.userId);
-	pkt_writeString(pkt, in.userName);
-	pkt_writeUint8(pkt, in.leftHanded);
-	pkt_writeUint8(pkt, in.automaticPlayerHeight);
-	pkt_writeFloat32(pkt, in.playerHeight);
-	pkt_writeFloat32(pkt, in.headPosToPlayerHeightOffset);
-	pkt_writeColorSchemeNetSerializable(pkt, in.colorScheme);
+void pkt_writePlayerSpecificSettingsNetSerializable(struct PacketContext ctx, uint8_t **pkt, struct PlayerSpecificSettingsNetSerializable in) {
+	pkt_writeString(ctx, pkt, in.userId);
+	pkt_writeString(ctx, pkt, in.userName);
+	pkt_writeUint8(ctx, pkt, in.leftHanded);
+	pkt_writeUint8(ctx, pkt, in.automaticPlayerHeight);
+	pkt_writeFloat32(ctx, pkt, in.playerHeight);
+	pkt_writeFloat32(ctx, pkt, in.headPosToPlayerHeightOffset);
+	pkt_writeColorSchemeNetSerializable(ctx, pkt, in.colorScheme);
 }
-void pkt_writePlayerSpecificSettingsAtStartNetSerializable(uint8_t **pkt, struct PlayerSpecificSettingsAtStartNetSerializable in) {
-	pkt_writeInt32(pkt, in.count);
+void pkt_writePlayerSpecificSettingsAtStartNetSerializable(struct PacketContext ctx, uint8_t **pkt, struct PlayerSpecificSettingsAtStartNetSerializable in) {
+	pkt_writeInt32(ctx, pkt, in.count);
 	for(uint32_t i = 0; i < in.count; ++i)
-		pkt_writePlayerSpecificSettingsNetSerializable(pkt, in.activePlayerSpecificSettingsAtGameStart[i]);
+		pkt_writePlayerSpecificSettingsNetSerializable(ctx, pkt, in.activePlayerSpecificSettingsAtGameStart[i]);
 }
-struct NoteCutInfoNetSerializable pkt_readNoteCutInfoNetSerializable(const uint8_t **pkt) {
+struct NoteCutInfoNetSerializable pkt_readNoteCutInfoNetSerializable(struct PacketContext ctx, const uint8_t **pkt) {
 	struct NoteCutInfoNetSerializable out;
-	uint8_t bits = pkt_readUint8(pkt);
+	uint8_t bits = pkt_readUint8(ctx, pkt);
 	out.cutWasOk = (bits >> 0) & 1;
-	out.saberSpeed = pkt_readFloat32(pkt);
-	out.saberDir = pkt_readVector3Serializable(pkt);
-	out.cutPoint = pkt_readVector3Serializable(pkt);
-	out.cutNormal = pkt_readVector3Serializable(pkt);
-	out.notePosition = pkt_readVector3Serializable(pkt);
-	out.noteScale = pkt_readVector3Serializable(pkt);
-	out.noteRotation = pkt_readQuaternionSerializable(pkt);
-	out.colorType = pkt_readVarInt32(pkt);
-	out.noteLineLayer = pkt_readVarInt32(pkt);
-	out.noteLineIndex = pkt_readVarInt32(pkt);
-	out.noteTime = pkt_readFloat32(pkt);
-	out.timeToNextColorNote = pkt_readFloat32(pkt);
-	out.moveVec = pkt_readVector3Serializable(pkt);
+	out.saberSpeed = pkt_readFloat32(ctx, pkt);
+	out.saberDir = pkt_readVector3Serializable(ctx, pkt);
+	out.cutPoint = pkt_readVector3Serializable(ctx, pkt);
+	out.cutNormal = pkt_readVector3Serializable(ctx, pkt);
+	out.notePosition = pkt_readVector3Serializable(ctx, pkt);
+	out.noteScale = pkt_readVector3Serializable(ctx, pkt);
+	out.noteRotation = pkt_readQuaternionSerializable(ctx, pkt);
+	out.colorType = pkt_readVarInt32(ctx, pkt);
+	out.noteLineLayer = pkt_readVarInt32(ctx, pkt);
+	out.noteLineIndex = pkt_readVarInt32(ctx, pkt);
+	out.noteTime = pkt_readFloat32(ctx, pkt);
+	out.timeToNextColorNote = pkt_readFloat32(ctx, pkt);
+	out.moveVec = pkt_readVector3Serializable(ctx, pkt);
 	return out;
 }
-struct NoteMissInfoNetSerializable pkt_readNoteMissInfoNetSerializable(const uint8_t **pkt) {
+struct NoteMissInfoNetSerializable pkt_readNoteMissInfoNetSerializable(struct PacketContext ctx, const uint8_t **pkt) {
 	struct NoteMissInfoNetSerializable out;
-	out.colorType = pkt_readVarInt32(pkt);
-	out.noteLineLayer = pkt_readVarInt32(pkt);
-	out.noteLineIndex = pkt_readVarInt32(pkt);
-	out.noteTime = pkt_readFloat32(pkt);
+	out.colorType = pkt_readVarInt32(ctx, pkt);
+	out.noteLineLayer = pkt_readVarInt32(ctx, pkt);
+	out.noteLineIndex = pkt_readVarInt32(ctx, pkt);
+	out.noteTime = pkt_readFloat32(ctx, pkt);
 	return out;
 }
-struct LevelCompletionResults pkt_readLevelCompletionResults(const uint8_t **pkt) {
+struct LevelCompletionResults pkt_readLevelCompletionResults(struct PacketContext ctx, const uint8_t **pkt) {
 	struct LevelCompletionResults out;
-	out.gameplayModifiers = pkt_readGameplayModifiers(pkt);
-	out.modifiedScore = pkt_readVarInt32(pkt);
-	out.rawScore = pkt_readVarInt32(pkt);
-	out.rank = pkt_readVarInt32(pkt);
-	out.fullCombo = pkt_readUint8(pkt);
-	out.leftSaberMovementDistance = pkt_readFloat32(pkt);
-	out.rightSaberMovementDistance = pkt_readFloat32(pkt);
-	out.leftHandMovementDistance = pkt_readFloat32(pkt);
-	out.rightHandMovementDistance = pkt_readFloat32(pkt);
-	out.songDuration = pkt_readFloat32(pkt);
-	out.levelEndStateType = pkt_readVarInt32(pkt);
-	out.levelEndAction = pkt_readVarInt32(pkt);
-	out.energy = pkt_readFloat32(pkt);
-	out.goodCutsCount = pkt_readVarInt32(pkt);
-	out.badCutsCount = pkt_readVarInt32(pkt);
-	out.missedCount = pkt_readVarInt32(pkt);
-	out.notGoodCount = pkt_readVarInt32(pkt);
-	out.okCount = pkt_readVarInt32(pkt);
-	out.averageCutScore = pkt_readVarInt32(pkt);
-	out.maxCutScore = pkt_readVarInt32(pkt);
-	out.averageCutDistanceRawScore = pkt_readFloat32(pkt);
-	out.maxCombo = pkt_readVarInt32(pkt);
-	out.minDirDeviation = pkt_readFloat32(pkt);
-	out.maxDirDeviation = pkt_readFloat32(pkt);
-	out.averageDirDeviation = pkt_readFloat32(pkt);
-	out.minTimeDeviation = pkt_readFloat32(pkt);
-	out.maxTimeDeviation = pkt_readFloat32(pkt);
-	out.averageTimeDeviation = pkt_readFloat32(pkt);
-	out.endSongTime = pkt_readFloat32(pkt);
+	out.gameplayModifiers = pkt_readGameplayModifiers(ctx, pkt);
+	out.modifiedScore = pkt_readVarInt32(ctx, pkt);
+	out.rawScore = pkt_readVarInt32(ctx, pkt);
+	out.rank = pkt_readVarInt32(ctx, pkt);
+	out.fullCombo = pkt_readUint8(ctx, pkt);
+	out.leftSaberMovementDistance = pkt_readFloat32(ctx, pkt);
+	out.rightSaberMovementDistance = pkt_readFloat32(ctx, pkt);
+	out.leftHandMovementDistance = pkt_readFloat32(ctx, pkt);
+	out.rightHandMovementDistance = pkt_readFloat32(ctx, pkt);
+	out.songDuration = pkt_readFloat32(ctx, pkt);
+	out.levelEndStateType = pkt_readVarInt32(ctx, pkt);
+	out.levelEndAction = pkt_readVarInt32(ctx, pkt);
+	out.energy = pkt_readFloat32(ctx, pkt);
+	out.goodCutsCount = pkt_readVarInt32(ctx, pkt);
+	out.badCutsCount = pkt_readVarInt32(ctx, pkt);
+	out.missedCount = pkt_readVarInt32(ctx, pkt);
+	out.notGoodCount = pkt_readVarInt32(ctx, pkt);
+	out.okCount = pkt_readVarInt32(ctx, pkt);
+	out.averageCutScore = pkt_readVarInt32(ctx, pkt);
+	out.maxCutScore = pkt_readVarInt32(ctx, pkt);
+	out.averageCutDistanceRawScore = pkt_readFloat32(ctx, pkt);
+	out.maxCombo = pkt_readVarInt32(ctx, pkt);
+	out.minDirDeviation = pkt_readFloat32(ctx, pkt);
+	out.maxDirDeviation = pkt_readFloat32(ctx, pkt);
+	out.averageDirDeviation = pkt_readFloat32(ctx, pkt);
+	out.minTimeDeviation = pkt_readFloat32(ctx, pkt);
+	out.maxTimeDeviation = pkt_readFloat32(ctx, pkt);
+	out.averageTimeDeviation = pkt_readFloat32(ctx, pkt);
+	out.endSongTime = pkt_readFloat32(ctx, pkt);
 	return out;
 }
-struct MultiplayerLevelCompletionResults pkt_readMultiplayerLevelCompletionResults(const uint8_t **pkt, uint32_t protocolVersion) {
+struct MultiplayerLevelCompletionResults pkt_readMultiplayerLevelCompletionResults(struct PacketContext ctx, const uint8_t **pkt) {
 	struct MultiplayerLevelCompletionResults out;
-	if(protocolVersion <= 6) {
-		out.levelEndState = pkt_readVarInt32(pkt);
+	if(ctx.protocolVersion <= 6) {
+		out.levelEndState = pkt_readVarInt32(ctx, pkt);
 	}
-	if(protocolVersion > 6) {
-		out.playerLevelEndState = pkt_readVarInt32(pkt);
-		out.playerLevelEndReason = pkt_readVarInt32(pkt);
+	if(ctx.protocolVersion > 6) {
+		out.playerLevelEndState = pkt_readVarInt32(ctx, pkt);
+		out.playerLevelEndReason = pkt_readVarInt32(ctx, pkt);
 	}
-	if((protocolVersion <= 6 && out.levelEndState < MultiplayerLevelEndState_GivenUp) || (protocolVersion > 6 && out.playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted)) {
-		out.levelCompletionResults = pkt_readLevelCompletionResults(pkt);
+	if((ctx.protocolVersion <= 6 && out.levelEndState < MultiplayerLevelEndState_GivenUp) || (ctx.protocolVersion > 6 && out.playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted)) {
+		out.levelCompletionResults = pkt_readLevelCompletionResults(ctx, pkt);
 	}
 	return out;
 }
-struct NodePoseSyncState1 pkt_readNodePoseSyncState1(const uint8_t **pkt) {
+struct NodePoseSyncState1 pkt_readNodePoseSyncState1(struct PacketContext ctx, const uint8_t **pkt) {
 	struct NodePoseSyncState1 out;
-	out.head = pkt_readPoseSerializable(pkt);
-	out.leftController = pkt_readPoseSerializable(pkt);
-	out.rightController = pkt_readPoseSerializable(pkt);
+	out.head = pkt_readPoseSerializable(ctx, pkt);
+	out.leftController = pkt_readPoseSerializable(ctx, pkt);
+	out.rightController = pkt_readPoseSerializable(ctx, pkt);
 	return out;
 }
-struct StandardScoreSyncState pkt_readStandardScoreSyncState(const uint8_t **pkt) {
+struct StandardScoreSyncState pkt_readStandardScoreSyncState(struct PacketContext ctx, const uint8_t **pkt) {
 	struct StandardScoreSyncState out;
-	out.modifiedScore = pkt_readVarInt32(pkt);
-	out.rawScore = pkt_readVarInt32(pkt);
-	out.immediateMaxPossibleRawScore = pkt_readVarInt32(pkt);
-	out.combo = pkt_readVarInt32(pkt);
-	out.multiplier = pkt_readVarInt32(pkt);
+	out.modifiedScore = pkt_readVarInt32(ctx, pkt);
+	out.rawScore = pkt_readVarInt32(ctx, pkt);
+	out.immediateMaxPossibleRawScore = pkt_readVarInt32(ctx, pkt);
+	out.combo = pkt_readVarInt32(ctx, pkt);
+	out.multiplier = pkt_readVarInt32(ctx, pkt);
 	return out;
 }
-struct NoteSpawnInfoNetSerializable pkt_readNoteSpawnInfoNetSerializable(const uint8_t **pkt) {
+struct NoteSpawnInfoNetSerializable pkt_readNoteSpawnInfoNetSerializable(struct PacketContext ctx, const uint8_t **pkt) {
 	struct NoteSpawnInfoNetSerializable out;
-	out.time = pkt_readFloat32(pkt);
-	out.lineIndex = pkt_readVarInt32(pkt);
-	out.noteLineLayer = pkt_readVarInt32(pkt);
-	out.beforeJumpNoteLineLayer = pkt_readVarInt32(pkt);
-	out.colorType = pkt_readVarInt32(pkt);
-	out.cutDirection = pkt_readVarInt32(pkt);
-	out.timeToNextColorNote = pkt_readFloat32(pkt);
-	out.timeToPrevColorNote = pkt_readFloat32(pkt);
-	out.flipLineIndex = pkt_readVarInt32(pkt);
-	out.flipYSide = pkt_readVarInt32(pkt);
-	out.moveStartPos = pkt_readVector3Serializable(pkt);
-	out.moveEndPos = pkt_readVector3Serializable(pkt);
-	out.jumpEndPos = pkt_readVector3Serializable(pkt);
-	out.jumpGravity = pkt_readFloat32(pkt);
-	out.moveDuration = pkt_readFloat32(pkt);
-	out.jumpDuration = pkt_readFloat32(pkt);
-	out.rotation = pkt_readFloat32(pkt);
-	out.cutDirectionAngleOffset = pkt_readFloat32(pkt);
+	out.time = pkt_readFloat32(ctx, pkt);
+	out.lineIndex = pkt_readVarInt32(ctx, pkt);
+	out.noteLineLayer = pkt_readVarInt32(ctx, pkt);
+	out.beforeJumpNoteLineLayer = pkt_readVarInt32(ctx, pkt);
+	out.colorType = pkt_readVarInt32(ctx, pkt);
+	out.cutDirection = pkt_readVarInt32(ctx, pkt);
+	out.timeToNextColorNote = pkt_readFloat32(ctx, pkt);
+	out.timeToPrevColorNote = pkt_readFloat32(ctx, pkt);
+	out.flipLineIndex = pkt_readVarInt32(ctx, pkt);
+	out.flipYSide = pkt_readVarInt32(ctx, pkt);
+	out.moveStartPos = pkt_readVector3Serializable(ctx, pkt);
+	out.moveEndPos = pkt_readVector3Serializable(ctx, pkt);
+	out.jumpEndPos = pkt_readVector3Serializable(ctx, pkt);
+	out.jumpGravity = pkt_readFloat32(ctx, pkt);
+	out.moveDuration = pkt_readFloat32(ctx, pkt);
+	out.jumpDuration = pkt_readFloat32(ctx, pkt);
+	out.rotation = pkt_readFloat32(ctx, pkt);
+	out.cutDirectionAngleOffset = pkt_readFloat32(ctx, pkt);
 	return out;
 }
-struct ObstacleSpawnInfoNetSerializable pkt_readObstacleSpawnInfoNetSerializable(const uint8_t **pkt) {
+struct ObstacleSpawnInfoNetSerializable pkt_readObstacleSpawnInfoNetSerializable(struct PacketContext ctx, const uint8_t **pkt) {
 	struct ObstacleSpawnInfoNetSerializable out;
-	out.time = pkt_readFloat32(pkt);
-	out.lineIndex = pkt_readVarInt32(pkt);
-	out.obstacleType = pkt_readVarInt32(pkt);
-	out.duration = pkt_readFloat32(pkt);
-	out.width = pkt_readVarInt32(pkt);
-	out.moveStartPos = pkt_readVector3Serializable(pkt);
-	out.moveEndPos = pkt_readVector3Serializable(pkt);
-	out.jumpEndPos = pkt_readVector3Serializable(pkt);
-	out.obstacleHeight = pkt_readFloat32(pkt);
-	out.moveDuration = pkt_readFloat32(pkt);
-	out.jumpDuration = pkt_readFloat32(pkt);
-	out.noteLinesDistance = pkt_readFloat32(pkt);
-	out.rotation = pkt_readFloat32(pkt);
+	out.time = pkt_readFloat32(ctx, pkt);
+	out.lineIndex = pkt_readVarInt32(ctx, pkt);
+	out.obstacleType = pkt_readVarInt32(ctx, pkt);
+	out.duration = pkt_readFloat32(ctx, pkt);
+	out.width = pkt_readVarInt32(ctx, pkt);
+	out.moveStartPos = pkt_readVector3Serializable(ctx, pkt);
+	out.moveEndPos = pkt_readVector3Serializable(ctx, pkt);
+	out.jumpEndPos = pkt_readVector3Serializable(ctx, pkt);
+	out.obstacleHeight = pkt_readFloat32(ctx, pkt);
+	out.moveDuration = pkt_readFloat32(ctx, pkt);
+	out.jumpDuration = pkt_readFloat32(ctx, pkt);
+	out.noteLinesDistance = pkt_readFloat32(ctx, pkt);
+	out.rotation = pkt_readFloat32(ctx, pkt);
 	return out;
 }
-void pkt_writeSetPlayersMissingEntitlementsToLevel(uint8_t **pkt, struct SetPlayersMissingEntitlementsToLevel in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+void pkt_writeSetPlayersMissingEntitlementsToLevel(struct PacketContext ctx, uint8_t **pkt, struct SetPlayersMissingEntitlementsToLevel in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
+	pkt_writeRemoteProcedureCallFlags(ctx, pkt, in.flags);
 	if(in.flags.hasValue0) {
-		pkt_writePlayersMissingEntitlementsNetSerializable(pkt, in.playersMissingEntitlements);
+		pkt_writePlayersMissingEntitlementsNetSerializable(ctx, pkt, in.playersMissingEntitlements);
 	}
 }
-void pkt_writeGetIsEntitledToLevel(uint8_t **pkt, struct GetIsEntitledToLevel in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+void pkt_writeGetIsEntitledToLevel(struct PacketContext ctx, uint8_t **pkt, struct GetIsEntitledToLevel in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
+	pkt_writeRemoteProcedureCallFlags(ctx, pkt, in.flags);
 	if(in.flags.hasValue0) {
-		pkt_writeLongString(pkt, in.levelId);
+		pkt_writeLongString(ctx, pkt, in.levelId);
 	}
 }
-struct SetIsEntitledToLevel pkt_readSetIsEntitledToLevel(const uint8_t **pkt, uint32_t protocolVersion) {
+struct SetIsEntitledToLevel pkt_readSetIsEntitledToLevel(struct PacketContext ctx, const uint8_t **pkt) {
 	struct SetIsEntitledToLevel out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(ctx, pkt);
 	if(out.flags.hasValue0) {
-		out.levelId = pkt_readLongString(pkt);
+		out.levelId = pkt_readLongString(ctx, pkt);
 	}
 	if(out.flags.hasValue1) {
-		out.entitlementStatus = pkt_readVarInt32(pkt);
+		out.entitlementStatus = pkt_readVarInt32(ctx, pkt);
 	}
 	return out;
 }
-void pkt_writeSetSelectedBeatmap(uint8_t **pkt, struct SetSelectedBeatmap in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+void pkt_writeSetSelectedBeatmap(struct PacketContext ctx, uint8_t **pkt, struct SetSelectedBeatmap in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
+	pkt_writeRemoteProcedureCallFlags(ctx, pkt, in.flags);
 	if(in.flags.hasValue0) {
-		pkt_writeBeatmapIdentifierNetSerializable(pkt, in.identifier);
+		pkt_writeBeatmapIdentifierNetSerializable(ctx, pkt, in.identifier);
 	}
 }
-struct RecommendBeatmap pkt_readRecommendBeatmap(const uint8_t **pkt, uint32_t protocolVersion) {
+struct RecommendBeatmap pkt_readRecommendBeatmap(struct PacketContext ctx, const uint8_t **pkt) {
 	struct RecommendBeatmap out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(ctx, pkt);
 	if(out.flags.hasValue0) {
-		out.identifier = pkt_readBeatmapIdentifierNetSerializable(pkt);
+		out.identifier = pkt_readBeatmapIdentifierNetSerializable(ctx, pkt);
 	}
 	return out;
 }
-void pkt_writeRecommendBeatmap(uint8_t **pkt, struct RecommendBeatmap in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+void pkt_writeRecommendBeatmap(struct PacketContext ctx, uint8_t **pkt, struct RecommendBeatmap in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
+	pkt_writeRemoteProcedureCallFlags(ctx, pkt, in.flags);
 	if(in.flags.hasValue0) {
-		pkt_writeBeatmapIdentifierNetSerializable(pkt, in.identifier);
+		pkt_writeBeatmapIdentifierNetSerializable(ctx, pkt, in.identifier);
 	}
 }
-struct ClearRecommendedBeatmap pkt_readClearRecommendedBeatmap(const uint8_t **pkt, uint32_t protocolVersion) {
+struct ClearRecommendedBeatmap pkt_readClearRecommendedBeatmap(struct PacketContext ctx, const uint8_t **pkt) {
 	struct ClearRecommendedBeatmap out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
 	return out;
 }
-struct GetRecommendedBeatmap pkt_readGetRecommendedBeatmap(const uint8_t **pkt, uint32_t protocolVersion) {
+struct GetRecommendedBeatmap pkt_readGetRecommendedBeatmap(struct PacketContext ctx, const uint8_t **pkt) {
 	struct GetRecommendedBeatmap out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
 	return out;
 }
-void pkt_writeGetRecommendedBeatmap(uint8_t **pkt, struct GetRecommendedBeatmap in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
+void pkt_writeGetRecommendedBeatmap(struct PacketContext ctx, uint8_t **pkt, struct GetRecommendedBeatmap in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
 }
-void pkt_writeSetSelectedGameplayModifiers(uint8_t **pkt, struct SetSelectedGameplayModifiers in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+void pkt_writeSetSelectedGameplayModifiers(struct PacketContext ctx, uint8_t **pkt, struct SetSelectedGameplayModifiers in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
+	pkt_writeRemoteProcedureCallFlags(ctx, pkt, in.flags);
 	if(in.flags.hasValue0) {
-		pkt_writeGameplayModifiers(pkt, in.gameplayModifiers);
+		pkt_writeGameplayModifiers(ctx, pkt, in.gameplayModifiers);
 	}
 }
-struct RecommendGameplayModifiers pkt_readRecommendGameplayModifiers(const uint8_t **pkt, uint32_t protocolVersion) {
+struct RecommendGameplayModifiers pkt_readRecommendGameplayModifiers(struct PacketContext ctx, const uint8_t **pkt) {
 	struct RecommendGameplayModifiers out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(ctx, pkt);
 	if(out.flags.hasValue0) {
-		out.gameplayModifiers = pkt_readGameplayModifiers(pkt);
+		out.gameplayModifiers = pkt_readGameplayModifiers(ctx, pkt);
 	}
 	return out;
 }
-void pkt_writeRecommendGameplayModifiers(uint8_t **pkt, struct RecommendGameplayModifiers in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+void pkt_writeRecommendGameplayModifiers(struct PacketContext ctx, uint8_t **pkt, struct RecommendGameplayModifiers in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
+	pkt_writeRemoteProcedureCallFlags(ctx, pkt, in.flags);
 	if(in.flags.hasValue0) {
-		pkt_writeGameplayModifiers(pkt, in.gameplayModifiers);
+		pkt_writeGameplayModifiers(ctx, pkt, in.gameplayModifiers);
 	}
 }
-struct ClearRecommendedGameplayModifiers pkt_readClearRecommendedGameplayModifiers(const uint8_t **pkt, uint32_t protocolVersion) {
+struct ClearRecommendedGameplayModifiers pkt_readClearRecommendedGameplayModifiers(struct PacketContext ctx, const uint8_t **pkt) {
 	struct ClearRecommendedGameplayModifiers out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
 	return out;
 }
-struct GetRecommendedGameplayModifiers pkt_readGetRecommendedGameplayModifiers(const uint8_t **pkt, uint32_t protocolVersion) {
+struct GetRecommendedGameplayModifiers pkt_readGetRecommendedGameplayModifiers(struct PacketContext ctx, const uint8_t **pkt) {
 	struct GetRecommendedGameplayModifiers out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
 	return out;
 }
-void pkt_writeGetRecommendedGameplayModifiers(uint8_t **pkt, struct GetRecommendedGameplayModifiers in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
+void pkt_writeGetRecommendedGameplayModifiers(struct PacketContext ctx, uint8_t **pkt, struct GetRecommendedGameplayModifiers in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
 }
-void pkt_writeStartLevel(uint8_t **pkt, struct StartLevel in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+void pkt_writeStartLevel(struct PacketContext ctx, uint8_t **pkt, struct StartLevel in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
+	pkt_writeRemoteProcedureCallFlags(ctx, pkt, in.flags);
 	if(in.flags.hasValue0) {
-		pkt_writeBeatmapIdentifierNetSerializable(pkt, in.beatmapId);
+		pkt_writeBeatmapIdentifierNetSerializable(ctx, pkt, in.beatmapId);
 	}
 	if(in.flags.hasValue1) {
-		pkt_writeGameplayModifiers(pkt, in.gameplayModifiers);
+		pkt_writeGameplayModifiers(ctx, pkt, in.gameplayModifiers);
 	}
 	if(in.flags.hasValue2) {
-		pkt_writeFloat32(pkt, in.startTime);
+		pkt_writeFloat32(ctx, pkt, in.startTime);
 	}
 }
-struct GetStartedLevel pkt_readGetStartedLevel(const uint8_t **pkt, uint32_t protocolVersion) {
+struct GetStartedLevel pkt_readGetStartedLevel(struct PacketContext ctx, const uint8_t **pkt) {
 	struct GetStartedLevel out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
 	return out;
 }
-void pkt_writeCancelLevelStart(uint8_t **pkt, struct CancelLevelStart in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
+void pkt_writeCancelLevelStart(struct PacketContext ctx, uint8_t **pkt, struct CancelLevelStart in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
 }
-struct GetMultiplayerGameState pkt_readGetMultiplayerGameState(const uint8_t **pkt, uint32_t protocolVersion) {
+struct GetMultiplayerGameState pkt_readGetMultiplayerGameState(struct PacketContext ctx, const uint8_t **pkt) {
 	struct GetMultiplayerGameState out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
 	return out;
 }
-void pkt_writeSetMultiplayerGameState(uint8_t **pkt, struct SetMultiplayerGameState in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+void pkt_writeSetMultiplayerGameState(struct PacketContext ctx, uint8_t **pkt, struct SetMultiplayerGameState in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
+	pkt_writeRemoteProcedureCallFlags(ctx, pkt, in.flags);
 	if(in.flags.hasValue0) {
-		pkt_writeVarInt32(pkt, in.lobbyState);
+		pkt_writeVarInt32(ctx, pkt, in.lobbyState);
 	}
 }
-struct GetIsReady pkt_readGetIsReady(const uint8_t **pkt, uint32_t protocolVersion) {
+struct GetIsReady pkt_readGetIsReady(struct PacketContext ctx, const uint8_t **pkt) {
 	struct GetIsReady out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
 	return out;
 }
-void pkt_writeGetIsReady(uint8_t **pkt, struct GetIsReady in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
+void pkt_writeGetIsReady(struct PacketContext ctx, uint8_t **pkt, struct GetIsReady in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
 }
-struct SetIsReady pkt_readSetIsReady(const uint8_t **pkt, uint32_t protocolVersion) {
+struct SetIsReady pkt_readSetIsReady(struct PacketContext ctx, const uint8_t **pkt) {
 	struct SetIsReady out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(ctx, pkt);
 	if(out.flags.hasValue0) {
-		out.isReady = pkt_readUint8(pkt);
+		out.isReady = pkt_readUint8(ctx, pkt);
 	}
 	return out;
 }
-void pkt_writeSetIsReady(uint8_t **pkt, struct SetIsReady in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+void pkt_writeSetIsReady(struct PacketContext ctx, uint8_t **pkt, struct SetIsReady in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
+	pkt_writeRemoteProcedureCallFlags(ctx, pkt, in.flags);
 	if(in.flags.hasValue0) {
-		pkt_writeUint8(pkt, in.isReady);
+		pkt_writeUint8(ctx, pkt, in.isReady);
 	}
 }
-struct GetIsInLobby pkt_readGetIsInLobby(const uint8_t **pkt, uint32_t protocolVersion) {
+struct GetIsInLobby pkt_readGetIsInLobby(struct PacketContext ctx, const uint8_t **pkt) {
 	struct GetIsInLobby out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
 	return out;
 }
-void pkt_writeGetIsInLobby(uint8_t **pkt, struct GetIsInLobby in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
+void pkt_writeGetIsInLobby(struct PacketContext ctx, uint8_t **pkt, struct GetIsInLobby in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
 }
-struct SetIsInLobby pkt_readSetIsInLobby(const uint8_t **pkt, uint32_t protocolVersion) {
+struct SetIsInLobby pkt_readSetIsInLobby(struct PacketContext ctx, const uint8_t **pkt) {
 	struct SetIsInLobby out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(ctx, pkt);
 	if(out.flags.hasValue0) {
-		out.isBack = pkt_readUint8(pkt);
+		out.isBack = pkt_readUint8(ctx, pkt);
 	}
 	return out;
 }
-void pkt_writeSetIsInLobby(uint8_t **pkt, struct SetIsInLobby in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+void pkt_writeSetIsInLobby(struct PacketContext ctx, uint8_t **pkt, struct SetIsInLobby in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
+	pkt_writeRemoteProcedureCallFlags(ctx, pkt, in.flags);
 	if(in.flags.hasValue0) {
-		pkt_writeUint8(pkt, in.isBack);
+		pkt_writeUint8(ctx, pkt, in.isBack);
 	}
 }
-struct GetCountdownEndTime pkt_readGetCountdownEndTime(const uint8_t **pkt, uint32_t protocolVersion) {
+struct GetCountdownEndTime pkt_readGetCountdownEndTime(struct PacketContext ctx, const uint8_t **pkt) {
 	struct GetCountdownEndTime out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
 	return out;
 }
-void pkt_writeSetCountdownEndTime(uint8_t **pkt, struct SetCountdownEndTime in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+void pkt_writeSetCountdownEndTime(struct PacketContext ctx, uint8_t **pkt, struct SetCountdownEndTime in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
+	pkt_writeRemoteProcedureCallFlags(ctx, pkt, in.flags);
 	if(in.flags.hasValue0) {
-		pkt_writeFloat32(pkt, in.newTime);
+		pkt_writeFloat32(ctx, pkt, in.newTime);
 	}
 }
-void pkt_writeCancelCountdown(uint8_t **pkt, struct CancelCountdown in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
+void pkt_writeCancelCountdown(struct PacketContext ctx, uint8_t **pkt, struct CancelCountdown in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
 }
-void pkt_writeGetOwnedSongPacks(uint8_t **pkt, struct GetOwnedSongPacks in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
+void pkt_writeGetOwnedSongPacks(struct PacketContext ctx, uint8_t **pkt, struct GetOwnedSongPacks in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
 }
-struct SetOwnedSongPacks pkt_readSetOwnedSongPacks(const uint8_t **pkt, uint32_t protocolVersion) {
+struct SetOwnedSongPacks pkt_readSetOwnedSongPacks(struct PacketContext ctx, const uint8_t **pkt) {
 	struct SetOwnedSongPacks out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(ctx, pkt);
 	if(out.flags.hasValue0) {
-		out.songPackMask = pkt_readSongPackMask(pkt);
+		out.songPackMask = pkt_readSongPackMask(ctx, pkt);
 	}
 	return out;
 }
-struct GetPermissionConfiguration pkt_readGetPermissionConfiguration(const uint8_t **pkt, uint32_t protocolVersion) {
+struct GetPermissionConfiguration pkt_readGetPermissionConfiguration(struct PacketContext ctx, const uint8_t **pkt) {
 	struct GetPermissionConfiguration out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
 	return out;
 }
-void pkt_writeSetPermissionConfiguration(uint8_t **pkt, struct SetPermissionConfiguration in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+void pkt_writeSetPermissionConfiguration(struct PacketContext ctx, uint8_t **pkt, struct SetPermissionConfiguration in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
+	pkt_writeRemoteProcedureCallFlags(ctx, pkt, in.flags);
 	if(in.flags.hasValue0) {
-		pkt_writePlayersLobbyPermissionConfigurationNetSerializable(pkt, in.playersPermissionConfiguration);
+		pkt_writePlayersLobbyPermissionConfigurationNetSerializable(ctx, pkt, in.playersPermissionConfiguration);
 	}
 }
-void pkt_writeSetIsStartButtonEnabled(uint8_t **pkt, struct SetIsStartButtonEnabled in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+void pkt_writeSetIsStartButtonEnabled(struct PacketContext ctx, uint8_t **pkt, struct SetIsStartButtonEnabled in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
+	pkt_writeRemoteProcedureCallFlags(ctx, pkt, in.flags);
 	if(in.flags.hasValue0) {
-		pkt_writeVarInt32(pkt, in.reason);
+		pkt_writeVarInt32(ctx, pkt, in.reason);
 	}
 }
-void pkt_writeSetGameplaySceneSyncFinish(uint8_t **pkt, struct SetGameplaySceneSyncFinish in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+void pkt_writeSetGameplaySceneSyncFinish(struct PacketContext ctx, uint8_t **pkt, struct SetGameplaySceneSyncFinish in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
+	pkt_writeRemoteProcedureCallFlags(ctx, pkt, in.flags);
 	if(in.flags.hasValue0) {
-		pkt_writePlayerSpecificSettingsAtStartNetSerializable(pkt, in.playersAtGameStart);
+		pkt_writePlayerSpecificSettingsAtStartNetSerializable(ctx, pkt, in.playersAtGameStart);
 	}
 	if(in.flags.hasValue1) {
-		pkt_writeString(pkt, in.sessionGameId);
+		pkt_writeString(ctx, pkt, in.sessionGameId);
 	}
 }
-struct SetGameplaySceneReady pkt_readSetGameplaySceneReady(const uint8_t **pkt, uint32_t protocolVersion) {
+struct SetGameplaySceneReady pkt_readSetGameplaySceneReady(struct PacketContext ctx, const uint8_t **pkt) {
 	struct SetGameplaySceneReady out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(ctx, pkt);
 	if(out.flags.hasValue0) {
-		out.playerSpecificSettingsNetSerializable = pkt_readPlayerSpecificSettingsNetSerializable(pkt);
+		out.playerSpecificSettingsNetSerializable = pkt_readPlayerSpecificSettingsNetSerializable(ctx, pkt);
 	}
 	return out;
 }
-void pkt_writeGetGameplaySceneReady(uint8_t **pkt, struct GetGameplaySceneReady in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
+void pkt_writeGetGameplaySceneReady(struct PacketContext ctx, uint8_t **pkt, struct GetGameplaySceneReady in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
 }
-struct SetGameplaySongReady pkt_readSetGameplaySongReady(const uint8_t **pkt, uint32_t protocolVersion) {
+struct SetGameplaySongReady pkt_readSetGameplaySongReady(struct PacketContext ctx, const uint8_t **pkt) {
 	struct SetGameplaySongReady out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
 	return out;
 }
-void pkt_writeGetGameplaySongReady(uint8_t **pkt, struct GetGameplaySongReady in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
+void pkt_writeGetGameplaySongReady(struct PacketContext ctx, uint8_t **pkt, struct GetGameplaySongReady in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
 }
-void pkt_writeSetSongStartTime(uint8_t **pkt, struct SetSongStartTime in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
-	pkt_writeRemoteProcedureCallFlags(pkt, in.flags, protocolVersion);
+void pkt_writeSetSongStartTime(struct PacketContext ctx, uint8_t **pkt, struct SetSongStartTime in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
+	pkt_writeRemoteProcedureCallFlags(ctx, pkt, in.flags);
 	if(in.flags.hasValue0) {
-		pkt_writeFloat32(pkt, in.startTime);
+		pkt_writeFloat32(ctx, pkt, in.startTime);
 	}
 }
-struct NoteCut pkt_readNoteCut(const uint8_t **pkt, uint32_t protocolVersion) {
+struct NoteCut pkt_readNoteCut(struct PacketContext ctx, const uint8_t **pkt) {
 	struct NoteCut out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(ctx, pkt);
 	if(out.flags.hasValue0) {
-		out.songTime = pkt_readFloat32(pkt);
+		out.songTime = pkt_readFloat32(ctx, pkt);
 	}
 	if(out.flags.hasValue1) {
-		out.noteCutInfo = pkt_readNoteCutInfoNetSerializable(pkt);
+		out.noteCutInfo = pkt_readNoteCutInfoNetSerializable(ctx, pkt);
 	}
 	return out;
 }
-struct NoteMissed pkt_readNoteMissed(const uint8_t **pkt, uint32_t protocolVersion) {
+struct NoteMissed pkt_readNoteMissed(struct PacketContext ctx, const uint8_t **pkt) {
 	struct NoteMissed out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(ctx, pkt);
 	if(out.flags.hasValue0) {
-		out.songTime = pkt_readFloat32(pkt);
+		out.songTime = pkt_readFloat32(ctx, pkt);
 	}
 	if(out.flags.hasValue1) {
-		out.noteMissInfo = pkt_readNoteMissInfoNetSerializable(pkt);
+		out.noteMissInfo = pkt_readNoteMissInfoNetSerializable(ctx, pkt);
 	}
 	return out;
 }
-struct LevelFinished pkt_readLevelFinished(const uint8_t **pkt, uint32_t protocolVersion) {
+struct LevelFinished pkt_readLevelFinished(struct PacketContext ctx, const uint8_t **pkt) {
 	struct LevelFinished out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(ctx, pkt);
 	if(out.flags.hasValue0) {
-		out.results = pkt_readMultiplayerLevelCompletionResults(pkt, protocolVersion);
+		out.results = pkt_readMultiplayerLevelCompletionResults(ctx, pkt);
 	}
 	return out;
 }
-void pkt_writeReturnToMenu(uint8_t **pkt, struct ReturnToMenu in, uint32_t protocolVersion) {
-	pkt_writeRemoteProcedureCall(pkt, in.base);
+void pkt_writeReturnToMenu(struct PacketContext ctx, uint8_t **pkt, struct ReturnToMenu in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
 }
-struct RequestReturnToMenu pkt_readRequestReturnToMenu(const uint8_t **pkt, uint32_t protocolVersion) {
+struct RequestReturnToMenu pkt_readRequestReturnToMenu(struct PacketContext ctx, const uint8_t **pkt) {
 	struct RequestReturnToMenu out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
 	return out;
 }
-struct NoteSpawned pkt_readNoteSpawned(const uint8_t **pkt, uint32_t protocolVersion) {
+struct NoteSpawned pkt_readNoteSpawned(struct PacketContext ctx, const uint8_t **pkt) {
 	struct NoteSpawned out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(ctx, pkt);
 	if(out.flags.hasValue0) {
-		out.songTime = pkt_readFloat32(pkt);
+		out.songTime = pkt_readFloat32(ctx, pkt);
 	}
 	if(out.flags.hasValue1) {
-		out.noteSpawnInfo = pkt_readNoteSpawnInfoNetSerializable(pkt);
+		out.noteSpawnInfo = pkt_readNoteSpawnInfoNetSerializable(ctx, pkt);
 	}
 	return out;
 }
-struct ObstacleSpawned pkt_readObstacleSpawned(const uint8_t **pkt, uint32_t protocolVersion) {
+struct ObstacleSpawned pkt_readObstacleSpawned(struct PacketContext ctx, const uint8_t **pkt) {
 	struct ObstacleSpawned out;
-	out.base = pkt_readRemoteProcedureCall(pkt);
-	out.flags = pkt_readRemoteProcedureCallFlags(pkt, protocolVersion);
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(ctx, pkt);
 	if(out.flags.hasValue0) {
-		out.songTime = pkt_readFloat32(pkt);
+		out.songTime = pkt_readFloat32(ctx, pkt);
 	}
 	if(out.flags.hasValue1) {
-		out.obstacleSpawnInfo = pkt_readObstacleSpawnInfoNetSerializable(pkt);
+		out.obstacleSpawnInfo = pkt_readObstacleSpawnInfoNetSerializable(ctx, pkt);
 	}
 	return out;
 }
-struct NodePoseSyncState pkt_readNodePoseSyncState(const uint8_t **pkt) {
+struct NodePoseSyncState pkt_readNodePoseSyncState(struct PacketContext ctx, const uint8_t **pkt) {
 	struct NodePoseSyncState out;
-	out.id = pkt_readSyncStateId(pkt);
-	out.time = pkt_readFloat32(pkt);
-	out.state = pkt_readNodePoseSyncState1(pkt);
+	out.id = pkt_readSyncStateId(ctx, pkt);
+	out.time = pkt_readFloat32(ctx, pkt);
+	out.state = pkt_readNodePoseSyncState1(ctx, pkt);
 	return out;
 }
-struct ScoreSyncState pkt_readScoreSyncState(const uint8_t **pkt) {
+struct ScoreSyncState pkt_readScoreSyncState(struct PacketContext ctx, const uint8_t **pkt) {
 	struct ScoreSyncState out;
-	out.id = pkt_readSyncStateId(pkt);
-	out.time = pkt_readFloat32(pkt);
-	out.state = pkt_readStandardScoreSyncState(pkt);
+	out.id = pkt_readSyncStateId(ctx, pkt);
+	out.time = pkt_readFloat32(ctx, pkt);
+	out.state = pkt_readStandardScoreSyncState(ctx, pkt);
 	return out;
 }
-struct NodePoseSyncStateDelta pkt_readNodePoseSyncStateDelta(const uint8_t **pkt) {
+struct NodePoseSyncStateDelta pkt_readNodePoseSyncStateDelta(struct PacketContext ctx, const uint8_t **pkt) {
 	struct NodePoseSyncStateDelta out;
-	out.baseId = pkt_readSyncStateId(pkt);
-	out.timeOffsetMs = pkt_readVarInt32(pkt);
+	out.baseId = pkt_readSyncStateId(ctx, pkt);
+	out.timeOffsetMs = pkt_readVarInt32(ctx, pkt);
 	if(out.baseId.same == 0) {
-		out.delta = pkt_readNodePoseSyncState1(pkt);
+		out.delta = pkt_readNodePoseSyncState1(ctx, pkt);
 	}
 	return out;
 }
-struct ScoreSyncStateDelta pkt_readScoreSyncStateDelta(const uint8_t **pkt) {
+struct ScoreSyncStateDelta pkt_readScoreSyncStateDelta(struct PacketContext ctx, const uint8_t **pkt) {
 	struct ScoreSyncStateDelta out;
-	out.baseId = pkt_readSyncStateId(pkt);
-	out.timeOffsetMs = pkt_readVarInt32(pkt);
+	out.baseId = pkt_readSyncStateId(ctx, pkt);
+	out.timeOffsetMs = pkt_readVarInt32(ctx, pkt);
 	if(out.baseId.same == 0) {
-		out.delta = pkt_readStandardScoreSyncState(pkt);
+		out.delta = pkt_readStandardScoreSyncState(ctx, pkt);
 	}
 	return out;
 }
-struct MpCore pkt_readMpCore(const uint8_t **pkt) {
+struct MpCore pkt_readMpCore(struct PacketContext ctx, const uint8_t **pkt) {
 	struct MpCore out;
-	out.packetType = pkt_readString(pkt);
+	out.packetType = pkt_readString(ctx, pkt);
 	return out;
 }
-struct MultiplayerSessionMessageHeader pkt_readMultiplayerSessionMessageHeader(const uint8_t **pkt) {
+struct MultiplayerSessionMessageHeader pkt_readMultiplayerSessionMessageHeader(struct PacketContext ctx, const uint8_t **pkt) {
 	struct MultiplayerSessionMessageHeader out;
-	out.type = pkt_readUint8(pkt);
+	out.type = pkt_readUint8(ctx, pkt);
 	return out;
 }
-void pkt_writeMultiplayerSessionMessageHeader(uint8_t **pkt, struct MultiplayerSessionMessageHeader in) {
-	pkt_writeUint8(pkt, in.type);
+void pkt_writeMultiplayerSessionMessageHeader(struct PacketContext ctx, uint8_t **pkt, struct MultiplayerSessionMessageHeader in) {
+	pkt_writeUint8(ctx, pkt, in.type);
 }
-struct MenuRpcHeader pkt_readMenuRpcHeader(const uint8_t **pkt) {
+struct MenuRpcHeader pkt_readMenuRpcHeader(struct PacketContext ctx, const uint8_t **pkt) {
 	struct MenuRpcHeader out;
-	out.type = pkt_readUint8(pkt);
+	out.type = pkt_readUint8(ctx, pkt);
 	return out;
 }
-void pkt_writeMenuRpcHeader(uint8_t **pkt, struct MenuRpcHeader in) {
-	pkt_writeUint8(pkt, in.type);
+void pkt_writeMenuRpcHeader(struct PacketContext ctx, uint8_t **pkt, struct MenuRpcHeader in) {
+	pkt_writeUint8(ctx, pkt, in.type);
 }
-struct GameplayRpcHeader pkt_readGameplayRpcHeader(const uint8_t **pkt) {
+struct GameplayRpcHeader pkt_readGameplayRpcHeader(struct PacketContext ctx, const uint8_t **pkt) {
 	struct GameplayRpcHeader out;
-	out.type = pkt_readUint8(pkt);
+	out.type = pkt_readUint8(ctx, pkt);
 	return out;
 }
-void pkt_writeGameplayRpcHeader(uint8_t **pkt, struct GameplayRpcHeader in) {
-	pkt_writeUint8(pkt, in.type);
+void pkt_writeGameplayRpcHeader(struct PacketContext ctx, uint8_t **pkt, struct GameplayRpcHeader in) {
+	pkt_writeUint8(ctx, pkt, in.type);
 }
-struct MpBeatmapPacket pkt_readMpBeatmapPacket(const uint8_t **pkt) {
+struct MpBeatmapPacket pkt_readMpBeatmapPacket(struct PacketContext ctx, const uint8_t **pkt) {
 	struct MpBeatmapPacket out;
-	out.levelHash = pkt_readString(pkt);
-	out.songName = pkt_readLongString(pkt);
-	out.songSubName = pkt_readLongString(pkt);
-	out.songAuthorName = pkt_readLongString(pkt);
-	out.levelAuthorName = pkt_readLongString(pkt);
-	out.beatsPerMinute = pkt_readFloat32(pkt);
-	out.songDuration = pkt_readFloat32(pkt);
-	out.characteristic = pkt_readString(pkt);
-	out.difficulty = pkt_readUint32(pkt);
+	out.levelHash = pkt_readString(ctx, pkt);
+	out.songName = pkt_readLongString(ctx, pkt);
+	out.songSubName = pkt_readLongString(ctx, pkt);
+	out.songAuthorName = pkt_readLongString(ctx, pkt);
+	out.levelAuthorName = pkt_readLongString(ctx, pkt);
+	out.beatsPerMinute = pkt_readFloat32(ctx, pkt);
+	out.songDuration = pkt_readFloat32(ctx, pkt);
+	out.characteristic = pkt_readString(ctx, pkt);
+	out.difficulty = pkt_readUint32(ctx, pkt);
 	return out;
 }
-struct MpPlayerData pkt_readMpPlayerData(const uint8_t **pkt) {
+struct MpPlayerData pkt_readMpPlayerData(struct PacketContext ctx, const uint8_t **pkt) {
 	struct MpPlayerData out;
-	out.platformId = pkt_readString(pkt);
-	out.platform = pkt_readInt32(pkt);
+	out.platformId = pkt_readString(ctx, pkt);
+	out.platform = pkt_readInt32(ctx, pkt);
 	return out;
 }
-struct AuthenticateUserRequest pkt_readAuthenticateUserRequest(const uint8_t **pkt) {
+struct AuthenticateUserRequest pkt_readAuthenticateUserRequest(struct PacketContext ctx, const uint8_t **pkt) {
 	struct AuthenticateUserRequest out;
-	out.base = pkt_readBaseMasterServerReliableResponse(pkt);
-	out.authenticationToken = pkt_readAuthenticationToken(pkt);
+	out.base = pkt_readBaseMasterServerReliableResponse(ctx, pkt);
+	out.authenticationToken = pkt_readAuthenticationToken(ctx, pkt);
 	return out;
 }
-void pkt_writeAuthenticateUserResponse(uint8_t **pkt, struct AuthenticateUserResponse in) {
-	pkt_writeBaseMasterServerReliableResponse(pkt, in.base);
-	pkt_writeUint8(pkt, in.result);
+void pkt_writeAuthenticateUserResponse(struct PacketContext ctx, uint8_t **pkt, struct AuthenticateUserResponse in) {
+	pkt_writeBaseMasterServerReliableResponse(ctx, pkt, in.base);
+	pkt_writeUint8(ctx, pkt, in.result);
 }
-void pkt_writeConnectToServerResponse(uint8_t **pkt, struct ConnectToServerResponse in) {
-	pkt_writeBaseMasterServerReliableResponse(pkt, in.base);
-	pkt_writeUint8(pkt, in.result);
+void pkt_writeConnectToServerResponse(struct PacketContext ctx, uint8_t **pkt, struct ConnectToServerResponse in) {
+	pkt_writeBaseMasterServerReliableResponse(ctx, pkt, in.base);
+	pkt_writeUint8(ctx, pkt, in.result);
 	if(in.result == GetPublicServersResponse_Result_Success) {
-		pkt_writeString(pkt, in.userId);
-		pkt_writeString(pkt, in.userName);
-		pkt_writeString(pkt, in.secret);
-		pkt_writeBeatmapLevelSelectionMask(pkt, in.selectionMask);
-		pkt_writeUint8(pkt, in.flags);
-		pkt_writeIPEndPoint(pkt, in.remoteEndPoint);
-		pkt_writeUint8Array(pkt, in.random, 32);
-		pkt_writeByteArrayNetSerializable(pkt, in.publicKey);
-		pkt_writeServerCode(pkt, in.code);
-		pkt_writeGameplayServerConfiguration(pkt, in.configuration);
-		pkt_writeString(pkt, in.managerId);
+		pkt_writeString(ctx, pkt, in.userId);
+		pkt_writeString(ctx, pkt, in.userName);
+		pkt_writeString(ctx, pkt, in.secret);
+		pkt_writeBeatmapLevelSelectionMask(ctx, pkt, in.selectionMask);
+		pkt_writeUint8(ctx, pkt, in.flags);
+		pkt_writeIPEndPoint(ctx, pkt, in.remoteEndPoint);
+		pkt_writeUint8Array(ctx, pkt, in.random, 32);
+		pkt_writeByteArrayNetSerializable(ctx, pkt, in.publicKey);
+		pkt_writeServerCode(ctx, pkt, in.code);
+		pkt_writeGameplayServerConfiguration(ctx, pkt, in.configuration);
+		pkt_writeString(ctx, pkt, in.managerId);
 	}
 }
-struct ConnectToServerRequest pkt_readConnectToServerRequest(const uint8_t **pkt) {
+struct ConnectToServerRequest pkt_readConnectToServerRequest(struct PacketContext ctx, const uint8_t **pkt) {
 	struct ConnectToServerRequest out;
-	out.base = pkt_readBaseConnectToServerRequest(pkt);
-	out.selectionMask = pkt_readBeatmapLevelSelectionMask(pkt);
-	out.secret = pkt_readString(pkt);
-	out.code = pkt_readServerCode(pkt);
-	out.configuration = pkt_readGameplayServerConfiguration(pkt);
+	out.base = pkt_readBaseConnectToServerRequest(ctx, pkt);
+	out.selectionMask = pkt_readBeatmapLevelSelectionMask(ctx, pkt);
+	out.secret = pkt_readString(ctx, pkt);
+	out.code = pkt_readServerCode(ctx, pkt);
+	out.configuration = pkt_readGameplayServerConfiguration(ctx, pkt);
 	return out;
 }
-struct ClientHelloRequest pkt_readClientHelloRequest(const uint8_t **pkt) {
+struct ClientHelloRequest pkt_readClientHelloRequest(struct PacketContext ctx, const uint8_t **pkt) {
 	struct ClientHelloRequest out;
-	out.base = pkt_readBaseMasterServerReliableRequest(pkt);
+	out.base = pkt_readBaseMasterServerReliableRequest(ctx, pkt);
 	pkt_readUint8Array(pkt, out.random, 32);
 	return out;
 }
-void pkt_writeHelloVerifyRequest(uint8_t **pkt, struct HelloVerifyRequest in) {
-	pkt_writeBaseMasterServerReliableResponse(pkt, in.base);
-	pkt_writeUint8Array(pkt, in.cookie, 32);
+void pkt_writeHelloVerifyRequest(struct PacketContext ctx, uint8_t **pkt, struct HelloVerifyRequest in) {
+	pkt_writeBaseMasterServerReliableResponse(ctx, pkt, in.base);
+	pkt_writeUint8Array(ctx, pkt, in.cookie, 32);
 }
-struct ClientHelloWithCookieRequest pkt_readClientHelloWithCookieRequest(const uint8_t **pkt) {
+struct ClientHelloWithCookieRequest pkt_readClientHelloWithCookieRequest(struct PacketContext ctx, const uint8_t **pkt) {
 	struct ClientHelloWithCookieRequest out;
-	out.base = pkt_readBaseMasterServerReliableRequest(pkt);
-	out.certificateResponseId = pkt_readUint32(pkt);
+	out.base = pkt_readBaseMasterServerReliableRequest(ctx, pkt);
+	out.certificateResponseId = pkt_readUint32(ctx, pkt);
 	pkt_readUint8Array(pkt, out.random, 32);
 	pkt_readUint8Array(pkt, out.cookie, 32);
 	return out;
 }
-void pkt_writeServerHelloRequest(uint8_t **pkt, struct ServerHelloRequest in) {
-	pkt_writeBaseMasterServerReliableResponse(pkt, in.base);
-	pkt_writeUint8Array(pkt, in.random, 32);
-	pkt_writeByteArrayNetSerializable(pkt, in.publicKey);
-	pkt_writeByteArrayNetSerializable(pkt, in.signature);
+void pkt_writeServerHelloRequest(struct PacketContext ctx, uint8_t **pkt, struct ServerHelloRequest in) {
+	pkt_writeBaseMasterServerReliableResponse(ctx, pkt, in.base);
+	pkt_writeUint8Array(ctx, pkt, in.random, 32);
+	pkt_writeByteArrayNetSerializable(ctx, pkt, in.publicKey);
+	pkt_writeByteArrayNetSerializable(ctx, pkt, in.signature);
 }
-void pkt_writeServerCertificateRequest(uint8_t **pkt, struct ServerCertificateRequest in) {
-	pkt_writeBaseMasterServerReliableResponse(pkt, in.base);
-	pkt_writeVarUint32(pkt, in.certificateCount);
+void pkt_writeServerCertificateRequest(struct PacketContext ctx, uint8_t **pkt, struct ServerCertificateRequest in) {
+	pkt_writeBaseMasterServerReliableResponse(ctx, pkt, in.base);
+	pkt_writeVarUint32(ctx, pkt, in.certificateCount);
 	for(uint32_t i = 0; i < in.certificateCount; ++i)
-		pkt_writeByteArrayNetSerializable(pkt, in.certificateList[i]);
+		pkt_writeByteArrayNetSerializable(ctx, pkt, in.certificateList[i]);
 }
-struct ClientKeyExchangeRequest pkt_readClientKeyExchangeRequest(const uint8_t **pkt) {
+struct ClientKeyExchangeRequest pkt_readClientKeyExchangeRequest(struct PacketContext ctx, const uint8_t **pkt) {
 	struct ClientKeyExchangeRequest out;
-	out.base = pkt_readBaseMasterServerReliableResponse(pkt);
-	out.clientPublicKey = pkt_readByteArrayNetSerializable(pkt);
+	out.base = pkt_readBaseMasterServerReliableResponse(ctx, pkt);
+	out.clientPublicKey = pkt_readByteArrayNetSerializable(ctx, pkt);
 	return out;
 }
-void pkt_writeChangeCipherSpecRequest(uint8_t **pkt, struct ChangeCipherSpecRequest in) {
-	pkt_writeBaseMasterServerReliableResponse(pkt, in.base);
+void pkt_writeChangeCipherSpecRequest(struct PacketContext ctx, uint8_t **pkt, struct ChangeCipherSpecRequest in) {
+	pkt_writeBaseMasterServerReliableResponse(ctx, pkt, in.base);
 }
-void pkt_logMessageType(const char *name, char *buf, char *it, MessageType in) {
+void pkt_logMessageType(struct PacketContext ctx, const char *name, char *buf, char *it, MessageType in) {
 	fprintf(stderr, "%.*s%s=%u (%s)\n", (uint32_t)(it - buf), buf, name, in, reflect(MessageType, in));
 }
-struct MessageHeader pkt_readMessageHeader(const uint8_t **pkt) {
+struct MessageHeader pkt_readMessageHeader(struct PacketContext ctx, const uint8_t **pkt) {
 	struct MessageHeader out;
-	out.type = pkt_readUint32(pkt);
-	out.protocolVersion = pkt_readVarUint32(pkt);
+	out.type = pkt_readUint32(ctx, pkt);
+	out.protocolVersion = pkt_readVarUint32(ctx, pkt);
 	return out;
 }
-void pkt_writeMessageHeader(uint8_t **pkt, struct MessageHeader in) {
-	pkt_writeUint32(pkt, in.type);
-	pkt_writeVarUint32(pkt, in.protocolVersion);
+void pkt_writeMessageHeader(struct PacketContext ctx, uint8_t **pkt, struct MessageHeader in) {
+	pkt_writeUint32(ctx, pkt, in.type);
+	pkt_writeVarUint32(ctx, pkt, in.protocolVersion);
 }
-struct SerializeHeader pkt_readSerializeHeader(const uint8_t **pkt) {
+struct SerializeHeader pkt_readSerializeHeader(struct PacketContext ctx, const uint8_t **pkt) {
 	struct SerializeHeader out;
-	out.length = pkt_readVarUint32(pkt);
-	out.type = pkt_readUint8(pkt);
+	out.length = pkt_readVarUint32(ctx, pkt);
+	out.type = pkt_readUint8(ctx, pkt);
 	return out;
 }
-void pkt_writeSerializeHeader(uint8_t **pkt, struct SerializeHeader in) {
-	pkt_writeVarUint32(pkt, in.length);
-	pkt_writeUint8(pkt, in.type);
+void pkt_writeSerializeHeader(struct PacketContext ctx, uint8_t **pkt, struct SerializeHeader in) {
+	pkt_writeVarUint32(ctx, pkt, in.length);
+	pkt_writeUint8(ctx, pkt, in.type);
 }

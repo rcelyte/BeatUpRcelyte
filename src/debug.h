@@ -28,110 +28,110 @@ static void debug_logType(struct MessageHeader message, struct SerializeHeader s
 		fprintf(stderr, "%02hhx", in[i]);
 	fprintf(stderr, "\n");
 }*/
-static const uint8_t *debug_logRouting(const uint8_t *pkt, const uint8_t *data, const uint8_t *end, char *buf, uint32_t protocolVersion) {
-	pkt_logRoutingHeader("\tRoutingHeader", buf, buf, pkt_readRoutingHeader(&data));
+static const uint8_t *debug_logRouting(const uint8_t *pkt, const uint8_t *data, const uint8_t *end, char *buf, struct PacketContext version) {
+	pkt_logRoutingHeader(version, "\tRoutingHeader", buf, buf, pkt_readRoutingHeader(version, &data));
 	while(data < end) {
-		struct SerializeHeader serial = pkt_readSerializeHeader(&data);
+		struct SerializeHeader serial = pkt_readSerializeHeader(version, &data);
 		const uint8_t *sub = data--;
 		data += serial.length;
 		fprintf(stderr, "\tSerializeHeader[@%zu].type=%u (%s)\n", sub - pkt, serial.type, reflect(InternalMessageType, serial.type));
 		switch(serial.type) {
-			case InternalMessageType_SyncTime: pkt_logSyncTime("\tSyncTime", buf, buf, pkt_readSyncTime(&sub)); break;
-			case InternalMessageType_PlayerConnected: pkt_logPlayerConnected("\tPlayerConnected", buf, buf, pkt_readPlayerConnected(&sub)); break;
-			case InternalMessageType_PlayerIdentity: pkt_logPlayerIdentity("\tPlayerIdentity", buf, buf, pkt_readPlayerIdentity(&sub)); break;
-			case InternalMessageType_PlayerLatencyUpdate: pkt_logPlayerLatencyUpdate("\tPlayerLatencyUpdate", buf, buf, pkt_readPlayerLatencyUpdate(&sub)); break;
-			case InternalMessageType_PlayerDisconnected: pkt_logPlayerDisconnected("\tPlayerDisconnected", buf, buf, pkt_readPlayerDisconnected(&sub)); break;
-			case InternalMessageType_PlayerSortOrderUpdate: pkt_logPlayerSortOrderUpdate("\tPlayerSortOrderUpdate", buf, buf, pkt_readPlayerSortOrderUpdate(&sub)); break;
-			case InternalMessageType_Party: pkt_logParty("\tParty", buf, buf, pkt_readParty(&sub)); break;
+			case InternalMessageType_SyncTime: pkt_logSyncTime(version, "\tSyncTime", buf, buf, pkt_readSyncTime(version, &sub)); break;
+			case InternalMessageType_PlayerConnected: pkt_logPlayerConnected(version, "\tPlayerConnected", buf, buf, pkt_readPlayerConnected(version, &sub)); break;
+			case InternalMessageType_PlayerIdentity: pkt_logPlayerIdentity(version, "\tPlayerIdentity", buf, buf, pkt_readPlayerIdentity(version, &sub)); break;
+			case InternalMessageType_PlayerLatencyUpdate: pkt_logPlayerLatencyUpdate(version, "\tPlayerLatencyUpdate", buf, buf, pkt_readPlayerLatencyUpdate(version, &sub)); break;
+			case InternalMessageType_PlayerDisconnected: pkt_logPlayerDisconnected(version, "\tPlayerDisconnected", buf, buf, pkt_readPlayerDisconnected(version, &sub)); break;
+			case InternalMessageType_PlayerSortOrderUpdate: pkt_logPlayerSortOrderUpdate(version, "\tPlayerSortOrderUpdate", buf, buf, pkt_readPlayerSortOrderUpdate(version, &sub)); break;
+			case InternalMessageType_Party: pkt_logParty(version, "\tParty", buf, buf, pkt_readParty(version, &sub)); break;
 			case InternalMessageType_MultiplayerSession: {
-				struct MultiplayerSessionMessageHeader smsg = pkt_readMultiplayerSessionMessageHeader(&sub);
-				pkt_logMultiplayerSessionMessageHeader("\tMultiplayerSessionMessageHeader", buf, buf, smsg);
+				struct MultiplayerSessionMessageHeader smsg = pkt_readMultiplayerSessionMessageHeader(version, &sub);
+				pkt_logMultiplayerSessionMessageHeader(version, "\tMultiplayerSessionMessageHeader", buf, buf, smsg);
 				switch(smsg.type) {
 					case MultiplayerSessionMessageType_MenuRpc: {
-						struct MenuRpcHeader rpc = pkt_readMenuRpcHeader(&sub);
-						pkt_logMenuRpcHeader("\tMenuRpcHeader", buf, buf, rpc);
+						struct MenuRpcHeader rpc = pkt_readMenuRpcHeader(version, &sub);
+						pkt_logMenuRpcHeader(version, "\tMenuRpcHeader", buf, buf, rpc);
 						switch(rpc.type) {
-							case MenuRpcType_SetPlayersMissingEntitlementsToLevel: pkt_logSetPlayersMissingEntitlementsToLevel("\tSetPlayersMissingEntitlementsToLevel", buf, buf, pkt_readSetPlayersMissingEntitlementsToLevel(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_GetIsEntitledToLevel: pkt_logGetIsEntitledToLevel("\tGetIsEntitledToLevel", buf, buf, pkt_readGetIsEntitledToLevel(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_SetIsEntitledToLevel: pkt_logSetIsEntitledToLevel("\tSetIsEntitledToLevel", buf, buf, pkt_readSetIsEntitledToLevel(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_InvalidateLevelEntitlementStatuses: pkt_logInvalidateLevelEntitlementStatuses("\tInvalidateLevelEntitlementStatuses", buf, buf, pkt_readInvalidateLevelEntitlementStatuses(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_SelectLevelPack: pkt_logSelectLevelPack("\tSelectLevelPack", buf, buf, pkt_readSelectLevelPack(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_SetSelectedBeatmap: pkt_logSetSelectedBeatmap("\tSetSelectedBeatmap", buf, buf, pkt_readSetSelectedBeatmap(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_GetSelectedBeatmap: pkt_logGetSelectedBeatmap("\tGetSelectedBeatmap", buf, buf, pkt_readGetSelectedBeatmap(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_RecommendBeatmap: pkt_logRecommendBeatmap("\tRecommendBeatmap", buf, buf, pkt_readRecommendBeatmap(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_ClearRecommendedBeatmap: pkt_logClearRecommendedBeatmap("\tClearRecommendedBeatmap", buf, buf, pkt_readClearRecommendedBeatmap(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_GetRecommendedBeatmap: pkt_logGetRecommendedBeatmap("\tGetRecommendedBeatmap", buf, buf, pkt_readGetRecommendedBeatmap(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_SetSelectedGameplayModifiers: pkt_logSetSelectedGameplayModifiers("\tSetSelectedGameplayModifiers", buf, buf, pkt_readSetSelectedGameplayModifiers(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_GetSelectedGameplayModifiers: pkt_logGetSelectedGameplayModifiers("\tGetSelectedGameplayModifiers", buf, buf, pkt_readGetSelectedGameplayModifiers(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_RecommendGameplayModifiers: pkt_logRecommendGameplayModifiers("\tRecommendGameplayModifiers", buf, buf, pkt_readRecommendGameplayModifiers(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_ClearRecommendedGameplayModifiers: pkt_logClearRecommendedGameplayModifiers("\tClearRecommendedGameplayModifiers", buf, buf, pkt_readClearRecommendedGameplayModifiers(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_GetRecommendedGameplayModifiers: pkt_logGetRecommendedGameplayModifiers("\tGetRecommendedGameplayModifiers", buf, buf, pkt_readGetRecommendedGameplayModifiers(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_LevelLoadError: pkt_logLevelLoadError("\tLevelLoadError", buf, buf, pkt_readLevelLoadError(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_LevelLoadSuccess: pkt_logLevelLoadSuccess("\tLevelLoadSuccess", buf, buf, pkt_readLevelLoadSuccess(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_StartLevel: pkt_logStartLevel("\tStartLevel", buf, buf, pkt_readStartLevel(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_GetStartedLevel: pkt_logGetStartedLevel("\tGetStartedLevel", buf, buf, pkt_readGetStartedLevel(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_CancelLevelStart: pkt_logCancelLevelStart("\tCancelLevelStart", buf, buf, pkt_readCancelLevelStart(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_GetMultiplayerGameState: pkt_logGetMultiplayerGameState("\tGetMultiplayerGameState", buf, buf, pkt_readGetMultiplayerGameState(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_SetMultiplayerGameState: pkt_logSetMultiplayerGameState("\tSetMultiplayerGameState", buf, buf, pkt_readSetMultiplayerGameState(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_GetIsReady: pkt_logGetIsReady("\tGetIsReady", buf, buf, pkt_readGetIsReady(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_SetIsReady: pkt_logSetIsReady("\tSetIsReady", buf, buf, pkt_readSetIsReady(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_SetStartGameTime: pkt_logSetStartGameTime("\tSetStartGameTime", buf, buf, pkt_readSetStartGameTime(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_CancelStartGameTime: pkt_logCancelStartGameTime("\tCancelStartGameTime", buf, buf, pkt_readCancelStartGameTime(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_GetIsInLobby: pkt_logGetIsInLobby("\tGetIsInLobby", buf, buf, pkt_readGetIsInLobby(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_SetIsInLobby: pkt_logSetIsInLobby("\tSetIsInLobby", buf, buf, pkt_readSetIsInLobby(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_GetCountdownEndTime: pkt_logGetCountdownEndTime("\tGetCountdownEndTime", buf, buf, pkt_readGetCountdownEndTime(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_SetCountdownEndTime: pkt_logSetCountdownEndTime("\tSetCountdownEndTime", buf, buf, pkt_readSetCountdownEndTime(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_CancelCountdown: pkt_logCancelCountdown("\tCancelCountdown", buf, buf, pkt_readCancelCountdown(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_GetOwnedSongPacks: pkt_logGetOwnedSongPacks("\tGetOwnedSongPacks", buf, buf, pkt_readGetOwnedSongPacks(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_SetOwnedSongPacks: pkt_logSetOwnedSongPacks("\tSetOwnedSongPacks", buf, buf, pkt_readSetOwnedSongPacks(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_RequestKickPlayer: pkt_logRequestKickPlayer("\tRequestKickPlayer", buf, buf, pkt_readRequestKickPlayer(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_GetPermissionConfiguration: pkt_logGetPermissionConfiguration("\tGetPermissionConfiguration", buf, buf, pkt_readGetPermissionConfiguration(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_SetPermissionConfiguration: pkt_logSetPermissionConfiguration("\tSetPermissionConfiguration", buf, buf, pkt_readSetPermissionConfiguration(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_GetIsStartButtonEnabled: pkt_logGetIsStartButtonEnabled("\tGetIsStartButtonEnabled", buf, buf, pkt_readGetIsStartButtonEnabled(&sub, protocolVersion), protocolVersion); break;
-							case MenuRpcType_SetIsStartButtonEnabled: pkt_logSetIsStartButtonEnabled("\tSetIsStartButtonEnabled", buf, buf, pkt_readSetIsStartButtonEnabled(&sub, protocolVersion), protocolVersion); break;
+							case MenuRpcType_SetPlayersMissingEntitlementsToLevel: pkt_logSetPlayersMissingEntitlementsToLevel(version, "\tSetPlayersMissingEntitlementsToLevel", buf, buf, pkt_readSetPlayersMissingEntitlementsToLevel(version, &sub)); break;
+							case MenuRpcType_GetIsEntitledToLevel: pkt_logGetIsEntitledToLevel(version, "\tGetIsEntitledToLevel", buf, buf, pkt_readGetIsEntitledToLevel(version, &sub)); break;
+							case MenuRpcType_SetIsEntitledToLevel: pkt_logSetIsEntitledToLevel(version, "\tSetIsEntitledToLevel", buf, buf, pkt_readSetIsEntitledToLevel(version, &sub)); break;
+							case MenuRpcType_InvalidateLevelEntitlementStatuses: pkt_logInvalidateLevelEntitlementStatuses(version, "\tInvalidateLevelEntitlementStatuses", buf, buf, pkt_readInvalidateLevelEntitlementStatuses(version, &sub)); break;
+							case MenuRpcType_SelectLevelPack: pkt_logSelectLevelPack(version, "\tSelectLevelPack", buf, buf, pkt_readSelectLevelPack(version, &sub)); break;
+							case MenuRpcType_SetSelectedBeatmap: pkt_logSetSelectedBeatmap(version, "\tSetSelectedBeatmap", buf, buf, pkt_readSetSelectedBeatmap(version, &sub)); break;
+							case MenuRpcType_GetSelectedBeatmap: pkt_logGetSelectedBeatmap(version, "\tGetSelectedBeatmap", buf, buf, pkt_readGetSelectedBeatmap(version, &sub)); break;
+							case MenuRpcType_RecommendBeatmap: pkt_logRecommendBeatmap(version, "\tRecommendBeatmap", buf, buf, pkt_readRecommendBeatmap(version, &sub)); break;
+							case MenuRpcType_ClearRecommendedBeatmap: pkt_logClearRecommendedBeatmap(version, "\tClearRecommendedBeatmap", buf, buf, pkt_readClearRecommendedBeatmap(version, &sub)); break;
+							case MenuRpcType_GetRecommendedBeatmap: pkt_logGetRecommendedBeatmap(version, "\tGetRecommendedBeatmap", buf, buf, pkt_readGetRecommendedBeatmap(version, &sub)); break;
+							case MenuRpcType_SetSelectedGameplayModifiers: pkt_logSetSelectedGameplayModifiers(version, "\tSetSelectedGameplayModifiers", buf, buf, pkt_readSetSelectedGameplayModifiers(version, &sub)); break;
+							case MenuRpcType_GetSelectedGameplayModifiers: pkt_logGetSelectedGameplayModifiers(version, "\tGetSelectedGameplayModifiers", buf, buf, pkt_readGetSelectedGameplayModifiers(version, &sub)); break;
+							case MenuRpcType_RecommendGameplayModifiers: pkt_logRecommendGameplayModifiers(version, "\tRecommendGameplayModifiers", buf, buf, pkt_readRecommendGameplayModifiers(version, &sub)); break;
+							case MenuRpcType_ClearRecommendedGameplayModifiers: pkt_logClearRecommendedGameplayModifiers(version, "\tClearRecommendedGameplayModifiers", buf, buf, pkt_readClearRecommendedGameplayModifiers(version, &sub)); break;
+							case MenuRpcType_GetRecommendedGameplayModifiers: pkt_logGetRecommendedGameplayModifiers(version, "\tGetRecommendedGameplayModifiers", buf, buf, pkt_readGetRecommendedGameplayModifiers(version, &sub)); break;
+							case MenuRpcType_LevelLoadError: pkt_logLevelLoadError(version, "\tLevelLoadError", buf, buf, pkt_readLevelLoadError(version, &sub)); break;
+							case MenuRpcType_LevelLoadSuccess: pkt_logLevelLoadSuccess(version, "\tLevelLoadSuccess", buf, buf, pkt_readLevelLoadSuccess(version, &sub)); break;
+							case MenuRpcType_StartLevel: pkt_logStartLevel(version, "\tStartLevel", buf, buf, pkt_readStartLevel(version, &sub)); break;
+							case MenuRpcType_GetStartedLevel: pkt_logGetStartedLevel(version, "\tGetStartedLevel", buf, buf, pkt_readGetStartedLevel(version, &sub)); break;
+							case MenuRpcType_CancelLevelStart: pkt_logCancelLevelStart(version, "\tCancelLevelStart", buf, buf, pkt_readCancelLevelStart(version, &sub)); break;
+							case MenuRpcType_GetMultiplayerGameState: pkt_logGetMultiplayerGameState(version, "\tGetMultiplayerGameState", buf, buf, pkt_readGetMultiplayerGameState(version, &sub)); break;
+							case MenuRpcType_SetMultiplayerGameState: pkt_logSetMultiplayerGameState(version, "\tSetMultiplayerGameState", buf, buf, pkt_readSetMultiplayerGameState(version, &sub)); break;
+							case MenuRpcType_GetIsReady: pkt_logGetIsReady(version, "\tGetIsReady", buf, buf, pkt_readGetIsReady(version, &sub)); break;
+							case MenuRpcType_SetIsReady: pkt_logSetIsReady(version, "\tSetIsReady", buf, buf, pkt_readSetIsReady(version, &sub)); break;
+							case MenuRpcType_SetStartGameTime: pkt_logSetStartGameTime(version, "\tSetStartGameTime", buf, buf, pkt_readSetStartGameTime(version, &sub)); break;
+							case MenuRpcType_CancelStartGameTime: pkt_logCancelStartGameTime(version, "\tCancelStartGameTime", buf, buf, pkt_readCancelStartGameTime(version, &sub)); break;
+							case MenuRpcType_GetIsInLobby: pkt_logGetIsInLobby(version, "\tGetIsInLobby", buf, buf, pkt_readGetIsInLobby(version, &sub)); break;
+							case MenuRpcType_SetIsInLobby: pkt_logSetIsInLobby(version, "\tSetIsInLobby", buf, buf, pkt_readSetIsInLobby(version, &sub)); break;
+							case MenuRpcType_GetCountdownEndTime: pkt_logGetCountdownEndTime(version, "\tGetCountdownEndTime", buf, buf, pkt_readGetCountdownEndTime(version, &sub)); break;
+							case MenuRpcType_SetCountdownEndTime: pkt_logSetCountdownEndTime(version, "\tSetCountdownEndTime", buf, buf, pkt_readSetCountdownEndTime(version, &sub)); break;
+							case MenuRpcType_CancelCountdown: pkt_logCancelCountdown(version, "\tCancelCountdown", buf, buf, pkt_readCancelCountdown(version, &sub)); break;
+							case MenuRpcType_GetOwnedSongPacks: pkt_logGetOwnedSongPacks(version, "\tGetOwnedSongPacks", buf, buf, pkt_readGetOwnedSongPacks(version, &sub)); break;
+							case MenuRpcType_SetOwnedSongPacks: pkt_logSetOwnedSongPacks(version, "\tSetOwnedSongPacks", buf, buf, pkt_readSetOwnedSongPacks(version, &sub)); break;
+							case MenuRpcType_RequestKickPlayer: pkt_logRequestKickPlayer(version, "\tRequestKickPlayer", buf, buf, pkt_readRequestKickPlayer(version, &sub)); break;
+							case MenuRpcType_GetPermissionConfiguration: pkt_logGetPermissionConfiguration(version, "\tGetPermissionConfiguration", buf, buf, pkt_readGetPermissionConfiguration(version, &sub)); break;
+							case MenuRpcType_SetPermissionConfiguration: pkt_logSetPermissionConfiguration(version, "\tSetPermissionConfiguration", buf, buf, pkt_readSetPermissionConfiguration(version, &sub)); break;
+							case MenuRpcType_GetIsStartButtonEnabled: pkt_logGetIsStartButtonEnabled(version, "\tGetIsStartButtonEnabled", buf, buf, pkt_readGetIsStartButtonEnabled(version, &sub)); break;
+							case MenuRpcType_SetIsStartButtonEnabled: pkt_logSetIsStartButtonEnabled(version, "\tSetIsStartButtonEnabled", buf, buf, pkt_readSetIsStartButtonEnabled(version, &sub)); break;
 							default: fprintf(stderr, "BAD MENU RPC TYPE\n");
 						}
 						break;
 					}
 					case MultiplayerSessionMessageType_GameplayRpc: {
-						struct GameplayRpcHeader rpc = pkt_readGameplayRpcHeader(&sub);
-						pkt_logGameplayRpcHeader("\tGameplayRpcHeader", buf, buf, rpc);
+						struct GameplayRpcHeader rpc = pkt_readGameplayRpcHeader(version, &sub);
+						pkt_logGameplayRpcHeader(version, "\tGameplayRpcHeader", buf, buf, rpc);
 						switch(rpc.type) {
-							case GameplayRpcType_SetGameplaySceneSyncFinish: pkt_logSetGameplaySceneSyncFinish("\tSetGameplaySceneSyncFinish", buf, buf, pkt_readSetGameplaySceneSyncFinish(&sub, protocolVersion), protocolVersion); break;
-							case GameplayRpcType_SetGameplaySceneReady: pkt_logSetGameplaySceneReady("\tSetGameplaySceneReady", buf, buf, pkt_readSetGameplaySceneReady(&sub, protocolVersion), protocolVersion); break;
-							case GameplayRpcType_GetGameplaySceneReady: pkt_logGetGameplaySceneReady("\tGetGameplaySceneReady", buf, buf, pkt_readGetGameplaySceneReady(&sub, protocolVersion), protocolVersion); break;
-							case GameplayRpcType_SetActivePlayerFailedToConnect: pkt_logSetActivePlayerFailedToConnect("\tSetActivePlayerFailedToConnect", buf, buf, pkt_readSetActivePlayerFailedToConnect(&sub, protocolVersion), protocolVersion); break;
-							case GameplayRpcType_SetGameplaySongReady: pkt_logSetGameplaySongReady("\tSetGameplaySongReady", buf, buf, pkt_readSetGameplaySongReady(&sub, protocolVersion), protocolVersion); break;
-							case GameplayRpcType_GetGameplaySongReady: pkt_logGetGameplaySongReady("\tGetGameplaySongReady", buf, buf, pkt_readGetGameplaySongReady(&sub, protocolVersion), protocolVersion); break;
-							case GameplayRpcType_SetSongStartTime: pkt_logSetSongStartTime("\tSetSongStartTime", buf, buf, pkt_readSetSongStartTime(&sub, protocolVersion), protocolVersion); break;
-							case GameplayRpcType_NoteCut: pkt_logNoteCut("\tNoteCut", buf, buf, pkt_readNoteCut(&sub, protocolVersion), protocolVersion); break;
-							case GameplayRpcType_NoteMissed: pkt_logNoteMissed("\tNoteMissed", buf, buf, pkt_readNoteMissed(&sub, protocolVersion), protocolVersion); break;
-							case GameplayRpcType_LevelFinished: pkt_logLevelFinished("\tLevelFinished", buf, buf, pkt_readLevelFinished(&sub, protocolVersion), protocolVersion); break;
-							case GameplayRpcType_ReturnToMenu: pkt_logReturnToMenu("\tReturnToMenu", buf, buf, pkt_readReturnToMenu(&sub, protocolVersion), protocolVersion); break;
-							case GameplayRpcType_RequestReturnToMenu: pkt_logRequestReturnToMenu("\tRequestReturnToMenu", buf, buf, pkt_readRequestReturnToMenu(&sub, protocolVersion), protocolVersion); break;
-							case GameplayRpcType_NoteSpawned: pkt_logNoteSpawned("\tNoteSpawned", buf, buf, pkt_readNoteSpawned(&sub, protocolVersion), protocolVersion); break;
-							case GameplayRpcType_ObstacleSpawned: pkt_logObstacleSpawned("\tObstacleSpawned", buf, buf, pkt_readObstacleSpawned(&sub, protocolVersion), protocolVersion); break;
+							case GameplayRpcType_SetGameplaySceneSyncFinish: pkt_logSetGameplaySceneSyncFinish(version, "\tSetGameplaySceneSyncFinish", buf, buf, pkt_readSetGameplaySceneSyncFinish(version, &sub)); break;
+							case GameplayRpcType_SetGameplaySceneReady: pkt_logSetGameplaySceneReady(version, "\tSetGameplaySceneReady", buf, buf, pkt_readSetGameplaySceneReady(version, &sub)); break;
+							case GameplayRpcType_GetGameplaySceneReady: pkt_logGetGameplaySceneReady(version, "\tGetGameplaySceneReady", buf, buf, pkt_readGetGameplaySceneReady(version, &sub)); break;
+							case GameplayRpcType_SetActivePlayerFailedToConnect: pkt_logSetActivePlayerFailedToConnect(version, "\tSetActivePlayerFailedToConnect", buf, buf, pkt_readSetActivePlayerFailedToConnect(version, &sub)); break;
+							case GameplayRpcType_SetGameplaySongReady: pkt_logSetGameplaySongReady(version, "\tSetGameplaySongReady", buf, buf, pkt_readSetGameplaySongReady(version, &sub)); break;
+							case GameplayRpcType_GetGameplaySongReady: pkt_logGetGameplaySongReady(version, "\tGetGameplaySongReady", buf, buf, pkt_readGetGameplaySongReady(version, &sub)); break;
+							case GameplayRpcType_SetSongStartTime: pkt_logSetSongStartTime(version, "\tSetSongStartTime", buf, buf, pkt_readSetSongStartTime(version, &sub)); break;
+							case GameplayRpcType_NoteCut: pkt_logNoteCut(version, "\tNoteCut", buf, buf, pkt_readNoteCut(version, &sub)); break;
+							case GameplayRpcType_NoteMissed: pkt_logNoteMissed(version, "\tNoteMissed", buf, buf, pkt_readNoteMissed(version, &sub)); break;
+							case GameplayRpcType_LevelFinished: pkt_logLevelFinished(version, "\tLevelFinished", buf, buf, pkt_readLevelFinished(version, &sub)); break;
+							case GameplayRpcType_ReturnToMenu: pkt_logReturnToMenu(version, "\tReturnToMenu", buf, buf, pkt_readReturnToMenu(version, &sub)); break;
+							case GameplayRpcType_RequestReturnToMenu: pkt_logRequestReturnToMenu(version, "\tRequestReturnToMenu", buf, buf, pkt_readRequestReturnToMenu(version, &sub)); break;
+							case GameplayRpcType_NoteSpawned: pkt_logNoteSpawned(version, "\tNoteSpawned", buf, buf, pkt_readNoteSpawned(version, &sub)); break;
+							case GameplayRpcType_ObstacleSpawned: pkt_logObstacleSpawned(version, "\tObstacleSpawned", buf, buf, pkt_readObstacleSpawned(version, &sub)); break;
 							default: fprintf(stderr, "BAD GAMEPLAY RPC TYPE\n");
 						}
 						break;
 					}
 					#if 0
-					case MultiplayerSessionMessageType_NodePoseSyncState: pkt_logNodePoseSyncState("\tNodePoseSyncState", buf, buf, pkt_readNodePoseSyncState(&sub)); break;
-					case MultiplayerSessionMessageType_ScoreSyncState: pkt_logScoreSyncState("\tScoreSyncState", buf, buf, pkt_readScoreSyncState(&sub)); break;
-					case MultiplayerSessionMessageType_NodePoseSyncStateDelta: pkt_logNodePoseSyncStateDelta("\tNodePoseSyncStateDelta", buf, buf, pkt_readNodePoseSyncStateDelta(&sub)); break;
-					case MultiplayerSessionMessageType_ScoreSyncStateDelta: pkt_logScoreSyncStateDelta("\tScoreSyncStateDelta", buf, buf, pkt_readScoreSyncStateDelta(&sub)); break;
+					case MultiplayerSessionMessageType_NodePoseSyncState: pkt_logNodePoseSyncState(version, "\tNodePoseSyncState", buf, buf, pkt_readNodePoseSyncState(version, &sub)); break;
+					case MultiplayerSessionMessageType_ScoreSyncState: pkt_logScoreSyncState(version, "\tScoreSyncState", buf, buf, pkt_readScoreSyncState(version, &sub)); break;
+					case MultiplayerSessionMessageType_NodePoseSyncStateDelta: pkt_logNodePoseSyncStateDelta(version, "\tNodePoseSyncStateDelta", buf, buf, pkt_readNodePoseSyncStateDelta(version, &sub)); break;
+					case MultiplayerSessionMessageType_ScoreSyncStateDelta: pkt_logScoreSyncStateDelta(version, "\tScoreSyncStateDelta", buf, buf, pkt_readScoreSyncStateDelta(version, &sub)); break;
 					#else
-					case MultiplayerSessionMessageType_NodePoseSyncState: pkt_readNodePoseSyncState(&sub); break;
-					case MultiplayerSessionMessageType_ScoreSyncState: pkt_readScoreSyncState(&sub); break;
-					case MultiplayerSessionMessageType_NodePoseSyncStateDelta: pkt_readNodePoseSyncStateDelta(&sub); break;
-					case MultiplayerSessionMessageType_ScoreSyncStateDelta: pkt_readScoreSyncStateDelta(&sub); break;
+					case MultiplayerSessionMessageType_NodePoseSyncState: pkt_readNodePoseSyncState(version, &sub); break;
+					case MultiplayerSessionMessageType_ScoreSyncState: pkt_readScoreSyncState(version, &sub); break;
+					case MultiplayerSessionMessageType_NodePoseSyncStateDelta: pkt_readNodePoseSyncStateDelta(version, &sub); break;
+					case MultiplayerSessionMessageType_ScoreSyncStateDelta: pkt_readScoreSyncStateDelta(version, &sub); break;
 					#endif
 					case MultiplayerSessionMessageType_MpCore: {
-						struct MpCore mpHeader = pkt_readMpCore(&sub);
+						struct MpCore mpHeader = pkt_readMpCore(version, &sub);
 						if(mpHeader.packetType.length == 15 && memcmp(mpHeader.packetType.data, "MpBeatmapPacket", 15) == 0) {
-							pkt_logMpBeatmapPacket("\tMpBeatmapPacket", buf, buf, pkt_readMpBeatmapPacket(&sub));
+							pkt_logMpBeatmapPacket(version, "\tMpBeatmapPacket", buf, buf, pkt_readMpBeatmapPacket(version, &sub));
 						} else if(mpHeader.packetType.length == 12 && memcmp(mpHeader.packetType.data, "MpPlayerData", 12) == 0) {
-							pkt_logMpPlayerData("\tMpPlayerData", buf, buf, pkt_readMpPlayerData(&sub));
+							pkt_logMpPlayerData(version, "\tMpPlayerData", buf, buf, pkt_readMpPlayerData(version, &sub));
 						} else {
 							fprintf(stderr, "[INSTANCE] BAD MPCORE MESSAGE TYPE: '%.*s'\n", mpHeader.packetType.length, mpHeader.packetType.data);
 						}
@@ -140,11 +140,11 @@ static const uint8_t *debug_logRouting(const uint8_t *pkt, const uint8_t *data, 
 					default: fprintf(stderr, "BAD MULTIPLAYER SESSION MESSAGE TYPE\n");
 				}
 			}  break;
-			case InternalMessageType_KickPlayer: pkt_logKickPlayer("\tKickPlayer", buf, buf, pkt_readKickPlayer(&sub)); break;
-			case InternalMessageType_PlayerStateUpdate: pkt_logPlayerStateUpdate("\tPlayerStateUpdate", buf, buf, pkt_readPlayerStateUpdate(&sub)); break;
-			case InternalMessageType_PlayerAvatarUpdate: pkt_logPlayerAvatarUpdate("\tPlayerAvatarUpdate", buf, buf, pkt_readPlayerAvatarUpdate(&sub)); break;
-			case InternalMessageType_PingMessage: pkt_logPingMessage("\tPingMessage", buf, buf, pkt_readPingMessage(&sub)); break;
-			case InternalMessageType_PongMessage: pkt_logPongMessage("\tPongMessage", buf, buf, pkt_readPongMessage(&sub)); break;
+			case InternalMessageType_KickPlayer: pkt_logKickPlayer(version, "\tKickPlayer", buf, buf, pkt_readKickPlayer(version, &sub)); break;
+			case InternalMessageType_PlayerStateUpdate: pkt_logPlayerStateUpdate(version, "\tPlayerStateUpdate", buf, buf, pkt_readPlayerStateUpdate(version, &sub)); break;
+			case InternalMessageType_PlayerAvatarUpdate: pkt_logPlayerAvatarUpdate(version, "\tPlayerAvatarUpdate", buf, buf, pkt_readPlayerAvatarUpdate(version, &sub)); break;
+			case InternalMessageType_PingMessage: pkt_logPingMessage(version, "\tPingMessage", buf, buf, pkt_readPingMessage(version, &sub)); break;
+			case InternalMessageType_PongMessage: pkt_logPongMessage(version, "\tPongMessage", buf, buf, pkt_readPongMessage(version, &sub)); break;
 			default: fprintf(stderr, "BAD INTERNAL MESSAGE TYPE\n"); continue;
 		}
 		if(sub != data) {
@@ -164,7 +164,7 @@ static const uint8_t *debug_logRouting(const uint8_t *pkt, const uint8_t *data, 
 	fprintf(stderr, "\tSerializeHeader[@%zu] end\n", data - pkt);
 	return data;
 }
-static void debug_logPacket(const uint8_t *pkt, const uint8_t *end, struct NetPacketHeader header, uint32_t protocolVersion) {
+static void debug_logPacket(const uint8_t *pkt, const uint8_t *end, struct NetPacketHeader header, struct PacketContext version) {
 	if(header.isFragmented) {
 		fprintf(stderr, "FRAGMENTED\n");
 		return;
@@ -172,48 +172,48 @@ static void debug_logPacket(const uint8_t *pkt, const uint8_t *end, struct NetPa
 	const uint8_t *data = pkt;
 	char buf[1024*16];
 	switch(header.property) {
-		case PacketProperty_Unreliable: data = debug_logRouting(pkt, data, end, buf, protocolVersion); break;
+		case PacketProperty_Unreliable: data = debug_logRouting(pkt, data, end, buf, version); break;
 		case PacketProperty_Channeled: {
-			pkt_logChanneled("\tChanneled", buf, buf, pkt_readChanneled(&data));
-			data = debug_logRouting(pkt, data, end, buf, protocolVersion);
+			pkt_logChanneled(version, "\tChanneled", buf, buf, pkt_readChanneled(version, &data));
+			data = debug_logRouting(pkt, data, end, buf, version);
 			break;
 		}
-		case PacketProperty_Ack: pkt_logAck("\tAck", buf, buf, pkt_readAck(&data)); break;
-		case PacketProperty_Ping: pkt_logPing("\tPing", buf, buf, pkt_readPing(&data)); break;
-		case PacketProperty_Pong: pkt_logPong("\tPong", buf, buf, pkt_readPong(&data)); break;
-		case PacketProperty_ConnectRequest: pkt_logConnectRequest("\tConnectRequest", buf, buf, pkt_readConnectRequest(&data)); break;
-		case PacketProperty_ConnectAccept: pkt_logConnectAccept("\tConnectAccept", buf, buf, pkt_readConnectAccept(&data)); break;
-		case PacketProperty_Disconnect: pkt_logDisconnect("\tDisconnect", buf, buf, pkt_readDisconnect(&data)); break;
+		case PacketProperty_Ack: pkt_logAck(version, "\tAck", buf, buf, pkt_readAck(version, &data)); break;
+		case PacketProperty_Ping: pkt_logPing(version, "\tPing", buf, buf, pkt_readPing(version, &data)); break;
+		case PacketProperty_Pong: pkt_logPong(version, "\tPong", buf, buf, pkt_readPong(version, &data)); break;
+		case PacketProperty_ConnectRequest: pkt_logConnectRequest(version, "\tConnectRequest", buf, buf, pkt_readConnectRequest(version, &data)); break;
+		case PacketProperty_ConnectAccept: pkt_logConnectAccept(version, "\tConnectAccept", buf, buf, pkt_readConnectAccept(version, &data)); break;
+		case PacketProperty_Disconnect: pkt_logDisconnect(version, "\tDisconnect", buf, buf, pkt_readDisconnect(version, &data)); break;
 		case PacketProperty_UnconnectedMessage: {
-			struct MessageHeader message = pkt_readMessageHeader(&data);
-			struct SerializeHeader serial = pkt_readSerializeHeader(&data);
+			struct MessageHeader message = pkt_readMessageHeader(version, &data);
+			struct SerializeHeader serial = pkt_readSerializeHeader(version, &data);
 			debug_logMessage(message, serial);
 			if(message.type == MessageType_UserMessage) {
 				switch(serial.type) {
-					case UserMessageType_AuthenticateUserRequest: pkt_logAuthenticateUserRequest("\tAuthenticateUserRequest", buf, buf, pkt_readAuthenticateUserRequest(&data)); break;
-					case UserMessageType_AuthenticateUserResponse: pkt_logAuthenticateUserResponse("\tAuthenticateUserResponse", buf, buf, pkt_readAuthenticateUserResponse(&data)); break;
-					case UserMessageType_ConnectToServerResponse: pkt_logConnectToServerResponse("\tConnectToServerResponse", buf, buf, pkt_readConnectToServerResponse(&data)); break;
-					case UserMessageType_ConnectToServerRequest: pkt_logConnectToServerRequest("\tConnectToServerRequest", buf, buf, pkt_readConnectToServerRequest(&data)); break;
-					case UserMessageType_UserMessageReceivedAcknowledge: pkt_logUserMessageReceivedAcknowledge("\tUserMessageReceivedAcknowledge", buf, buf, pkt_readUserMessageReceivedAcknowledge(&data)); break;
-					case UserMessageType_UserMultipartMessage: pkt_logUserMultipartMessage("\tUserMultipartMessage", buf, buf, pkt_readUserMultipartMessage(&data)); break;
-					case UserMessageType_SessionKeepaliveMessage: pkt_logSessionKeepaliveMessage("\tSessionKeepaliveMessage", buf, buf, pkt_readSessionKeepaliveMessage(&data)); break;
-					case UserMessageType_GetPublicServersRequest: pkt_logGetPublicServersRequest("\tGetPublicServersRequest", buf, buf, pkt_readGetPublicServersRequest(&data)); break;
-					case UserMessageType_GetPublicServersResponse: pkt_logGetPublicServersResponse("\tGetPublicServersResponse", buf, buf, pkt_readGetPublicServersResponse(&data)); break;
+					case UserMessageType_AuthenticateUserRequest: pkt_logAuthenticateUserRequest(version, "\tAuthenticateUserRequest", buf, buf, pkt_readAuthenticateUserRequest(version, &data)); break;
+					case UserMessageType_AuthenticateUserResponse: pkt_logAuthenticateUserResponse(version, "\tAuthenticateUserResponse", buf, buf, pkt_readAuthenticateUserResponse(version, &data)); break;
+					case UserMessageType_ConnectToServerResponse: pkt_logConnectToServerResponse(version, "\tConnectToServerResponse", buf, buf, pkt_readConnectToServerResponse(version, &data)); break;
+					case UserMessageType_ConnectToServerRequest: pkt_logConnectToServerRequest(version, "\tConnectToServerRequest", buf, buf, pkt_readConnectToServerRequest(version, &data)); break;
+					case UserMessageType_UserMessageReceivedAcknowledge: pkt_logUserMessageReceivedAcknowledge(version, "\tUserMessageReceivedAcknowledge", buf, buf, pkt_readUserMessageReceivedAcknowledge(version, &data)); break;
+					case UserMessageType_UserMultipartMessage: pkt_logUserMultipartMessage(version, "\tUserMultipartMessage", buf, buf, pkt_readUserMultipartMessage(version, &data)); break;
+					case UserMessageType_SessionKeepaliveMessage: pkt_logSessionKeepaliveMessage(version, "\tSessionKeepaliveMessage", buf, buf, pkt_readSessionKeepaliveMessage(version, &data)); break;
+					case UserMessageType_GetPublicServersRequest: pkt_logGetPublicServersRequest(version, "\tGetPublicServersRequest", buf, buf, pkt_readGetPublicServersRequest(version, &data)); break;
+					case UserMessageType_GetPublicServersResponse: pkt_logGetPublicServersResponse(version, "\tGetPublicServersResponse", buf, buf, pkt_readGetPublicServersResponse(version, &data)); break;
 					default: fprintf(stderr, "BAD USER MESSAGE TYPE\n");
 				}
 			} else if(message.type == MessageType_DedicatedServerMessage) {
 				fprintf(stderr, "DedicatedServerMessageType not implemented\n");
 			} else if(message.type == MessageType_HandshakeMessage) {
 				switch(serial.type) {
-					case HandshakeMessageType_ClientHelloRequest: pkt_logClientHelloRequest("\tClientHelloRequest", buf, buf, pkt_readClientHelloRequest(&data)); break;
-					case HandshakeMessageType_HelloVerifyRequest: pkt_logHelloVerifyRequest("\tHelloVerifyRequest", buf, buf, pkt_readHelloVerifyRequest(&data)); break;
-					case HandshakeMessageType_ClientHelloWithCookieRequest: pkt_logClientHelloWithCookieRequest("\tClientHelloWithCookieRequest", buf, buf, pkt_readClientHelloWithCookieRequest(&data)); break;
-					case HandshakeMessageType_ServerHelloRequest: pkt_logServerHelloRequest("\tServerHelloRequest", buf, buf, pkt_readServerHelloRequest(&data)); break;
-					case HandshakeMessageType_ServerCertificateRequest: pkt_logServerCertificateRequest("\tServerCertificateRequest", buf, buf, pkt_readServerCertificateRequest(&data)); break;
-					case HandshakeMessageType_ClientKeyExchangeRequest: pkt_logClientKeyExchangeRequest("\tClientKeyExchangeRequest", buf, buf, pkt_readClientKeyExchangeRequest(&data)); break;
-					case HandshakeMessageType_ChangeCipherSpecRequest: pkt_logChangeCipherSpecRequest("\tChangeCipherSpecRequest", buf, buf, pkt_readChangeCipherSpecRequest(&data)); break;
-					case HandshakeMessageType_HandshakeMessageReceivedAcknowledge: pkt_logHandshakeMessageReceivedAcknowledge("\tHandshakeMessageReceivedAcknowledge", buf, buf, pkt_readHandshakeMessageReceivedAcknowledge(&data)); break;
-					case HandshakeMessageType_HandshakeMultipartMessage: pkt_logHandshakeMultipartMessage("\tHandshakeMultipartMessage", buf, buf, pkt_readHandshakeMultipartMessage(&data)); break;
+					case HandshakeMessageType_ClientHelloRequest: pkt_logClientHelloRequest(version, "\tClientHelloRequest", buf, buf, pkt_readClientHelloRequest(version, &data)); break;
+					case HandshakeMessageType_HelloVerifyRequest: pkt_logHelloVerifyRequest(version, "\tHelloVerifyRequest", buf, buf, pkt_readHelloVerifyRequest(version, &data)); break;
+					case HandshakeMessageType_ClientHelloWithCookieRequest: pkt_logClientHelloWithCookieRequest(version, "\tClientHelloWithCookieRequest", buf, buf, pkt_readClientHelloWithCookieRequest(version, &data)); break;
+					case HandshakeMessageType_ServerHelloRequest: pkt_logServerHelloRequest(version, "\tServerHelloRequest", buf, buf, pkt_readServerHelloRequest(version, &data)); break;
+					case HandshakeMessageType_ServerCertificateRequest: pkt_logServerCertificateRequest(version, "\tServerCertificateRequest", buf, buf, pkt_readServerCertificateRequest(version, &data)); break;
+					case HandshakeMessageType_ClientKeyExchangeRequest: pkt_logClientKeyExchangeRequest(version, "\tClientKeyExchangeRequest", buf, buf, pkt_readClientKeyExchangeRequest(version, &data)); break;
+					case HandshakeMessageType_ChangeCipherSpecRequest: pkt_logChangeCipherSpecRequest(version, "\tChangeCipherSpecRequest", buf, buf, pkt_readChangeCipherSpecRequest(version, &data)); break;
+					case HandshakeMessageType_HandshakeMessageReceivedAcknowledge: pkt_logHandshakeMessageReceivedAcknowledge(version, "\tHandshakeMessageReceivedAcknowledge", buf, buf, pkt_readHandshakeMessageReceivedAcknowledge(version, &data)); break;
+					case HandshakeMessageType_HandshakeMultipartMessage: pkt_logHandshakeMultipartMessage(version, "\tHandshakeMultipartMessage", buf, buf, pkt_readHandshakeMultipartMessage(version, &data)); break;
 					default: fprintf(stderr, "BAD HANDSHAKE MESSAGE TYPE\n");
 				}
 			} else {
@@ -221,17 +221,17 @@ static void debug_logPacket(const uint8_t *pkt, const uint8_t *end, struct NetPa
 			}
 			break;
 		}
-		case PacketProperty_MtuCheck: pkt_logMtuCheck("\tMtuCheck", buf, buf, pkt_readMtuCheck(&data)); break;
-		case PacketProperty_MtuOk: pkt_logMtuOk("\tMtuOk", buf, buf, pkt_readMtuOk(&data)); break;
+		case PacketProperty_MtuCheck: pkt_logMtuCheck(version, "\tMtuCheck", buf, buf, pkt_readMtuCheck(version, &data)); break;
+		case PacketProperty_MtuOk: pkt_logMtuOk(version, "\tMtuOk", buf, buf, pkt_readMtuOk(version, &data)); break;
 		case PacketProperty_Broadcast: fprintf(stderr, "\tPacketProperty_Broadcast\n"); return;
 		case PacketProperty_Merged: {
 			for(uint16_t len; data < end; data += len) {
-				len = pkt_readUint16(&data);
+				len = pkt_readUint16(version, &data);
 				const uint8_t *sub = data;
-				struct NetPacketHeader subheader = pkt_readNetPacketHeader(&sub);
+				struct NetPacketHeader subheader = pkt_readNetPacketHeader(version, &sub);
 				if(sub <= &data[len]) {
 					fprintf(stderr, "Merged[@%zu]:\n", sub - pkt);
-					debug_logPacket(sub, &data[len], subheader, protocolVersion);
+					debug_logPacket(sub, &data[len], subheader, version);
 				}
 			}
 			fprintf(stderr, "Merged[@%zu] end\n", data - pkt);

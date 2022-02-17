@@ -8,21 +8,21 @@
 #define indexof(a, e) ((e) - (a))
 #define String_eq(a, b) ((a).length == (b).length && memcmp((a).data, (b).data, (b).length) == 0)
 
-#define SERIALIZE_RPC(pkt, mtype, dtype, data, protocolVersion) { \
-	SERIALIZE_CUSTOM(pkt, InternalMessageType_MultiplayerSession) { \
-		pkt_writeMultiplayerSessionMessageHeader(pkt, (struct MultiplayerSessionMessageHeader){ \
+#define SERIALIZE_RPC(ctx, pkt, mtype, dtype, data) { \
+	SERIALIZE_CUSTOM(ctx, pkt, InternalMessageType_MultiplayerSession) { \
+		pkt_writeMultiplayerSessionMessageHeader(ctx, pkt, (struct MultiplayerSessionMessageHeader){ \
 			.type = MultiplayerSessionMessageType_##mtype##Rpc, \
 		}); \
-		pkt_write##mtype##RpcHeader(pkt, (struct mtype##RpcHeader){ \
+		pkt_write##mtype##RpcHeader(ctx, pkt, (struct mtype##RpcHeader){ \
 			.type = mtype##RpcType_##dtype, \
 		}); \
-		pkt_write##dtype(pkt, data, protocolVersion); \
+		pkt_write##dtype(ctx, pkt, data); \
 	} \
 }
 
 // TODO: explicit protocolVersion
-#define SERIALIZE_MENURPC(pkt, dtype, data, protocolVersion) SERIALIZE_RPC(pkt, Menu, dtype, data, protocolVersion)
-#define SERIALIZE_GAMEPLAYRPC(pkt, dtype, data, protocolVersion) SERIALIZE_RPC(pkt, Gameplay, dtype, data, protocolVersion)
+#define SERIALIZE_MENURPC(ctx, pkt, dtype, data) SERIALIZE_RPC(ctx, pkt, Menu, dtype, data)
+#define SERIALIZE_GAMEPLAYRPC(ctx, pkt, dtype, data) SERIALIZE_RPC(ctx, pkt, Gameplay, dtype, data)
 
 #define CLEAR_BEATMAP (struct BeatmapIdentifierNetSerializable){{0}, {0}, 0}
 #define CLEAR_MODIFIERS (struct GameplayModifiers){EnergyType_Bar, 0, 0, 0, EnabledObstacleType_All, 0, 0, 0, 0, 0, 0, SongSpeed_Normal, 0, 0, 0, 0, 0}
