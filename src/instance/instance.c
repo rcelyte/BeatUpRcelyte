@@ -532,6 +532,7 @@ static void instance_onResend(struct Context *ctx, uint32_t currentTime, uint32_
 				for(uint_fast8_t i = 0; i < 64; ++i)
 					try_resend(&ctx->net, &session->net, &session->channels.ro.base.resend[i], currentTime);
 				try_resend(&ctx->net, &session->net, &session->channels.rs.resend, currentTime);
+				*nextTick = currentTime + 15; // TODO: proper resend timing + clearing unneeded ack bits
 			}
 		}
 		if(!*room)

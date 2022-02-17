@@ -117,6 +117,7 @@ static void index_onResend(struct Context *ctx, uint32_t currentTime, uint32_t *
 				try_resend(&ctx->net, &session->net, &session->channels.ro.base.resend[i], currentTime);
 			try_resend(&ctx->net, &session->net, &session->channels.rs.resend, currentTime);
 			net_flush_merged(&ctx->net, &session->net);
+			*nextTick = currentTime + 15; // TODO: proper resend timing + clearing unneeded ack bits
 			sp = &(*sp)->next;
 		}
 	}
