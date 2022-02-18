@@ -1,3 +1,6 @@
+#include "log.h"
+LOG_CTX("NET")
+
 #include "packets.h"
 #include "encryption.h"
 #include <mbedtls/ssl.h>
@@ -40,7 +43,7 @@ _Bool EncryptionState_init(struct EncryptionState *state, const mbedtls_mpi *pre
 	uint8_t preMasterSecretBytes[mbedtls_mpi_size(preMasterSecret)];
 	int32_t err = mbedtls_mpi_write_binary(preMasterSecret, preMasterSecretBytes, sizeof(preMasterSecretBytes));
 	if(err) {
-		fprintf(stderr, "mbedtls_mpi_write_binary() failed: %s\n", mbedtls_high_level_strerr(err));
+		uprintf("mbedtls_mpi_write_binary() failed: %s\n", mbedtls_high_level_strerr(err));
 		return 1;
 	}
 	uint8_t seed[80], sourceArray[192];
@@ -102,7 +105,7 @@ static _Bool ValidateReceivedMac(struct EncryptionState *state, uint8_t *data, u
 	const mbedtls_md_info_t *md_info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
 	mbedtls_md_hmac(md_info, state->_receiveMacKey, sizeof(state->_receiveMacKey), data, length, hash);
 	if(memcmp(mac, hash, 10)) {
-		fprintf(stderr, "Packet hash mismatch: expected %02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx, got %02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx\n", hash[0], hash[1], hash[2], hash[3], hash[4], hash[5], hash[6], hash[7], hash[8], hash[9], mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], mac[6], mac[7], mac[8], mac[9]);
+		uprintf("Packet hash mismatch: expected %02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx, got %02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx\n", hash[0], hash[1], hash[2], hash[3], hash[4], hash[5], hash[6], hash[7], hash[8], hash[9], mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], mac[6], mac[7], mac[8], mac[9]);
 		return 1;
 	}
 	return 0;

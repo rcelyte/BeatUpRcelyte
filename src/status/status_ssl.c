@@ -64,7 +64,7 @@ static DWORD WINAPI
 static void*
 #endif
 status_ssl_handler(struct Context *ctx) {
-	fprintf(stderr, "HTTPS status started\n");
+	uprintf("Started HTTPS\n");
 	struct SS addr = {sizeof(struct sockaddr_storage)};
 	int32_t clientfd;
 	while((clientfd = accept(ctx->listenfd, &addr.sa, &addr.len)) != -1) {
@@ -79,7 +79,7 @@ status_ssl_handler(struct Context *ctx) {
 			ret = mbedtls_ssl_read(&ctx->ssl, buf, sizeof(buf) - 1);
 		} while(ret == STATUS_ERR_INTR);
 		if(ret < 0) {
-			fprintf(stderr, "mbedtls_ssl_write() failed: %s\n", mbedtls_high_level_strerr(ret));
+			uprintf("mbedtls_ssl_write() failed: %s\n", mbedtls_high_level_strerr(ret));
 		} else {
 			size_t len = status_resp("HTTPS", ctx->path, (char*)buf, ret);
 			if(len) {
@@ -87,7 +87,7 @@ status_ssl_handler(struct Context *ctx) {
 					if(ret == STATUS_ERR_RESET)
 						goto reset;
 					if(ret != STATUS_ERR_INTR) {
-						fprintf(stderr, "mbedtls_ssl_write() failed: %s\n", mbedtls_high_level_strerr(ret));
+						uprintf("mbedtls_ssl_write() failed: %s\n", mbedtls_high_level_strerr(ret));
 						close(clientfd);
 						return 0;
 					}
@@ -123,7 +123,7 @@ _Bool status_ssl_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, const cha
 			.sin6_scope_id = 0,
 		};
 		if(bind(ctx.listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
-			fprintf(stderr, "Cannot bind socket to port %hu: %s\n", port, strerror(errno));
+			uprintf("Cannot bind socket to port %hu: %s\n", port, strerror(errno));
 			close(ctx.listenfd);
 			ctx.listenfd = -1;
 			return 1;
@@ -140,23 +140,23 @@ _Bool status_ssl_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, const cha
 	mbedtls_ctr_drbg_init(&ctx.ctr_drbg);
 	int ret = mbedtls_ctr_drbg_seed(&ctx.ctr_drbg, mbedtls_entropy_func, &ctx.entropy, (const unsigned char*)"ssl_server", 10);
 	if(ret != 0) {
-		fprintf(stderr, "mbedtls_ctr_drbg_seed() failed: %s\n", mbedtls_high_level_strerr(ret));
+		uprintf("mbedtls_ctr_drbg_seed() failed: %s\n", mbedtls_high_level_strerr(ret));
 		return 1;
 	}
 	char service[8];
 	sprintf(service, "%hu", port);
 	if((ret = mbedtls_ssl_config_defaults(&ctx.conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT)) != 0) {
-		fprintf(stderr, "mbedtls_ssl_config_defaults() failed: %s\n", mbedtls_high_level_strerr(ret));
+		uprintf("mbedtls_ssl_config_defaults() failed: %s\n", mbedtls_high_level_strerr(ret));
 		return 1;
 	}
 	mbedtls_ssl_conf_rng(&ctx.conf, mbedtls_ctr_drbg_random, &ctx.ctr_drbg);
 	mbedtls_ssl_conf_ca_chain(&ctx.conf, cert->MBEDTLS_PRIVATE(next), NULL);
 	if((ret = mbedtls_ssl_conf_own_cert(&ctx.conf, cert, key)) != 0) {
-		fprintf(stderr, "mbedtls_ssl_conf_own_cert() failed: %s\n", mbedtls_high_level_strerr(ret));
+		uprintf("mbedtls_ssl_conf_own_cert() failed: %s\n", mbedtls_high_level_strerr(ret));
 		return 1;
 	}
 	if((ret = mbedtls_ssl_setup(&ctx.ssl, &ctx.conf)) != 0) {
-		fprintf(stderr, "mbedtls_ssl_setup() failed: %s\n", mbedtls_high_level_strerr(ret));
+		uprintf("mbedtls_ssl_setup() failed: %s\n", mbedtls_high_level_strerr(ret));
 		return 1;
 	}
 	ctx.path = path;
@@ -169,7 +169,7 @@ _Bool status_ssl_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, const cha
 }
 void status_ssl_cleanup() {
 	if(ctx.listenfd != -1) {
-		fprintf(stderr, "Stopping HTTPS status\n");
+		uprintf("Stopping HTTPS\n");
 		mbedtls_ctr_drbg_free(&ctx.ctr_drbg);
 		mbedtls_entropy_free(&ctx.entropy);
 		mbedtls_ssl_config_free(&ctx.conf);

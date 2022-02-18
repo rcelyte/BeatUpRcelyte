@@ -1,8 +1,11 @@
+#include "log.h"
+LOG_CTX("WIRE")
+
 #include "wire.h"
 #include "instance/instance.h"
 
 _Bool wire_request_block(struct WireBlockHandle *block_out, uint16_t notify) {
-	fprintf(stderr, "TODO: multiple threads; multiple hosts\n");
+	uprintf("TODO: multiple threads; multiple hosts\n");
 	block_out->host = 0;
 	block_out->thread = 0;
 	return instance_request_block(block_out->thread, &block_out->group, notify);

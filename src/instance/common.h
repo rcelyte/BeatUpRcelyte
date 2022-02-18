@@ -1,3 +1,6 @@
+#include "../log.h"
+LOG_CTX("INSTANCE")
+
 #include "../net.h"
 
 #define PER_PLAYER_DIFFICULTY 1

@@ -29,7 +29,7 @@ static void _update_menu(struct Context *ctx, struct IndexSession *session, cons
 	uint8_t resp[65536], *resp_end;
 	for(uint8_t i = 1, *it = session->menu; *it; ++i, it += *it + 1) {
 		resp_end = resp;
-		pkt_writeRoutingHeader(PV_LEGACY_DEFAULT, &resp_end, (struct RoutingHeader){i, 0, 0});
+		pkt_writeRoutingHeader(session->net.version, &resp_end, (struct RoutingHeader){i, 0, 0});
 		struct PlayerDisconnected r_disconnect;
 		r_disconnect.disconnectedReason = DisconnectedReason_ClientConnectionClosed;
 		SERIALIZE_CUSTOM(PV_LEGACY_DEFAULT, &resp_end, InternalMessageType_PlayerDisconnected)
@@ -94,7 +94,7 @@ static struct IndexSession *index_disconnect(struct IndexSession *session) {
 	struct IndexSession *next = session->next;
 	char addrstr[INET6_ADDRSTRLEN + 8];
 	net_tostr(NetSession_get_addr(&session->net), addrstr);
-	fprintf(stderr, "[INDEX] disconnect %s\n", addrstr);
+	uprintf("disconnect %s\n", addrstr);
 	net_session_free(&session->net);
 	free(session);
 	return next;
@@ -126,15 +126,15 @@ static void index_onResend(struct Context *ctx, uint32_t currentTime, uint32_t *
 static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, const uint8_t **data) {
 	struct MenuRpcHeader rpc = pkt_readMenuRpcHeader(PV_LEGACY_DEFAULT, data);
 	switch(rpc.type) {
-		case MenuRpcType_SetPlayersMissingEntitlementsToLevel: fprintf(stderr, "[INDEX] MenuRpcType_SetPlayersMissingEntitlementsToLevel not implemented\n"); abort();
-		case MenuRpcType_GetIsEntitledToLevel: fprintf(stderr, "[INDEX] MenuRpcType_GetIsEntitledToLevel not implemented\n"); abort();
-		case MenuRpcType_SetIsEntitledToLevel: fprintf(stderr, "[INDEX] MenuRpcType_SetIsEntitledToLevel not implemented\n"); abort();
-		case MenuRpcType_InvalidateLevelEntitlementStatuses: fprintf(stderr, "[INDEX] MenuRpcType_InvalidateLevelEntitlementStatuses not implemented\n"); abort();
-		case MenuRpcType_SelectLevelPack: fprintf(stderr, "[INDEX] MenuRpcType_SelectLevelPack not implemented\n"); abort();
-		case MenuRpcType_SetSelectedBeatmap: fprintf(stderr, "[INDEX] MenuRpcType_SetSelectedBeatmap not implemented\n"); abort();
-		case MenuRpcType_GetSelectedBeatmap: fprintf(stderr, "[INDEX] MenuRpcType_GetSelectedBeatmap not implemented\n"); abort();
-		case MenuRpcType_RecommendBeatmap: fprintf(stderr, "[INDEX] MenuRpcType_RecommendBeatmap not implemented\n"); abort();
-		case MenuRpcType_ClearRecommendedBeatmap: fprintf(stderr, "[INDEX] MenuRpcType_ClearRecommendedBeatmap not implemented\n"); abort();
+		case MenuRpcType_SetPlayersMissingEntitlementsToLevel: uprintf("MenuRpcType_SetPlayersMissingEntitlementsToLevel not implemented\n"); abort();
+		case MenuRpcType_GetIsEntitledToLevel: uprintf("MenuRpcType_GetIsEntitledToLevel not implemented\n"); abort();
+		case MenuRpcType_SetIsEntitledToLevel: uprintf("MenuRpcType_SetIsEntitledToLevel not implemented\n"); abort();
+		case MenuRpcType_InvalidateLevelEntitlementStatuses: uprintf("MenuRpcType_InvalidateLevelEntitlementStatuses not implemented\n"); abort();
+		case MenuRpcType_SelectLevelPack: uprintf("MenuRpcType_SelectLevelPack not implemented\n"); abort();
+		case MenuRpcType_SetSelectedBeatmap: uprintf("MenuRpcType_SetSelectedBeatmap not implemented\n"); abort();
+		case MenuRpcType_GetSelectedBeatmap: uprintf("MenuRpcType_GetSelectedBeatmap not implemented\n"); abort();
+		case MenuRpcType_RecommendBeatmap: uprintf("MenuRpcType_RecommendBeatmap not implemented\n"); abort();
+		case MenuRpcType_ClearRecommendedBeatmap: uprintf("MenuRpcType_ClearRecommendedBeatmap not implemented\n"); abort();
 		case MenuRpcType_GetRecommendedBeatmap: {
 			pkt_readGetRecommendedBeatmap(session->net.version, data);
 			struct RecommendBeatmap r_beatmap;
@@ -151,8 +151,8 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 			}
 			break;
 		}
-		case MenuRpcType_SetSelectedGameplayModifiers: fprintf(stderr, "[INDEX] MenuRpcType_SetSelectedGameplayModifiers not implemented\n"); abort();
-		case MenuRpcType_GetSelectedGameplayModifiers: fprintf(stderr, "[INDEX] MenuRpcType_GetSelectedGameplayModifiers not implemented\n"); abort();
+		case MenuRpcType_SetSelectedGameplayModifiers: uprintf("MenuRpcType_SetSelectedGameplayModifiers not implemented\n"); abort();
+		case MenuRpcType_GetSelectedGameplayModifiers: uprintf("MenuRpcType_GetSelectedGameplayModifiers not implemented\n"); abort();
 		case MenuRpcType_RecommendGameplayModifiers: {
 			pkt_readRecommendGameplayModifiers(session->net.version, data);
 			uint8_t resp[65536], *resp_end = resp;
@@ -165,7 +165,7 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 			instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			break;
 		}
-		case MenuRpcType_ClearRecommendedGameplayModifiers: fprintf(stderr, "[INDEX] MenuRpcType_ClearRecommendedGameplayModifiers not implemented\n"); abort();
+		case MenuRpcType_ClearRecommendedGameplayModifiers: uprintf("MenuRpcType_ClearRecommendedGameplayModifiers not implemented\n"); abort();
 		case MenuRpcType_GetRecommendedGameplayModifiers: {
 			pkt_readGetRecommendedGameplayModifiers(session->net.version, data);
 			struct RecommendGameplayModifiers r_modifiers;
@@ -180,9 +180,9 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 			}
 			break;
 		}
-		case MenuRpcType_LevelLoadError: fprintf(stderr, "[INDEX] MenuRpcType_LevelLoadError not implemented\n"); abort();
-		case MenuRpcType_LevelLoadSuccess: fprintf(stderr, "[INDEX] MenuRpcType_LevelLoadSuccess not implemented\n"); abort();
-		case MenuRpcType_StartLevel: fprintf(stderr, "[INDEX] MenuRpcType_StartLevel not implemented\n"); abort();
+		case MenuRpcType_LevelLoadError: uprintf("MenuRpcType_LevelLoadError not implemented\n"); abort();
+		case MenuRpcType_LevelLoadSuccess: uprintf("MenuRpcType_LevelLoadSuccess not implemented\n"); abort();
+		case MenuRpcType_StartLevel: uprintf("MenuRpcType_StartLevel not implemented\n"); abort();
 		case MenuRpcType_GetStartedLevel: {
 			pkt_readGetStartedLevel(session->net.version, data);
 			uint8_t resp[65536], *resp_end = resp;
@@ -195,7 +195,7 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 			instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			break;
 		}
-		case MenuRpcType_CancelLevelStart: fprintf(stderr, "[INDEX] MenuRpcType_CancelLevelStart not implemented\n"); abort();
+		case MenuRpcType_CancelLevelStart: uprintf("MenuRpcType_CancelLevelStart not implemented\n"); abort();
 		case MenuRpcType_GetMultiplayerGameState: {
 			pkt_readGetMultiplayerGameState(session->net.version, data);
 			uint8_t resp[65536], *resp_end = resp;
@@ -208,7 +208,7 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 			instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			break;
 		}
-		case MenuRpcType_SetMultiplayerGameState: fprintf(stderr, "[INDEX] MenuRpcType_SetMultiplayerGameState not implemented\n"); abort();
+		case MenuRpcType_SetMultiplayerGameState: uprintf("MenuRpcType_SetMultiplayerGameState not implemented\n"); abort();
 		case MenuRpcType_GetIsReady: {
 			pkt_readGetIsReady(session->net.version, data);
 			struct SetIsReady r_ready;
@@ -225,12 +225,12 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 		}
 		case MenuRpcType_SetIsReady: {
 			if(pkt_readSetIsReady(session->net.version, data).isReady) {
-				fprintf(stderr, "TODO: redirect to lobby here\n");
+				uprintf("TODO: redirect to lobby here\n");
 			}
 			break;
 		}
-		case MenuRpcType_SetStartGameTime: fprintf(stderr, "[INDEX] MenuRpcType_SetStartGameTime not implemented\n"); abort();
-		case MenuRpcType_CancelStartGameTime: fprintf(stderr, "[INDEX] MenuRpcType_CancelStartGameTime not implemented\n"); abort();
+		case MenuRpcType_SetStartGameTime: uprintf("MenuRpcType_SetStartGameTime not implemented\n"); abort();
+		case MenuRpcType_CancelStartGameTime: uprintf("MenuRpcType_CancelStartGameTime not implemented\n"); abort();
 		case MenuRpcType_GetIsInLobby: {
 			pkt_readGetIsInLobby(session->net.version, data);
 			struct SetIsInLobby r_back;
@@ -258,11 +258,11 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 			instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			break;
 		}
-		case MenuRpcType_SetCountdownEndTime: fprintf(stderr, "[INDEX] MenuRpcType_SetCountdownEndTime not implemented\n"); abort();
-		case MenuRpcType_CancelCountdown: fprintf(stderr, "[INDEX] MenuRpcType_CancelCountdown not implemented\n"); abort();
-		case MenuRpcType_GetOwnedSongPacks: fprintf(stderr, "[INDEX] MenuRpcType_GetOwnedSongPacks not implemented\n"); abort();
+		case MenuRpcType_SetCountdownEndTime: uprintf("MenuRpcType_SetCountdownEndTime not implemented\n"); abort();
+		case MenuRpcType_CancelCountdown: uprintf("MenuRpcType_CancelCountdown not implemented\n"); abort();
+		case MenuRpcType_GetOwnedSongPacks: uprintf("MenuRpcType_GetOwnedSongPacks not implemented\n"); abort();
 		case MenuRpcType_SetOwnedSongPacks: pkt_readSetOwnedSongPacks(session->net.version, data); break;
-		case MenuRpcType_RequestKickPlayer: fprintf(stderr, "[INDEX] MenuRpcType_RequestKickPlayer not implemented\n"); abort();
+		case MenuRpcType_RequestKickPlayer: uprintf("MenuRpcType_RequestKickPlayer not implemented\n"); abort();
 		case MenuRpcType_GetPermissionConfiguration:  {
 			pkt_readGetPermissionConfiguration(session->net.version, data);
 			uint8_t resp[65536], *resp_end = resp;
@@ -289,10 +289,10 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 			instance_send_channeled(&session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			break;
 		}
-		case MenuRpcType_SetPermissionConfiguration: fprintf(stderr, "[INDEX] MenuRpcType_SetPermissionConfiguration not implemented\n"); abort();
-		case MenuRpcType_GetIsStartButtonEnabled: fprintf(stderr, "[INDEX] MenuRpcType_GetIsStartButtonEnabled not implemented\n"); abort();
-		case MenuRpcType_SetIsStartButtonEnabled: fprintf(stderr, "[INDEX] MenuRpcType_SetIsStartButtonEnabled not implemented\n"); abort();
-		default: fprintf(stderr, "[INSTANCE] BAD MENU RPC TYPE\n");
+		case MenuRpcType_SetPermissionConfiguration: uprintf("MenuRpcType_SetPermissionConfiguration not implemented\n"); abort();
+		case MenuRpcType_GetIsStartButtonEnabled: uprintf("MenuRpcType_GetIsStartButtonEnabled not implemented\n"); abort();
+		case MenuRpcType_SetIsStartButtonEnabled: uprintf("MenuRpcType_SetIsStartButtonEnabled not implemented\n"); abort();
+		default: uprintf("BAD MENU RPC TYPE\n");
 	}
 }
 
@@ -342,17 +342,17 @@ static void process_Channeled(struct Context *ctx, void *room, struct IndexSessi
 			default: continue;
 		}
 		if(sub != *data) {
-			fprintf(stderr, "BAD INTERNAL MESSAGE LENGTH (expected %u, read %zu)\n", serial.length, sub - (*data - serial.length));
+			uprintf("BAD INTERNAL MESSAGE LENGTH (expected %u, read %zu)\n", serial.length, sub - (*data - serial.length));
 			if(sub < *data) {
-				fprintf(stderr, "\t");
+				uprintf("\t");
 				for(const uint8_t *it = *data - serial.length; it < *data; ++it)
-					fprintf(stderr, "%02hhx", *it);
-				fprintf(stderr, "\n\t");
+					uprintf("%02hhx", *it);
+				uprintf("\n\t");
 				for(const uint8_t *it = *data - serial.length; it < sub; ++it)
-					fprintf(stderr, "  ");
-				fprintf(stderr, "^ extra data starts here");
+					uprintf("  ");
+				uprintf("^ extra data starts here");
 			}
-			fprintf(stderr, "\n");
+			uprintf("\n");
 		}
 	}
 }
@@ -405,7 +405,7 @@ static void handle_packet(struct Context *ctx, struct IndexSession *session, con
 	if(session->clientState == ClientState_disconnected && header.property != PacketProperty_ConnectRequest)
 		return;
 	if(header.isFragmented && header.property != PacketProperty_Channeled) {
-		fprintf(stderr, "MALFORMED HEADER\n");
+		uprintf("MALFORMED HEADER\n");
 		return;
 	}
 	switch(header.property) {
@@ -434,10 +434,10 @@ static void handle_packet(struct Context *ctx, struct IndexSession *session, con
 		case PacketProperty_InvalidProtocol: break;
 		case PacketProperty_NatMessage: break;
 		case PacketProperty_Empty: break;
-		default: fprintf(stderr, "[INSTANCE] BAD PACKET PROPERTY\n");
+		default: uprintf("BAD PACKET PROPERTY\n");
 	}
 	if(data != end)
-		fprintf(stderr, "[INSTANCE] BAD PACKET LENGTH (expected %u, read %zu)\n", len, data - pkt);
+		uprintf("BAD PACKET LENGTH (expected %u, read %zu)\n", len, data - pkt);
 }
 
 #ifdef WINDOWS
@@ -447,7 +447,7 @@ static void*
 #endif
 index_handler(struct Context *ctx) {
 	net_lock(&ctx->net);
-	fprintf(stderr, "[INDEX] Started\n");
+	uprintf("Started Index\n");
 	uint8_t buf[262144];
 	memset(buf, 0, sizeof(buf));
 	uint32_t len;
@@ -468,7 +468,7 @@ static pthread_t index_thread = 0;
 static struct Context context = {{-1}, NULL};
 _Bool index_init() {
 	if(net_init(&context.net, 0)) {
-		fprintf(stderr, "net_init() failed\n");
+		uprintf("net_init() failed\n");
 		return 1;
 	}
 	context.net.user = &context;
@@ -483,7 +483,7 @@ _Bool index_init() {
 		index_thread = 0;
 	#endif
 	if(!index_thread) {
-		fprintf(stderr, "[INDEX] Index thread creation failed\n");
+		uprintf("Index thread creation failed\n");
 		return 1;
 	}
 	return 0;
@@ -492,7 +492,7 @@ _Bool index_init() {
 void index_cleanup() {
 	if(index_thread) {
 		net_stop(&context.net);
-		fprintf(stderr, "[INDEX] Stopping\n");
+		uprintf("Stopping Index\n");
 		#ifdef WINDOWS
 		WaitForSingleObject(index_thread, INFINITE);
 		#else
@@ -518,7 +518,7 @@ _Bool index_get_isopen(struct String *managerId_out, struct GameplayServerConfig
 struct NetSession *index_create_session(struct SS addr, struct String secret, struct String userId, struct String userName) {
 	struct IndexSession *session = malloc(sizeof(struct IndexSession));
 	if(!session) {
-		fprintf(stderr, "alloc error\n");
+		uprintf("alloc error\n");
 		abort();
 	}
 	net_session_init(&context.net, &session->net, addr);
@@ -534,7 +534,7 @@ struct NetSession *index_create_session(struct SS addr, struct String secret, st
 
 	char addrstr[INET6_ADDRSTRLEN + 8];
 	net_tostr(&addr, addrstr);
-	fprintf(stderr, "[INDEX] connect %s\n", addrstr);
+	uprintf("connect %s\n", addrstr);
 	return &session->net;
 }
 

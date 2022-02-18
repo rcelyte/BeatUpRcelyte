@@ -48,7 +48,7 @@ static void resend_add(struct ReliableChannel *channel, const uint8_t *buf, uint
 		.channelId = method,
 	});
 	if(&data_end[len] > &resend->data[lengthof(channel->resend->data)]) {
-		fprintf(stderr, "Fragmenting not implemented\n");
+		uprintf("Fragmenting not implemented\n");
 		abort();
 	}
 	pkt_writeUint8Array(PV_LEGACY_DEFAULT, &data_end, buf, len);
@@ -58,15 +58,15 @@ static void resend_add(struct ReliableChannel *channel, const uint8_t *buf, uint
 
 void instance_send_channeled(struct Channels *channels, const uint8_t *buf, uint32_t len, DeliveryMethod method) {
 	if(method != DeliveryMethod_ReliableOrdered) {
-		fprintf(stderr, "instance_send_channeled(DeliveryMethod_%s) not implemented\n", reflect(DeliveryMethod, method));
+		uprintf("instance_send_channeled(DeliveryMethod_%s) not implemented\n", reflect(DeliveryMethod, method));
 		abort();
 	}
-	// fprintf(stderr, "[%p] instance_send_channeled\n", (void*)channels);
+	// uprintf("[%p] instance_send_channeled\n", (void*)channels);
 	struct ReliableChannel *channel = &channels->ro.base;
 	if(RelativeSequenceNumber(channel->localSeqence, channel->localWindowStart) >= NET_WINDOW_SIZE) {
 		*channels->ro.base.backlogEnd = malloc(sizeof(struct InstancePacketList));
 		if(!*channels->ro.base.backlogEnd) {
-			fprintf(stderr, "alloc error\n");
+			uprintf("alloc error\n");
 			abort();
 		}
 		(*channels->ro.base.backlogEnd)->next = NULL;
@@ -75,22 +75,22 @@ void instance_send_channeled(struct Channels *channels, const uint8_t *buf, uint
 		channels->ro.base.backlogEnd = &(*channels->ro.base.backlogEnd)->next;
 	} else {
 		resend_add(channel, buf, len, method);
-		// fprintf(stderr, " send[%i]: %hu\n", RelativeSequenceNumber(channel->localSeqence, channel->localWindowStart), channel->localSeqence);
+		// uprintf(" send[%i]: %hu\n", RelativeSequenceNumber(channel->localSeqence, channel->localWindowStart), channel->localSeqence);
 	}
 	/*{
 		const uint8_t *read = buf;
 		pkt_readRoutingHeader(&read);
 		struct SerializeHeader serial = pkt_readSerializeHeader(&read);
-		fprintf(stderr, "\tserial.type=%s\n", reflect(InternalMessageType, serial.type));
+		uprintf("\tserial.type=%s\n", reflect(InternalMessageType, serial.type));
 		if(serial.type == InternalMessageType_MultiplayerSession) {
 			struct MultiplayerSessionMessageHeader smsg = pkt_readMultiplayerSessionMessageHeader(&read);
-			fprintf(stderr, "\tsmsg.type=%s\n", reflect(MultiplayerSessionMessageType, smsg.type));
+			uprintf("\tsmsg.type=%s\n", reflect(MultiplayerSessionMessageType, smsg.type));
 			if(smsg.type == MultiplayerSessionMessageType_MenuRpc) {
 				struct MenuRpcHeader rpc = pkt_readMenuRpcHeader(&read);
-				fprintf(stderr, "\tmenurpc.type=%s\n", reflect(MenuRpcType, rpc.type));
+				uprintf("\tmenurpc.type=%s\n", reflect(MenuRpcType, rpc.type));
 			} else if(smsg.type == MultiplayerSessionMessageType_GameplayRpc) {
 				struct GameplayRpcHeader rpc = pkt_readGameplayRpcHeader(&read);
-				fprintf(stderr, "\tgameplayrpc.type=%s\n", reflect(GameplayRpcType, rpc.type));
+				uprintf("\tgameplayrpc.type=%s\n", reflect(GameplayRpcType, rpc.type));
 			}
 		}
 	}*/
@@ -101,7 +101,7 @@ void instance_send_channeled(struct Channels *channels, const uint8_t *buf, uint
 void handle_Ack(struct Channels *channels, const uint8_t **data) {
 	struct Ack ack = pkt_readAck(PV_LEGACY_DEFAULT, data);
 	/*if(rand() > RAND_MAX / 500) {
-		// fprintf(stderr, "nope.\n");
+		// uprintf("nope.\n");
 		return;
 	}*/
 	/*if(packet.Size != _outgoingAcks.Size) // [PA]Invalid acks packet size
@@ -120,10 +120,10 @@ void handle_Ack(struct Channels *channels, const uint8_t **data) {
 			break;
 		uint16_t pendingIdx = pendingSeq % NET_WINDOW_SIZE;
 		if((ack.data[pendingIdx / bitsize(*ack.data)] >> (pendingIdx % bitsize(*ack.data))) & 1) {
-			// fprintf(stderr, "  ack[%i]: %hu\n", RelativeSequenceNumber(channel->localSeqence, channel->localWindowStart), pendingSeq);
+			// uprintf("  ack[%i]: %hu\n", RelativeSequenceNumber(channel->localSeqence, channel->localWindowStart), pendingSeq);
 			if(pendingSeq == channel->localWindowStart) { //Move window
 				channel->localWindowStart = (channel->localWindowStart + 1) % NET_MAX_SEQUENCE;
-				// fprintf(stderr, "clear[%i]: %hu\n", RelativeSequenceNumber(channel->localSeqence, channel->localWindowStart), pendingSeq);
+				// uprintf("clear[%i]: %hu\n", RelativeSequenceNumber(channel->localSeqence, channel->localWindowStart), pendingSeq);
 			}
 			channel->resend[pendingIdx].len = 0;
 		}
@@ -131,7 +131,7 @@ void handle_Ack(struct Channels *channels, const uint8_t **data) {
 	while(channel->backlog) {
 		if(RelativeSequenceNumber(channel->localSeqence, channel->localWindowStart) >= NET_WINDOW_SIZE)
 			return;
-		// fprintf(stderr, " late[%i]: %hu\n", RelativeSequenceNumber(channel->localSeqence, channel->localWindowStart), channel->localSeqence);
+		// uprintf(" late[%i]: %hu\n", RelativeSequenceNumber(channel->localSeqence, channel->localWindowStart), channel->localSeqence);
 		resend_add(channel, channel->backlog->pkt.data, channel->backlog->pkt.len, ack.channelId);
 		struct InstancePacketList *e = channel->backlog;
 		channel->backlog = channel->backlog->next;
@@ -151,7 +151,7 @@ static void process_Reliable(ChanneledHandler handler, struct NetSession *sessio
 		if(!*incoming) {
 			*incoming = malloc(sizeof(**incoming) + header.fragmentsTotal * sizeof(*(*incoming)->fragments));
 			if(!*incoming) {
-				fprintf(stderr, "[INSTANCE] alloc error\n");
+				uprintf("alloc error\n");
 				abort();
 			}
 			(*incoming)->fragmentId = header.fragmentId;
@@ -185,13 +185,13 @@ static void process_Reliable(ChanneledHandler handler, struct NetSession *sessio
 			#ifdef PACKET_LOGGING_FUNCS
 			{
 				char buf[1024*16];
-				fprintf(stderr, "fragmented\n");
+				uprintf("fragmented\n");
 				debug_logRouting(pkt, pkt, pkt_end, buf, session->protocolVersion);
 			}
 			#endif
 			handler(p_ctx, p_room, p_session, &pkt_it, pkt_end, channelId);
 			if(pkt_it != pkt_end)
-				fprintf(stderr, "[INSTANCE] BAD FRAGMENTED PACKET LENGTH (expected %zu, read %zu)\n", pkt_end - pkt, pkt_it - pkt);
+				uprintf("BAD FRAGMENTED PACKET LENGTH (expected %zu, read %zu)\n", pkt_end - pkt, pkt_it - pkt);
 			struct IncomingFragments *e = *incoming;
 			*incoming = (*incoming)->next;
 			free(e);
@@ -237,7 +237,7 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 						process_Reliable(handler, session, channels, p_ctx, p_room, p_session, &pkt_it, pkt_end, DeliveryMethod_ReliableOrdered, ipkt->isFragmented);
 						channel->remoteSequence = (channel->remoteSequence + 1) % NET_MAX_SEQUENCE;
 						if(pkt_it != pkt_end)
-							fprintf(stderr, "[INSTANCE] BAD RELIABLE PACKET LENGTH (expected %zu, read %zu)\n", pkt_end - pkt, pkt_it - pkt);
+							uprintf("BAD RELIABLE PACKET LENGTH (expected %zu, read %zu)\n", pkt_end - pkt, pkt_it - pkt);
 					}
 				} else {
 					while(channels->ru.earlyReceived[channel->remoteSequence % NET_WINDOW_SIZE]) {
@@ -260,7 +260,7 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 		case DeliveryMethod_Sequenced: break;
 		case DeliveryMethod_ReliableSequenced: {
 			if(isFragmented) {
-				fprintf(stderr, "MALFORMED PACKET\n");
+				uprintf("MALFORMED PACKET\n");
 				break;
 			}
 			int32_t relative = RelativeSequenceNumber(channeled.sequence, channels->rs.ack.sequence);

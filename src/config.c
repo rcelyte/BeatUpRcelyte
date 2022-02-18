@@ -1,3 +1,6 @@
+#include "log.h"
+LOG_CTX("CONFIG")
+
 #include "config.h"
 #include "json.h"
 #include <mbedtls/entropy.h>
@@ -15,14 +18,14 @@ static _Bool load_cert(char *cert, uint32_t cert_len, mbedtls_x509_crt *out) {
 		err = mbedtls_x509_crt_parse(out, (uint8_t*)cert, cert_len);
 	} else {
 		if(cert_len >= sizeof(buf)) {
-			fprintf(stderr, "Failed to load %.*s: Path too long\n", cert_len, cert);
+			uprintf("Failed to load %.*s: Path too long\n", cert_len, cert);
 			return 1;
 		}
 		sprintf(buf, "%.*s", cert_len, cert);
 		err = mbedtls_x509_crt_parse_file(out, buf);
 	}
 	if(err) {
-		fprintf(stderr, "Failed to load %s: %s\n", buf, mbedtls_high_level_strerr(err));
+		uprintf("Failed to load %s: %s\n", buf, mbedtls_high_level_strerr(err));
 		return 1;
 	}
 	return 0;
@@ -41,7 +44,7 @@ static _Bool load_key(char *key, uint32_t key_len, mbedtls_pk_context *out) {
 		err = mbedtls_pk_parse_key(out, (uint8_t*)key, key_len, NULL, 0, mbedtls_ctr_drbg_random, &ctr_drbg);
 	} else {
 		if(key_len >= sizeof(buf)) {
-			fprintf(stderr, "Failed to load %.*s: Path too long\n", key_len, key);
+			uprintf("Failed to load %.*s: Path too long\n", key_len, key);
 			return 1;
 		}
 		sprintf(buf, "%.*s", key_len, key);
@@ -50,7 +53,7 @@ static _Bool load_key(char *key, uint32_t key_len, mbedtls_pk_context *out) {
 	mbedtls_entropy_free(&entropy);
 	mbedtls_ctr_drbg_free(&ctr_drbg);
 	if(err) {
-		fprintf(stderr, "Failed to load %s: %s\n", buf, mbedtls_high_level_strerr(err));
+		uprintf("Failed to load %s: %s\n", buf, mbedtls_high_level_strerr(err));
 		return 1;
 	}
 	return 0;
@@ -65,10 +68,10 @@ _Bool config_load(struct Config *out, const char *path) {
 	if(f == NULL && errno == ENOENT) {
 		FILE *def = fopen(path, "w");
 		if(!def) {
-			fprintf(stderr, "Failed to write default config to %s: %s\n", path, strerror(errno));
+			uprintf("Failed to write default config to %s: %s\n", path, strerror(errno));
 			return 0;
 		}
-		fprintf(stderr, "Writing default config to %s\n", path);
+		uprintf("Writing default config to %s\n", path);
 		#ifdef WINDOWS
 		fprintf(def, "{\r\n\t\"HostName\": \"\",\r\n\t\"HostCert\": \"cert.pem\",\r\n\t\"HostKey\": \"key.pem\",\r\n\t\"StatusUri\": \"http://localhost/status\"\r\n}\r\n");
 		#else
@@ -78,19 +81,19 @@ _Bool config_load(struct Config *out, const char *path) {
 		f = fopen(path, "r");
 	}
 	if(!f) {
-		fprintf(stderr, "Failed to open %s: %s\n", path, strerror(errno));
+		uprintf("Failed to open %s: %s\n", path, strerror(errno));
 		return 1;
 	}
 	fseek(f, 0, SEEK_END);
 	size_t flen = ftell(f);
 	fseek(f, 0, SEEK_SET);
 	if(flen >= sizeof(config_json)) {
-		fprintf(stderr, "Failed to read %s: File too large\n", path);
+		uprintf("Failed to read %s: File too large\n", path);
 		fclose(f);
 		return 1;
 	}
 	if(fread(config_json, 1, flen, f) != flen) {
-		fprintf(stderr, "Failed to read %s\n", path);
+		uprintf("Failed to read %s\n", path);
 		return 1;
 	}
 	config_json[flen] = 0;
@@ -119,7 +122,7 @@ _Bool config_load(struct Config *out, const char *path) {
 			uint32_t domain_len = 0;
 			it = json_get_string(it, &domain, &domain_len);
 			if(domain_len >= 4096) {
-				fprintf(stderr, "Error parsing config value \"HostName\": name too long\n");
+				uprintf("Error parsing config value \"HostName\": name too long\n");
 				continue;
 			}
 			sprintf(out->host_domain, "%.*s", domain_len, domain);
@@ -128,7 +131,7 @@ _Bool config_load(struct Config *out, const char *path) {
 			uint32_t domain_len = 0;
 			it = json_get_string(it, &domain, &domain_len);
 			if(domain_len >= 4096) {
-				fprintf(stderr, "Error parsing config value \"HostName\": name too long\n");
+				uprintf("Error parsing config value \"HostName\": name too long\n");
 				continue;
 			}
 			sprintf(out->host_domainIPv4, "%.*s", domain_len, domain);
@@ -144,7 +147,7 @@ _Bool config_load(struct Config *out, const char *path) {
 			uint32_t uri_len;
 			it = json_get_string(it, &uri, &uri_len);
 			if(uri_len >= 4096) {
-				fprintf(stderr, "Error parsing config value \"StatusUri\": URI too long\n");
+				uprintf("Error parsing config value \"StatusUri\": URI too long\n");
 				continue;
 			}
 			if(uri_len > 8 && memcmp(uri, "https://", 8) == 0) {
@@ -154,7 +157,7 @@ _Bool config_load(struct Config *out, const char *path) {
 				out->status_tls = 0, out->status_port = 80;
 				uri += 7, uri_len -= 7;
 			} else {
-				fprintf(stderr, "Error parsing config value \"StatusUri\": URI must begin with http:// or https://\n");
+				uprintf("Error parsing config value \"StatusUri\": URI must begin with http:// or https://\n");
 				continue;
 			}
 			uint32_t sub_len;
@@ -187,17 +190,17 @@ _Bool config_load(struct Config *out, const char *path) {
 	}
 
 	if(!*out->host_domain) {
-		fprintf(stderr, "Missing required value \"HostName\"\n");
+		uprintf("Missing required value \"HostName\"\n");
 		return 1;
 	}
 	if(!*out->host_domainIPv4)
 		sprintf(out->host_domainIPv4, "%s", out->host_domain);
 	if(master_cert_len == 0) {
-		fprintf(stderr, "Missing required value \"HostCert\"\n");
+		uprintf("Missing required value \"HostCert\"\n");
 		return 1;
 	}
 	if(master_key_len == 0) {
-		fprintf(stderr, "Missing required value \"HostKey\"\n");
+		uprintf("Missing required value \"HostKey\"\n");
 		return 1;
 	}
 	if(!status_cert) {

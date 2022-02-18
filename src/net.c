@@ -1,3 +1,6 @@
+#include "log.h"
+LOG_CTX("NET")
+
 #define NET_H_PRIVATE(x) x
 #include "enum_reflection.h"
 #include "net.h"
@@ -38,7 +41,7 @@ _Bool NetKeypair_write_key(const struct NetKeypair *keys, struct NetContext *ctx
 	size_t keylen = 0;
 	int32_t err = mbedtls_ecp_tls_write_point(&ctx->grp, &keys->public, MBEDTLS_ECP_PF_UNCOMPRESSED, &keylen, out, *out_len);
 	if(err) {
-		fprintf(stderr, "mbedtls_ecp_tls_write_point() failed: %s\n", mbedtls_high_level_strerr(err));
+		uprintf("mbedtls_ecp_tls_write_point() failed: %s\n", mbedtls_high_level_strerr(err));
 		*out_len = 0;
 		return 1;
 	}
@@ -51,19 +54,19 @@ const uint8_t *NetSession_get_cookie(const struct NetSession *session) {
 _Bool NetSession_signature(const struct NetSession *session, struct NetContext *ctx, const mbedtls_pk_context *key, const uint8_t *in, uint32_t in_len, struct ByteArrayNetSerializable *out) {
 	out->length = 0;
 	if(mbedtls_pk_get_type(key) != MBEDTLS_PK_RSA) {
-		fprintf(stderr, "Key should be RSA\n");
+		uprintf("Key should be RSA\n");
 		return 1;
 	}
 	mbedtls_rsa_context *rsa = key->MBEDTLS_PRIVATE(pk_ctx);
 	uint8_t hash[32];
 	int32_t err = mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), in, in_len, hash);
 	if(err != 0) {
-		fprintf(stderr, "mbedtls_md() failed: %s\n", mbedtls_high_level_strerr(err));
+		uprintf("mbedtls_md() failed: %s\n", mbedtls_high_level_strerr(err));
 		return 1;
 	}
 	err = mbedtls_rsa_pkcs1_sign(rsa, mbedtls_ctr_drbg_random, &ctx->ctr_drbg, MBEDTLS_MD_SHA256, 32, hash, out->data);
 	if(err != 0) {
-		fprintf(stderr, "mbedtls_rsa_pkcs1_sign() failed: %s\n", mbedtls_high_level_strerr(err));
+		uprintf("mbedtls_rsa_pkcs1_sign() failed: %s\n", mbedtls_high_level_strerr(err));
 		return 1;
 	}
 	out->length = rsa->MBEDTLS_PRIVATE(len);
@@ -75,14 +78,14 @@ _Bool NetSession_set_clientPublicKey(struct NetSession *session, struct NetConte
 	mbedtls_ecp_point_init(&clientPublicKey);
 	int32_t err = mbedtls_ecp_tls_read_point(&ctx->grp, &clientPublicKey, &buf, in->length);
 	if(err != 0) {
-		fprintf(stderr, "mbedtls_ecp_tls_read_point() failed: %s\n", mbedtls_high_level_strerr(err));
+		uprintf("mbedtls_ecp_tls_read_point() failed: %s\n", mbedtls_high_level_strerr(err));
 		return 1;
 	}
 	mbedtls_mpi preMasterSecret;
 	mbedtls_mpi_init(&preMasterSecret);
 	err = mbedtls_ecdh_compute_shared(&ctx->grp, &preMasterSecret, &clientPublicKey, &session->keys.secret, mbedtls_ctr_drbg_random, &ctx->ctr_drbg);
 	if(err != 0) {
-		fprintf(stderr, "mbedtls_ecdh_compute_shared() failed: %s\n", mbedtls_high_level_strerr(err));
+		uprintf("mbedtls_ecdh_compute_shared() failed: %s\n", mbedtls_high_level_strerr(err));
 		return 1;
 	}
 	return EncryptionState_init(&session->encryptionState, &preMasterSecret, session->keys.random, session->clientRandom, 0);
@@ -177,7 +180,7 @@ void net_send_internal(struct NetContext *ctx, struct NetSession *session, const
 	};
 	DWORD size = 0;
 	WSASendMsg(ctx->sockfd, &msg, 0, &size, NULL, NULL);
-	// fprintf(stderr, "[NET] sendto[%lu]\n", size);
+	// uprintf("sendto[%lu]\n", size);
 	#else
 	struct iovec iov[] = {
 		{.iov_base = head, .iov_len = head_end - head},
@@ -193,7 +196,7 @@ void net_send_internal(struct NetContext *ctx, struct NetSession *session, const
 		.msg_flags = 0,
 	};
 	/*ssize_t size =*/ sendmsg(ctx->sockfd, &msg, 0);
-	// fprintf(stderr, "[NET] sendto[%zd]\n", size);
+	// uprintf("sendto[%zd]\n", size);
 	#endif
 }
 
@@ -204,7 +207,7 @@ _Bool net_init(struct NetContext *ctx, uint16_t port) {
 	mbedtls_entropy_init(&ctx->entropy);
 	mbedtls_ecp_group_init(&ctx->grp);
 	if(ctx->sockfd == -1) {
-		fprintf(stderr, "Socket creation failed\n");
+		uprintf("Socket creation failed\n");
 		return -1;
 	}
 	int res;
@@ -230,24 +233,24 @@ _Bool net_init(struct NetContext *ctx, uint16_t port) {
 	if(res < 0) {
 		close(ctx->sockfd);
 		ctx->sockfd = -1;
-		fprintf(stderr, "Socket binding failed\n");
+		uprintf("Socket binding failed\n");
 		return 1;
 	}
 	struct SS realAddr = {sizeof(struct sockaddr_storage)};
 	getsockname(ctx->sockfd, &realAddr.sa, &realAddr.len);
 	char namestr[INET6_ADDRSTRLEN + 8];
 	net_tostr(&realAddr, namestr);
-	fprintf(stderr, "[NET] Bound %s\n", namestr);
+	uprintf("Bound %s\n", namestr);
 	if(mbedtls_ctr_drbg_seed(&ctx->ctr_drbg, mbedtls_entropy_func, &ctx->entropy, (const uint8_t*)u8"M@$73RS€RV3R", 14) != 0) {
-		fprintf(stderr, "mbedtls_ctr_drbg_seed() failed\n");
+		uprintf("mbedtls_ctr_drbg_seed() failed\n");
 		return 1;
 	}
 	if(mbedtls_ecp_group_load(&ctx->grp, MBEDTLS_ECP_DP_SECP384R1)) {
-		fprintf(stderr, "mbedtls_ecp_group_load() failed\n");
+		uprintf("mbedtls_ecp_group_load() failed\n");
 		return 1;
 	}
 	if(pthread_mutex_init(&ctx->mutex, NULL)) {
-		fprintf(stderr, "pthread_mutex_init() failed\n");
+		uprintf("pthread_mutex_init() failed\n");
 		return 1;
 	}
 	ctx->run = 1;
@@ -277,7 +280,7 @@ void net_keypair_init(struct NetKeypair *keys) {
 void net_keypair_gen(struct NetContext *ctx, struct NetKeypair *keys) {
 	net_cookie(&ctx->ctr_drbg, keys->random);
 	if(mbedtls_ecp_gen_keypair(&ctx->grp, &keys->secret, &keys->public, mbedtls_ctr_drbg_random, &ctx->ctr_drbg)) {
-		fprintf(stderr, "mbedtls_ecp_gen_keypair() failed\n");
+		uprintf("mbedtls_ecp_gen_keypair() failed\n");
 		abort();
 	}
 }
@@ -310,7 +313,7 @@ void net_stop(struct NetContext *ctx) {
 
 void net_cleanup(struct NetContext *ctx) {
 	if(pthread_mutex_destroy(&ctx->mutex))
-		fprintf(stderr, "pthread_mutex_destroy() failed\n");
+		uprintf("pthread_mutex_destroy() failed\n");
 	mbedtls_entropy_free(&ctx->entropy);
 	mbedtls_ctr_drbg_free(&ctx->ctr_drbg);
 	close(ctx->sockfd);
@@ -321,7 +324,7 @@ void net_lock(struct NetContext *ctx) {
 	#if 1
 	if(pthread_mutex_trylock(&ctx->mutex) == 0)
 		return;
-	fprintf(stderr, "block\n");
+	uprintf("block\n");
 	#endif
 	pthread_mutex_lock(&ctx->mutex);
 }
@@ -358,43 +361,43 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct
 		if(ctx->run)
 			goto retry;
 		if(size == -1)
-			fprintf(stderr, "recvfrom() failed: %s\n", strerror(errno));
+			uprintf("recvfrom() failed: %s\n", strerror(errno));
 		return 0;
 	}
 	if(&buf[buf_len] < ctx->dirt) {
-		fprintf(stderr, "BAD BUFFER CONTENTS\n");
+		uprintf("BAD BUFFER CONTENTS\n");
 		abort();
 	}
 	if(&buf[size] < ctx->dirt) // Since deserialization doesn't have range checks, we need to clean up data from previous messages
 		memset(&buf[size], 0, ctx->dirt - &buf[size]);
 	ctx->dirt = &buf[size];
 	if(addr.sa.sa_family == AF_UNSPEC) {
-		fprintf(stderr, "UNSPEC\n");
+		uprintf("UNSPEC\n");
 		goto retry;
 	}
 	if(buf[0] > 1) {
 		sendto(ctx->sockfd, (char*)buf, 1, 0, &addr.sa, addr.len);
 		char namestr[INET6_ADDRSTRLEN + 8];
 		net_tostr(&addr, namestr);
-		fprintf(stderr, "ping[%s]: %hhu\n", namestr, buf[0]);
+		uprintf("ping[%s]: %hhu\n", namestr, buf[0]);
 		goto retry;
 	}
 	*session = ctx->onResolve(ctx->user, addr, userdata_out);
 	if(!*session)
 		goto retry;
-	// fprintf(stderr, "[NET] recvfrom[%zi]\n", size);
+	// uprintf("recvfrom[%zi]\n", size);
 	uint8_t *head = buf;
 	struct PacketEncryptionLayer layer = pkt_readPacketEncryptionLayer((*session)->version, (const uint8_t**)&head);
 	if(layer.encrypted == 1) { // TODO: filter unencrypted?
 		uint32_t length = &buf[size] - head;
 		if(EncryptionState_decrypt(&(*session)->encryptionState, layer, head, &length)) {
-			fprintf(stderr, "Packet decryption failed\n");
+			uprintf("Packet decryption failed\n");
 			goto retry;
 		}
 		size = length + (head - buf);
 		(*session)->lastKeepAlive = net_time();
 	} else if(layer.encrypted) {
-		fprintf(stderr, "Invalid packet\n");
+		uprintf("Invalid packet\n");
 		goto retry;
 	}
 	*pkt = head;

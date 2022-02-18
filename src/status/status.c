@@ -21,7 +21,7 @@ static DWORD WINAPI
 static void*
 #endif
 status_handler(struct Context *ctx) {
-	fprintf(stderr, "HTTP status started\n");
+	uprintf("Started HTTP\n");
 	struct SS addr = {sizeof(struct sockaddr_storage)};
 	int32_t clientfd;
 	while((clientfd = accept(ctx->listenfd, &addr.sa, &addr.len)) != -1) {
@@ -57,7 +57,7 @@ _Bool status_init(const char *path, uint16_t port) {
 			.sin6_scope_id = 0,
 		};
 		if(bind(ctx.listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
-			fprintf(stderr, "Cannot bind socket to port %hu: %s\n", port, strerror(errno));
+			uprintf("Cannot bind socket to port %hu: %s\n", port, strerror(errno));
 			close(ctx.listenfd);
 			ctx.listenfd = -1;
 			return 1;
@@ -78,7 +78,7 @@ _Bool status_init(const char *path, uint16_t port) {
 }
 void status_cleanup() {
 	if(ctx.listenfd != -1) {
-		fprintf(stderr, "Stopping HTTP status\n");
+		uprintf("Stopping HTTP\n");
 		shutdown(ctx.listenfd, SHUT_RD);
 		close(ctx.listenfd);
 		ctx.listenfd = -1;

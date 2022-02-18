@@ -1,3 +1,4 @@
+#include "internal.h"
 #include "status.h"
 #include <string.h>
 
@@ -157,7 +158,7 @@ static uint32_t status_web(char *buf, ServerCode code) {
 					"</tbody>"
 				"</table>");
 	} else {
-		fprintf(stderr, "TODO: room status page\n");
+		uprintf("TODO: room status page\n");
 	}
 	len += sprintf(&page[len],
 			"</div>"

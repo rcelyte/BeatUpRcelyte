@@ -1,3 +1,6 @@
+#include "log.h"
+LOG_CTX("MASTER")
+
 #define FORCE_MASSIVE_LOBBIES
 
 #include "enum_reflection.h"
@@ -76,7 +79,7 @@ static struct NetSession *master_onResolve(struct Context *ctx, struct SS addr, 
 			return &session->net;
 	session = malloc(sizeof(struct MasterSession));
 	if(!session) {
-		fprintf(stderr, "alloc error\n");
+		uprintf("alloc error\n");
 		abort();
 	}
 	net_session_init(&ctx->net, &session->net, addr);
@@ -90,7 +93,7 @@ static struct NetSession *master_onResolve(struct Context *ctx, struct SS addr, 
 
 	char addrstr[INET6_ADDRSTRLEN + 8];
 	net_tostr(&addr, addrstr);
-	fprintf(stderr, "[MASTER] connect %s\n", addrstr);
+	uprintf("connect %s\n", addrstr);
 	return &session->net;
 }
 
@@ -98,7 +101,7 @@ static struct MasterSession *master_disconnect(struct MasterSession *session) {
 	struct MasterSession *next = session->next;
 	char addrstr[INET6_ADDRSTRLEN + 8];
 	net_tostr(NetSession_get_addr(&session->net), addrstr);
-	fprintf(stderr, "[MASTER] disconnect %s\n", addrstr);
+	uprintf("disconnect %s\n", addrstr);
 	while(session->multipartList) {
 		struct MasterMultipartList *e = session->multipartList;
 		session->multipartList = session->multipartList->next;
@@ -163,7 +166,7 @@ static void master_net_send_reliable(struct NetContext *ctx, struct MasterSessio
 		session->resend.data[p->data].len = len;
 		memcpy(session->resend.data[p->data].data, buf, len);
 	} else {
-		fprintf(stderr, "[MASTER] RESEND BUFFER FULL\n");
+		uprintf("RESEND BUFFER FULL\n");
 	}
 	if(shouldSend)
 		net_send_internal(ctx, &session->net, buf, len, encrypt);
@@ -398,7 +401,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		#ifdef FORCE_MASSIVE_LOBBIES
 		req.configuration.maxPlayerCount = 126;
 		req.configuration.songSelectionMode = SongSelectionMode_Vote;
-		fprintf(stderr, "ONLY THE BIGGEST OF ROOMS!!!\n");
+		uprintf("ONLY THE BIGGEST OF ROOMS!!!\n");
 		#endif
 		if(pool_request_room(&room, &handle, managerId, req.configuration)) {
 			r_conn.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers;
@@ -454,7 +457,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		r_conn.managerId = managerId;
 		r_conn.result = ConnectToServerResponse_Result_Success;
 		char scode[8];
-		fprintf(stderr, "Sending player to room `%s`\n", ServerCodeToString(scode, req.code));
+		uprintf("Sending player to room `%s`\n", ServerCodeToString(scode, req.code));
 	}
 	send:;
 	uint8_t resp[65536], *resp_end = resp;
@@ -466,14 +469,14 @@ static void handle_packet(struct Context *ctx, struct MasterSession *session, co
 static void handle_BaseMasterServerMultipartMessage(struct Context *ctx, struct MasterSession *session, const uint8_t **data) {
 	struct BaseMasterServerMultipartMessage msg = pkt_readBaseMasterServerMultipartMessage(PV_LEGACY_DEFAULT, data);
 	if(!msg.totalLength) {
-		fprintf(stderr, "[MASTER] INVALID MULTIPART LENGTH\n");
+		uprintf("INVALID MULTIPART LENGTH\n");
 		return;
 	}
 	struct MasterMultipartList **multipart = &session->multipartList;
 	for(; *multipart; multipart = &(*multipart)->next) {
 		if((*multipart)->id == msg.multipartMessageId) {
 			if((*multipart)->totalLength != msg.totalLength) {
-				fprintf(stderr, "[MASTER] BAD MULTIPART LENGTH\n");
+				uprintf("BAD MULTIPART LENGTH\n");
 				return;
 			}
 			break;
@@ -482,7 +485,7 @@ static void handle_BaseMasterServerMultipartMessage(struct Context *ctx, struct 
 	if(!*multipart) {
 		*multipart = malloc(sizeof(struct MasterMultipartList) + msg.totalLength);
 		if(!*multipart) {
-			fprintf(stderr, "alloc error\n");
+			uprintf("alloc error\n");
 			abort();
 		}
 		(*multipart)->next = NULL;
@@ -492,7 +495,7 @@ static void handle_BaseMasterServerMultipartMessage(struct Context *ctx, struct 
 		memset((*multipart)->data, 0, msg.totalLength);
 	}
 	if(msg.offset + msg.length > msg.totalLength) {
-		fprintf(stderr, "[MASTER] INVALID MULTIPART LENGTH\n");
+		uprintf("INVALID MULTIPART LENGTH\n");
 		return;
 	}
 	memcpy(&(*multipart)->data[msg.offset], msg.data, msg.length);
@@ -511,8 +514,8 @@ static void handle_packet(struct Context *ctx, struct MasterSession *session, co
 	if(message.type == MessageType_UserMessage) {
 		switch(serial.type) {
 			case UserMessageType_AuthenticateUserRequest: handle_AuthenticateUserRequest(ctx, session, &data); break;
-			case UserMessageType_AuthenticateUserResponse: fprintf(stderr, "[MASTER] BAD TYPE: UserMessageType_AuthenticateUserResponse\n"); break;
-			case UserMessageType_ConnectToServerResponse: fprintf(stderr, "[MASTER] BAD TYPE: UserMessageType_ConnectToServerResponse\n"); break;
+			case UserMessageType_AuthenticateUserResponse: uprintf("BAD TYPE: UserMessageType_AuthenticateUserResponse\n"); break;
+			case UserMessageType_ConnectToServerResponse: uprintf("BAD TYPE: UserMessageType_ConnectToServerResponse\n"); break;
 			case UserMessageType_ConnectToServerRequest: handle_ConnectToServerRequest(ctx, session, &data); break;
 			case UserMessageType_UserMessageReceivedAcknowledge: {
 				master_handle_ack(session, &message, &serial, pkt_readBaseMasterServerAcknowledgeMessage(PV_LEGACY_DEFAULT, &data).base.responseId);
@@ -520,19 +523,19 @@ static void handle_packet(struct Context *ctx, struct MasterSession *session, co
 			}
 			case UserMessageType_UserMultipartMessage: handle_BaseMasterServerMultipartMessage(ctx, session, &data); break;
 			case UserMessageType_SessionKeepaliveMessage: break;
-			case UserMessageType_GetPublicServersRequest: fprintf(stderr, "[MASTER] UserMessageType_GetPublicServersRequest not implemented\n"); abort();
-			case UserMessageType_GetPublicServersResponse: fprintf(stderr, "[MASTER] UserMessageType_GetPublicServersResponse not implemented\n"); abort();
-			default: fprintf(stderr, "[MASTER] BAD USER MESSAGE TYPE\n");
+			case UserMessageType_GetPublicServersRequest: uprintf("UserMessageType_GetPublicServersRequest not implemented\n"); abort();
+			case UserMessageType_GetPublicServersResponse: uprintf("UserMessageType_GetPublicServersResponse not implemented\n"); abort();
+			default: uprintf("BAD USER MESSAGE TYPE\n");
 		}
 	} else if(message.type == MessageType_HandshakeMessage) {
 		switch(serial.type) {
 			case HandshakeMessageType_ClientHelloRequest: handle_ClientHelloRequest(ctx, session, &data, message.protocolVersion); break;
-			case HandshakeMessageType_HelloVerifyRequest: fprintf(stderr, "[MASTER] BAD TYPE: HandshakeMessageType_HelloVerifyRequest\n"); break;
+			case HandshakeMessageType_HelloVerifyRequest: uprintf("BAD TYPE: HandshakeMessageType_HelloVerifyRequest\n"); break;
 			case HandshakeMessageType_ClientHelloWithCookieRequest: handle_ClientHelloWithCookieRequest(ctx, session, &data); break;
-			case HandshakeMessageType_ServerHelloRequest: fprintf(stderr, "[MASTER] BAD TYPE: HandshakeMessageType_ServerHelloRequest\n"); break;
-			case HandshakeMessageType_ServerCertificateRequest: fprintf(stderr, "[MASTER] BAD TYPE: HandshakeMessageType_ServerCertificateRequest\n"); break;
+			case HandshakeMessageType_ServerHelloRequest: uprintf("BAD TYPE: HandshakeMessageType_ServerHelloRequest\n"); break;
+			case HandshakeMessageType_ServerCertificateRequest: uprintf("BAD TYPE: HandshakeMessageType_ServerCertificateRequest\n"); break;
 			case HandshakeMessageType_ClientKeyExchangeRequest: handle_ClientKeyExchangeRequest(ctx, session, &data); break;
-			case HandshakeMessageType_ChangeCipherSpecRequest: fprintf(stderr, "[MASTER] BAD TYPE: HandshakeMessageType_ChangeCipherSpecRequest\n"); break;
+			case HandshakeMessageType_ChangeCipherSpecRequest: uprintf("BAD TYPE: HandshakeMessageType_ChangeCipherSpecRequest\n"); break;
 			case HandshakeMessageType_HandshakeMessageReceivedAcknowledge: {
 				if(master_handle_ack(session, &message, &serial, pkt_readBaseMasterServerAcknowledgeMessage(PV_LEGACY_DEFAULT, &data).base.responseId)) {
 					if(message.type == MessageType_HandshakeMessage && serial.type == HandshakeMessageType_ServerCertificateRequest)
@@ -540,18 +543,18 @@ static void handle_packet(struct Context *ctx, struct MasterSession *session, co
 				}
 				break;
 			}
-			case HandshakeMessageType_HandshakeMultipartMessage: fprintf(stderr, "[MASTER] BAD TYPE: HandshakeMessageType_HandshakeMultipartMessage\n"); break;
-			default: fprintf(stderr, "[MASTER] BAD HANDSHAKE MESSAGE TYPE\n");
+			case HandshakeMessageType_HandshakeMultipartMessage: uprintf("BAD TYPE: HandshakeMessageType_HandshakeMultipartMessage\n"); break;
+			default: uprintf("BAD HANDSHAKE MESSAGE TYPE\n");
 		}
 	} else if(message.type == MessageType_DedicatedServerMessage) {
-		fprintf(stderr, "[MASTER] DedicatedServerMessageType not implemented\n");
+		uprintf("DedicatedServerMessageType not implemented\n");
 	} else if(message.type == MessageType_GameLiftMessage) {
-		fprintf(stderr, "[MASTER] GameLiftMessage not implemented\n");
+		uprintf("GameLiftMessage not implemented\n");
 	} else {
-		fprintf(stderr, "[MASTER] BAD MESSAGE TYPE\n");
+		uprintf("BAD MESSAGE TYPE\n");
 	}
 	if(data != end)
-		fprintf(stderr, "[MASTER] BAD PACKET LENGTH (expected %zu, read %zu)\n", len, len + data - end);
+		uprintf("BAD PACKET LENGTH (expected %zu, read %zu)\n", len, len + data - end);
 }
 
 #ifdef WINDOWS
@@ -561,7 +564,7 @@ static void*
 #endif
 master_handler(struct Context *ctx) {
 	net_lock(&ctx->net);
-	fprintf(stderr, "[MASTER] Started\n");
+	uprintf("Started\n");
 	uint8_t buf[262144];
 	memset(buf, 0, sizeof(buf));
 	uint32_t len;
@@ -571,7 +574,7 @@ master_handler(struct Context *ctx) {
 		const uint8_t *data = pkt, *end = &pkt[len];
 		struct NetPacketHeader header = pkt_readNetPacketHeader(PV_LEGACY_DEFAULT, &data);
 		if(header.property != PacketProperty_UnconnectedMessage) {
-			fprintf(stderr, "[MASTER] Unsupported packet type: %s\n", reflect(PacketProperty, header.property));
+			uprintf("Unsupported packet type: %s\n", reflect(PacketProperty, header.property));
 			continue;
 		}
 		handle_packet(ctx, session, data, end);
@@ -591,19 +594,19 @@ _Bool master_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, uint16_t port
 		uint_fast8_t count = 0;
 		for(mbedtls_x509_crt *it = cert; it; it = it->MBEDTLS_PRIVATE(next), ++count) {
 			if(it->MBEDTLS_PRIVATE(raw).MBEDTLS_PRIVATE(len) > 4096) {
-				fprintf(stderr, "[MASTER] Host certificate too large\n");
+				uprintf("Host certificate too large\n");
 				return 1;
 			}
 		}
 		if(count > lengthof(((struct ServerCertificateRequest*)NULL)->certificateList)) {
-			fprintf(stderr, "[MASTER] Host certificate chain too long\n");
+			uprintf("Host certificate chain too long\n");
 			return 1;
 		}
 	}
 	ctx.cert = cert;
 	ctx.key = key;
 	if(net_init(&ctx.net, port)) {
-		fprintf(stderr, "[MASTER] net_init() failed\n");
+		uprintf("net_init() failed\n");
 		return 1;
 	}
 	ctx.net.user = &ctx;
@@ -620,7 +623,7 @@ _Bool master_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, uint16_t port
 void master_cleanup() {
 	if(master_thread) {
 		net_stop(&ctx.net);
-		fprintf(stderr, "[MASTER] Stopping\n");
+		uprintf("Stopping\n");
 		#ifdef WINDOWS
 		WaitForSingleObject(master_thread, INFINITE);
 		#else

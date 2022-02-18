@@ -1,3 +1,6 @@
+#include "log.h"
+LOG_CTX("SCRAMBLE")
+
 #include "scramble.h"
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/entropy.h>
@@ -25,7 +28,7 @@ ServerCode scramble_decode(ServerCode in) {return in;}
 	mbedtls_entropy_init(&entropy);
 	int32_t err = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, (const uint8_t*)u8"M@$73RS€RV3R", 14);
 	if(err)
-		fprintf(stderr, "mbedtls_ctr_drbg_seed() failed: %s\n", mbedtls_high_level_strerr(err));
+		uprintf("mbedtls_ctr_drbg_seed() failed: %s\n", mbedtls_high_level_strerr(err));
 	mbedtls_ctr_drbg_random(&ctr_drbg, (uint8_t*)seed, sizeof(seed));
 	mbedtls_entropy_free(&entropy);
 	mbedtls_ctr_drbg_free(&ctr_drbg);
@@ -39,7 +42,7 @@ ServerCode scramble_decode(ServerCode in) {return in;}
 
 ServerCode scramble_encode(ServerCode in) {
 	if(in >= 1 << 25) {
-		fprintf(stderr, "SCRAMBLE FAILED\n");
+		uprintf("SCRAMBLE FAILED\n");
 		abort();
 	}
 	ServerCode out = scramble_seed;
