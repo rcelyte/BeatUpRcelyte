@@ -655,6 +655,9 @@ struct PongMessage pkt_readPongMessage(struct PacketContext ctx, const uint8_t *
 	out.pingTime = pkt_readFloat32(ctx, pkt);
 	return out;
 }
+void pkt_writePongMessage(struct PacketContext ctx, uint8_t **pkt, struct PongMessage in) {
+	pkt_writeFloat32(ctx, pkt, in.pingTime);
+}
 struct RemoteProcedureCall pkt_readRemoteProcedureCall(struct PacketContext ctx, const uint8_t **pkt) {
 	struct RemoteProcedureCall out;
 	out.syncTime = pkt_readFloat32(ctx, pkt);

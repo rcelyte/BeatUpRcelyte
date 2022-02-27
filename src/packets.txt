@@ -586,7 +586,7 @@ u8 InternalMessage Type
 		MultiplayerAvatarData playerAvatar
 	r PingMessage
 		f32 pingTime
-	r PongMessage
+	d PongMessage
 		f32 pingTime
 d RemoteProcedureCall
 	f32 syncTime

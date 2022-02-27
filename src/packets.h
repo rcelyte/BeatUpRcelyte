@@ -1179,6 +1179,7 @@ void pkt_writePlayerSortOrderUpdate(struct PacketContext ctx, uint8_t **pkt, str
 struct PlayerStateUpdate pkt_readPlayerStateUpdate(struct PacketContext ctx, const uint8_t **pkt);
 struct PingMessage pkt_readPingMessage(struct PacketContext ctx, const uint8_t **pkt);
 struct PongMessage pkt_readPongMessage(struct PacketContext ctx, const uint8_t **pkt);
+void pkt_writePongMessage(struct PacketContext ctx, uint8_t **pkt, struct PongMessage in);
 struct RemoteProcedureCall pkt_readRemoteProcedureCall(struct PacketContext ctx, const uint8_t **pkt);
 void pkt_writeRemoteProcedureCall(struct PacketContext ctx, uint8_t **pkt, struct RemoteProcedureCall in);
 struct RemoteProcedureCallFlags pkt_readRemoteProcedureCallFlags(struct PacketContext ctx, const uint8_t **pkt);
