@@ -234,14 +234,15 @@ void pkt_writeByteArrayNetSerializable(struct PacketContext ctx, uint8_t **pkt, 
 }
 struct String pkt_readString(struct PacketContext ctx, const uint8_t **pkt) {
 	struct String out;
+	out.isNull = 0;
 	if(ctx.netVersion >= 12) {
 		out.length = pkt_readUint16(ctx, pkt);
-		out.isNull = (out.length != 0);
 		if(out.length)
 			--out.length;
+		else
+			out.isNull = 1;
 	} else {
 		out.length = pkt_readUint32(ctx, pkt);
-		out.isNull = 0;
 	}
 	if(out.length > 60) {
 		fprintf(stderr, "Buffer overflow in read of String.data: %u > 60\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
@@ -252,14 +253,15 @@ struct String pkt_readString(struct PacketContext ctx, const uint8_t **pkt) {
 }
 struct LongString pkt_readLongString(struct PacketContext ctx, const uint8_t **pkt) {
 	struct LongString out;
+	out.isNull = 0;
 	if(ctx.netVersion >= 12) {
 		out.length = pkt_readUint16(ctx, pkt);
-		out.isNull = (out.length != 0);
 		if(out.length)
 			--out.length;
+		else
+			out.isNull = 1;
 	} else {
 		out.length = pkt_readUint32(ctx, pkt);
-		out.isNull = 0;
 	}
 	if(out.length > 4096) {
 		fprintf(stderr, "Buffer overflow in read of LongString.data: %u > 4096\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
@@ -388,7 +390,7 @@ static ServerCode pkt_readServerCode(struct PacketContext ctx, const uint8_t **p
 	return StringToServerCode(str.data, str.length);
 }
 static void pkt_writeServerCode(struct PacketContext ctx, uint8_t **pkt, ServerCode in) {
-	struct String str = {.length = 0};
+	struct String str = {.length = 0, .isNull = 0};
 	for(in = scramble_encode(in); in; in /= 36)
 		str.data[str.length++] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--in % 36];
 	pkt_writeString(ctx, pkt, str);

@@ -446,6 +446,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 			goto send;
 		}
 		net_unlock(net);
+		r_conn.userId.isNull = 0;
 		r_conn.userId.length = sprintf(r_conn.userId.data, "dtxJlHm56k6ZXcnxhbyfiA");
 		r_conn.userName.length = 0;
 		r_conn.secret = req.secret;

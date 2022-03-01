@@ -107,8 +107,8 @@ uint32_t net_time();
 _Bool master_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, uint16_t port);
 void master_cleanup();
 
-static inline int32_t RelativeSequenceNumber(int32_t number, int32_t expected) {
-	return (number - expected + NET_MAX_SEQUENCE + NET_MAX_SEQUENCE / 2) % NET_MAX_SEQUENCE - NET_MAX_SEQUENCE / 2;
+static inline int32_t RelativeSequenceNumber(int32_t to, int32_t from) {
+	return (to - from + NET_MAX_SEQUENCE + NET_MAX_SEQUENCE / 2) % NET_MAX_SEQUENCE - NET_MAX_SEQUENCE / 2;
 }
 
 extern _Bool net_useIPv4;
