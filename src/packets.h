@@ -205,6 +205,22 @@ ENUM(uint8_t, MultiplayerGameState, {
 	MultiplayerGameState_Lobby,
 	MultiplayerGameState_Game,
 })
+ENUM(int32_t, GameplayType, {
+	GameplayType_Normal,
+	GameplayType_Bomb,
+	GameplayType_BurstSliderHead,
+	GameplayType_BurstSliderElement,
+	GameplayType_BurstSliderElementFill,
+})
+ENUM(int32_t, ScoringType, {
+	ScoringType_Ignore = -1,
+	ScoringType_NoScore,
+	ScoringType_Normal,
+	ScoringType_SliderHead,
+	ScoringType_SliderTail,
+	ScoringType_BurstSliderHead,
+	ScoringType_BurstSliderElement,
+})
 ENUM(int32_t, ColorType, {
 	ColorType_ColorA = 0,
 	ColorType_ColorB = 1,
@@ -272,6 +288,15 @@ ENUM(uint8_t, ObstacleType, {
 	ObstacleType_FullHeight,
 	ObstacleType_Top,
 })
+ENUM(uint8_t, SliderType, {
+	SliderType_Normal,
+	SliderType_Burst,
+})
+ENUM(uint8_t, SliderMidAnchorMode, {
+	SliderMidAnchorMode_Straight,
+	SliderMidAnchorMode_Clockwise,
+	SliderMidAnchorMode_CounterClockwise,
+})
 ENUM(uint8_t, MenuRpcType, {
 	MenuRpcType_SetPlayersMissingEntitlementsToLevel,
 	MenuRpcType_GetIsEntitledToLevel,
@@ -327,6 +352,7 @@ ENUM(uint8_t, GameplayRpcType, {
 	GameplayRpcType_RequestReturnToMenu,
 	GameplayRpcType_NoteSpawned,
 	GameplayRpcType_ObstacleSpawned,
+	GameplayRpcType_SliderSpawned,
 })
 ENUM(uint8_t, MultiplayerSessionMessageType, {
 	MultiplayerSessionMessageType_MenuRpc,
@@ -678,8 +704,9 @@ struct NoteCutInfoNetSerializable {
 	struct Vector3Serializable notePosition;
 	struct Vector3Serializable noteScale;
 	struct QuaternionSerializable noteRotation;
+	GameplayType gameplayType;
 	ColorType colorType;
-	NoteLineLayer noteLineLayer;
+	NoteLineLayer lineLayer;
 	int32_t noteLineIndex;
 	float noteTime;
 	float timeToNextColorNote;
@@ -687,14 +714,14 @@ struct NoteCutInfoNetSerializable {
 };
 struct NoteMissInfoNetSerializable {
 	ColorType colorType;
-	NoteLineLayer noteLineLayer;
+	NoteLineLayer lineLayer;
 	int32_t noteLineIndex;
 	float noteTime;
 };
 struct LevelCompletionResults {
 	struct GameplayModifiers gameplayModifiers;
 	int32_t modifiedScore;
-	int32_t rawScore;
+	int32_t multipliedScore;
 	Rank rank;
 	_Bool fullCombo;
 	float leftSaberMovementDistance;
@@ -712,6 +739,10 @@ struct LevelCompletionResults {
 	int32_t okCount;
 	int32_t averageCutScore;
 	int32_t maxCutScore;
+	int32_t totalCutScore;
+	int32_t goodCutsCountForNotesWithFullScoreScoringType;
+	int32_t averageCenterDistanceCutScoreForNotesWithFullScoreScoringType;
+	int32_t averageCutScoreForNotesWithFullScoreScoringType;
 	float averageCutDistanceRawScore;
 	int32_t maxCombo;
 	float minDirDeviation;
@@ -745,6 +776,8 @@ struct NoteSpawnInfoNetSerializable {
 	int32_t lineIndex;
 	NoteLineLayer noteLineLayer;
 	NoteLineLayer beforeJumpNoteLineLayer;
+	GameplayType gameplayType;
+	ScoringType scoringType;
 	ColorType colorType;
 	NoteCutDirection cutDirection;
 	float timeToNextColorNote;
@@ -759,13 +792,16 @@ struct NoteSpawnInfoNetSerializable {
 	float jumpDuration;
 	float rotation;
 	float cutDirectionAngleOffset;
+	float cutSfxVolumeMultiplier;
 };
 struct ObstacleSpawnInfoNetSerializable {
 	float time;
 	int32_t lineIndex;
+	NoteLineLayer lineLayer;
 	ObstacleType obstacleType;
 	float duration;
 	int32_t width;
+	int32_t height;
 	struct Vector3Serializable moveStartPos;
 	struct Vector3Serializable moveEndPos;
 	struct Vector3Serializable jumpEndPos;
@@ -773,6 +809,40 @@ struct ObstacleSpawnInfoNetSerializable {
 	float moveDuration;
 	float jumpDuration;
 	float noteLinesDistance;
+	float rotation;
+};
+struct SliderSpawnInfoNetSerializable {
+	ColorType colorType;
+	SliderType sliderType;
+	_Bool hasHeadNote;
+	float headTime;
+	int32_t headLineIndex;
+	NoteLineLayer headLineLayer;
+	NoteLineLayer headBeforeJumpLineLayer;
+	float headControlPointLengthMultiplier;
+	NoteCutDirection headCutDirection;
+	float headCutDirectionAngleOffset;
+	_Bool hasTailNote;
+	float tailTime;
+	int32_t tailLineIndex;
+	NoteLineLayer tailLineLayer;
+	NoteLineLayer tailBeforeJumpLineLayer;
+	float tailControlPointLengthMultiplier;
+	NoteCutDirection tailCutDirection;
+	float tailCutDirectionAngleOffset;
+	SliderMidAnchorMode midAnchorMode;
+	int32_t sliceCount;
+	float squishAmount;
+	struct Vector3Serializable headMoveStartPos;
+	struct Vector3Serializable headJumpStartPos;
+	struct Vector3Serializable headJumpEndPos;
+	float headJumpGravity;
+	struct Vector3Serializable tailMoveStartPos;
+	struct Vector3Serializable tailJumpStartPos;
+	struct Vector3Serializable tailJumpEndPos;
+	float tailJumpGravity;
+	float moveDuration;
+	float jumpDuration;
 	float rotation;
 };
 struct SetPlayersMissingEntitlementsToLevel {
@@ -796,6 +866,9 @@ struct SetSelectedBeatmap {
 	struct RemoteProcedureCallFlags flags;
 	struct BeatmapIdentifierNetSerializable identifier;
 };
+struct GetSelectedBeatmap {
+	struct RemoteProcedureCall base;
+};
 struct RecommendBeatmap {
 	struct RemoteProcedureCall base;
 	struct RemoteProcedureCallFlags flags;
@@ -811,6 +884,9 @@ struct SetSelectedGameplayModifiers {
 	struct RemoteProcedureCall base;
 	struct RemoteProcedureCallFlags flags;
 	struct GameplayModifiers gameplayModifiers;
+};
+struct GetSelectedGameplayModifiers {
+	struct RemoteProcedureCall base;
 };
 struct RecommendGameplayModifiers {
 	struct RemoteProcedureCall base;
@@ -951,6 +1027,12 @@ struct ObstacleSpawned {
 	struct RemoteProcedureCallFlags flags;
 	float songTime;
 	struct ObstacleSpawnInfoNetSerializable obstacleSpawnInfo;
+};
+struct SliderSpawned {
+	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
+	float songTime;
+	struct SliderSpawnInfoNetSerializable sliderSpawnInfo;
 };
 struct NodePoseSyncState {
 	struct SyncStateId id;
@@ -1210,16 +1292,19 @@ struct NodePoseSyncState1 pkt_readNodePoseSyncState1(struct PacketContext ctx, c
 struct StandardScoreSyncState pkt_readStandardScoreSyncState(struct PacketContext ctx, const uint8_t **pkt);
 struct NoteSpawnInfoNetSerializable pkt_readNoteSpawnInfoNetSerializable(struct PacketContext ctx, const uint8_t **pkt);
 struct ObstacleSpawnInfoNetSerializable pkt_readObstacleSpawnInfoNetSerializable(struct PacketContext ctx, const uint8_t **pkt);
+struct SliderSpawnInfoNetSerializable pkt_readSliderSpawnInfoNetSerializable(struct PacketContext ctx, const uint8_t **pkt);
 void pkt_writeSetPlayersMissingEntitlementsToLevel(struct PacketContext ctx, uint8_t **pkt, struct SetPlayersMissingEntitlementsToLevel in);
 void pkt_writeGetIsEntitledToLevel(struct PacketContext ctx, uint8_t **pkt, struct GetIsEntitledToLevel in);
 struct SetIsEntitledToLevel pkt_readSetIsEntitledToLevel(struct PacketContext ctx, const uint8_t **pkt);
 void pkt_writeSetSelectedBeatmap(struct PacketContext ctx, uint8_t **pkt, struct SetSelectedBeatmap in);
+struct GetSelectedBeatmap pkt_readGetSelectedBeatmap(struct PacketContext ctx, const uint8_t **pkt);
 struct RecommendBeatmap pkt_readRecommendBeatmap(struct PacketContext ctx, const uint8_t **pkt);
 void pkt_writeRecommendBeatmap(struct PacketContext ctx, uint8_t **pkt, struct RecommendBeatmap in);
 struct ClearRecommendedBeatmap pkt_readClearRecommendedBeatmap(struct PacketContext ctx, const uint8_t **pkt);
 struct GetRecommendedBeatmap pkt_readGetRecommendedBeatmap(struct PacketContext ctx, const uint8_t **pkt);
 void pkt_writeGetRecommendedBeatmap(struct PacketContext ctx, uint8_t **pkt, struct GetRecommendedBeatmap in);
 void pkt_writeSetSelectedGameplayModifiers(struct PacketContext ctx, uint8_t **pkt, struct SetSelectedGameplayModifiers in);
+struct GetSelectedGameplayModifiers pkt_readGetSelectedGameplayModifiers(struct PacketContext ctx, const uint8_t **pkt);
 struct RecommendGameplayModifiers pkt_readRecommendGameplayModifiers(struct PacketContext ctx, const uint8_t **pkt);
 void pkt_writeRecommendGameplayModifiers(struct PacketContext ctx, uint8_t **pkt, struct RecommendGameplayModifiers in);
 struct ClearRecommendedGameplayModifiers pkt_readClearRecommendedGameplayModifiers(struct PacketContext ctx, const uint8_t **pkt);
@@ -1259,6 +1344,7 @@ void pkt_writeReturnToMenu(struct PacketContext ctx, uint8_t **pkt, struct Retur
 struct RequestReturnToMenu pkt_readRequestReturnToMenu(struct PacketContext ctx, const uint8_t **pkt);
 struct NoteSpawned pkt_readNoteSpawned(struct PacketContext ctx, const uint8_t **pkt);
 struct ObstacleSpawned pkt_readObstacleSpawned(struct PacketContext ctx, const uint8_t **pkt);
+struct SliderSpawned pkt_readSliderSpawned(struct PacketContext ctx, const uint8_t **pkt);
 struct NodePoseSyncState pkt_readNodePoseSyncState(struct PacketContext ctx, const uint8_t **pkt);
 struct ScoreSyncState pkt_readScoreSyncState(struct PacketContext ctx, const uint8_t **pkt);
 struct NodePoseSyncStateDelta pkt_readNodePoseSyncStateDelta(struct PacketContext ctx, const uint8_t **pkt);

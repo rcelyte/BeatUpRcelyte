@@ -157,7 +157,7 @@ static void process_Reliable(ChanneledHandler handler, struct NetSession *sessio
 			{
 				char buf[1024*16];
 				uprintf("fragmented\n");
-				debug_logRouting(pkt, pkt, pkt_end, buf, session->protocolVersion);
+				debug_logRouting(pkt, pkt, pkt_end, buf, session->version);
 			}
 			#endif
 			handler(p_ctx, p_room, p_session, &pkt_it, pkt_end, channelId);

@@ -617,7 +617,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 		case MenuRpcType_InvalidateLevelEntitlementStatuses: uprintf("MenuRpcType_InvalidateLevelEntitlementStatuses not implemented\n"); abort();
 		case MenuRpcType_SelectLevelPack: uprintf("MenuRpcType_SelectLevelPack not implemented\n"); abort();
 		case MenuRpcType_SetSelectedBeatmap: uprintf("MenuRpcType_SetSelectedBeatmap not implemented\n"); abort();
-		case MenuRpcType_GetSelectedBeatmap: uprintf("MenuRpcType_GetSelectedBeatmap not implemented\n"); abort();
+		case MenuRpcType_GetSelectedBeatmap: pkt_readGetSelectedBeatmap(session->net.version, data); break;
 		case MenuRpcType_RecommendBeatmap: {
 			struct RecommendBeatmap beatmap = pkt_readRecommendBeatmap(session->net.version, data);
 			if(room->state != ServerState_Lobby)
@@ -726,7 +726,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 		}
 		case MenuRpcType_GetRecommendedBeatmap: pkt_readGetRecommendedBeatmap(session->net.version, data); break;
 		case MenuRpcType_SetSelectedGameplayModifiers: uprintf("BAD TYPE: MenuRpcType_SetSelectedGameplayModifiers\n"); break;
-		case MenuRpcType_GetSelectedGameplayModifiers: uprintf("MenuRpcType_GetSelectedGameplayModifiers not implemented\n"); abort();
+		case MenuRpcType_GetSelectedGameplayModifiers: pkt_readGetSelectedGameplayModifiers(session->net.version, data); break;
 		case MenuRpcType_RecommendGameplayModifiers: {
 			struct RecommendGameplayModifiers modifiers = pkt_readRecommendGameplayModifiers(session->net.version, data);
 			if(0) {
@@ -909,6 +909,7 @@ static void handle_GameplayRpc(struct Context *ctx, struct Room *room, struct In
 		}
 		case GameplayRpcType_NoteSpawned: pkt_readNoteSpawned(session->net.version, data); break;
 		case GameplayRpcType_ObstacleSpawned: pkt_readObstacleSpawned(session->net.version, data); break;
+		case GameplayRpcType_SliderSpawned: pkt_readSliderSpawned(session->net.version, data); break;
 		default: uprintf("BAD GAMEPLAY RPC TYPE\n");
 	}
 }
@@ -1312,9 +1313,9 @@ instance_handler(struct Context *ctx) {
 		{
 			const uint8_t *read = pkt;
 			struct NetPacketHeader header = pkt_readNetPacketHeader(session->net.version, &read);
-			if(!header.isFragmented) {
+			if(header.property != PacketProperty_Unreliable && !header.isFragmented) {
 				uprintf("recieve[%s]:\n", reflect(PacketProperty, header.property));
-				debug_logPacket(read, &pkt[len], header, session->net.protocolVersion);
+				debug_logPacket(read, &pkt[len], header, session->net.version);
 			}
 		}
 		#endif

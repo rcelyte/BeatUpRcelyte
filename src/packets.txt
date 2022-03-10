@@ -722,6 +722,20 @@ d PlayerSpecificSettingsNetSerializable
 s PlayerSpecificSettingsAtStartNetSerializable
 	i32 count
 	PlayerSpecificSettingsNetSerializable[128,count] activePlayerSpecificSettingsAtGameStart
+i32 GameplayType
+	z Normal
+	z Bomb
+	z BurstSliderHead
+	z BurstSliderElement
+	z BurstSliderElementFill
+i32 ScoringType
+	z Ignore -1
+	z NoScore
+	z Normal
+	z SliderHead
+	z SliderTail
+	z BurstSliderHead
+	z BurstSliderElement
 i32 ColorType
 	z ColorA 0
 	z ColorB 1
@@ -740,15 +754,17 @@ r NoteCutInfoNetSerializable
 	Vector3Serializable notePosition
 	Vector3Serializable noteScale
 	QuaternionSerializable noteRotation
+	if(ctx.protocolVersion >= 8)
+		vi32.GameplayType gameplayType
 	vi32.ColorType colorType
-	vi32.NoteLineLayer noteLineLayer
+	vi32.NoteLineLayer lineLayer
 	vi32 noteLineIndex
 	f32 noteTime
 	f32 timeToNextColorNote
 	Vector3Serializable moveVec
 r NoteMissInfoNetSerializable
 	vi32.ColorType colorType
-	vi32.NoteLineLayer noteLineLayer
+	vi32.NoteLineLayer lineLayer
 	vi32 noteLineIndex
 	f32 noteTime
 u8 MultiplayerLevelEndState
@@ -793,14 +809,15 @@ u8 LevelEndAction
 r LevelCompletionResults
 	GameplayModifiers gameplayModifiers
 	vi32 modifiedScore
-	vi32 rawScore
+	vi32 multipliedScore
 	vi32.Rank rank
 	b fullCombo
 	f32 leftSaberMovementDistance
 	f32 rightSaberMovementDistance
 	f32 leftHandMovementDistance
 	f32 rightHandMovementDistance
-	f32 songDuration
+	if(ctx.protocolVersion < 8)
+		f32 songDuration
 	vi32.LevelEndStateType levelEndStateType
 	vi32.LevelEndAction levelEndAction
 	f32 energy
@@ -809,24 +826,32 @@ r LevelCompletionResults
 	vi32 missedCount
 	vi32 notGoodCount
 	vi32 okCount
-	vi32 averageCutScore
+	if(ctx.protocolVersion < 8)
+		vi32 averageCutScore
 	vi32 maxCutScore
-	f32 averageCutDistanceRawScore
+	if(ctx.protocolVersion >= 8)
+		vi32 totalCutScore
+		vi32 goodCutsCountForNotesWithFullScoreScoringType
+		i32 averageCenterDistanceCutScoreForNotesWithFullScoreScoringType
+		i32 averageCutScoreForNotesWithFullScoreScoringType
+	if(ctx.protocolVersion < 8)
+		f32 averageCutDistanceRawScore
 	vi32 maxCombo
-	f32 minDirDeviation
-	f32 maxDirDeviation
-	f32 averageDirDeviation
-	f32 minTimeDeviation
-	f32 maxTimeDeviation
-	f32 averageTimeDeviation
+	if(ctx.protocolVersion < 8)
+		f32 minDirDeviation
+		f32 maxDirDeviation
+		f32 averageDirDeviation
+		f32 minTimeDeviation
+		f32 maxTimeDeviation
+		f32 averageTimeDeviation
 	f32 endSongTime
 r MultiplayerLevelCompletionResults
-	if(ctx.protocolVersion <= 6)
+	if(ctx.protocolVersion < 7)
 		vi32.MultiplayerLevelEndState levelEndState
-	if(ctx.protocolVersion > 6)
+	if(ctx.protocolVersion >= 7)
 		vi32.MultiplayerPlayerLevelEndState playerLevelEndState
 		vi32.MultiplayerPlayerLevelEndReason playerLevelEndReason
-	if((ctx.protocolVersion <= 6 && .levelEndState < MultiplayerLevelEndState_GivenUp) || (ctx.protocolVersion > 6 && .playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted))
+	if((ctx.protocolVersion < 7 && .levelEndState < MultiplayerLevelEndState_GivenUp) || (ctx.protocolVersion > 6 && .playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted))
 		LevelCompletionResults levelCompletionResults
 r NodePoseSyncState1
 	PoseSerializable head
@@ -854,6 +879,9 @@ r NoteSpawnInfoNetSerializable
 	vi32 lineIndex
 	vi32.NoteLineLayer noteLineLayer
 	vi32.NoteLineLayer beforeJumpNoteLineLayer
+	if(ctx.protocolVersion >= 8)
+		vi32.GameplayType gameplayType
+		vi32.ScoringType scoringType
 	vi32.ColorType colorType
 	vi32.NoteCutDirection cutDirection
 	f32 timeToNextColorNote
@@ -868,15 +896,22 @@ r NoteSpawnInfoNetSerializable
 	f32 jumpDuration
 	f32 rotation
 	f32 cutDirectionAngleOffset
+	if(ctx.protocolVersion >= 8)
+		f32 cutSfxVolumeMultiplier
 u8 ObstacleType
 	z FullHeight
 	z Top
 r ObstacleSpawnInfoNetSerializable
 	f32 time
 	vi32 lineIndex
-	vi32.ObstacleType obstacleType
+	if(ctx.protocolVersion >= 8)
+		vi32.NoteLineLayer lineLayer
+	if(ctx.protocolVersion < 8)
+		vi32.ObstacleType obstacleType
 	f32 duration
 	vi32 width
+	if(ctx.protocolVersion >= 8)
+		vi32 height
 	Vector3Serializable moveStartPos
 	Vector3Serializable moveEndPos
 	Vector3Serializable jumpEndPos
@@ -884,6 +919,46 @@ r ObstacleSpawnInfoNetSerializable
 	f32 moveDuration
 	f32 jumpDuration
 	f32 noteLinesDistance
+	f32 rotation
+u8 SliderType
+	z Normal
+	z Burst
+u8 SliderMidAnchorMode
+	z Straight
+	z Clockwise
+	z CounterClockwise
+r SliderSpawnInfoNetSerializable
+	vi32.ColorType colorType
+	vi32.SliderType sliderType
+	b hasHeadNote
+	f32 headTime
+	vi32 headLineIndex
+	vi32.NoteLineLayer headLineLayer
+	vi32.NoteLineLayer headBeforeJumpLineLayer
+	f32 headControlPointLengthMultiplier
+	vi32.NoteCutDirection headCutDirection
+	f32 headCutDirectionAngleOffset
+	b hasTailNote
+	f32 tailTime
+	vi32 tailLineIndex
+	vi32.NoteLineLayer tailLineLayer
+	vi32.NoteLineLayer tailBeforeJumpLineLayer
+	f32 tailControlPointLengthMultiplier
+	vi32.NoteCutDirection tailCutDirection
+	f32 tailCutDirectionAngleOffset
+	vi32.SliderMidAnchorMode midAnchorMode
+	vi32 sliceCount
+	f32 squishAmount
+	Vector3Serializable headMoveStartPos
+	Vector3Serializable headJumpStartPos
+	Vector3Serializable headJumpEndPos
+	f32 headJumpGravity
+	Vector3Serializable tailMoveStartPos
+	Vector3Serializable tailJumpStartPos
+	Vector3Serializable tailJumpEndPos
+	f32 tailJumpGravity
+	f32 moveDuration
+	f32 jumpDuration
 	f32 rotation
 u8 MultiplayerSessionMessage Type
 	u8 MenuRpc Type
@@ -916,7 +991,7 @@ u8 MultiplayerSessionMessage Type
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				BeatmapIdentifierNetSerializable identifier
-		n GetSelectedBeatmap
+		r GetSelectedBeatmap
 			RemoteProcedureCall base
 		d RecommendBeatmap
 			RemoteProcedureCall base
@@ -932,7 +1007,7 @@ u8 MultiplayerSessionMessage Type
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				GameplayModifiers gameplayModifiers
-		n GetSelectedGameplayModifiers
+		r GetSelectedGameplayModifiers
 			RemoteProcedureCall base
 		d RecommendGameplayModifiers
 			RemoteProcedureCall base
@@ -1099,6 +1174,13 @@ u8 MultiplayerSessionMessage Type
 				f32 songTime
 			if(.flags.hasValue1)
 				ObstacleSpawnInfoNetSerializable obstacleSpawnInfo
+		r SliderSpawned
+			RemoteProcedureCall base
+			RemoteProcedureCallFlags flags
+			if(.flags.hasValue0)
+				f32 songTime
+			if(.flags.hasValue1)
+				SliderSpawnInfoNetSerializable sliderSpawnInfo
 	r NodePoseSyncState
 		SyncStateId id
 		f32 time

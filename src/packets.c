@@ -859,8 +859,11 @@ struct NoteCutInfoNetSerializable pkt_readNoteCutInfoNetSerializable(struct Pack
 	out.notePosition = pkt_readVector3Serializable(ctx, pkt);
 	out.noteScale = pkt_readVector3Serializable(ctx, pkt);
 	out.noteRotation = pkt_readQuaternionSerializable(ctx, pkt);
+	if(ctx.protocolVersion >= 8) {
+		out.gameplayType = pkt_readVarInt32(ctx, pkt);
+	}
 	out.colorType = pkt_readVarInt32(ctx, pkt);
-	out.noteLineLayer = pkt_readVarInt32(ctx, pkt);
+	out.lineLayer = pkt_readVarInt32(ctx, pkt);
 	out.noteLineIndex = pkt_readVarInt32(ctx, pkt);
 	out.noteTime = pkt_readFloat32(ctx, pkt);
 	out.timeToNextColorNote = pkt_readFloat32(ctx, pkt);
@@ -870,7 +873,7 @@ struct NoteCutInfoNetSerializable pkt_readNoteCutInfoNetSerializable(struct Pack
 struct NoteMissInfoNetSerializable pkt_readNoteMissInfoNetSerializable(struct PacketContext ctx, const uint8_t **pkt) {
 	struct NoteMissInfoNetSerializable out;
 	out.colorType = pkt_readVarInt32(ctx, pkt);
-	out.noteLineLayer = pkt_readVarInt32(ctx, pkt);
+	out.lineLayer = pkt_readVarInt32(ctx, pkt);
 	out.noteLineIndex = pkt_readVarInt32(ctx, pkt);
 	out.noteTime = pkt_readFloat32(ctx, pkt);
 	return out;
@@ -879,14 +882,16 @@ struct LevelCompletionResults pkt_readLevelCompletionResults(struct PacketContex
 	struct LevelCompletionResults out;
 	out.gameplayModifiers = pkt_readGameplayModifiers(ctx, pkt);
 	out.modifiedScore = pkt_readVarInt32(ctx, pkt);
-	out.rawScore = pkt_readVarInt32(ctx, pkt);
+	out.multipliedScore = pkt_readVarInt32(ctx, pkt);
 	out.rank = pkt_readVarInt32(ctx, pkt);
 	out.fullCombo = pkt_readUint8(ctx, pkt);
 	out.leftSaberMovementDistance = pkt_readFloat32(ctx, pkt);
 	out.rightSaberMovementDistance = pkt_readFloat32(ctx, pkt);
 	out.leftHandMovementDistance = pkt_readFloat32(ctx, pkt);
 	out.rightHandMovementDistance = pkt_readFloat32(ctx, pkt);
-	out.songDuration = pkt_readFloat32(ctx, pkt);
+	if(ctx.protocolVersion < 8) {
+		out.songDuration = pkt_readFloat32(ctx, pkt);
+	}
 	out.levelEndStateType = pkt_readVarInt32(ctx, pkt);
 	out.levelEndAction = pkt_readVarInt32(ctx, pkt);
 	out.energy = pkt_readFloat32(ctx, pkt);
@@ -895,29 +900,41 @@ struct LevelCompletionResults pkt_readLevelCompletionResults(struct PacketContex
 	out.missedCount = pkt_readVarInt32(ctx, pkt);
 	out.notGoodCount = pkt_readVarInt32(ctx, pkt);
 	out.okCount = pkt_readVarInt32(ctx, pkt);
-	out.averageCutScore = pkt_readVarInt32(ctx, pkt);
+	if(ctx.protocolVersion < 8) {
+		out.averageCutScore = pkt_readVarInt32(ctx, pkt);
+	}
 	out.maxCutScore = pkt_readVarInt32(ctx, pkt);
-	out.averageCutDistanceRawScore = pkt_readFloat32(ctx, pkt);
+	if(ctx.protocolVersion >= 8) {
+		out.totalCutScore = pkt_readVarInt32(ctx, pkt);
+		out.goodCutsCountForNotesWithFullScoreScoringType = pkt_readVarInt32(ctx, pkt);
+		out.averageCenterDistanceCutScoreForNotesWithFullScoreScoringType = pkt_readInt32(ctx, pkt);
+		out.averageCutScoreForNotesWithFullScoreScoringType = pkt_readInt32(ctx, pkt);
+	}
+	if(ctx.protocolVersion < 8) {
+		out.averageCutDistanceRawScore = pkt_readFloat32(ctx, pkt);
+	}
 	out.maxCombo = pkt_readVarInt32(ctx, pkt);
-	out.minDirDeviation = pkt_readFloat32(ctx, pkt);
-	out.maxDirDeviation = pkt_readFloat32(ctx, pkt);
-	out.averageDirDeviation = pkt_readFloat32(ctx, pkt);
-	out.minTimeDeviation = pkt_readFloat32(ctx, pkt);
-	out.maxTimeDeviation = pkt_readFloat32(ctx, pkt);
-	out.averageTimeDeviation = pkt_readFloat32(ctx, pkt);
+	if(ctx.protocolVersion < 8) {
+		out.minDirDeviation = pkt_readFloat32(ctx, pkt);
+		out.maxDirDeviation = pkt_readFloat32(ctx, pkt);
+		out.averageDirDeviation = pkt_readFloat32(ctx, pkt);
+		out.minTimeDeviation = pkt_readFloat32(ctx, pkt);
+		out.maxTimeDeviation = pkt_readFloat32(ctx, pkt);
+		out.averageTimeDeviation = pkt_readFloat32(ctx, pkt);
+	}
 	out.endSongTime = pkt_readFloat32(ctx, pkt);
 	return out;
 }
 struct MultiplayerLevelCompletionResults pkt_readMultiplayerLevelCompletionResults(struct PacketContext ctx, const uint8_t **pkt) {
 	struct MultiplayerLevelCompletionResults out;
-	if(ctx.protocolVersion <= 6) {
+	if(ctx.protocolVersion < 7) {
 		out.levelEndState = pkt_readVarInt32(ctx, pkt);
 	}
-	if(ctx.protocolVersion > 6) {
+	if(ctx.protocolVersion >= 7) {
 		out.playerLevelEndState = pkt_readVarInt32(ctx, pkt);
 		out.playerLevelEndReason = pkt_readVarInt32(ctx, pkt);
 	}
-	if((ctx.protocolVersion <= 6 && out.levelEndState < MultiplayerLevelEndState_GivenUp) || (ctx.protocolVersion > 6 && out.playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted)) {
+	if((ctx.protocolVersion < 7 && out.levelEndState < MultiplayerLevelEndState_GivenUp) || (ctx.protocolVersion > 6 && out.playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted)) {
 		out.levelCompletionResults = pkt_readLevelCompletionResults(ctx, pkt);
 	}
 	return out;
@@ -944,6 +961,10 @@ struct NoteSpawnInfoNetSerializable pkt_readNoteSpawnInfoNetSerializable(struct 
 	out.lineIndex = pkt_readVarInt32(ctx, pkt);
 	out.noteLineLayer = pkt_readVarInt32(ctx, pkt);
 	out.beforeJumpNoteLineLayer = pkt_readVarInt32(ctx, pkt);
+	if(ctx.protocolVersion >= 8) {
+		out.gameplayType = pkt_readVarInt32(ctx, pkt);
+		out.scoringType = pkt_readVarInt32(ctx, pkt);
+	}
 	out.colorType = pkt_readVarInt32(ctx, pkt);
 	out.cutDirection = pkt_readVarInt32(ctx, pkt);
 	out.timeToNextColorNote = pkt_readFloat32(ctx, pkt);
@@ -958,15 +979,26 @@ struct NoteSpawnInfoNetSerializable pkt_readNoteSpawnInfoNetSerializable(struct 
 	out.jumpDuration = pkt_readFloat32(ctx, pkt);
 	out.rotation = pkt_readFloat32(ctx, pkt);
 	out.cutDirectionAngleOffset = pkt_readFloat32(ctx, pkt);
+	if(ctx.protocolVersion >= 8) {
+		out.cutSfxVolumeMultiplier = pkt_readFloat32(ctx, pkt);
+	}
 	return out;
 }
 struct ObstacleSpawnInfoNetSerializable pkt_readObstacleSpawnInfoNetSerializable(struct PacketContext ctx, const uint8_t **pkt) {
 	struct ObstacleSpawnInfoNetSerializable out;
 	out.time = pkt_readFloat32(ctx, pkt);
 	out.lineIndex = pkt_readVarInt32(ctx, pkt);
-	out.obstacleType = pkt_readVarInt32(ctx, pkt);
+	if(ctx.protocolVersion >= 8) {
+		out.lineLayer = pkt_readVarInt32(ctx, pkt);
+	}
+	if(ctx.protocolVersion < 8) {
+		out.obstacleType = pkt_readVarInt32(ctx, pkt);
+	}
 	out.duration = pkt_readFloat32(ctx, pkt);
 	out.width = pkt_readVarInt32(ctx, pkt);
+	if(ctx.protocolVersion >= 8) {
+		out.height = pkt_readVarInt32(ctx, pkt);
+	}
 	out.moveStartPos = pkt_readVector3Serializable(ctx, pkt);
 	out.moveEndPos = pkt_readVector3Serializable(ctx, pkt);
 	out.jumpEndPos = pkt_readVector3Serializable(ctx, pkt);
@@ -974,6 +1006,42 @@ struct ObstacleSpawnInfoNetSerializable pkt_readObstacleSpawnInfoNetSerializable
 	out.moveDuration = pkt_readFloat32(ctx, pkt);
 	out.jumpDuration = pkt_readFloat32(ctx, pkt);
 	out.noteLinesDistance = pkt_readFloat32(ctx, pkt);
+	out.rotation = pkt_readFloat32(ctx, pkt);
+	return out;
+}
+struct SliderSpawnInfoNetSerializable pkt_readSliderSpawnInfoNetSerializable(struct PacketContext ctx, const uint8_t **pkt) {
+	struct SliderSpawnInfoNetSerializable out;
+	out.colorType = pkt_readVarInt32(ctx, pkt);
+	out.sliderType = pkt_readVarInt32(ctx, pkt);
+	out.hasHeadNote = pkt_readUint8(ctx, pkt);
+	out.headTime = pkt_readFloat32(ctx, pkt);
+	out.headLineIndex = pkt_readVarInt32(ctx, pkt);
+	out.headLineLayer = pkt_readVarInt32(ctx, pkt);
+	out.headBeforeJumpLineLayer = pkt_readVarInt32(ctx, pkt);
+	out.headControlPointLengthMultiplier = pkt_readFloat32(ctx, pkt);
+	out.headCutDirection = pkt_readVarInt32(ctx, pkt);
+	out.headCutDirectionAngleOffset = pkt_readFloat32(ctx, pkt);
+	out.hasTailNote = pkt_readUint8(ctx, pkt);
+	out.tailTime = pkt_readFloat32(ctx, pkt);
+	out.tailLineIndex = pkt_readVarInt32(ctx, pkt);
+	out.tailLineLayer = pkt_readVarInt32(ctx, pkt);
+	out.tailBeforeJumpLineLayer = pkt_readVarInt32(ctx, pkt);
+	out.tailControlPointLengthMultiplier = pkt_readFloat32(ctx, pkt);
+	out.tailCutDirection = pkt_readVarInt32(ctx, pkt);
+	out.tailCutDirectionAngleOffset = pkt_readFloat32(ctx, pkt);
+	out.midAnchorMode = pkt_readVarInt32(ctx, pkt);
+	out.sliceCount = pkt_readVarInt32(ctx, pkt);
+	out.squishAmount = pkt_readFloat32(ctx, pkt);
+	out.headMoveStartPos = pkt_readVector3Serializable(ctx, pkt);
+	out.headJumpStartPos = pkt_readVector3Serializable(ctx, pkt);
+	out.headJumpEndPos = pkt_readVector3Serializable(ctx, pkt);
+	out.headJumpGravity = pkt_readFloat32(ctx, pkt);
+	out.tailMoveStartPos = pkt_readVector3Serializable(ctx, pkt);
+	out.tailJumpStartPos = pkt_readVector3Serializable(ctx, pkt);
+	out.tailJumpEndPos = pkt_readVector3Serializable(ctx, pkt);
+	out.tailJumpGravity = pkt_readFloat32(ctx, pkt);
+	out.moveDuration = pkt_readFloat32(ctx, pkt);
+	out.jumpDuration = pkt_readFloat32(ctx, pkt);
 	out.rotation = pkt_readFloat32(ctx, pkt);
 	return out;
 }
@@ -1010,6 +1078,11 @@ void pkt_writeSetSelectedBeatmap(struct PacketContext ctx, uint8_t **pkt, struct
 		pkt_writeBeatmapIdentifierNetSerializable(ctx, pkt, in.identifier);
 	}
 }
+struct GetSelectedBeatmap pkt_readGetSelectedBeatmap(struct PacketContext ctx, const uint8_t **pkt) {
+	struct GetSelectedBeatmap out;
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
+	return out;
+}
 struct RecommendBeatmap pkt_readRecommendBeatmap(struct PacketContext ctx, const uint8_t **pkt) {
 	struct RecommendBeatmap out;
 	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
@@ -1045,6 +1118,11 @@ void pkt_writeSetSelectedGameplayModifiers(struct PacketContext ctx, uint8_t **p
 	if(in.flags.hasValue0) {
 		pkt_writeGameplayModifiers(ctx, pkt, in.gameplayModifiers);
 	}
+}
+struct GetSelectedGameplayModifiers pkt_readGetSelectedGameplayModifiers(struct PacketContext ctx, const uint8_t **pkt) {
+	struct GetSelectedGameplayModifiers out;
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
+	return out;
 }
 struct RecommendGameplayModifiers pkt_readRecommendGameplayModifiers(struct PacketContext ctx, const uint8_t **pkt) {
 	struct RecommendGameplayModifiers out;
@@ -1301,6 +1379,18 @@ struct ObstacleSpawned pkt_readObstacleSpawned(struct PacketContext ctx, const u
 	}
 	if(out.flags.hasValue1) {
 		out.obstacleSpawnInfo = pkt_readObstacleSpawnInfoNetSerializable(ctx, pkt);
+	}
+	return out;
+}
+struct SliderSpawned pkt_readSliderSpawned(struct PacketContext ctx, const uint8_t **pkt) {
+	struct SliderSpawned out;
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
+	out.flags = pkt_readRemoteProcedureCallFlags(ctx, pkt);
+	if(out.flags.hasValue0) {
+		out.songTime = pkt_readFloat32(ctx, pkt);
+	}
+	if(out.flags.hasValue1) {
+		out.sliderSpawnInfo = pkt_readSliderSpawnInfoNetSerializable(ctx, pkt);
 	}
 	return out;
 }

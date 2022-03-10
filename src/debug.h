@@ -111,6 +111,7 @@ static const uint8_t *debug_logRouting(const uint8_t *pkt, const uint8_t *data, 
 							case GameplayRpcType_RequestReturnToMenu: pkt_logRequestReturnToMenu(version, "\tRequestReturnToMenu", buf, buf, pkt_readRequestReturnToMenu(version, &sub)); break;
 							case GameplayRpcType_NoteSpawned: pkt_logNoteSpawned(version, "\tNoteSpawned", buf, buf, pkt_readNoteSpawned(version, &sub)); break;
 							case GameplayRpcType_ObstacleSpawned: pkt_logObstacleSpawned(version, "\tObstacleSpawned", buf, buf, pkt_readObstacleSpawned(version, &sub)); break;
+							case GameplayRpcType_SliderSpawned: pkt_logSliderSpawned(version, "\tSliderSpawned", buf, buf, pkt_readSliderSpawned(version, &sub)); break;
 							default: fprintf(stderr, "BAD GAMEPLAY RPC TYPE\n");
 						}
 						break;
