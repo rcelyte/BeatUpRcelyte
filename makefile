@@ -13,7 +13,7 @@ DEPS := $(OBJS:.o=.d)
 LIBS := libmbedtls.a libmbedx509.a libmbedcrypto.a
 OBJS += $(LIBS:%=$(OBJDIR)/%)
 
-CFLAGS := -g -std=gnu11 -Imbedtls/include -Wall -Wno-unused-function -Werror -pedantic-errors
+CFLAGS := -g -std=gnu11 -Imbedtls/include -Wall -Wno-unused-function -Werror -pedantic-errors -DFORCE_MASSIVE_LOBBIES -DPER_PLAYER_DIFFICULTY=1 -DPER_PLAYER_MODIFIERS=1
 LDFLAGS := -O2 -Wl,--gc-sections,--fatal-warnings
 
 sinclude makefile.user

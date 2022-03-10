@@ -1,6 +1,4 @@
 #include "log.h"
-LOG_CTX("WIRE")
-
 #include "wire.h"
 #include "instance/instance.h"
 

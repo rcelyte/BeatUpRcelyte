@@ -1,6 +1,4 @@
 #include "log.h"
-LOG_CTX("NET")
-
 #define NET_H_PRIVATE(x) x
 #include "enum_reflection.h"
 #include "net.h"

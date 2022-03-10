@@ -1,8 +1,4 @@
 #include "log.h"
-LOG_CTX("MASTER")
-
-#define FORCE_MASSIVE_LOBBIES
-
 #include "enum_reflection.h"
 #include "instance/instance.h"
 #ifdef WINDOWS

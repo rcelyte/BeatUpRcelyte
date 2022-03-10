@@ -1,6 +1,4 @@
 #include "log.h"
-LOG_CTX("CONFIG")
-
 #include "config.h"
 #include "json.h"
 #include <mbedtls/entropy.h>

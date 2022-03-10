@@ -1,10 +1,6 @@
 #include "../log.h"
-LOG_CTX("INSTANCE")
-
 #include "../net.h"
 
-#define PER_PLAYER_DIFFICULTY 1
-#define PER_PLAYER_MODIFIERS 1
 #define LOAD_TIMEOUT 15
 
 #define lengthof(x) (sizeof(x)/sizeof(*x))

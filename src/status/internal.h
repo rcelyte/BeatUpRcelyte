@@ -1,6 +1,4 @@
 #include "../log.h"
-LOG_CTX("STATUS")
-
 #include <stdint.h>
 
 uint32_t status_resp(const char *source, const char *path, char *buf, uint32_t buf_len);

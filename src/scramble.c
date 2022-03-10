@@ -1,6 +1,4 @@
 #include "log.h"
-LOG_CTX("SCRAMBLE")
-
 #include "scramble.h"
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/entropy.h>

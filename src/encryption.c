@@ -1,6 +1,4 @@
 #include "log.h"
-LOG_CTX("NET")
-
 #include "packets.h"
 #include "encryption.h"
 #include <mbedtls/ssl.h>
