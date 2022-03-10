@@ -203,11 +203,11 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 						struct InstancePacket *ipkt = &channels->ro.receivedPackets[channel->inboundSequence % NET_WINDOW_SIZE];
 						const uint8_t *const pkt = ipkt->data, *pkt_it = ipkt->data;
 						const uint8_t *const pkt_end = &pkt[ipkt->len];
-						ipkt->len = 0;
 						process_Reliable(handler, session, channels, p_ctx, p_room, p_session, &pkt_it, pkt_end, DeliveryMethod_ReliableOrdered, ipkt->isFragmented);
-						channel->inboundSequence = (channel->inboundSequence + 1) % NET_MAX_SEQUENCE;
 						if(pkt_it != pkt_end)
 							uprintf("BAD RELIABLE PACKET LENGTH (expected %zu, read %zu)\n", pkt_end - pkt, pkt_it - pkt);
+						ipkt->len = 0;
+						channel->inboundSequence = (channel->inboundSequence + 1) % NET_MAX_SEQUENCE;
 					}
 				} else {
 					while(channels->ru.earlyReceived[channel->inboundSequence % NET_WINDOW_SIZE]) {

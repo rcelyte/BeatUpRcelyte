@@ -396,6 +396,11 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct
 		}
 		size = length + (head - buf);
 		(*session)->lastKeepAlive = net_time();
+		while((*session)->mtu < size && (*session)->mtuIdx < lengthof(PossibleMtu) - 1) {
+			uint32_t oldMtu = (*session)->mtu;
+			(*session)->mtu = PossibleMtu[++(*session)->mtuIdx];
+			uprintf("MTU %u -> %u\n", oldMtu, (*session)->mtu);
+		}
 	} else if(layer.encrypted) {
 		uprintf("Invalid packet\n");
 		goto retry;
