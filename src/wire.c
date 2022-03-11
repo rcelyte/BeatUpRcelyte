@@ -6,10 +6,12 @@ _Bool wire_request_block(struct WireBlockHandle *block_out, uint16_t notify) {
 	uprintf("TODO: multiple threads; multiple hosts\n");
 	block_out->host = 0;
 	block_out->thread = 0;
-	return instance_request_block(block_out->thread, &block_out->group, notify);
+	return instance_block_request(block_out->thread, &block_out->group, notify);
 }
 
-void wire_block_release(struct WireBlockHandle block) {}
+void wire_block_release(struct WireBlockHandle block) {
+	instance_block_release(block.thread, block.group);
+}
 
 _Bool wire_room_open(struct WireRoomHandle handle, struct String managerId, struct GameplayServerConfiguration configuration) {
 	if(handle.block.host != 0 || handle.block.thread != 0)

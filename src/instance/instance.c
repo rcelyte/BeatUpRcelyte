@@ -198,7 +198,7 @@ struct Context {
 	struct NetContext net;
 	struct Counter16 blockAlloc;
 	struct Room *rooms[16][16];
-	uint16_t notify[16];
+	uint16_t notifyHandle[16];
 } static contexts[THREAD_COUNT];
 
 static struct NetSession *instance_onResolve(struct Context *ctx, struct SS addr, void **userdata_out) {
@@ -516,15 +516,20 @@ static void room_disconnect(struct Context *ctx, struct Room **room, struct Inst
 	}
 	if((mode & DC_RESET) || !Counter128_isEmpty((*room)->playerSort))
 		return;
+
+	uint16_t group = indexof(*ctx->rooms, room) / lengthof(*ctx->rooms);
+	struct RoomHandle handle = {
+		.block = ctx->notifyHandle[group],
+		.sub = indexof(ctx->rooms[group], room) % lengthof(*ctx->rooms),
+	};
+	net_unlock(&ctx->net); // avoids deadlock if pool_room_close_notify() internally calls instance_block_release()
+	pool_room_close_notify(handle);
+	net_lock(&ctx->net);
+
 	net_keypair_free(&(*room)->keys);
 	free(*room);
 	*room = NULL;
-	uint16_t group = indexof(*ctx->rooms, room) / lengthof(*ctx->rooms);
-	pool_room_close_notify((struct RoomHandle){ // TODO: needs mutex
-		.block = ctx->notify[group],
-		.sub = indexof(ctx->rooms[group], room) % lengthof(*ctx->rooms),
-	});
-	uprintf("closing room\n");
+	uprintf("closing room (%hu,%hu,%hhu)\n", indexof(contexts, ctx), handle.block, handle.sub);
 }
 
 static void instance_onResend(struct Context *ctx, uint32_t currentTime, uint32_t *nextTick) {
@@ -1411,18 +1416,26 @@ struct IPEndPoint instance_get_endpoint(_Bool ipv4) {
 	return out;
 }
 
-_Bool instance_request_block(uint16_t thread, uint16_t *group_out, uint16_t notify) {
+_Bool instance_block_request(uint16_t thread, uint16_t *group_out, uint16_t notify) {
 	uint8_t group;
 	net_lock(&contexts[thread].net);
 	if(Counter16_set_next(&contexts[thread].blockAlloc, &group, 1)) {
 		*group_out = group;
-		contexts[thread].notify[group] = notify;
+		contexts[thread].notifyHandle[group] = notify;
+		uprintf("opening block (%hu,%hu)\n", thread, group);
 		net_unlock(&contexts[thread].net);
 		return 0;
 	}
 	net_unlock(&contexts[thread].net);
 	uprintf("THREAD FULL\n");
 	return 1;
+}
+
+void instance_block_release(uint16_t thread, uint16_t group) {
+	net_lock(&contexts[thread].net);
+	uprintf("closing block (%hu,%hu)\n", thread, group);
+	Counter16_set(&contexts[thread].blockAlloc, group, 0);
+	net_unlock(&contexts[thread].net);
 }
 
 _Bool instance_room_open(uint16_t thread, uint16_t group, uint8_t sub, struct String managerId, struct GameplayServerConfiguration configuration) {

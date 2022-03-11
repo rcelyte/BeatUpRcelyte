@@ -1,7 +1,9 @@
+#include "log.h"
 #include "pool.h"
 #include "scramble.h"
 #include "packets.h"
 #include <stddef.h>
+#include <pthread.h>
 
 #define MAX_SERVER_CODE 62193780
 #define POOL_BLOCK_COUNT ((MAX_SERVER_CODE+256*16) / (256*16))
@@ -15,15 +17,16 @@ struct RoomBlockPtr {
 };
 static struct RoomBlockPtr rooms[POOL_BLOCK_COUNT];
 static uint16_t count = 0, alloc[POOL_BLOCK_COUNT];
+static pthread_mutex_t pool_mutex;
 
-static struct RoomHandle RoomHandle_code(ServerCode code) {
+/*static struct RoomHandle RoomHandle_code(ServerCode code) {
 	struct RoomHandle h;
 	h.sub = code & 15;
 	code >>= 4;
 	h.high = code / POOL_BLOCK_COUNT;
 	h.block = code - h.high * POOL_BLOCK_COUNT;
 	return h;
-}
+}*/
 
 static _Bool pool_reserve_room(ServerCode code) { // DO NOT RESERVE MORE THAN 15 ROOMS
 	struct RoomHandle room;
@@ -37,6 +40,10 @@ static _Bool pool_reserve_room(ServerCode code) { // DO NOT RESERVE MORE THAN 15
 }
 
 _Bool pool_init() {
+	if(pthread_mutex_init(&pool_mutex, NULL)) {
+		uprintf("pthread_mutex_init() failed\n");
+		return 1;
+	}
 	for(uint32_t i = 0; i < lengthof(rooms); ++i)
 		rooms[i] = (struct RoomBlockPtr){{0,0,0},0xffff,{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
 	for(uint32_t i = 0; i < lengthof(alloc); ++i)
@@ -63,7 +70,13 @@ _Bool pool_init() {
 	return 0;
 }
 
+void pool_free() {
+	if(pthread_mutex_destroy(&pool_mutex))
+		uprintf("pthread_mutex_destroy() failed\n");
+}
+
 _Bool pool_request_room(struct RoomHandle *room_out, struct WireRoomHandle *handle_out, struct String managerId, struct GameplayServerConfiguration configuration) {
+	pthread_mutex_lock(&pool_mutex);
 	uint16_t block = alloc[count];
 	if(rooms[block].idle == 0xffff)
 		if(wire_request_block(&rooms[block].handle, block))
@@ -74,6 +87,7 @@ _Bool pool_request_room(struct RoomHandle *room_out, struct WireRoomHandle *hand
 	room_out->high = rooms[room_out->block].high[room_out->sub];
 	rooms[room_out->block].idle &= rooms[room_out->block].idle - 1;
 	count += (rooms[room_out->block].idle == 0);
+	pthread_mutex_unlock(&pool_mutex);
 	return wire_room_open(*handle_out, managerId, configuration);
 }
 
@@ -83,14 +97,18 @@ void pool_room_close(struct RoomHandle room) {
 }
 
 void pool_room_close_notify(struct RoomHandle room) {
-	/*++rooms[room.block].high[room.sub];
+	pthread_mutex_lock(&pool_mutex);
+	#ifdef SCRAMBLE_CODES
+	++rooms[room.block].high[room.sub];
 	if(pool_room_code(room) > MAX_SERVER_CODE)
-		rooms[room.block].high[room.sub] = 0;*/
+		rooms[room.block].high[room.sub] = 0;
+	#endif
 	if(rooms[room.block].idle == 0)
 		alloc[--count] = room.block;
 	rooms[room.block].idle |= 1 << room.sub;
 	if(rooms[room.block].idle == 0xffff)
 		wire_block_release(rooms[room.block].handle);
+	pthread_mutex_unlock(&pool_mutex);
 }
 
 ServerCode pool_room_code(struct RoomHandle room) {
@@ -102,6 +120,9 @@ _Bool pool_find_room(ServerCode code, struct RoomHandle *room_out, struct WireRo
 	code >>= 4;
 	room_out->high = code / POOL_BLOCK_COUNT;
 	room_out->block = code - room_out->high * POOL_BLOCK_COUNT;
+	pthread_mutex_lock(&pool_mutex);
 	handle_out->block = rooms[room_out->block].handle;
-	return ((rooms[room_out->block].idle >> room_out->sub) & 1) || room_out->high != rooms[room_out->block].high[room_out->sub];
+	_Bool notFound = ((rooms[room_out->block].idle >> room_out->sub) & 1) || room_out->high != rooms[room_out->block].high[room_out->sub];
+	pthread_mutex_unlock(&pool_mutex);
+	return notFound;
 }
