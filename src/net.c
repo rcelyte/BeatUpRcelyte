@@ -258,7 +258,6 @@ _Bool net_init(struct NetContext *ctx, uint16_t port) {
 }
 
 void net_session_init(struct NetContext *ctx, struct NetSession *session, struct SS addr) {
-	session->version = PV_LEGACY_DEFAULT;
 	session->addr = addr;
 	session->encryptionState.initialized = 0;
 	net_keypair_init(&session->keys);
@@ -292,6 +291,7 @@ void net_session_reset(struct NetContext *ctx, struct NetSession *session) {
 	struct SS addr = session->addr;
 	net_session_free(session);
 	memset(session, 0, sizeof(*session));
+	session->version = PV_LEGACY_DEFAULT;
 	net_cookie(&ctx->ctr_drbg, session->cookie);
 	session->addr = addr;
 	session->lastKeepAlive = net_time();
