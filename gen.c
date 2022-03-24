@@ -100,7 +100,7 @@ _Bool read_word(const char **in, char *out) {
 }
 
 void read_expr(const char **s, char *out) {
-	while(alpha(**s) || numeric(**s) || **s == '.' || **s == '+' || **s == '-')
+	while(alpha(**s) || numeric(**s) || **s == '.' || **s == '+' || **s == '-' || **s == '*' || **s == '/')
 		*out++ = *(*s)++;
 	*out = 0;
 }
@@ -252,15 +252,17 @@ void parse_struct_entries(const char **in, const char *structName, uint32_t inde
 		} else {
 			char serialType[128], dataType[128], logType[128], name[128], length[128] = "out.";
 			uint32_t count = 0;
-			_Bool rangecheck = 0;
+			_Bool rangecheck = 0, lengthField = 0;
 			fieldwidth_t width = read_type_double(in, serialType, dataType, logType);
 			if(!skip_char_maybe(in, '\n')) {
 				if(skip_char_maybe(in, '[')) {
 					count = atoll(skip_number(in));
-					if(skip_char_maybe(in, ','))
-						read_expr(in, &length[4]), rangecheck = 1;
-					else
+					if(skip_char_maybe(in, ',')) {
+						lengthField = skip_char_maybe(in, '.');
+						read_expr(in, &length[lengthField ? 4 : 0]), rangecheck = 1;
+					} else {
 						sprintf(length, "%u", count);
+					}
 					skip_char(in, ']');
 				}
 				skip_char(in, ' ');
@@ -283,7 +285,10 @@ void parse_struct_entries(const char **in, const char *structName, uint32_t inde
 						char length_name[1024];
 						read_word((const char*[]){length}, length_name);
 						*des += sprintf(*tabs(des, outdent), "if(%s > %u) {\n", length, count);
-						*des += sprintf(*tabs(des, outdent + 1), "fprintf(stderr, \"Buffer overflow in read of %s.%s: %%u > %u\\n\", (uint32_t)%s), %s = 0, *pkt = _trap;\n", structName, name, count, length, length_name);
+						*des += sprintf(*tabs(des, outdent + 1), "uprintf(\"Buffer overflow in read of %s.%s: %%u > %u\\n\", (uint32_t)%s)", structName, name, count, length);
+						if(lengthField)
+							*des += sprintf(*des, ", %s = 0", length_name);
+						*des += sprintf(*des, ", *pkt = _trap;\n");
 						*des += sprintf(*tabs(des, outdent++), "} else {\n");
 					}
 					if(count && width == 8) {
@@ -309,7 +314,7 @@ void parse_struct_entries(const char **in, const char *structName, uint32_t inde
 				}
 
 				char *length_in = length;
-				if(rangecheck) {
+				if(rangecheck && lengthField) {
 					length_in = &length[1];
 					memcpy(length_in, "in.", 3);
 				}
@@ -436,7 +441,7 @@ struct EnumEntry parse_enum(struct HeaderData *header, char **source, const char
 		if(strstr(source_buf, fn) == 0) {
 			*source += sprintf(*source, "void pkt_log%s%s(struct PacketContext ctx, const char *name, char *buf, char *it, %s%s in) {", self.name, suffix, self.name, suffix);
 			if(start != buf_end)
-				*source += sprintf(*source, "\n\tfprintf(stderr, \"%%.*s%%s=%%u (%%s)\\n\", (uint32_t)(it - buf), buf, name, in, reflect(%s%s, in));\n", self.name, suffix);
+				*source += sprintf(*source, "\n\tuprintf(\"%%.*s%%s=%%u (%%s)\\n\", (uint32_t)(it - buf), buf, name, in, reflect(%s%s, in));\n", self.name, suffix);
 			*source += sprintf(*source, "}\n");
 		}
 	}
@@ -511,16 +516,19 @@ int main(int argc, char const *argv[]) {
 	};
 	write_fmt(&header_end.enums, "#ifndef PACKETS_H\n#define PACKETS_H\n\n");
 	write_warning(&header_end.enums);
+	write_fmt(&header_end.enums, "#include \"log.h\"\n");
 	write_fmt(&header_end.enums, "#include \"enum.h\"\n");
 	write_fmt(&header_end.enums, "#include <stdint.h>\n\n");
 	if(enableLog)
 		write_fmt(&header_end.enums, "#define PACKET_LOGGING_FUNCS\n\n");
 	write_fmt(&header_end.enums,
 		"struct PacketContext {\n"
-		"\tuint32_t netVersion;\n"
-		"\tuint32_t protocolVersion;\n"
+		"\tuint8_t netVersion;\n"
+		"\tuint8_t protocolVersion;\n"
+		"\tuint8_t windowSize;\n"
+		"\tuint8_t beatUpVersion;\n"
 		"};\n"
-		"#define PV_LEGACY_DEFAULT (struct PacketContext){11, 6}\n\n");
+		"#define PV_LEGACY_DEFAULT (struct PacketContext){11, 6, 64, 0}\n\n");
 
 	char source[524288], *source_end = source;
 	source_buf = source;

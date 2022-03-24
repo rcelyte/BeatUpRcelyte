@@ -11,8 +11,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#define lengthof(x) (sizeof(x)/sizeof(*x))
+#define lengthof(x) (sizeof(x)/sizeof(*(x)))
 
+#define MASTER_WINDOW_SIZE 64
 #define MASTER_SERIALIZE(pkt, session, mtype, stype, dtype, data) { \
 	pkt_writeNetPacketHeader(PV_LEGACY_DEFAULT, &resp_end, (struct NetPacketHeader){ \
 		.property = PacketProperty_UnconnectedMessage, \
@@ -40,8 +41,8 @@ struct MasterResendSparsePtr {
 };
 struct MasterResend {
 	uint32_t count;
-	struct MasterResendSparsePtr index[NET_WINDOW_SIZE];
-	struct MasterPacket data[NET_WINDOW_SIZE];
+	struct MasterResendSparsePtr index[MASTER_WINDOW_SIZE];
+	struct MasterPacket data[MASTER_WINDOW_SIZE];
 };
 struct MasterMultipartList {
 	struct MasterMultipartList *next;
@@ -81,7 +82,7 @@ static struct NetSession *master_onResolve(struct Context *ctx, struct SS addr, 
 	net_session_init(&ctx->net, &session->net, addr);
 	session->handshakeStep = 255;
 	session->resend.count = 0;
-	for(uint32_t i = 0; i < NET_WINDOW_SIZE; ++i)
+	for(uint32_t i = 0; i < MASTER_WINDOW_SIZE; ++i)
 		session->resend.index[i].data = i;
 	session->multipartList = NULL;
 	session->next = ctx->sessionList;
@@ -153,7 +154,7 @@ static _Bool master_handle_ack(struct MasterSession *session, struct MessageHead
 }
 
 static void master_net_send_reliable(struct NetContext *ctx, struct MasterSession *session, const uint8_t *buf, uint32_t len, uint32_t requestId, _Bool shouldSend, _Bool encrypt) {
-	if(session->resend.count < NET_WINDOW_SIZE) {
+	if(session->resend.count < MASTER_WINDOW_SIZE) {
 		struct MasterResendSparsePtr *p = &session->resend.index[session->resend.count++];
 		p->shouldSend = shouldSend;
 		p->encrypt = encrypt;

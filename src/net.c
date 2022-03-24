@@ -5,7 +5,7 @@
 #include <mbedtls/ecdh.h>
 #include <mbedtls/error.h>
 
-#define lengthof(x) (sizeof(x)/sizeof(*x))
+#define lengthof(x) (sizeof(x)/sizeof(*(x)))
 
 #ifdef WINDOWS
 #define SHUT_RDWR SD_BOTH
@@ -404,7 +404,7 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct
 		goto retry;
 	}
 	*pkt = head;
-	return &buf[size] - *pkt;
+	return &buf[size] - head;
 }
 void net_flush_merged(struct NetContext *ctx, struct NetSession *session) {
 	if(session->mergeData_end - session->mergeData > 3)

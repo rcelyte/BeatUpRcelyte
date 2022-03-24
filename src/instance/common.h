@@ -3,25 +3,27 @@
 
 #define LOAD_TIMEOUT 15
 
-#define lengthof(x) (sizeof(x)/sizeof(*x))
+#define lengthof(x) (sizeof(x)/sizeof(*(x)))
 #define indexof(a, e) ((e) - (a))
 #define String_eq(a, b) ((a).length == (b).length && memcmp((a).data, (b).data, (b).length) == 0)
+#define String_is(a, str) ((a).length == (lengthof(str) - 1) && memcmp((a).data, str, (lengthof(str) - 1)) == 0)
 
-#define SERIALIZE_RPC(ctx, pkt, mtype, dtype, data) { \
+#define SERIALIZE_SESSION(ctx, pkt, mtype, dtype, data) { \
 	SERIALIZE_CUSTOM(ctx, pkt, InternalMessageType_MultiplayerSession) { \
 		pkt_writeMultiplayerSessionMessageHeader(ctx, pkt, (struct MultiplayerSessionMessageHeader){ \
-			.type = MultiplayerSessionMessageType_##mtype##Rpc, \
+			.type = MultiplayerSessionMessageType_##mtype, \
 		}); \
-		pkt_write##mtype##RpcHeader(ctx, pkt, (struct mtype##RpcHeader){ \
-			.type = mtype##RpcType_##dtype, \
+		pkt_write##mtype##Header(ctx, pkt, (struct mtype##Header){ \
+			.type = mtype##Type_##dtype, \
 		}); \
 		pkt_write##dtype(ctx, pkt, data); \
 	} \
 }
 
 // TODO: explicit protocolVersion
-#define SERIALIZE_MENURPC(ctx, pkt, dtype, data) SERIALIZE_RPC(ctx, pkt, Menu, dtype, data)
-#define SERIALIZE_GAMEPLAYRPC(ctx, pkt, dtype, data) SERIALIZE_RPC(ctx, pkt, Gameplay, dtype, data)
+#define SERIALIZE_MENURPC(ctx, pkt, dtype, data) SERIALIZE_SESSION(ctx, pkt, MenuRpc, dtype, data)
+#define SERIALIZE_GAMEPLAYRPC(ctx, pkt, dtype, data) SERIALIZE_SESSION(ctx, pkt, GameplayRpc, dtype, data)
+#define SERIALIZE_BEATUP(ctx, pkt, dtype, data) SERIALIZE_SESSION(ctx, pkt, BeatUpMessage, dtype, data)
 
 #define CLEAR_BEATMAP (struct BeatmapIdentifierNetSerializable){{0}, {0}, 0}
 #define CLEAR_MODIFIERS (struct GameplayModifiers){EnergyType_Bar, 0, 0, 0, EnabledObstacleType_All, 0, 0, 0, 0, 0, 0, SongSpeed_Normal, 0, 0, 0, 0, 0}
@@ -36,12 +38,16 @@ enum ClientState {
 	ClientState_connected,
 };
 
-ENUM(uint8_t, ServerState, {
-	ServerState_Lobby,
-	ServerState_LoadingScene,
-	ServerState_LoadingSong,
-	ServerState_Game,
-})
+typedef uint8_t ServerState;
+enum ServerState {
+	ServerState_Lobby = 1 << 0,
+	ServerState_Downloading = 1 << 1,
+	ServerState_LoadingScene = 1 << 2,
+	ServerState_LoadingSong = 1 << 3,
+	ServerState_Gameplay = 1 << 4,
+	ServerState_Menu = ServerState_Lobby | ServerState_Downloading,
+	ServerState_Game = ServerState_LoadingScene | ServerState_LoadingSong | ServerState_Gameplay,
+};
 
 struct InstancePacket {
 	uint16_t len;
@@ -55,19 +61,20 @@ struct InstanceResendPacket {
 };
 struct ReliableChannel {
 	struct Ack ack;
+	_Bool sendAck;
 	uint16_t outboundSequence, inboundSequence;
 	uint16_t outboundWindowStart;
-	struct InstanceResendPacket resend[NET_WINDOW_SIZE];
+	struct InstanceResendPacket resend[NET_MAX_WINDOW_SIZE];
 	struct InstancePacketList *backlog;
 	struct InstancePacketList **backlogEnd;
 };
 struct ReliableUnorderedChannel {
 	struct ReliableChannel base;
-	_Bool earlyReceived[NET_WINDOW_SIZE];
+	_Bool earlyReceived[NET_MAX_WINDOW_SIZE];
 };
 struct ReliableOrderedChannel {
 	struct ReliableChannel base;
-	struct InstancePacket receivedPackets[NET_WINDOW_SIZE];
+	struct InstancePacket receivedPackets[NET_MAX_WINDOW_SIZE];
 };
 struct SequencedChannel {
 	struct Ack ack;

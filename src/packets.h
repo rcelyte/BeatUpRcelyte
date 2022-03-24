@@ -7,14 +7,17 @@
  * AUTO GENERATED; DO NOT TOUCH
  */
 
+#include "log.h"
 #include "enum.h"
 #include <stdint.h>
 
 struct PacketContext {
-	uint32_t netVersion;
-	uint32_t protocolVersion;
+	uint8_t netVersion;
+	uint8_t protocolVersion;
+	uint8_t windowSize;
+	uint8_t beatUpVersion;
 };
-#define PV_LEGACY_DEFAULT (struct PacketContext){11, 6}
+#define PV_LEGACY_DEFAULT (struct PacketContext){11, 6, 64, 0}
 
 ENUM(uint8_t, Platform, {
 	Platform_Test,
@@ -297,6 +300,13 @@ ENUM(uint8_t, SliderMidAnchorMode, {
 	SliderMidAnchorMode_Clockwise,
 	SliderMidAnchorMode_CounterClockwise,
 })
+ENUM(uint8_t, BeatUpMessageType, {
+	BeatUpMessageType_RecommendPreview,
+	BeatUpMessageType_SetCanShareBeatmap,
+	BeatUpMessageType_DirectDownloadInfo,
+	BeatUpMessageType_LevelFragmentRequest,
+	BeatUpMessageType_LevelFragment,
+})
 ENUM(uint8_t, MenuRpcType, {
 	MenuRpcType_SetPlayersMissingEntitlementsToLevel,
 	MenuRpcType_GetIsEntitledToLevel,
@@ -362,6 +372,7 @@ ENUM(uint8_t, MultiplayerSessionMessageType, {
 	MultiplayerSessionMessageType_NodePoseSyncStateDelta,
 	MultiplayerSessionMessageType_ScoreSyncStateDelta,
 	MultiplayerSessionMessageType_MpCore = 100,
+	MultiplayerSessionMessageType_BeatUpMessage = 101,
 })
 ENUM(int32_t, MpPlatform, {
 	MpPlatform_Unknown,
@@ -431,7 +442,7 @@ struct BaseMasterServerAcknowledgeMessage {
 };
 struct ByteArrayNetSerializable {
 	uint32_t length;
-	uint8_t data[4096];
+	uint8_t data[8192];
 };
 struct AuthenticationToken {
 	Platform platform;
@@ -485,7 +496,7 @@ struct Channeled {
 struct Ack {
 	uint16_t sequence;
 	DeliveryMethod channelId;
-	uint8_t data[8];
+	uint8_t data[16];
 	uint8_t _pad0;
 };
 struct Ping {
@@ -524,6 +535,15 @@ struct MtuOk {
 	uint32_t newMtu0;
 	uint8_t pad[1423];
 	uint32_t newMtu1;
+};
+struct ModConnectHeader {
+	uint32_t length;
+	struct String name;
+};
+struct BeatUpConnectHeader {
+	uint32_t protocolId;
+	uint32_t windowSize;
+	_Bool directDownloads;
 };
 struct NetPacketHeader {
 	PacketProperty property;
@@ -845,6 +865,49 @@ struct SliderSpawnInfoNetSerializable {
 	float jumpDuration;
 	float rotation;
 };
+struct NetworkPreviewBeatmapLevel {
+	struct LongString levelId;
+	struct LongString songName;
+	struct LongString songSubName;
+	struct LongString songAuthorName;
+	struct LongString levelAuthorName;
+	float beatsPerMinute;
+	float songTimeOffset;
+	float shuffle;
+	float shufflePeriod;
+	float previewStartTime;
+	float previewDuration;
+	float songDuration;
+	struct ByteArrayNetSerializable cover;
+};
+struct RecommendPreview {
+	struct NetworkPreviewBeatmapLevel preview;
+};
+struct SetCanShareBeatmap {
+	struct LongString levelId;
+	struct String levelHash;
+	uint64_t fileSize;
+	_Bool canShare;
+};
+struct DirectDownloadInfo {
+	struct LongString levelId;
+	struct String levelHash;
+	uint64_t fileSize;
+	uint8_t count;
+	struct String sourcePlayers[128];
+};
+struct LevelFragmentRequest {
+	uint64_t offset;
+	uint16_t maxSize;
+};
+struct LevelFragment {
+	uint64_t offset;
+	uint16_t size;
+	uint8_t data[1500];
+};
+struct BeatUpMessageHeader {
+	BeatUpMessageType type;
+};
 struct SetPlayersMissingEntitlementsToLevel {
 	struct RemoteProcedureCall base;
 	struct RemoteProcedureCallFlags flags;
@@ -1055,7 +1118,7 @@ struct ScoreSyncStateDelta {
 	struct StandardScoreSyncState delta;
 };
 struct MpCore {
-	struct String packetType;
+	struct String type;
 };
 struct MultiplayerSessionMessageHeader {
 	MultiplayerSessionMessageType type;
@@ -1161,7 +1224,7 @@ struct SerializeHeader {
 			serial.type = stype; \
 			*pkt = start, start = NULL; \
 			pkt_writeSerializeHeader(ctx, pkt, serial); \
-			fprintf(stderr, "serialize " #stype "\n"); \
+			/*uprintf("serialize " #stype "\n");*/ \
 			goto CONCAT0(_body_, __LINE__); \
 		} else CONCAT0(_body_, __LINE__):
 uint8_t pkt_readUint8(struct PacketContext ctx, const uint8_t **pkt);
@@ -1240,6 +1303,8 @@ void pkt_writeConnectAccept(struct PacketContext ctx, uint8_t **pkt, struct Conn
 struct Disconnect pkt_readDisconnect(struct PacketContext ctx, const uint8_t **pkt);
 struct MtuCheck pkt_readMtuCheck(struct PacketContext ctx, const uint8_t **pkt);
 void pkt_writeMtuOk(struct PacketContext ctx, uint8_t **pkt, struct MtuOk in);
+struct ModConnectHeader pkt_readModConnectHeader(struct PacketContext ctx, const uint8_t **pkt);
+struct BeatUpConnectHeader pkt_readBeatUpConnectHeader(struct PacketContext ctx, const uint8_t **pkt);
 struct NetPacketHeader pkt_readNetPacketHeader(struct PacketContext ctx, const uint8_t **pkt);
 void pkt_writeNetPacketHeader(struct PacketContext ctx, uint8_t **pkt, struct NetPacketHeader in);
 struct FragmentedHeader pkt_readFragmentedHeader(struct PacketContext ctx, const uint8_t **pkt);
@@ -1293,6 +1358,17 @@ struct StandardScoreSyncState pkt_readStandardScoreSyncState(struct PacketContex
 struct NoteSpawnInfoNetSerializable pkt_readNoteSpawnInfoNetSerializable(struct PacketContext ctx, const uint8_t **pkt);
 struct ObstacleSpawnInfoNetSerializable pkt_readObstacleSpawnInfoNetSerializable(struct PacketContext ctx, const uint8_t **pkt);
 struct SliderSpawnInfoNetSerializable pkt_readSliderSpawnInfoNetSerializable(struct PacketContext ctx, const uint8_t **pkt);
+struct NetworkPreviewBeatmapLevel pkt_readNetworkPreviewBeatmapLevel(struct PacketContext ctx, const uint8_t **pkt);
+void pkt_writeNetworkPreviewBeatmapLevel(struct PacketContext ctx, uint8_t **pkt, struct NetworkPreviewBeatmapLevel in);
+struct RecommendPreview pkt_readRecommendPreview(struct PacketContext ctx, const uint8_t **pkt);
+void pkt_writeRecommendPreview(struct PacketContext ctx, uint8_t **pkt, struct RecommendPreview in);
+struct SetCanShareBeatmap pkt_readSetCanShareBeatmap(struct PacketContext ctx, const uint8_t **pkt);
+void pkt_writeDirectDownloadInfo(struct PacketContext ctx, uint8_t **pkt, struct DirectDownloadInfo in);
+struct LevelFragmentRequest pkt_readLevelFragmentRequest(struct PacketContext ctx, const uint8_t **pkt);
+struct LevelFragment pkt_readLevelFragment(struct PacketContext ctx, const uint8_t **pkt);
+void pkt_writeLevelFragment(struct PacketContext ctx, uint8_t **pkt, struct LevelFragment in);
+struct BeatUpMessageHeader pkt_readBeatUpMessageHeader(struct PacketContext ctx, const uint8_t **pkt);
+void pkt_writeBeatUpMessageHeader(struct PacketContext ctx, uint8_t **pkt, struct BeatUpMessageHeader in);
 void pkt_writeSetPlayersMissingEntitlementsToLevel(struct PacketContext ctx, uint8_t **pkt, struct SetPlayersMissingEntitlementsToLevel in);
 void pkt_writeGetIsEntitledToLevel(struct PacketContext ctx, uint8_t **pkt, struct GetIsEntitledToLevel in);
 struct SetIsEntitledToLevel pkt_readSetIsEntitledToLevel(struct PacketContext ctx, const uint8_t **pkt);

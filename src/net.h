@@ -24,7 +24,7 @@ typedef int socklen_t;
 
 #define NET_MAX_PKT_SIZE 1432
 #define NET_MAX_SEQUENCE 32768
-#define NET_WINDOW_SIZE 64
+#define NET_MAX_WINDOW_SIZE 64
 #define NET_RESEND_DELAY 27
 
 struct SS {

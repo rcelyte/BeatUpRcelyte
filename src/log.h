@@ -3,6 +3,10 @@
 #include <stdarg.h>
 #include <string.h>
 
+#ifndef LOG_PREFIX
+#define LOG_PREFIX "[%s] ", __builtin_strrchr("/"__BASE_FILE__, '/') + 1
+#endif
+
 static void uprintf(const char *format, ...) {
 	static _Bool carry = 1;
 	va_list args0, args1;
@@ -14,7 +18,7 @@ static void uprintf(const char *format, ...) {
 	va_end(args1);
 	for(const char *end, *it = buf; it < &buf[sizeof(buf) - 1]; it = end) {
 		if(carry)
-			printf("[%s] ", __builtin_strrchr("/"__BASE_FILE__, '/') + 1);
+			printf(LOG_PREFIX);
 		end = strchr(it, '\n');
 		if(end)
 			++end, carry = 1;

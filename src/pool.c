@@ -8,7 +8,7 @@
 #define MAX_SERVER_CODE 62193780
 #define POOL_BLOCK_COUNT ((MAX_SERVER_CODE+256*16) / (256*16))
 
-#define lengthof(x) (sizeof(x)/sizeof(*x))
+#define lengthof(x) (sizeof(x)/sizeof(*(x)))
 
 struct RoomBlockPtr {
 	struct WireBlockHandle handle;

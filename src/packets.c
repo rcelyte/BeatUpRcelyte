@@ -44,7 +44,7 @@ uint64_t pkt_readVarUint64(struct PacketContext ctx, const uint8_t **pkt) {
 	uint8_t shift = 0;
 	do {
 		if(shift >= 64) {
-			fprintf(stderr, "Buffer overflow in read of VarUint\n");
+			uprintf("Buffer overflow in read of VarUint\n");
 			*pkt = _trap;
 			return 0;
 		}
@@ -150,21 +150,21 @@ void pkt_writeFloat64(struct PacketContext ctx, uint8_t **pkt, double v) {
 #define pkt_logVarUint32 pkt_logUint32
 #define pkt_logVarInt32 pkt_logInt32
 static void pkt_logUint64(struct PacketContext ctx, const char *name, char *buf, char *it, uint64_t v) {
-	fprintf(stderr, "%.*s%s=%" PRIu64 "\n", (uint32_t)(it - buf), buf, name, v);
+	uprintf("%.*s%s=%" PRIu64 "\n", (uint32_t)(it - buf), buf, name, v);
 }
 static void pkt_logInt64(struct PacketContext ctx, const char *name, char *buf, char *it, int64_t v) {
-	fprintf(stderr, "%.*s%s=%" PRId64 "\n", (uint32_t)(it - buf), buf, name, v);
+	uprintf("%.*s%s=%" PRId64 "\n", (uint32_t)(it - buf), buf, name, v);
 }
 #define pkt_logInt8Array(ctx, name, buf, it, in, count) pkt_logUint8Array(ctx, name, buf, it, (const uint8_t*)in, count)
 static void pkt_logUint8Array(struct PacketContext ctx, const char *name, char *buf, char *it, const uint8_t *in, uint32_t count) {
-	fprintf(stderr, "%.*s%s=", (uint32_t)(it - buf), buf, name);
+	uprintf("%.*s%s=", (uint32_t)(it - buf), buf, name);
 	for(uint32_t i = 0; i < count; ++i)
-		fprintf(stderr, "%02hhx", in[i]);
-	fprintf(stderr, "\n");
+		uprintf("%02hhx", in[i]);
+	uprintf("\n");
 }
 #define pkt_logFloat32 pkt_logFloat64
 static void pkt_logFloat64(struct PacketContext ctx, const char *name, char *buf, char *it, double v) {
-	fprintf(stderr, "%.*s%s=%f\n", (uint32_t)(it - buf), buf, name, v);
+	uprintf("%.*s%s=%f\n", (uint32_t)(it - buf), buf, name, v);
 }
 struct PacketEncryptionLayer pkt_readPacketEncryptionLayer(struct PacketContext ctx, const uint8_t **pkt) {
 	struct PacketEncryptionLayer out;
@@ -221,8 +221,8 @@ void pkt_writeBaseMasterServerAcknowledgeMessage(struct PacketContext ctx, uint8
 struct ByteArrayNetSerializable pkt_readByteArrayNetSerializable(struct PacketContext ctx, const uint8_t **pkt) {
 	struct ByteArrayNetSerializable out;
 	out.length = pkt_readVarUint32(ctx, pkt);
-	if(out.length > 4096) {
-		fprintf(stderr, "Buffer overflow in read of ByteArrayNetSerializable.data: %u > 4096\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
+	if(out.length > 8192) {
+		uprintf("Buffer overflow in read of ByteArrayNetSerializable.data: %u > 8192\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
 	} else {
 		pkt_readUint8Array(pkt, out.data, out.length);
 	}
@@ -245,7 +245,7 @@ struct String pkt_readString(struct PacketContext ctx, const uint8_t **pkt) {
 		out.length = pkt_readUint32(ctx, pkt);
 	}
 	if(out.length > 60) {
-		fprintf(stderr, "Buffer overflow in read of String.data: %u > 60\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
+		uprintf("Buffer overflow in read of String.data: %u > 60\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
 	} else {
 		pkt_readInt8Array(pkt, out.data, out.length);
 	}
@@ -264,7 +264,7 @@ struct LongString pkt_readLongString(struct PacketContext ctx, const uint8_t **p
 		out.length = pkt_readUint32(ctx, pkt);
 	}
 	if(out.length > 4096) {
-		fprintf(stderr, "Buffer overflow in read of LongString.data: %u > 4096\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
+		uprintf("Buffer overflow in read of LongString.data: %u > 4096\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
 	} else {
 		pkt_readInt8Array(pkt, out.data, out.length);
 	}
@@ -286,10 +286,10 @@ void pkt_writeLongString(struct PacketContext ctx, uint8_t **pkt, struct LongStr
 }
 #ifdef PACKET_LOGGING_FUNCS
 static void pkt_logString(struct PacketContext ctx, const char *name, char *buf, char *it, struct String in) {
-	fprintf(stderr, "%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
+	uprintf("%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
 }
 static void pkt_logLongString(struct PacketContext ctx, const char *name, char *buf, char *it, struct LongString in) {
-	fprintf(stderr, "%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
+	uprintf("%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
 }
 #endif
 struct AuthenticationToken pkt_readAuthenticationToken(struct PacketContext ctx, const uint8_t **pkt) {
@@ -308,7 +308,7 @@ struct BaseMasterServerMultipartMessage pkt_readBaseMasterServerMultipartMessage
 	out.length = pkt_readVarUint32(ctx, pkt);
 	out.totalLength = pkt_readVarUint32(ctx, pkt);
 	if(out.length > 384) {
-		fprintf(stderr, "Buffer overflow in read of BaseMasterServerMultipartMessage.data: %u > 384\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
+		uprintf("Buffer overflow in read of BaseMasterServerMultipartMessage.data: %u > 384\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
 	} else {
 		pkt_readUint8Array(pkt, out.data, out.length);
 	}
@@ -397,10 +397,10 @@ static void pkt_writeServerCode(struct PacketContext ctx, uint8_t **pkt, ServerC
 }
 #ifdef PACKET_LOGGING_FUNCS
 static void pkt_logServerCode(struct PacketContext ctx, const char *name, char *buf, char *it, ServerCode in) {
-	fprintf(stderr, "%.*s%s=%u (\"", (uint32_t)(it - buf), buf, name, in);
+	uprintf("%.*s%s=%u (\"", (uint32_t)(it - buf), buf, name, in);
 	for(; in; in /= 36)
-		fprintf(stderr, "%c", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--in % 36]);
-	fprintf(stderr, "\")\n");
+		uprintf("%c", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--in % 36]);
+	uprintf("\")\n");
 }
 #endif
 void pkt_writeIPEndPoint(struct PacketContext ctx, uint8_t **pkt, struct IPEndPoint in) {
@@ -431,7 +431,11 @@ struct Ack pkt_readAck(struct PacketContext ctx, const uint8_t **pkt) {
 	out.sequence = pkt_readUint16(ctx, pkt);
 	out.channelId = pkt_readUint8(ctx, pkt);
 	if(out.channelId % 2 == 0) {
-		pkt_readUint8Array(pkt, out.data, 8);
+		if(ctx.windowSize/8 > 16) {
+			uprintf("Buffer overflow in read of Ack.data: %u > 16\n", (uint32_t)ctx.windowSize/8), *pkt = _trap;
+		} else {
+			pkt_readUint8Array(pkt, out.data, ctx.windowSize/8);
+		}
 		out._pad0 = pkt_readUint8(ctx, pkt);
 	}
 	return out;
@@ -440,7 +444,7 @@ void pkt_writeAck(struct PacketContext ctx, uint8_t **pkt, struct Ack in) {
 	pkt_writeUint16(ctx, pkt, in.sequence);
 	pkt_writeUint8(ctx, pkt, in.channelId);
 	if(in.channelId % 2 == 0) {
-		pkt_writeUint8Array(ctx, pkt, in.data, 8);
+		pkt_writeUint8Array(ctx, pkt, in.data, ctx.windowSize/8);
 		pkt_writeUint8(ctx, pkt, in._pad0);
 	}
 }
@@ -471,7 +475,7 @@ struct ConnectRequest pkt_readConnectRequest(struct PacketContext ctx, const uin
 	}
 	out.addrlen = pkt_readUint8(ctx, pkt);
 	if(out.addrlen > 38) {
-		fprintf(stderr, "Buffer overflow in read of ConnectRequest.address: %u > 38\n", (uint32_t)out.addrlen), out.addrlen = 0, *pkt = _trap;
+		uprintf("Buffer overflow in read of ConnectRequest.address: %u > 38\n", (uint32_t)out.addrlen), out.addrlen = 0, *pkt = _trap;
 	} else {
 		pkt_readUint8Array(pkt, out.address, out.addrlen);
 	}
@@ -498,7 +502,7 @@ struct MtuCheck pkt_readMtuCheck(struct PacketContext ctx, const uint8_t **pkt) 
 	struct MtuCheck out;
 	out.newMtu0 = pkt_readUint32(ctx, pkt);
 	if(out.newMtu0-9 > 1423) {
-		fprintf(stderr, "Buffer overflow in read of MtuCheck.pad: %u > 1423\n", (uint32_t)out.newMtu0-9), out.newMtu0 = 0, *pkt = _trap;
+		uprintf("Buffer overflow in read of MtuCheck.pad: %u > 1423\n", (uint32_t)out.newMtu0-9), out.newMtu0 = 0, *pkt = _trap;
 	} else {
 		pkt_readUint8Array(pkt, out.pad, out.newMtu0-9);
 	}
@@ -509,6 +513,19 @@ void pkt_writeMtuOk(struct PacketContext ctx, uint8_t **pkt, struct MtuOk in) {
 	pkt_writeUint32(ctx, pkt, in.newMtu0);
 	pkt_writeUint8Array(ctx, pkt, in.pad, in.newMtu0-9);
 	pkt_writeUint32(ctx, pkt, in.newMtu1);
+}
+struct ModConnectHeader pkt_readModConnectHeader(struct PacketContext ctx, const uint8_t **pkt) {
+	struct ModConnectHeader out;
+	out.length = pkt_readVarUint32(ctx, pkt);
+	out.name = pkt_readString(ctx, pkt);
+	return out;
+}
+struct BeatUpConnectHeader pkt_readBeatUpConnectHeader(struct PacketContext ctx, const uint8_t **pkt) {
+	struct BeatUpConnectHeader out;
+	out.protocolId = pkt_readUint32(ctx, pkt);
+	out.windowSize = pkt_readUint32(ctx, pkt);
+	out.directDownloads = pkt_readUint8(ctx, pkt);
+	return out;
 }
 struct NetPacketHeader pkt_readNetPacketHeader(struct PacketContext ctx, const uint8_t **pkt) {
 	struct NetPacketHeader out;
@@ -1045,6 +1062,92 @@ struct SliderSpawnInfoNetSerializable pkt_readSliderSpawnInfoNetSerializable(str
 	out.rotation = pkt_readFloat32(ctx, pkt);
 	return out;
 }
+struct NetworkPreviewBeatmapLevel pkt_readNetworkPreviewBeatmapLevel(struct PacketContext ctx, const uint8_t **pkt) {
+	struct NetworkPreviewBeatmapLevel out;
+	out.levelId = pkt_readLongString(ctx, pkt);
+	out.songName = pkt_readLongString(ctx, pkt);
+	out.songSubName = pkt_readLongString(ctx, pkt);
+	out.songAuthorName = pkt_readLongString(ctx, pkt);
+	out.levelAuthorName = pkt_readLongString(ctx, pkt);
+	out.beatsPerMinute = pkt_readFloat32(ctx, pkt);
+	out.songTimeOffset = pkt_readFloat32(ctx, pkt);
+	out.shuffle = pkt_readFloat32(ctx, pkt);
+	out.shufflePeriod = pkt_readFloat32(ctx, pkt);
+	out.previewStartTime = pkt_readFloat32(ctx, pkt);
+	out.previewDuration = pkt_readFloat32(ctx, pkt);
+	out.songDuration = pkt_readFloat32(ctx, pkt);
+	out.cover = pkt_readByteArrayNetSerializable(ctx, pkt);
+	return out;
+}
+void pkt_writeNetworkPreviewBeatmapLevel(struct PacketContext ctx, uint8_t **pkt, struct NetworkPreviewBeatmapLevel in) {
+	pkt_writeLongString(ctx, pkt, in.levelId);
+	pkt_writeLongString(ctx, pkt, in.songName);
+	pkt_writeLongString(ctx, pkt, in.songSubName);
+	pkt_writeLongString(ctx, pkt, in.songAuthorName);
+	pkt_writeLongString(ctx, pkt, in.levelAuthorName);
+	pkt_writeFloat32(ctx, pkt, in.beatsPerMinute);
+	pkt_writeFloat32(ctx, pkt, in.songTimeOffset);
+	pkt_writeFloat32(ctx, pkt, in.shuffle);
+	pkt_writeFloat32(ctx, pkt, in.shufflePeriod);
+	pkt_writeFloat32(ctx, pkt, in.previewStartTime);
+	pkt_writeFloat32(ctx, pkt, in.previewDuration);
+	pkt_writeFloat32(ctx, pkt, in.songDuration);
+	pkt_writeByteArrayNetSerializable(ctx, pkt, in.cover);
+}
+struct RecommendPreview pkt_readRecommendPreview(struct PacketContext ctx, const uint8_t **pkt) {
+	struct RecommendPreview out;
+	out.preview = pkt_readNetworkPreviewBeatmapLevel(ctx, pkt);
+	return out;
+}
+void pkt_writeRecommendPreview(struct PacketContext ctx, uint8_t **pkt, struct RecommendPreview in) {
+	pkt_writeNetworkPreviewBeatmapLevel(ctx, pkt, in.preview);
+}
+struct SetCanShareBeatmap pkt_readSetCanShareBeatmap(struct PacketContext ctx, const uint8_t **pkt) {
+	struct SetCanShareBeatmap out;
+	out.levelId = pkt_readLongString(ctx, pkt);
+	out.levelHash = pkt_readString(ctx, pkt);
+	out.fileSize = pkt_readVarUint64(ctx, pkt);
+	out.canShare = pkt_readUint8(ctx, pkt);
+	return out;
+}
+void pkt_writeDirectDownloadInfo(struct PacketContext ctx, uint8_t **pkt, struct DirectDownloadInfo in) {
+	pkt_writeLongString(ctx, pkt, in.levelId);
+	pkt_writeString(ctx, pkt, in.levelHash);
+	pkt_writeVarUint64(ctx, pkt, in.fileSize);
+	pkt_writeUint8(ctx, pkt, in.count);
+	for(uint32_t i = 0; i < in.count; ++i)
+		pkt_writeString(ctx, pkt, in.sourcePlayers[i]);
+}
+struct LevelFragmentRequest pkt_readLevelFragmentRequest(struct PacketContext ctx, const uint8_t **pkt) {
+	struct LevelFragmentRequest out;
+	out.offset = pkt_readVarUint64(ctx, pkt);
+	out.maxSize = pkt_readUint16(ctx, pkt);
+	return out;
+}
+struct LevelFragment pkt_readLevelFragment(struct PacketContext ctx, const uint8_t **pkt) {
+	struct LevelFragment out;
+	out.offset = pkt_readVarUint64(ctx, pkt);
+	out.size = pkt_readUint16(ctx, pkt);
+	if(out.size > 1500) {
+		uprintf("Buffer overflow in read of LevelFragment.data: %u > 1500\n", (uint32_t)out.size), out.size = 0, *pkt = _trap;
+	} else {
+		pkt_readUint8Array(pkt, out.data, out.size);
+	}
+	return out;
+}
+void pkt_writeLevelFragment(struct PacketContext ctx, uint8_t **pkt, struct LevelFragment in) {
+	pkt_writeVarUint64(ctx, pkt, in.offset);
+	pkt_writeUint16(ctx, pkt, in.size);
+	pkt_writeUint8Array(ctx, pkt, in.data, in.size);
+}
+struct BeatUpMessageHeader pkt_readBeatUpMessageHeader(struct PacketContext ctx, const uint8_t **pkt) {
+	struct BeatUpMessageHeader out;
+	out.type = pkt_readUint8(ctx, pkt);
+	return out;
+}
+void pkt_writeBeatUpMessageHeader(struct PacketContext ctx, uint8_t **pkt, struct BeatUpMessageHeader in) {
+	pkt_writeUint8(ctx, pkt, in.type);
+}
 void pkt_writeSetPlayersMissingEntitlementsToLevel(struct PacketContext ctx, uint8_t **pkt, struct SetPlayersMissingEntitlementsToLevel in) {
 	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
 	pkt_writeRemoteProcedureCallFlags(ctx, pkt, in.flags);
@@ -1428,7 +1531,7 @@ struct ScoreSyncStateDelta pkt_readScoreSyncStateDelta(struct PacketContext ctx,
 }
 struct MpCore pkt_readMpCore(struct PacketContext ctx, const uint8_t **pkt) {
 	struct MpCore out;
-	out.packetType = pkt_readString(ctx, pkt);
+	out.type = pkt_readString(ctx, pkt);
 	return out;
 }
 struct MultiplayerSessionMessageHeader pkt_readMultiplayerSessionMessageHeader(struct PacketContext ctx, const uint8_t **pkt) {
@@ -1550,7 +1653,7 @@ void pkt_writeChangeCipherSpecRequest(struct PacketContext ctx, uint8_t **pkt, s
 	pkt_writeBaseMasterServerReliableResponse(ctx, pkt, in.base);
 }
 void pkt_logMessageType(struct PacketContext ctx, const char *name, char *buf, char *it, MessageType in) {
-	fprintf(stderr, "%.*s%s=%u (%s)\n", (uint32_t)(it - buf), buf, name, in, reflect(MessageType, in));
+	uprintf("%.*s%s=%u (%s)\n", (uint32_t)(it - buf), buf, name, in, reflect(MessageType, in));
 }
 struct MessageHeader pkt_readMessageHeader(struct PacketContext ctx, const uint8_t **pkt) {
 	struct MessageHeader out;

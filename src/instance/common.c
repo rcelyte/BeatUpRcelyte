@@ -39,7 +39,7 @@ void instance_channels_free(struct Channels *channels) {
 }
 
 static void resend_add(struct PacketContext version, struct ReliableChannel *channel, const uint8_t *buf, uint32_t len, DeliveryMethod method) {
-	struct InstanceResendPacket *resend = &channel->resend[channel->outboundSequence % NET_WINDOW_SIZE];
+	struct InstanceResendPacket *resend = &channel->resend[channel->outboundSequence % version.windowSize];
 	resend->timeStamp = net_time() - NET_RESEND_DELAY;
 	uint8_t *data_end = resend->data;
 	pkt_writeNetPacketHeader(version, &data_end, (struct NetPacketHeader){PacketProperty_Channeled, 0, 0});
@@ -56,13 +56,13 @@ static void resend_add(struct PacketContext version, struct ReliableChannel *cha
 	channel->outboundSequence = (channel->outboundSequence + 1) % NET_MAX_SEQUENCE;
 }
 
-void instance_send_channeled(struct PacketContext version, struct Channels *channels, const uint8_t *buf, uint32_t len, DeliveryMethod method) {
-	if(method != DeliveryMethod_ReliableOrdered) {
-		uprintf("instance_send_channeled(DeliveryMethod_%s) not implemented\n", reflect(DeliveryMethod, method));
+void instance_send_channeled(struct PacketContext version, struct Channels *channels, const uint8_t *buf, uint32_t len, DeliveryMethod channelId) {
+	if(channelId != DeliveryMethod_ReliableOrdered) {
+		uprintf("instance_send_channeled(DeliveryMethod_%s) not implemented\n", reflect(DeliveryMethod, channelId));
 		abort();
 	}
 	struct ReliableChannel *channel = &channels->ro.base;
-	if(RelativeSequenceNumber(channel->outboundSequence, channel->outboundWindowStart) >= NET_WINDOW_SIZE) {
+	if(RelativeSequenceNumber(channel->outboundSequence, channel->outboundWindowStart) >= version.windowSize) {
 		*channels->ro.base.backlogEnd = malloc(sizeof(struct InstancePacketList));
 		if(!*channels->ro.base.backlogEnd) {
 			uprintf("alloc error\n");
@@ -73,7 +73,7 @@ void instance_send_channeled(struct PacketContext version, struct Channels *chan
 		(*channels->ro.base.backlogEnd)->pkt.len = len;
 		channels->ro.base.backlogEnd = &(*channels->ro.base.backlogEnd)->next;
 	} else {
-		resend_add(version, channel, buf, len, method);
+		resend_add(version, channel, buf, len, channelId);
 	}
 }
 
@@ -92,9 +92,9 @@ void handle_Ack(struct NetSession *session, struct Channels *channels, const uin
 		return;
 	}
 	for(uint16_t sequence = channel->outboundWindowStart, end = channel->outboundSequence; sequence != end; sequence = (sequence + 1) % NET_MAX_SEQUENCE) {
-		if(RelativeSequenceNumber(sequence, ack.sequence) >= NET_WINDOW_SIZE)
+		if(RelativeSequenceNumber(sequence, ack.sequence) >= session->version.windowSize)
 			break;
-		uint16_t pendingIdx = sequence % NET_WINDOW_SIZE;
+		uint16_t pendingIdx = sequence % session->version.windowSize;
 		if((ack.data[pendingIdx / bitsize(*ack.data)] >> (pendingIdx % bitsize(*ack.data))) & 1)
 			channel->resend[pendingIdx].len = 0;
 		if(channel->resend[pendingIdx].len || sequence != channel->outboundWindowStart)
@@ -178,20 +178,21 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 	switch(channeled.channelId) {
 		case DeliveryMethod_ReliableUnordered: channel = &channels->ru.base;
 		case DeliveryMethod_ReliableOrdered: {
-			if(RelativeSequenceNumber(channeled.sequence, channel->inboundSequence) > NET_WINDOW_SIZE)
+			if(RelativeSequenceNumber(channeled.sequence, channel->inboundSequence) > session->version.windowSize)
 				break;
 			int32_t delta = RelativeSequenceNumber(channeled.sequence, channel->ack.sequence);
-			if(delta < 0 || delta >= NET_WINDOW_SIZE * 2)
+			if(delta < 0 || delta >= session->version.windowSize * 2)
 				break;
-			if(delta >= NET_WINDOW_SIZE) {
-				uint16_t newWindowStart = (channel->ack.sequence + delta - NET_WINDOW_SIZE + 1) % NET_MAX_SEQUENCE;
+			if(delta >= session->version.windowSize) {
+				uint16_t newWindowStart = (channel->ack.sequence + delta - session->version.windowSize + 1) % NET_MAX_SEQUENCE;
 				while(channel->ack.sequence != newWindowStart) {
-					uint16_t ackIdx = channel->ack.sequence % NET_WINDOW_SIZE;
+					uint16_t ackIdx = channel->ack.sequence % session->version.windowSize;
 					channel->ack.data[ackIdx / bitsize(*channel->ack.data)] &= ~(1 << (ackIdx % bitsize(*channel->ack.data)));
 					channel->ack.sequence = (channel->ack.sequence + 1) % NET_MAX_SEQUENCE;
 				}
 			}
-			uint16_t ackIdx = channeled.sequence % NET_WINDOW_SIZE;
+			channel->sendAck = 1;
+			uint16_t ackIdx = channeled.sequence % session->version.windowSize;
 			if(channel->ack.data[ackIdx / bitsize(*channel->ack.data)] & (1 << (ackIdx % bitsize(*channel->ack.data))))
 				break;
 			channel->ack.data[ackIdx / bitsize(*channel->ack.data)] |= 1 << (ackIdx % bitsize(*channel->ack.data));
@@ -199,8 +200,8 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 				process_Reliable(handler, session, channels, p_ctx, p_room, p_session, data, end, channeled.channelId, isFragmented);
 				channel->inboundSequence = (channel->inboundSequence + 1) % NET_MAX_SEQUENCE;
 				if(channeled.channelId == DeliveryMethod_ReliableOrdered) {
-					while(channels->ro.receivedPackets[channel->inboundSequence % NET_WINDOW_SIZE].len) {
-						struct InstancePacket *ipkt = &channels->ro.receivedPackets[channel->inboundSequence % NET_WINDOW_SIZE];
+					while(channels->ro.receivedPackets[channel->inboundSequence % session->version.windowSize].len) {
+						struct InstancePacket *ipkt = &channels->ro.receivedPackets[channel->inboundSequence % session->version.windowSize];
 						const uint8_t *const pkt = ipkt->data, *pkt_it = ipkt->data;
 						const uint8_t *const pkt_end = &pkt[ipkt->len];
 						process_Reliable(handler, session, channels, p_ctx, p_room, p_session, &pkt_it, pkt_end, DeliveryMethod_ReliableOrdered, ipkt->isFragmented);
@@ -210,8 +211,8 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 						channel->inboundSequence = (channel->inboundSequence + 1) % NET_MAX_SEQUENCE;
 					}
 				} else {
-					while(channels->ru.earlyReceived[channel->inboundSequence % NET_WINDOW_SIZE]) {
-						channels->ru.earlyReceived[channel->inboundSequence % NET_WINDOW_SIZE] = 0;
+					while(channels->ru.earlyReceived[channel->inboundSequence % session->version.windowSize]) {
+						channels->ru.earlyReceived[channel->inboundSequence % session->version.windowSize] = 0;
 						channel->inboundSequence = (channel->inboundSequence + 1) % NET_MAX_SEQUENCE;
 					}
 				}
@@ -301,8 +302,7 @@ void try_resend(struct NetContext *net, struct NetSession *session, struct Insta
 	if(p->len == 0 || currentTime - p->timeStamp < NET_RESEND_DELAY)
 		return;
 	net_queue_merged(net, session, p->data, p->len);
-	while(currentTime - p->timeStamp >= NET_RESEND_DELAY)
-		p->timeStamp += NET_RESEND_DELAY;
+	p->timeStamp += (currentTime - p->timeStamp) / NET_RESEND_DELAY * NET_RESEND_DELAY;
 }
 
 void flush_ack(struct NetContext *net, struct NetSession *session, struct Ack *ack) {

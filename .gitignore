@@ -3,7 +3,7 @@
 /.obj
 /beatupserver*
 /build.sh
-/CertBypass.dll
+/BeatUpClient.dll
 /makefile.user
 /pkg/BeatUpRcelyte
 /pkg/pkg

@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <errno.h>
 
+#define lengthof(x) (sizeof(x)/sizeof(*(x)))
+
 static _Bool load_cert(char *cert, uint32_t cert_len, mbedtls_x509_crt *out) {
 	mbedtls_x509_crt_init(out);
 	int32_t err;
@@ -119,7 +121,7 @@ _Bool config_load(struct Config *out, const char *path) {
 			char *domain;
 			uint32_t domain_len = 0;
 			it = json_get_string(it, &domain, &domain_len);
-			if(domain_len >= 4096) {
+			if(domain_len >= lengthof(out->host_domain)) {
 				uprintf("Error parsing config value \"HostName\": name too long\n");
 				continue;
 			}
@@ -128,7 +130,7 @@ _Bool config_load(struct Config *out, const char *path) {
 			char *domain;
 			uint32_t domain_len = 0;
 			it = json_get_string(it, &domain, &domain_len);
-			if(domain_len >= 4096) {
+			if(domain_len >= lengthof(out->host_domainIPv4)) {
 				uprintf("Error parsing config value \"HostName\": name too long\n");
 				continue;
 			}
@@ -144,7 +146,7 @@ _Bool config_load(struct Config *out, const char *path) {
 			char *uri;
 			uint32_t uri_len;
 			it = json_get_string(it, &uri, &uri_len);
-			if(uri_len >= 4096) {
+			if(uri_len >= lengthof(out->status_domain)) {
 				uprintf("Error parsing config value \"StatusUri\": URI too long\n");
 				continue;
 			}

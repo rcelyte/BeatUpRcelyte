@@ -9,7 +9,7 @@ head
 				serial.type = stype; \
 				*pkt = start, start = NULL; \
 				pkt_writeSerializeHeader(ctx, pkt, serial); \
-				fprintf(stderr, "serialize " #stype "\n"); \
+				/*uprintf("serialize " #stype "\n");*/ \
 				goto CONCAT0(_body_, __LINE__); \
 			} else CONCAT0(_body_, __LINE__):
 	uint8_t pkt_readUint8(struct PacketContext ctx, const uint8_t **pkt);
@@ -83,7 +83,7 @@ code
 		uint8_t shift = 0;
 		do {
 			if(shift >= 64) {
-				fprintf(stderr, "Buffer overflow in read of VarUint\n");
+				uprintf("Buffer overflow in read of VarUint\n");
 				*pkt = _trap;
 				return 0;
 			}
@@ -189,21 +189,21 @@ code
 	#define pkt_logVarUint32 pkt_logUint32
 	#define pkt_logVarInt32 pkt_logInt32
 	static void pkt_logUint64(struct PacketContext ctx, const char *name, char *buf, char *it, uint64_t v) {
-		fprintf(stderr, "%.*s%s=%" PRIu64 "\n", (uint32_t)(it - buf), buf, name, v);
+		uprintf("%.*s%s=%" PRIu64 "\n", (uint32_t)(it - buf), buf, name, v);
 	}
 	static void pkt_logInt64(struct PacketContext ctx, const char *name, char *buf, char *it, int64_t v) {
-		fprintf(stderr, "%.*s%s=%" PRId64 "\n", (uint32_t)(it - buf), buf, name, v);
+		uprintf("%.*s%s=%" PRId64 "\n", (uint32_t)(it - buf), buf, name, v);
 	}
 	#define pkt_logInt8Array(ctx, name, buf, it, in, count) pkt_logUint8Array(ctx, name, buf, it, (const uint8_t*)in, count)
 	static void pkt_logUint8Array(struct PacketContext ctx, const char *name, char *buf, char *it, const uint8_t *in, uint32_t count) {
-		fprintf(stderr, "%.*s%s=", (uint32_t)(it - buf), buf, name);
+		uprintf("%.*s%s=", (uint32_t)(it - buf), buf, name);
 		for(uint32_t i = 0; i < count; ++i)
-			fprintf(stderr, "%02hhx", in[i]);
-		fprintf(stderr, "\n");
+			uprintf("%02hhx", in[i]);
+		uprintf("\n");
 	}
 	#define pkt_logFloat32 pkt_logFloat64
 	static void pkt_logFloat64(struct PacketContext ctx, const char *name, char *buf, char *it, double v) {
-		fprintf(stderr, "%.*s%s=%f\n", (uint32_t)(it - buf), buf, name, v);
+		uprintf("%.*s%s=%f\n", (uint32_t)(it - buf), buf, name, v);
 	}
 
 u8 Platform
@@ -232,7 +232,7 @@ d BaseMasterServerAcknowledgeMessage
 	b messageHandled
 d ByteArrayNetSerializable
 	vu32 length
-	u8[4096,length] data
+	u8[8192,.length] data
 enum
 	struct String {
 		uint32_t length;
@@ -263,7 +263,7 @@ code
 			out.length = pkt_readUint32(ctx, pkt);
 		}
 		if(out.length > 60) {
-			fprintf(stderr, "Buffer overflow in read of String.data: %u > 60\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
+			uprintf("Buffer overflow in read of String.data: %u > 60\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
 		} else {
 			pkt_readInt8Array(pkt, out.data, out.length);
 		}
@@ -282,7 +282,7 @@ code
 			out.length = pkt_readUint32(ctx, pkt);
 		}
 		if(out.length > 4096) {
-			fprintf(stderr, "Buffer overflow in read of LongString.data: %u > 4096\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
+			uprintf("Buffer overflow in read of LongString.data: %u > 4096\n", (uint32_t)out.length), out.length = 0, *pkt = _trap;
 		} else {
 			pkt_readInt8Array(pkt, out.data, out.length);
 		}
@@ -304,10 +304,10 @@ code
 	}
 	#ifdef PACKET_LOGGING_FUNCS
 	static void pkt_logString(struct PacketContext ctx, const char *name, char *buf, char *it, struct String in) {
-		fprintf(stderr, "%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
+		uprintf("%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
 	}
 	static void pkt_logLongString(struct PacketContext ctx, const char *name, char *buf, char *it, struct LongString in) {
-		fprintf(stderr, "%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
+		uprintf("%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
 	}
 	#endif
 r AuthenticationToken
@@ -321,7 +321,7 @@ d BaseMasterServerMultipartMessage
 	vu32 offset
 	vu32 length
 	vu32 totalLength
-	u8[384,length] data
+	u8[384,.length] data
 d BitMask128
 	u64 d0
 	u64 d1
@@ -414,10 +414,10 @@ code
 	}
 	#ifdef PACKET_LOGGING_FUNCS
 	static void pkt_logServerCode(struct PacketContext ctx, const char *name, char *buf, char *it, ServerCode in) {
-		fprintf(stderr, "%.*s%s=%u (\"", (uint32_t)(it - buf), buf, name, in);
+		uprintf("%.*s%s=%u (\"", (uint32_t)(it - buf), buf, name, in);
 		for(; in; in /= 36)
-			fprintf(stderr, "%c", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--in % 36]);
-		fprintf(stderr, "\")\n");
+			uprintf("%c", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--in % 36]);
+		uprintf("\")\n");
 	}
 	#endif
 u32 ServerCode
@@ -467,7 +467,7 @@ u8 PacketProperty
 		u16 sequence
 		u8.DeliveryMethod channelId
 		if(.channelId % 2 == 0)
-			u8[8] data
+			u8[16,ctx.windowSize/8] data
 			u8 _pad0
 	d Ping
 		u16 sequence
@@ -480,7 +480,7 @@ u8 PacketProperty
 		if((ctx.netVersion = .protocolId) >= 12)
 			i32 peerId
 		u8 addrlen
-		u8[38,addrlen] address
+		u8[38,.addrlen] address
 		String secret
 		String userId
 		String userName
@@ -496,11 +496,11 @@ u8 PacketProperty
 	z UnconnectedMessage
 	r MtuCheck
 		u32 newMtu0
-		u8[1423,newMtu0-9] pad
+		u8[1423,.newMtu0-9] pad
 		u32 newMtu1
 	s MtuOk
 		u32 newMtu0
-		u8[1423,newMtu0-9] pad
+		u8[1423,.newMtu0-9] pad
 		u32 newMtu1
 	z Broadcast
 	z Merged
@@ -509,6 +509,13 @@ u8 PacketProperty
 	z InvalidProtocol
 	z NatMessage
 	z Empty
+r ModConnectHeader
+	vu32 length
+	String name
+r BeatUpConnectHeader
+	u32 protocolId
+	u32 windowSize
+	b directDownloads
 d NetPacketHeader
 	u8.e bits
 		u5.PacketProperty property
@@ -615,7 +622,7 @@ s RemoteProcedureCallFlags
 			u1.b hasValue3
 s PlayersMissingEntitlementsNetSerializable
 	i32 count
-	String[128,count] playersWithoutEntitlements
+	String[128,.count] playersWithoutEntitlements
 u8 EntitlementsStatus
 	z Unknown
 	z NotOwned
@@ -673,7 +680,7 @@ s PlayerLobbyPermissionConfigurationNetSerializable
 		u1.b hasInvitePermission
 s PlayersLobbyPermissionConfigurationNetSerializable
 	i32 count
-	PlayerLobbyPermissionConfigurationNetSerializable[128,count] playersPermission
+	PlayerLobbyPermissionConfigurationNetSerializable[128,.count] playersPermission
 r SyncStateId
 	u8.e bits
 		u7.u8 id
@@ -721,7 +728,7 @@ d PlayerSpecificSettingsNetSerializable
 	ColorSchemeNetSerializable colorScheme
 s PlayerSpecificSettingsAtStartNetSerializable
 	i32 count
-	PlayerSpecificSettingsNetSerializable[128,count] activePlayerSpecificSettingsAtGameStart
+	PlayerSpecificSettingsNetSerializable[128,.count] activePlayerSpecificSettingsAtGameStart
 i32 GameplayType
 	z Normal
 	z Bomb
@@ -960,6 +967,43 @@ r SliderSpawnInfoNetSerializable
 	f32 moveDuration
 	f32 jumpDuration
 	f32 rotation
+d NetworkPreviewBeatmapLevel
+	LongString levelId
+	LongString songName
+	LongString songSubName
+	LongString songAuthorName
+	LongString levelAuthorName
+	f32 beatsPerMinute
+	f32 songTimeOffset
+	f32 shuffle
+	f32 shufflePeriod
+	f32 previewStartTime
+	f32 previewDuration
+	f32 songDuration
+	ByteArrayNetSerializable cover
+u8 BeatUpMessage Type
+	d RecommendPreview
+		NetworkPreviewBeatmapLevel preview
+	r SetCanShareBeatmap
+		LongString levelId
+		String levelHash
+		vu64 fileSize
+		b canShare
+	s DirectDownloadInfo
+		LongString levelId
+		String levelHash
+		vu64 fileSize
+		u8 count
+		String[128,.count] sourcePlayers
+	r LevelFragmentRequest
+		vu64 offset
+		u16 maxSize
+	d LevelFragment
+		vu64 offset
+		u16 size
+		u8[1500,.size] data
+d BeatUpMessageHeader
+	u8.BeatUpMessageType type
 u8 MultiplayerSessionMessage Type
 	u8 MenuRpc Type
 		s SetPlayersMissingEntitlementsToLevel
@@ -1200,7 +1244,8 @@ u8 MultiplayerSessionMessage Type
 		if(.baseId.same == 0)
 			StandardScoreSyncState delta
 	r MpCore 100
-		String packetType
+		String type
+	z BeatUpMessage 101
 d MultiplayerSessionMessageHeader
 	u8.MultiplayerSessionMessageType type
 d MenuRpcHeader
@@ -1272,7 +1317,7 @@ u8 UserMessage Type
 		u8.GetPublicServersResponse_Result result
 		if(.result == GetPublicServersResponse_Result_Success)
 			vu32 publicServerCount
-			PublicServerInfo[8192,publicServerCount] publicServers
+			PublicServerInfo[8192,.publicServerCount] publicServers
 u8 DedicatedServerMessage Type
 	z DedicatedServerMessageReceivedAcknowledge 13
 	z DedicatedServerMultipartMessage 14
@@ -1301,7 +1346,7 @@ u8 HandshakeMessage Type
 	s ServerCertificateRequest
 		BaseMasterServerReliableResponse base
 		vu32 certificateCount
-		ByteArrayNetSerializable[10,certificateCount] certificateList
+		ByteArrayNetSerializable[10,.certificateCount] certificateList
 	r ClientKeyExchangeRequest 6
 		BaseMasterServerReliableResponse base
 		ByteArrayNetSerializable clientPublicKey
@@ -1323,7 +1368,7 @@ enum
 	#define MessageType_HandshakeMessage 3192347326u
 code
 	void pkt_logMessageType(struct PacketContext ctx, const char *name, char *buf, char *it, MessageType in) {
-		fprintf(stderr, "%.*s%s=%u (%s)\n", (uint32_t)(it - buf), buf, name, in, reflect(MessageType, in));
+		uprintf("%.*s%s=%u (%s)\n", (uint32_t)(it - buf), buf, name, in, reflect(MessageType, in));
 	}
 d MessageHeader
 	u32.MessageType type
