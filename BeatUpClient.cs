@@ -72,6 +72,7 @@ namespace BeatUpClient.Patches {
 			if(__instance.customServerHostName.value.Length != 0)
 				return;
 			__instance.useCustomServerEnvironment.value = true;
+			__instance.forceGameLiftServerEnvironment.value = false;
 			__instance.customServerHostName.value = "battletrains.org";
 		}
 	}
