@@ -522,6 +522,8 @@ struct ConnectAccept {
 	uint8_t connectNum;
 	_Bool reusedPeer;
 	int32_t peerId;
+	uint32_t windowSize;
+	_Bool skipResults;
 };
 struct Disconnect {
 	uint8_t _pad0[8];
@@ -543,7 +545,11 @@ struct ModConnectHeader {
 struct BeatUpConnectHeader {
 	uint32_t protocolId;
 	uint32_t windowSize;
+	uint8_t countdownDuration;
 	_Bool directDownloads;
+	_Bool skipResults;
+	_Bool perPlayerDifficulty;
+	_Bool perPlayerModifiers;
 };
 struct NetPacketHeader {
 	PacketProperty property;
@@ -865,6 +871,11 @@ struct SliderSpawnInfoNetSerializable {
 	float jumpDuration;
 	float rotation;
 };
+struct PreviewDifficultyBeatmapSet {
+	struct String beatmapCharacteristicSerializedName;
+	uint8_t count;
+	BeatmapDifficulty difficulties[5];
+};
 struct NetworkPreviewBeatmapLevel {
 	struct LongString levelId;
 	struct LongString songName;
@@ -878,10 +889,16 @@ struct NetworkPreviewBeatmapLevel {
 	float previewStartTime;
 	float previewDuration;
 	float songDuration;
+	uint8_t count;
+	struct PreviewDifficultyBeatmapSet previewDifficultyBeatmapSets[8];
 	struct ByteArrayNetSerializable cover;
 };
 struct RecommendPreview {
 	struct NetworkPreviewBeatmapLevel preview;
+	uint32_t requirements_len;
+	struct String requirements[16];
+	uint32_t suggestions_len;
+	struct String suggestions[16];
 };
 struct SetCanShareBeatmap {
 	struct LongString levelId;
@@ -1308,6 +1325,7 @@ struct BeatUpConnectHeader pkt_readBeatUpConnectHeader(struct PacketContext ctx,
 struct NetPacketHeader pkt_readNetPacketHeader(struct PacketContext ctx, const uint8_t **pkt);
 void pkt_writeNetPacketHeader(struct PacketContext ctx, uint8_t **pkt, struct NetPacketHeader in);
 struct FragmentedHeader pkt_readFragmentedHeader(struct PacketContext ctx, const uint8_t **pkt);
+void pkt_writeFragmentedHeader(struct PacketContext ctx, uint8_t **pkt, struct FragmentedHeader in);
 struct PlayerStateHash pkt_readPlayerStateHash(struct PacketContext ctx, const uint8_t **pkt);
 void pkt_writePlayerStateHash(struct PacketContext ctx, uint8_t **pkt, struct PlayerStateHash in);
 struct Color32 pkt_readColor32(struct PacketContext ctx, const uint8_t **pkt);
@@ -1358,10 +1376,9 @@ struct StandardScoreSyncState pkt_readStandardScoreSyncState(struct PacketContex
 struct NoteSpawnInfoNetSerializable pkt_readNoteSpawnInfoNetSerializable(struct PacketContext ctx, const uint8_t **pkt);
 struct ObstacleSpawnInfoNetSerializable pkt_readObstacleSpawnInfoNetSerializable(struct PacketContext ctx, const uint8_t **pkt);
 struct SliderSpawnInfoNetSerializable pkt_readSliderSpawnInfoNetSerializable(struct PacketContext ctx, const uint8_t **pkt);
+struct PreviewDifficultyBeatmapSet pkt_readPreviewDifficultyBeatmapSet(struct PacketContext ctx, const uint8_t **pkt);
 struct NetworkPreviewBeatmapLevel pkt_readNetworkPreviewBeatmapLevel(struct PacketContext ctx, const uint8_t **pkt);
-void pkt_writeNetworkPreviewBeatmapLevel(struct PacketContext ctx, uint8_t **pkt, struct NetworkPreviewBeatmapLevel in);
 struct RecommendPreview pkt_readRecommendPreview(struct PacketContext ctx, const uint8_t **pkt);
-void pkt_writeRecommendPreview(struct PacketContext ctx, uint8_t **pkt, struct RecommendPreview in);
 struct SetCanShareBeatmap pkt_readSetCanShareBeatmap(struct PacketContext ctx, const uint8_t **pkt);
 void pkt_writeDirectDownloadInfo(struct PacketContext ctx, uint8_t **pkt, struct DirectDownloadInfo in);
 struct LevelFragmentRequest pkt_readLevelFragmentRequest(struct PacketContext ctx, const uint8_t **pkt);

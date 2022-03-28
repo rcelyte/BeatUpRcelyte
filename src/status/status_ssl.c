@@ -11,6 +11,7 @@
 #include <mbedtls/entropy.h>
 #include <mbedtls/error.h>
 #include <unistd.h>
+#include <signal.h>
 #include <string.h>
 #include <errno.h>
 
@@ -122,6 +123,9 @@ _Bool status_ssl_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, const cha
 			.sin6_addr = IN6ADDR_ANY_INIT,
 			.sin6_scope_id = 0,
 		};
+		#ifndef WINDOWS
+		signal(SIGPIPE, SIG_IGN);
+		#endif
 		if(bind(ctx.listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
 			uprintf("Cannot bind socket to port %hu: %s\n", port, strerror(errno));
 			close(ctx.listenfd);

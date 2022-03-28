@@ -23,6 +23,7 @@ void instance_channels_init(struct Channels *channels) {
 	channels->ru.base.backlogEnd = &channels->ru.base.backlog;
 	channels->ro.base.backlog = NULL;
 	channels->ro.base.backlogEnd = &channels->ro.base.backlog;
+	channels->incomingFragmentsList = NULL;
 }
 
 void instance_channels_free(struct Channels *channels) {
@@ -36,27 +37,30 @@ void instance_channels_free(struct Channels *channels) {
 		channels->ro.base.backlog = channels->ro.base.backlog->next;
 		free(e);
 	}
+	while(channels->incomingFragmentsList) {
+		struct IncomingFragments *e = channels->incomingFragmentsList;
+		channels->incomingFragmentsList = channels->incomingFragmentsList->next;
+		free(e);
+	}
 }
 
-static void resend_add(struct PacketContext version, struct ReliableChannel *channel, const uint8_t *buf, uint32_t len, DeliveryMethod method) {
+static void resend_add(struct PacketContext version, struct ReliableChannel *channel, const uint8_t *buf, uint32_t len, DeliveryMethod method, _Bool isFragmented, struct FragmentedHeader fragmentHeader) {
 	struct InstanceResendPacket *resend = &channel->resend[channel->outboundSequence % version.windowSize];
 	resend->timeStamp = net_time() - NET_RESEND_DELAY;
 	uint8_t *data_end = resend->data;
-	pkt_writeNetPacketHeader(version, &data_end, (struct NetPacketHeader){PacketProperty_Channeled, 0, 0});
+	pkt_writeNetPacketHeader(version, &data_end, (struct NetPacketHeader){PacketProperty_Channeled, 0, isFragmented});
 	pkt_writeChanneled(version, &data_end, (struct Channeled){
 		.sequence = channel->outboundSequence,
 		.channelId = method,
 	});
-	if(&data_end[len] > &resend->data[lengthof(channel->resend->data)]) {
-		uprintf("Fragmenting not implemented\n");
-		abort();
-	}
+	if(isFragmented)
+		pkt_writeFragmentedHeader(version, &data_end, fragmentHeader);
 	pkt_writeUint8Array(version, &data_end, buf, len);
 	resend->len = data_end - resend->data;
 	channel->outboundSequence = (channel->outboundSequence + 1) % NET_MAX_SEQUENCE;
 }
 
-void instance_send_channeled(struct PacketContext version, struct Channels *channels, const uint8_t *buf, uint32_t len, DeliveryMethod channelId) {
+static void instance_send_backlog(struct PacketContext version, struct Channels *channels, const uint8_t *buf, uint32_t len, DeliveryMethod channelId, _Bool isFragmented, struct FragmentedHeader fragmentHeader) {
 	if(channelId != DeliveryMethod_ReliableOrdered) {
 		uprintf("instance_send_channeled(DeliveryMethod_%s) not implemented\n", reflect(DeliveryMethod, channelId));
 		abort();
@@ -69,12 +73,34 @@ void instance_send_channeled(struct PacketContext version, struct Channels *chan
 			abort();
 		}
 		(*channels->ro.base.backlogEnd)->next = NULL;
-		memcpy((*channels->ro.base.backlogEnd)->pkt.data, buf, len);
 		(*channels->ro.base.backlogEnd)->pkt.len = len;
+		(*channels->ro.base.backlogEnd)->pkt.isFragmented = isFragmented;
+		(*channels->ro.base.backlogEnd)->pkt.fragmentHeader = fragmentHeader;
+		memcpy((*channels->ro.base.backlogEnd)->pkt.data, buf, len);
 		channels->ro.base.backlogEnd = &(*channels->ro.base.backlogEnd)->next;
 	} else {
-		resend_add(version, channel, buf, len, channelId);
+		resend_add(version, channel, buf, len, channelId, isFragmented, fragmentHeader);
 	}
+}
+
+void instance_send_channeled(struct NetSession *session, struct Channels *channels, const uint8_t *buf, uint32_t len, DeliveryMethod channelId) {
+	struct FragmentedHeader fragmentHeader = {0, 0, 0};
+	if(len <= session->maxChanneledSize) {
+		instance_send_backlog(session->version, channels, buf, len, channelId, 0, fragmentHeader);
+		return;
+	}
+	if(channelId != DeliveryMethod_ReliableUnordered && channelId != DeliveryMethod_ReliableOrdered) {
+		uprintf("Packet too large (%u > %u)\n", len, session->maxChanneledSize);
+		abort();
+	} else if(len >= 65536) {
+		uprintf("Reliable packet too large (%u >= 65536)\n", len);
+		abort();
+	}
+	fragmentHeader.fragmentId = ++session->fragmentId;
+	fragmentHeader.fragmentsTotal = (len + session->maxFragmentSize - 1) / session->maxFragmentSize;
+	for(fragmentHeader.fragmentPart = 0; fragmentHeader.fragmentPart < fragmentHeader.fragmentsTotal - 1; ++fragmentHeader.fragmentPart, buf += session->maxFragmentSize, len -= session->maxFragmentSize)
+		instance_send_backlog(session->version, channels, buf, session->maxFragmentSize, channelId, 1, fragmentHeader);
+	instance_send_backlog(session->version, channels, buf, len, channelId, 1, fragmentHeader);
 }
 
 #define bitsize(e) (sizeof(e) * 8)
@@ -102,7 +128,7 @@ void handle_Ack(struct NetSession *session, struct Channels *channels, const uin
 		channel->outboundWindowStart = (channel->outboundWindowStart + 1) % NET_MAX_SEQUENCE;
 		if(!channel->backlog)
 			continue;
-		resend_add(session->version, channel, channel->backlog->pkt.data, channel->backlog->pkt.len, ack.channelId);
+		resend_add(session->version, channel, channel->backlog->pkt.data, channel->backlog->pkt.len, ack.channelId, channel->backlog->pkt.isFragmented, channel->backlog->pkt.fragmentHeader);
 		struct InstancePacketList *e = channel->backlog;
 		channel->backlog = channel->backlog->next;
 		free(e);
@@ -119,12 +145,13 @@ static void process_Reliable(ChanneledHandler handler, struct NetSession *sessio
 	struct FragmentedHeader header = pkt_readFragmentedHeader(session->version, data);
 	struct IncomingFragments **incoming = &channels->incomingFragmentsList;
 	do {
-		if(!*incoming) {
+		if(*incoming == NULL) {
 			*incoming = malloc(sizeof(**incoming) + header.fragmentsTotal * sizeof(*(*incoming)->fragments));
 			if(!*incoming) {
 				uprintf("alloc error\n");
 				abort();
 			}
+			(*incoming)->next = NULL;
 			(*incoming)->fragmentId = header.fragmentId;
 			(*incoming)->channelId = channelId;
 			(*incoming)->count = 0;

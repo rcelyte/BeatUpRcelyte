@@ -287,6 +287,19 @@ void net_keypair_free(struct NetKeypair *keys) {
 	mbedtls_ecp_point_free(&keys->public);
 }
 
+static void net_set_mtu(struct NetSession *session, uint8_t idx) {
+	uint32_t oldMtu = session->mtu;
+	session->mtu = PossibleMtu[idx];
+	session->mtuIdx = idx;
+	uprintf("MTU %u -> %u\n", oldMtu, session->mtu);
+	uint8_t buf[NET_MAX_PKT_SIZE], *buf_end = buf;
+	pkt_writeNetPacketHeader(session->version, &buf_end, (struct NetPacketHeader){PacketProperty_Channeled, 0, 0});
+	pkt_writeChanneled(session->version, &buf_end, (struct Channeled){0, 0});
+	session->maxChanneledSize = (&buf[session->mtu] - buf_end);
+	pkt_writeFragmentedHeader(session->version, &buf_end, (struct FragmentedHeader){0, 0, 0});
+	session->maxFragmentSize = (&buf[session->mtu] - buf_end);
+}
+
 void net_session_reset(struct NetContext *ctx, struct NetSession *session) {
 	struct SS addr = session->addr;
 	net_session_free(session);
@@ -295,8 +308,9 @@ void net_session_reset(struct NetContext *ctx, struct NetSession *session) {
 	net_cookie(&ctx->ctr_drbg, session->cookie);
 	session->addr = addr;
 	session->lastKeepAlive = net_time();
-	session->mtu = PossibleMtu[0];
-	session->mtuIdx = 0;
+	session->mtu = 0;
+	net_set_mtu(session, 0);
+	session->fragmentId = 0;
 	session->mergeData_end = session->mergeData;
 	net_flush_merged(ctx, session);
 	net_keypair_gen(ctx, &session->keys);
@@ -394,11 +408,8 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct
 		}
 		size = length + (head - buf);
 		(*session)->lastKeepAlive = net_time();
-		while((*session)->mtu < size && (*session)->mtuIdx < lengthof(PossibleMtu) - 1) {
-			uint32_t oldMtu = (*session)->mtu;
-			(*session)->mtu = PossibleMtu[++(*session)->mtuIdx];
-			uprintf("MTU %u -> %u\n", oldMtu, (*session)->mtu);
-		}
+		while((*session)->mtu < size && (*session)->mtuIdx < lengthof(PossibleMtu) - 1)
+			net_set_mtu(*session, (*session)->mtuIdx + 1);
 	} else if(layer.encrypted) {
 		uprintf("Invalid packet\n");
 		goto retry;

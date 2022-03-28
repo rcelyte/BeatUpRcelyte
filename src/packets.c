@@ -492,6 +492,10 @@ void pkt_writeConnectAccept(struct PacketContext ctx, uint8_t **pkt, struct Conn
 	if(ctx.netVersion >= 12) {
 		pkt_writeInt32(ctx, pkt, in.peerId);
 	}
+	if(ctx.beatUpVersion) {
+		pkt_writeUint32(ctx, pkt, in.windowSize);
+		pkt_writeUint8(ctx, pkt, in.skipResults);
+	}
 }
 struct Disconnect pkt_readDisconnect(struct PacketContext ctx, const uint8_t **pkt) {
 	struct Disconnect out;
@@ -524,7 +528,12 @@ struct BeatUpConnectHeader pkt_readBeatUpConnectHeader(struct PacketContext ctx,
 	struct BeatUpConnectHeader out;
 	out.protocolId = pkt_readUint32(ctx, pkt);
 	out.windowSize = pkt_readUint32(ctx, pkt);
-	out.directDownloads = pkt_readUint8(ctx, pkt);
+	out.countdownDuration = pkt_readUint8(ctx, pkt);
+	uint8_t bits = pkt_readUint8(ctx, pkt);
+	out.directDownloads = (bits >> 0) & 1;
+	out.skipResults = (bits >> 1) & 1;
+	out.perPlayerDifficulty = (bits >> 2) & 1;
+	out.perPlayerModifiers = (bits >> 3) & 1;
 	return out;
 }
 struct NetPacketHeader pkt_readNetPacketHeader(struct PacketContext ctx, const uint8_t **pkt) {
@@ -548,6 +557,11 @@ struct FragmentedHeader pkt_readFragmentedHeader(struct PacketContext ctx, const
 	out.fragmentPart = pkt_readUint16(ctx, pkt);
 	out.fragmentsTotal = pkt_readUint16(ctx, pkt);
 	return out;
+}
+void pkt_writeFragmentedHeader(struct PacketContext ctx, uint8_t **pkt, struct FragmentedHeader in) {
+	pkt_writeUint16(ctx, pkt, in.fragmentId);
+	pkt_writeUint16(ctx, pkt, in.fragmentPart);
+	pkt_writeUint16(ctx, pkt, in.fragmentsTotal);
 }
 struct PlayerStateHash pkt_readPlayerStateHash(struct PacketContext ctx, const uint8_t **pkt) {
 	struct PlayerStateHash out;
@@ -951,7 +965,7 @@ struct MultiplayerLevelCompletionResults pkt_readMultiplayerLevelCompletionResul
 		out.playerLevelEndState = pkt_readVarInt32(ctx, pkt);
 		out.playerLevelEndReason = pkt_readVarInt32(ctx, pkt);
 	}
-	if((ctx.protocolVersion < 7 && out.levelEndState < MultiplayerLevelEndState_GivenUp) || (ctx.protocolVersion > 6 && out.playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted)) {
+	if((ctx.protocolVersion < 7 && out.levelEndState < MultiplayerLevelEndState_GivenUp) || (ctx.protocolVersion >= 7 && out.playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted)) {
 		out.levelCompletionResults = pkt_readLevelCompletionResults(ctx, pkt);
 	}
 	return out;
@@ -1062,6 +1076,18 @@ struct SliderSpawnInfoNetSerializable pkt_readSliderSpawnInfoNetSerializable(str
 	out.rotation = pkt_readFloat32(ctx, pkt);
 	return out;
 }
+struct PreviewDifficultyBeatmapSet pkt_readPreviewDifficultyBeatmapSet(struct PacketContext ctx, const uint8_t **pkt) {
+	struct PreviewDifficultyBeatmapSet out;
+	out.beatmapCharacteristicSerializedName = pkt_readString(ctx, pkt);
+	out.count = pkt_readUint8(ctx, pkt);
+	if(out.count > 5) {
+		uprintf("Buffer overflow in read of PreviewDifficultyBeatmapSet.difficulties: %u > 5\n", (uint32_t)out.count), out.count = 0, *pkt = _trap;
+	} else {
+		for(uint32_t i = 0; i < out.count; ++i)
+			out.difficulties[i] = pkt_readVarUint32(ctx, pkt);
+	}
+	return out;
+}
 struct NetworkPreviewBeatmapLevel pkt_readNetworkPreviewBeatmapLevel(struct PacketContext ctx, const uint8_t **pkt) {
 	struct NetworkPreviewBeatmapLevel out;
 	out.levelId = pkt_readLongString(ctx, pkt);
@@ -1076,31 +1102,34 @@ struct NetworkPreviewBeatmapLevel pkt_readNetworkPreviewBeatmapLevel(struct Pack
 	out.previewStartTime = pkt_readFloat32(ctx, pkt);
 	out.previewDuration = pkt_readFloat32(ctx, pkt);
 	out.songDuration = pkt_readFloat32(ctx, pkt);
+	out.count = pkt_readUint8(ctx, pkt);
+	if(out.count > 8) {
+		uprintf("Buffer overflow in read of NetworkPreviewBeatmapLevel.previewDifficultyBeatmapSets: %u > 8\n", (uint32_t)out.count), out.count = 0, *pkt = _trap;
+	} else {
+		for(uint32_t i = 0; i < out.count; ++i)
+			out.previewDifficultyBeatmapSets[i] = pkt_readPreviewDifficultyBeatmapSet(ctx, pkt);
+	}
 	out.cover = pkt_readByteArrayNetSerializable(ctx, pkt);
 	return out;
-}
-void pkt_writeNetworkPreviewBeatmapLevel(struct PacketContext ctx, uint8_t **pkt, struct NetworkPreviewBeatmapLevel in) {
-	pkt_writeLongString(ctx, pkt, in.levelId);
-	pkt_writeLongString(ctx, pkt, in.songName);
-	pkt_writeLongString(ctx, pkt, in.songSubName);
-	pkt_writeLongString(ctx, pkt, in.songAuthorName);
-	pkt_writeLongString(ctx, pkt, in.levelAuthorName);
-	pkt_writeFloat32(ctx, pkt, in.beatsPerMinute);
-	pkt_writeFloat32(ctx, pkt, in.songTimeOffset);
-	pkt_writeFloat32(ctx, pkt, in.shuffle);
-	pkt_writeFloat32(ctx, pkt, in.shufflePeriod);
-	pkt_writeFloat32(ctx, pkt, in.previewStartTime);
-	pkt_writeFloat32(ctx, pkt, in.previewDuration);
-	pkt_writeFloat32(ctx, pkt, in.songDuration);
-	pkt_writeByteArrayNetSerializable(ctx, pkt, in.cover);
 }
 struct RecommendPreview pkt_readRecommendPreview(struct PacketContext ctx, const uint8_t **pkt) {
 	struct RecommendPreview out;
 	out.preview = pkt_readNetworkPreviewBeatmapLevel(ctx, pkt);
+	out.requirements_len = pkt_readVarUint32(ctx, pkt);
+	if(out.requirements_len > 16) {
+		uprintf("Buffer overflow in read of RecommendPreview.requirements: %u > 16\n", (uint32_t)out.requirements_len), out.requirements_len = 0, *pkt = _trap;
+	} else {
+		for(uint32_t i = 0; i < out.requirements_len; ++i)
+			out.requirements[i] = pkt_readString(ctx, pkt);
+	}
+	out.suggestions_len = pkt_readVarUint32(ctx, pkt);
+	if(out.suggestions_len > 16) {
+		uprintf("Buffer overflow in read of RecommendPreview.suggestions: %u > 16\n", (uint32_t)out.suggestions_len), out.suggestions_len = 0, *pkt = _trap;
+	} else {
+		for(uint32_t i = 0; i < out.suggestions_len; ++i)
+			out.suggestions[i] = pkt_readString(ctx, pkt);
+	}
 	return out;
-}
-void pkt_writeRecommendPreview(struct PacketContext ctx, uint8_t **pkt, struct RecommendPreview in) {
-	pkt_writeNetworkPreviewBeatmapLevel(ctx, pkt, in.preview);
 }
 struct SetCanShareBeatmap pkt_readSetCanShareBeatmap(struct PacketContext ctx, const uint8_t **pkt) {
 	struct SetCanShareBeatmap out;

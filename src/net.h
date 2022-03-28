@@ -56,6 +56,7 @@ struct NetSession {
 	uint32_t NET_H_PRIVATE(lastKeepAlive);
 	uint16_t NET_H_PRIVATE(mtu);
 	uint8_t NET_H_PRIVATE(mtuIdx);
+	uint16_t maxChanneledSize, maxFragmentSize, fragmentId;
 	uint8_t *NET_H_PRIVATE(mergeData_end);
 	uint8_t NET_H_PRIVATE(mergeData)[NET_MAX_PKT_SIZE];
 };

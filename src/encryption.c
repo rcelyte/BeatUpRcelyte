@@ -49,11 +49,11 @@ _Bool EncryptionState_init(struct EncryptionState *state, const mbedtls_mpi *pre
 	PRF(sourceArray, sourceArray, 48, seed, MakeSeed(seed, "key expansion", serverRandom, clientRandom), 192);
 	memcpy(isClient ? state->receiveKey : state->sendKey, sourceArray, 32);
 	memcpy(isClient ? state->sendKey : state->receiveKey, &sourceArray[32], 32);
-	memcpy(isClient ? state->_receiveMacKey : state->_sendMacKey, &sourceArray[64], 64);
-	memcpy(isClient ? state->_sendMacKey : state->_receiveMacKey, &sourceArray[128], 64);
-	state->_lastSentSequenceNum = -1;
-	state->_hasReceivedSequenceNum = 0;
-	memset(state->_receivedSequenceNumBuffer, 0, sizeof(state->_receivedSequenceNumBuffer));
+	memcpy(isClient ? state->receiveMacKey : state->sendMacKey, &sourceArray[64], 64);
+	memcpy(isClient ? state->sendMacKey : state->receiveMacKey, &sourceArray[128], 64);
+	state->lastSentSequenceNum = -1;
+	state->hasReceivedSequenceNum = 0;
+	memset(state->receivedSequenceNumBuffer, 0, sizeof(state->receivedSequenceNumBuffer));
 	mbedtls_aes_init(&state->aes);
 	state->initialized = 1;
 	return 0;
@@ -67,41 +67,41 @@ void EncryptionState_free(struct EncryptionState *state) {
 }
 
 static _Bool IsInvalidSequenceNum(struct EncryptionState *state, uint32_t sequenceNum) {
-	if(!state->_hasReceivedSequenceNum)
+	if(!state->hasReceivedSequenceNum)
 		return 0;
-	if(sequenceNum > state->_lastReceivedSequenceNum)
+	if(sequenceNum > state->lastReceivedSequenceNum)
 		return 0;
-	if(sequenceNum + 64 <= state->_lastReceivedSequenceNum)
+	if(sequenceNum + 64 <= state->lastReceivedSequenceNum)
 		return 1;
-	return state->_receivedSequenceNumBuffer[sequenceNum % 64];
+	return state->receivedSequenceNumBuffer[sequenceNum % 64];
 }
 
 static _Bool PutSequenceNum(struct EncryptionState *state, uint32_t sequenceNum) {
-	if(!state->_hasReceivedSequenceNum) {
-		state->_hasReceivedSequenceNum = 1;
-		state->_lastReceivedSequenceNum = sequenceNum;
-	} else if(sequenceNum > state->_lastReceivedSequenceNum) {
-		uint32_t delta = sequenceNum - state->_lastReceivedSequenceNum;
+	if(!state->hasReceivedSequenceNum) {
+		state->hasReceivedSequenceNum = 1;
+		state->lastReceivedSequenceNum = sequenceNum;
+	} else if(sequenceNum > state->lastReceivedSequenceNum) {
+		uint32_t delta = sequenceNum - state->lastReceivedSequenceNum;
 		if(delta >= 64)
-			memset(state->_receivedSequenceNumBuffer, 0, sizeof(state->_receivedSequenceNumBuffer));
+			memset(state->receivedSequenceNumBuffer, 0, sizeof(state->receivedSequenceNumBuffer));
 		else
 			for(uint32_t i = 1; i < delta; i++)
-				state->_receivedSequenceNumBuffer[(state->_lastReceivedSequenceNum + i) % 64] = 0;
-		state->_lastReceivedSequenceNum = sequenceNum;
+				state->receivedSequenceNumBuffer[(state->lastReceivedSequenceNum + i) % 64] = 0;
+		state->lastReceivedSequenceNum = sequenceNum;
 	} else {
-		if(sequenceNum + 64 <= state->_lastReceivedSequenceNum)
+		if(sequenceNum + 64 <= state->lastReceivedSequenceNum)
 			return 1;
-		if(state->_receivedSequenceNumBuffer[sequenceNum % 64u])
+		if(state->receivedSequenceNumBuffer[sequenceNum % 64u])
 			return 1;
 	}
-	state->_receivedSequenceNumBuffer[sequenceNum % 64] = 1;
+	state->receivedSequenceNumBuffer[sequenceNum % 64] = 1;
 	return 0;
 }
 
 static _Bool ValidateReceivedMac(struct EncryptionState *state, uint8_t *data, uint32_t length, uint8_t mac[10]) {
 	uint8_t hash[MBEDTLS_MD_MAX_SIZE];
 	const mbedtls_md_info_t *md_info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
-	mbedtls_md_hmac(md_info, state->_receiveMacKey, sizeof(state->_receiveMacKey), data, length, hash);
+	mbedtls_md_hmac(md_info, state->receiveMacKey, sizeof(state->receiveMacKey), data, length, hash);
 	if(memcmp(mac, hash, 10)) {
 		uprintf("Packet hash mismatch: expected %02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx, got %02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx\n", hash[0], hash[1], hash[2], hash[3], hash[4], hash[5], hash[6], hash[7], hash[8], hash[9], mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], mac[6], mac[7], mac[8], mac[9]);
 		return 1;
@@ -139,13 +139,13 @@ _Bool EncryptionState_decrypt(struct EncryptionState *state, struct PacketEncryp
 }
 
 static uint32_t GetNextSentSequenceNum(struct EncryptionState *state) {
-	return (uint32_t)++state->_lastSentSequenceNum;
+	return (uint32_t)++state->lastSentSequenceNum;
 }
 
 static void ComputeSendMac(struct EncryptionState *state, const uint8_t *data, uint32_t length, uint8_t *out) {
 	uint8_t hash[MBEDTLS_MD_MAX_SIZE];
 	const mbedtls_md_info_t *md_info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
-	mbedtls_md_hmac(md_info, state->_sendMacKey, sizeof(state->_sendMacKey), data, length, hash);
+	mbedtls_md_hmac(md_info, state->sendMacKey, sizeof(state->sendMacKey), data, length, hash);
 	memcpy(out, hash, 10);
 }
 

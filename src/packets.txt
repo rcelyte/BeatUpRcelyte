@@ -491,6 +491,9 @@ u8 PacketProperty
 		b reusedPeer
 		if(ctx.netVersion >= 12)
 			i32 peerId
+		if(ctx.beatUpVersion)
+			u32 windowSize
+			b skipResults
 	r Disconnect
 		u8[8] _pad0
 	z UnconnectedMessage
@@ -515,13 +518,18 @@ r ModConnectHeader
 r BeatUpConnectHeader
 	u32 protocolId
 	u32 windowSize
-	b directDownloads
+	u8 countdownDuration
+	u8.e bits
+		u1.b directDownloads
+		u1.b skipResults
+		u1.b perPlayerDifficulty
+		u1.b perPlayerModifiers
 d NetPacketHeader
 	u8.e bits
 		u5.PacketProperty property
 		u2.u8 connectionNumber
 		u1.b isFragmented
-r FragmentedHeader
+d FragmentedHeader
 	u16 fragmentId
 	u16 fragmentPart
 	u16 fragmentsTotal
@@ -858,7 +866,7 @@ r MultiplayerLevelCompletionResults
 	if(ctx.protocolVersion >= 7)
 		vi32.MultiplayerPlayerLevelEndState playerLevelEndState
 		vi32.MultiplayerPlayerLevelEndReason playerLevelEndReason
-	if((ctx.protocolVersion < 7 && .levelEndState < MultiplayerLevelEndState_GivenUp) || (ctx.protocolVersion > 6 && .playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted))
+	if((ctx.protocolVersion < 7 && .levelEndState < MultiplayerLevelEndState_GivenUp) || (ctx.protocolVersion >= 7 && .playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted))
 		LevelCompletionResults levelCompletionResults
 r NodePoseSyncState1
 	PoseSerializable head
@@ -967,7 +975,11 @@ r SliderSpawnInfoNetSerializable
 	f32 moveDuration
 	f32 jumpDuration
 	f32 rotation
-d NetworkPreviewBeatmapLevel
+r PreviewDifficultyBeatmapSet
+	String beatmapCharacteristicSerializedName
+	u8 count
+	vu32.BeatmapDifficulty[5,.count] difficulties
+r NetworkPreviewBeatmapLevel
 	LongString levelId
 	LongString songName
 	LongString songSubName
@@ -980,10 +992,16 @@ d NetworkPreviewBeatmapLevel
 	f32 previewStartTime
 	f32 previewDuration
 	f32 songDuration
+	u8 count
+	PreviewDifficultyBeatmapSet[8,.count] previewDifficultyBeatmapSets
 	ByteArrayNetSerializable cover
 u8 BeatUpMessage Type
-	d RecommendPreview
+	r RecommendPreview
 		NetworkPreviewBeatmapLevel preview
+		vu32 requirements_len
+		String[16,.requirements_len] requirements
+		vu32 suggestions_len
+		String[16,.suggestions_len] suggestions
 	r SetCanShareBeatmap
 		LongString levelId
 		String levelHash

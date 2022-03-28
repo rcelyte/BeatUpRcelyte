@@ -80,6 +80,7 @@ static struct NetSession *master_onResolve(struct Context *ctx, struct SS addr, 
 		abort();
 	}
 	net_session_init(&ctx->net, &session->net, addr);
+	session->lastSentRequestId = 0;
 	session->handshakeStep = 255;
 	session->resend.count = 0;
 	for(uint32_t i = 0; i < MASTER_WINDOW_SIZE; ++i)

@@ -7,12 +7,12 @@ struct EncryptionState {
 	mbedtls_aes_context aes;
 	uint8_t sendKey[32];
 	uint8_t receiveKey[32];
-	uint8_t _sendMacKey[64];
-	uint8_t _receiveMacKey[64];
-	int32_t _lastSentSequenceNum;
-	_Bool _hasReceivedSequenceNum;
-	uint32_t _lastReceivedSequenceNum;
-	_Bool _receivedSequenceNumBuffer[64];
+	uint8_t sendMacKey[64];
+	uint8_t receiveMacKey[64];
+	int32_t lastSentSequenceNum;
+	_Bool hasReceivedSequenceNum;
+	uint32_t lastReceivedSequenceNum;
+	_Bool receivedSequenceNumBuffer[64];
 	_Bool initialized;
 };
 

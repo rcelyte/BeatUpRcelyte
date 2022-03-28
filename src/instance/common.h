@@ -45,13 +45,15 @@ enum ServerState {
 	ServerState_LoadingScene = 1 << 2,
 	ServerState_LoadingSong = 1 << 3,
 	ServerState_Gameplay = 1 << 4,
+	ServerState_Results = 1 << 5,
 	ServerState_Menu = ServerState_Lobby | ServerState_Downloading,
-	ServerState_Game = ServerState_LoadingScene | ServerState_LoadingSong | ServerState_Gameplay,
+	ServerState_Game = ServerState_LoadingScene | ServerState_LoadingSong | ServerState_Gameplay | ServerState_Results,
 };
 
 struct InstancePacket {
 	uint16_t len;
 	_Bool isFragmented;
+	struct FragmentedHeader fragmentHeader;
 	uint8_t data[NET_MAX_PKT_SIZE];
 };
 struct InstanceResendPacket {
@@ -111,7 +113,7 @@ typedef void (*ChanneledHandler)(void *ctx, void *room, void *session, const uin
 void instance_pingpong_init(struct PingPong *pingpong);
 void instance_channels_init(struct Channels *channels);
 void instance_channels_free(struct Channels *channels);
-void instance_send_channeled(struct PacketContext version, struct Channels *channels, const uint8_t *buf, uint32_t len, DeliveryMethod method);
+void instance_send_channeled(struct NetSession *session, struct Channels *channels, const uint8_t *buf, uint32_t len, DeliveryMethod method);
 void handle_Ack(struct NetSession *session, struct Channels *channels, const uint8_t **data);
 void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct NetSession *session, struct Channels *channels, void *p_ctx, void *p_room, void *p_session, const uint8_t **data, const uint8_t *end, _Bool isFragmented);
 void handle_Ping(struct NetContext *net, struct NetSession *session, struct PingPong *pingpong, const uint8_t **data);

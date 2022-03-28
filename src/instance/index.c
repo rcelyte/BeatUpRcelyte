@@ -34,7 +34,7 @@ static void _update_menu(struct Context *ctx, struct IndexSession *session, cons
 		r_disconnect.disconnectedReason = DisconnectedReason_ClientConnectionClosed;
 		SERIALIZE_CUSTOM(PV_LEGACY_DEFAULT, &resp_end, InternalMessageType_PlayerDisconnected)
 			pkt_writePlayerDisconnected(PV_LEGACY_DEFAULT, &resp_end, r_disconnect);
-		instance_send_channeled(PV_LEGACY_DEFAULT, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+		instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 	}
 	for(uint8_t i = 1, *it = session->menu; *entries; ++i, it += *it + 1, ++entries) {
 		*it = sprintf((char*)&it[1], "%s", *entries);
@@ -50,7 +50,7 @@ static void _update_menu(struct Context *ctx, struct IndexSession *session, cons
 		r_connected.isConnectionOwner = 0;
 		SERIALIZE_CUSTOM(PV_LEGACY_DEFAULT, &resp_end, InternalMessageType_PlayerConnected)
 			pkt_writePlayerConnected(PV_LEGACY_DEFAULT, &resp_end, r_connected);
-		instance_send_channeled(PV_LEGACY_DEFAULT, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+		instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 
 		resp_end = resp;
 		pkt_writeRoutingHeader(PV_LEGACY_DEFAULT, &resp_end, (struct RoutingHeader){0, 0, 0});
@@ -59,7 +59,7 @@ static void _update_menu(struct Context *ctx, struct IndexSession *session, cons
 		r_sort.sortIndex = 1;
 		SERIALIZE_CUSTOM(PV_LEGACY_DEFAULT, &resp_end, InternalMessageType_PlayerSortOrderUpdate)
 			pkt_writePlayerSortOrderUpdate(PV_LEGACY_DEFAULT, &resp_end, r_sort);
-		instance_send_channeled(PV_LEGACY_DEFAULT, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+		instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 
 		resp_end = resp;
 		pkt_writeRoutingHeader(PV_LEGACY_DEFAULT, &resp_end, (struct RoutingHeader){i, 0, 0});
@@ -73,7 +73,7 @@ static void _update_menu(struct Context *ctx, struct IndexSession *session, cons
 		NetKeypair_write_key(&ctx->keys, &ctx->net, r_identity.publicEncryptionKey.data, &r_identity.publicEncryptionKey.length);
 		SERIALIZE_CUSTOM(PV_LEGACY_DEFAULT, &resp_end, InternalMessageType_PlayerIdentity)
 			pkt_writePlayerIdentity(PV_LEGACY_DEFAULT, &resp_end, r_identity);
-		instance_send_channeled(PV_LEGACY_DEFAULT, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+		instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 	}
 }
 
@@ -150,7 +150,7 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 				resp_end = resp;
 				pkt_writeRoutingHeader(PV_LEGACY_DEFAULT, &resp_end, (struct RoutingHeader){i, 0, 0});
 				SERIALIZE_MENURPC(session->net.version, &resp_end, RecommendBeatmap, r_beatmap);
-				instance_send_channeled(PV_LEGACY_DEFAULT, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+				instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			}
 			break;
 		}
@@ -165,7 +165,7 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 			r_set.gameplayModifiers = CLEAR_MODIFIERS;
 			pkt_writeRoutingHeader(PV_LEGACY_DEFAULT, &resp_end, (struct RoutingHeader){0, 127, 0});
 			SERIALIZE_MENURPC(session->net.version, &resp_end, SetSelectedGameplayModifiers, r_set);
-			instance_send_channeled(PV_LEGACY_DEFAULT, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+			instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			break;
 		}
 		case MenuRpcType_ClearRecommendedGameplayModifiers: uprintf("MenuRpcType_ClearRecommendedGameplayModifiers not implemented\n"); abort();
@@ -179,7 +179,7 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 				resp_end = resp;
 				pkt_writeRoutingHeader(PV_LEGACY_DEFAULT, &resp_end, (struct RoutingHeader){i, 0, 0});
 				SERIALIZE_MENURPC(session->net.version, &resp_end, RecommendGameplayModifiers, r_modifiers);
-				instance_send_channeled(PV_LEGACY_DEFAULT, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+				instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			}
 			break;
 		}
@@ -195,7 +195,7 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 			r_button.reason = CannotStartGameReason_NoSongSelected;
 			pkt_writeRoutingHeader(PV_LEGACY_DEFAULT, &resp_end, (struct RoutingHeader){0, 127, 0});
 			SERIALIZE_MENURPC(session->net.version, &resp_end, SetIsStartButtonEnabled, r_button);
-			instance_send_channeled(PV_LEGACY_DEFAULT, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+			instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			break;
 		}
 		case MenuRpcType_CancelLevelStart: uprintf("MenuRpcType_CancelLevelStart not implemented\n"); abort();
@@ -208,7 +208,7 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 			r_state.lobbyState = MultiplayerGameState_Lobby;
 			pkt_writeRoutingHeader(PV_LEGACY_DEFAULT, &resp_end, (struct RoutingHeader){0, 127, 0});
 			SERIALIZE_MENURPC(session->net.version, &resp_end, SetMultiplayerGameState, r_state);
-			instance_send_channeled(PV_LEGACY_DEFAULT, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+			instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			break;
 		}
 		case MenuRpcType_SetMultiplayerGameState: uprintf("MenuRpcType_SetMultiplayerGameState not implemented\n"); abort();
@@ -222,7 +222,7 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 				resp_end = resp;
 				pkt_writeRoutingHeader(PV_LEGACY_DEFAULT, &resp_end, (struct RoutingHeader){i, 0, 0});
 				SERIALIZE_MENURPC(session->net.version, &resp_end, SetIsReady, r_ready);
-				instance_send_channeled(PV_LEGACY_DEFAULT, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+				instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			}
 			break;
 		}
@@ -244,7 +244,7 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 				resp_end = resp;
 				pkt_writeRoutingHeader(PV_LEGACY_DEFAULT, &resp_end, (struct RoutingHeader){i, 0, 0});
 				SERIALIZE_MENURPC(session->net.version, &resp_end, SetIsInLobby, r_back);
-				instance_send_channeled(PV_LEGACY_DEFAULT, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+				instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			}
 			break;
 		}
@@ -258,7 +258,7 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 			r_button.reason = CannotStartGameReason_NoSongSelected;
 			pkt_writeRoutingHeader(PV_LEGACY_DEFAULT, &resp_end, (struct RoutingHeader){0, 127, 0});
 			SERIALIZE_MENURPC(session->net.version, &resp_end, SetIsStartButtonEnabled, r_button);
-			instance_send_channeled(PV_LEGACY_DEFAULT, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+			instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			break;
 		}
 		case MenuRpcType_SetCountdownEndTime: uprintf("MenuRpcType_SetCountdownEndTime not implemented\n"); abort();
@@ -290,7 +290,7 @@ static void handle_MenuRpc(struct Context *ctx, struct IndexSession *session, co
 			}
 			pkt_writeRoutingHeader(PV_LEGACY_DEFAULT, &resp_end, (struct RoutingHeader){0, 0, 0});
 			SERIALIZE_MENURPC(session->net.version, &resp_end, SetPermissionConfiguration, r_permission);
-			instance_send_channeled(PV_LEGACY_DEFAULT, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+			instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			break;
 		}
 		case MenuRpcType_SetPermissionConfiguration: uprintf("MenuRpcType_SetPermissionConfiguration not implemented\n"); abort();
@@ -313,7 +313,7 @@ static void handle_PlayerIdentity(struct Context *ctx, struct IndexSession *sess
 	r_sort.sortIndex = 0;
 	SERIALIZE_CUSTOM(PV_LEGACY_DEFAULT, &resp_end, InternalMessageType_PlayerSortOrderUpdate)
 		pkt_writePlayerSortOrderUpdate(PV_LEGACY_DEFAULT, &resp_end, r_sort);
-	instance_send_channeled(PV_LEGACY_DEFAULT, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+	instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 
 	update_menu(ctx, session, "Room 1", "Room 2");
 
@@ -325,7 +325,7 @@ static void handle_PlayerIdentity(struct Context *ctx, struct IndexSession *sess
 	SERIALIZE_MENURPC(session->net.version, &resp_end, GetRecommendedGameplayModifiers, (struct GetRecommendedGameplayModifiers){.base = base});
 	SERIALIZE_MENURPC(session->net.version, &resp_end, GetIsReady, (struct GetIsReady){.base = base});
 	SERIALIZE_MENURPC(session->net.version, &resp_end, GetIsInLobby, (struct GetIsInLobby){.base = base});
-	instance_send_channeled(PV_LEGACY_DEFAULT, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+	instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 }
 
 static void process_Channeled(struct Context *ctx, void *room, struct IndexSession *session, const uint8_t **data, const uint8_t *end, DeliveryMethod channelId) {
@@ -386,7 +386,7 @@ static void handle_ConnectRequest(struct Context *ctx, struct IndexSession *sess
 	r_sync.syncTime = get_syncTime();
 	SERIALIZE_CUSTOM(PV_LEGACY_DEFAULT, &resp_end, InternalMessageType_SyncTime)
 		pkt_writeSyncTime(PV_LEGACY_DEFAULT, &resp_end, r_sync);
-	instance_send_channeled(PV_LEGACY_DEFAULT, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+	instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 
 	resp_end = resp;
 	pkt_writeRoutingHeader(PV_LEGACY_DEFAULT, &resp_end, (struct RoutingHeader){0, 0, 0});
@@ -400,7 +400,7 @@ static void handle_ConnectRequest(struct Context *ctx, struct IndexSession *sess
 	NetKeypair_write_key(&ctx->keys, &ctx->net, r_identity.publicEncryptionKey.data, &r_identity.publicEncryptionKey.length);
 	SERIALIZE_CUSTOM(PV_LEGACY_DEFAULT, &resp_end, InternalMessageType_PlayerIdentity)
 		pkt_writePlayerIdentity(PV_LEGACY_DEFAULT, &resp_end, r_identity);
-	instance_send_channeled(PV_LEGACY_DEFAULT, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+	instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 }
 
 static void handle_packet(struct Context *ctx, struct IndexSession *session, const uint8_t *pkt, uint32_t len) {

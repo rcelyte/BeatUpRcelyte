@@ -2,8 +2,8 @@
 
 ![icon](https://repository-images.githubusercontent.com/430196616/1d564a38-bfb7-4e4c-b73d-fc47b13fb310)
 
-BeatUpRcelyte
-=============
+BeatUpServer
+============
 A multiplayer private server for *you!* Planned support for crossplay between PC and Quest.
 
 *Not to be confused with the in-game "Create Server" button, which creates a **room** on a server.*
