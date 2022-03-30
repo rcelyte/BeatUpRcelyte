@@ -8,7 +8,7 @@ typedef uint16_t StatusHandle;
 _Bool status_init(const char *path, uint16_t port);
 void status_cleanup();
 
-_Bool status_ssl_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, const char *path, uint16_t port);
+_Bool status_ssl_init(mbedtls_x509_crt certs[2], mbedtls_pk_context keys[2], const char *domain, const char *path, uint16_t port);
 void status_ssl_cleanup();
 
 void status_internal_init();

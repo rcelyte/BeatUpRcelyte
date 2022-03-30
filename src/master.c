@@ -64,8 +64,8 @@ struct MasterSession {
 
 struct Context {
 	struct NetContext net;
-	mbedtls_x509_crt *cert;
-	mbedtls_pk_context *key;
+	const mbedtls_x509_crt *cert;
+	const mbedtls_pk_context *key;
 	struct MasterSession *sessionList;
 };
 
@@ -270,7 +270,7 @@ static void handle_ClientHelloWithCookieRequest(struct Context *ctx, struct Mast
 	r_cert.base.requestId = master_getNextRequestId(session);
 	r_cert.base.responseId = req.certificateResponseId;
 	r_cert.certificateCount = 0;
-	for(mbedtls_x509_crt *it = ctx->cert; it; it = it->MBEDTLS_PRIVATE(next)) {
+	for(const mbedtls_x509_crt *it = ctx->cert; it; it = it->MBEDTLS_PRIVATE(next)) {
 		r_cert.certificateList[r_cert.certificateCount].length = it->MBEDTLS_PRIVATE(raw).MBEDTLS_PRIVATE(len);
 		memcpy(r_cert.certificateList[r_cert.certificateCount].data, it->MBEDTLS_PRIVATE(raw).MBEDTLS_PRIVATE(p), r_cert.certificateList[r_cert.certificateCount].length);
 		++r_cert.certificateCount;
@@ -587,10 +587,10 @@ static HANDLE master_thread = NULL;
 static pthread_t master_thread = 0;
 #endif
 static struct Context ctx = {{-1}, NULL, NULL, NULL};
-_Bool master_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, uint16_t port) {
+_Bool master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_context *key, uint16_t port) {
 	{
 		uint_fast8_t count = 0;
-		for(mbedtls_x509_crt *it = cert; it; it = it->MBEDTLS_PRIVATE(next), ++count) {
+		for(const mbedtls_x509_crt *it = cert; it; it = it->MBEDTLS_PRIVATE(next), ++count) {
 			if(it->MBEDTLS_PRIVATE(raw).MBEDTLS_PRIVATE(len) > 4096) {
 				uprintf("Host certificate too large\n");
 				return 1;

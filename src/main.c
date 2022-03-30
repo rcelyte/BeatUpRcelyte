@@ -40,7 +40,7 @@ int main(int argc, char const *argv[]) {
 		goto fail0;
 	status_internal_init();
 	if(cfg.status_tls) {
-		if(status_ssl_init(&cfg.status_cert, &cfg.status_key, cfg.status_path, cfg.status_port))
+		if(status_ssl_init(cfg.certs, cfg.keys, cfg.status_domain, cfg.status_path, cfg.status_port))
 			goto fail1;
 	} else {
 		if(status_init(cfg.status_path, cfg.status_port))
@@ -49,7 +49,7 @@ int main(int argc, char const *argv[]) {
 	if(instance_init(cfg.host_domain, cfg.host_domainIPv4))
 		goto fail2;
 	pool_init();
-	if(master_init(&cfg.master_cert, &cfg.master_key, cfg.master_port))
+	if(master_init(cfg.certs, cfg.keys, cfg.master_port))
 		goto fail3;
 	if(headless) {
 		#ifndef WINDOWS

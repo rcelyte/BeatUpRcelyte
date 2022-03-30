@@ -21,6 +21,9 @@ struct Context {
 	mbedtls_ssl_config conf;
 	mbedtls_entropy_context entropy;
 	mbedtls_ctr_drbg_context ctr_drbg;
+	mbedtls_x509_crt *certs;
+	mbedtls_pk_context *keys;
+	const char *domain;
 	const char *path;
 };
 
@@ -105,13 +108,19 @@ status_ssl_handler(struct Context *ctx) {
 	return 0;
 }
 
+static int sni_cb(struct Context *ctx, mbedtls_ssl_context *ssl, const unsigned char *name, size_t name_len) {
+	uint8_t i = (name_len == strlen(ctx->domain) && memcmp(name, ctx->domain, name_len) == 0);
+	mbedtls_ssl_set_hs_ca_chain(ssl, ctx->certs[i].MBEDTLS_PRIVATE(next), NULL);
+	return mbedtls_ssl_set_hs_own_cert(ssl, &ctx->certs[i], &ctx->keys[i]);
+}
+
 #ifdef WINDOWS
 static HANDLE status_thread = NULL;
 #else
 static pthread_t status_thread = 0;
 #endif
 static struct Context ctx = {-1};
-_Bool status_ssl_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, const char *path, uint16_t port) {
+_Bool status_ssl_init(mbedtls_x509_crt certs[2], mbedtls_pk_context keys[2], const char *domain, const char *path, uint16_t port) {
 	ctx.listenfd = socket(AF_INET6, SOCK_STREAM, 0);
 	{
 		int32_t iSetOption = 1;
@@ -154,15 +163,19 @@ _Bool status_ssl_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, const cha
 		return 1;
 	}
 	mbedtls_ssl_conf_rng(&ctx.conf, mbedtls_ctr_drbg_random, &ctx.ctr_drbg);
-	mbedtls_ssl_conf_ca_chain(&ctx.conf, cert->MBEDTLS_PRIVATE(next), NULL);
-	if((ret = mbedtls_ssl_conf_own_cert(&ctx.conf, cert, key)) != 0) {
+	mbedtls_ssl_conf_sni(&ctx.conf, (int (*)(void*, mbedtls_ssl_context*, const unsigned char*, size_t))sni_cb, &ctx);
+	/*mbedtls_ssl_conf_ca_chain(&ctx.conf, certs[1].MBEDTLS_PRIVATE(next), NULL);
+	if((ret = mbedtls_ssl_conf_own_cert(&ctx.conf, &certs[1], &keys[1])) != 0) {
 		uprintf("mbedtls_ssl_conf_own_cert() failed: %s\n", mbedtls_high_level_strerr(ret));
 		return 1;
-	}
+	}*/
 	if((ret = mbedtls_ssl_setup(&ctx.ssl, &ctx.conf)) != 0) {
 		uprintf("mbedtls_ssl_setup() failed: %s\n", mbedtls_high_level_strerr(ret));
 		return 1;
 	}
+	ctx.certs = certs;
+	ctx.keys = keys;
+	ctx.domain = domain;
 	ctx.path = path;
 	#ifdef WINDOWS
 	status_thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)status_ssl_handler, &ctx, 0, NULL);

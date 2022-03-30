@@ -105,7 +105,7 @@ mbedtls_ctr_drbg_context *net_get_ctr_drbg(struct NetContext *ctx);
 
 uint32_t net_time();
 
-_Bool master_init(mbedtls_x509_crt *cert, mbedtls_pk_context *key, uint16_t port);
+_Bool master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_context *key, uint16_t port);
 void master_cleanup();
 
 static inline int32_t RelativeSequenceNumber(int32_t to, int32_t from) {

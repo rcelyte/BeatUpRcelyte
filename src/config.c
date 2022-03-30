@@ -212,27 +212,27 @@ _Bool config_load(struct Config *out, const char *path) {
 		status_key_len = master_key_len;
 	}
 
-	if(!load_cert(master_cert, master_cert_len, &out->master_cert)) {
-		if(!load_cert(status_cert, status_cert_len, &out->status_cert)) {
-			if(!load_key(master_key, master_key_len, &out->master_key)) {
-				if(!load_key(status_key, status_key_len, &out->status_key)) {
+	if(!load_cert(master_cert, master_cert_len, &out->certs[0])) {
+		if(!load_cert(status_cert, status_cert_len, &out->certs[1])) {
+			if(!load_key(master_key, master_key_len, &out->keys[0])) {
+				if(!load_key(status_key, status_key_len, &out->keys[1])) {
 					return 0;
 				}
-				mbedtls_pk_free(&out->status_key);
+				mbedtls_pk_free(&out->keys[1]);
 			}
-			mbedtls_pk_free(&out->master_key);
+			mbedtls_pk_free(&out->keys[0]);
 		}
-		mbedtls_x509_crt_free(&out->status_cert);
+		mbedtls_x509_crt_free(&out->certs[1]);
 	}
-	mbedtls_x509_crt_free(&out->master_cert);
+	mbedtls_x509_crt_free(&out->certs[0]);
 	return 1;
 }
 
 void config_free(struct Config *cfg) {
-	mbedtls_x509_crt_free(&cfg->master_cert);
-	mbedtls_x509_crt_free(&cfg->status_cert);
-	mbedtls_pk_free(&cfg->master_key);
-	mbedtls_pk_free(&cfg->status_key);
+	mbedtls_x509_crt_free(&cfg->certs[0]);
+	mbedtls_x509_crt_free(&cfg->certs[1]);
+	mbedtls_pk_free(&cfg->keys[0]);
+	mbedtls_pk_free(&cfg->keys[1]);
 }
 
 /*struct Config config_default() { // TODO: use domain specific self-signed cert instead of generic one

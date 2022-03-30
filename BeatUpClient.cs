@@ -143,7 +143,6 @@ namespace BeatUpClient.Patches {
 					return;
 				Plugin.windowSize = windowSize;
 				Plugin.directDownloads = Config.Instance.DirectDownloads;
-				Plugin.skipResults = Config.Instance.SkipResults;
 				Plugin.Log?.Info($"Overriding window size - {windowSize}");
 				fi_Size.SetValue(packet, size);
 			}

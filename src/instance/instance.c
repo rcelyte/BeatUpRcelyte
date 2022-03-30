@@ -567,6 +567,99 @@ static void swap(uint8_t *a, uint8_t *b) {
 	*a = *b, *b = c;
 }
 
+static _Bool BeatmapIdentifierNetSerializable_eq(const struct BeatmapIdentifierNetSerializable *a, const struct BeatmapIdentifierNetSerializable *b, _Bool ignoreDifficulty) {
+	if(!String_eq(a->levelID, b->levelID))
+		return 0;
+	if(!String_eq(a->beatmapCharacteristicSerializedName, b->beatmapCharacteristicSerializedName))
+		return 0;
+	return a->difficulty == b->difficulty || ignoreDifficulty;
+}
+
+static _Bool GameplayModifiers_eq(const struct GameplayModifiers *a, const struct GameplayModifiers *b, _Bool speedOnly) {
+	if(a->songSpeed != b->songSpeed)
+		return 0;
+	return speedOnly || (a->energyType == b->energyType && a->demoNoFail == b->demoNoFail && a->instaFail == b->instaFail && a->failOnSaberClash == b->failOnSaberClash && a->enabledObstacleType == b->enabledObstacleType && a->demoNoObstacles == b->demoNoObstacles && a->noBombs == b->noBombs && a->fastNotes == b->fastNotes && a->strictAngles == b->strictAngles && a->disappearingArrows == b->disappearingArrows && a->ghostNotes == b->ghostNotes && a->noArrows == b->noArrows && a->noFailOn0Energy == b->noFailOn0Energy && a->proMode == b->proMode && a->zenMode == b->zenMode && a->smallCubes == b->smallCubes);
+}
+
+static void refresh_beatmap(struct Context *ctx, struct Room *room, _Bool lazy) {
+	if(room->state != ServerState_Lobby)
+		return;
+	uint32_t select = ~0u;
+	switch(room->configuration.songSelectionMode) {
+		case SongSelectionMode_Vote: vote_beatmap: {
+			uint8_t votes[126], max = 0;
+			struct Counter128 mask = COUNTER128_CLEAR;
+			FOR_ALL_PLAYERS(room, id,) {
+				votes[id] = 0;
+				if(!(room->players[id].permissions.hasRecommendBeatmapsPermission && room->players[id].lobby.recommendedBeatmap.beatmapCharacteristicSerializedName.length))
+					continue;
+				Counter128_set(&mask, id, 1);
+				FOR_SOME_PLAYERS(room, cmp, mask,) {
+					if(id == cmp || BeatmapIdentifierNetSerializable_eq(&room->players[id].lobby.recommendedBeatmap, &room->players[cmp].lobby.recommendedBeatmap, room->perPlayerDifficulty)) {
+						if(++votes[cmp] > max) {
+							select = cmp;
+							max = votes[cmp];
+						}
+						break;
+					}
+				}
+			}
+			break;
+		}
+		case SongSelectionMode_Random: { // TODO: implement
+			goto vote_beatmap;
+		}
+		case SongSelectionMode_OwnerPicks: {
+			FOR_ALL_PLAYERS(room, id,) {
+				if(room->players[id].permissions.isServerOwner) {
+					select = id;
+					break;
+				}
+			}
+			if(select == (uint32_t)~0u)
+				goto vote_beatmap;
+			break;
+		}
+		case SongSelectionMode_RandomPlayerPicks: {
+			if(room->lobby.randomPlayer == (uint32_t)~0u || !room->players[room->lobby.randomPlayer].lobby.recommendedBeatmap.beatmapCharacteristicSerializedName.length)
+				goto vote_beatmap;
+			select = room->lobby.randomPlayer;
+			break;
+		}
+	}
+	if(lazy && select != (uint32_t)~0u && BeatmapIdentifierNetSerializable_eq(&room->players[select].lobby.recommendedBeatmap, &room->selectedBeatmap, 0))
+		return;
+	room->lobby.canStart = 0;
+	room->lobby.canShare = COUNTER128_CLEAR;
+	room->lobby.buzzkills = COUNTER128_CLEAR;
+	room->lobby.possibleBuzzkills = COUNTER128_CLEAR;
+	room->lobby.shareHash.length = 0;
+	if(select != (uint32_t)~0u && room->players[select].lobby.recommendedBeatmap.beatmapCharacteristicSerializedName.length) {
+		room->lobby.isEntitled = COUNTER128_CLEAR;
+		room->lobby.isDownloaded = COUNTER128_CLEAR;
+		room->selectedBeatmap = room->players[select].lobby.recommendedBeatmap;
+		struct GetIsEntitledToLevel r_level;
+		struct SetSelectedBeatmap r_beatmap;
+		r_beatmap.base.syncTime = r_level.base.syncTime = room_get_syncTime(room);
+		r_level.flags.hasValue0 = 1;
+		r_level.levelId = room->selectedBeatmap.levelID;
+		r_beatmap.flags.hasValue0 = 1;
+		r_beatmap.identifier = room->selectedBeatmap;
+		FOR_ALL_PLAYERS(room, id,) {
+			player_beatmap(room, &room->players[id], &r_beatmap.identifier);
+			uint8_t resp[65536], *resp_end = resp;
+			pkt_writeRoutingHeader(room->players[id].net.version, &resp_end, (struct RoutingHeader){0, 127, 0});
+			SERIALIZE_MENURPC(room->players[id].net.version, &resp_end, GetIsEntitledToLevel, r_level);
+			SERIALIZE_MENURPC(room->players[id].net.version, &resp_end, SetSelectedBeatmap, r_beatmap);
+			instance_send_channeled(&room->players[id].net, &room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+		}
+	} else {
+		room->lobby.isEntitled = room->playerSort;
+		room->selectedBeatmap = CLEAR_BEATMAP;
+	}
+	refresh_button(ctx, room);
+}
+
 enum DisconnectMode {
 	DC_RESET = 1,
 	DC_NOTIFY = 2,
@@ -597,7 +690,7 @@ static void room_disconnect(struct Context *ctx, struct Room **room, struct Inst
 		if((*room)->state == ServerState_Lobby && id == (*room)->lobby.randomPlayer)
 			choose_random_player(ctx, *room);
 		if(mode & DC_NOTIFY) {
-			refresh_button(ctx, *room);
+			refresh_beatmap(ctx, *room, 0);
 			struct PlayerDisconnected r_disconnect;
 			r_disconnect.disconnectedReason = DisconnectedReason_ClientConnectionClosed;
 
@@ -679,97 +772,6 @@ static void instance_onResend(struct Context *ctx, uint32_t currentTime, uint32_
 		FOR_ALL_PLAYERS(*room, id,)
 			net_flush_merged(&ctx->net, &(*room)->players[id].net);
 	}
-}
-
-static _Bool BeatmapIdentifierNetSerializable_eq(const struct BeatmapIdentifierNetSerializable *a, const struct BeatmapIdentifierNetSerializable *b, _Bool ignoreDifficulty) {
-	if(!String_eq(a->levelID, b->levelID))
-		return 0;
-	if(!String_eq(a->beatmapCharacteristicSerializedName, b->beatmapCharacteristicSerializedName))
-		return 0;
-	return a->difficulty == b->difficulty || ignoreDifficulty;
-}
-
-static _Bool GameplayModifiers_eq(const struct GameplayModifiers *a, const struct GameplayModifiers *b, _Bool speedOnly) {
-	if(a->songSpeed != b->songSpeed)
-		return 0;
-	return speedOnly || (a->energyType == b->energyType && a->demoNoFail == b->demoNoFail && a->instaFail == b->instaFail && a->failOnSaberClash == b->failOnSaberClash && a->enabledObstacleType == b->enabledObstacleType && a->demoNoObstacles == b->demoNoObstacles && a->noBombs == b->noBombs && a->fastNotes == b->fastNotes && a->strictAngles == b->strictAngles && a->disappearingArrows == b->disappearingArrows && a->ghostNotes == b->ghostNotes && a->noArrows == b->noArrows && a->noFailOn0Energy == b->noFailOn0Energy && a->proMode == b->proMode && a->zenMode == b->zenMode && a->smallCubes == b->smallCubes);
-}
-
-static void refresh_beatmap(struct Context *ctx, struct Room *room, _Bool lazy) {
-	uint32_t select = ~0u;
-	switch(room->configuration.songSelectionMode) {
-		case SongSelectionMode_Vote: vote_beatmap: {
-			uint8_t votes[126], max = 0;
-			struct Counter128 mask = COUNTER128_CLEAR;
-			FOR_ALL_PLAYERS(room, id,) {
-				votes[id] = 0;
-				if(!(room->players[id].permissions.hasRecommendBeatmapsPermission && room->players[id].lobby.recommendedBeatmap.beatmapCharacteristicSerializedName.length))
-					continue;
-				Counter128_set(&mask, id, 1);
-				FOR_SOME_PLAYERS(room, cmp, mask,) {
-					if(id == cmp || BeatmapIdentifierNetSerializable_eq(&room->players[id].lobby.recommendedBeatmap, &room->players[cmp].lobby.recommendedBeatmap, room->perPlayerDifficulty)) {
-						if(++votes[cmp] > max) {
-							select = cmp;
-							max = votes[cmp];
-						}
-						break;
-					}
-				}
-			}
-			break;
-		}
-		case SongSelectionMode_Random: { // TODO: implement
-			goto vote_beatmap;
-		}
-		case SongSelectionMode_OwnerPicks: {
-			FOR_ALL_PLAYERS(room, id,) {
-				if(room->players[id].permissions.isServerOwner) {
-					select = id;
-					break;
-				}
-			}
-			if(select == (uint32_t)~0u)
-				goto vote_beatmap;
-			break;
-		}
-		case SongSelectionMode_RandomPlayerPicks: {
-			if(room->lobby.randomPlayer == (uint32_t)~0u || !room->players[room->lobby.randomPlayer].lobby.recommendedBeatmap.beatmapCharacteristicSerializedName.length)
-				goto vote_beatmap;
-			select = room->lobby.randomPlayer;
-			break;
-		}
-	}
-	if(lazy && select != (uint32_t)~0u && BeatmapIdentifierNetSerializable_eq(&room->players[select].lobby.recommendedBeatmap, &room->selectedBeatmap, 0))
-		return;
-	room->lobby.canStart = 0;
-	room->lobby.canShare = COUNTER128_CLEAR;
-	room->lobby.buzzkills = COUNTER128_CLEAR;
-	room->lobby.possibleBuzzkills = COUNTER128_CLEAR;
-	room->lobby.shareHash.length = 0;
-	if(select != (uint32_t)~0u && room->players[select].lobby.recommendedBeatmap.beatmapCharacteristicSerializedName.length) {
-		room->lobby.isEntitled = COUNTER128_CLEAR;
-		room->lobby.isDownloaded = COUNTER128_CLEAR;
-		room->selectedBeatmap = room->players[select].lobby.recommendedBeatmap;
-		struct GetIsEntitledToLevel r_level;
-		struct SetSelectedBeatmap r_beatmap;
-		r_beatmap.base.syncTime = r_level.base.syncTime = room_get_syncTime(room);
-		r_level.flags.hasValue0 = 1;
-		r_level.levelId = room->selectedBeatmap.levelID;
-		r_beatmap.flags.hasValue0 = 1;
-		r_beatmap.identifier = room->selectedBeatmap;
-		FOR_ALL_PLAYERS(room, id,) {
-			player_beatmap(room, &room->players[id], &r_beatmap.identifier);
-			uint8_t resp[65536], *resp_end = resp;
-			pkt_writeRoutingHeader(room->players[id].net.version, &resp_end, (struct RoutingHeader){0, 127, 0});
-			SERIALIZE_MENURPC(room->players[id].net.version, &resp_end, GetIsEntitledToLevel, r_level);
-			SERIALIZE_MENURPC(room->players[id].net.version, &resp_end, SetSelectedBeatmap, r_beatmap);
-			instance_send_channeled(&room->players[id].net, &room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
-		}
-	} else {
-		room->lobby.isEntitled = room->playerSort;
-		room->selectedBeatmap = CLEAR_BEATMAP;
-	}
-	refresh_button(ctx, room);
 }
 
 static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
