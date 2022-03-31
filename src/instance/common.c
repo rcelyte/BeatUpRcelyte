@@ -103,8 +103,6 @@ void instance_send_channeled(struct NetSession *session, struct Channels *channe
 	instance_send_backlog(session->version, channels, buf, len, channelId, 1, fragmentHeader);
 }
 
-#define bitsize(e) (sizeof(e) * 8)
-
 void handle_Ack(struct NetSession *session, struct Channels *channels, const uint8_t **data) {
 	struct Ack ack = pkt_readAck(session->version, data);
 	if(ack.channelId == DeliveryMethod_ReliableSequenced) {

@@ -1008,6 +1008,11 @@ struct SetIsReady {
 	struct RemoteProcedureCallFlags flags;
 	_Bool isReady;
 };
+struct SetStartGameTime {
+	struct RemoteProcedureCall base;
+	struct RemoteProcedureCallFlags flags;
+	float newTime;
+};
 struct GetIsInLobby {
 	struct RemoteProcedureCall base;
 };
@@ -1042,6 +1047,9 @@ struct SetPermissionConfiguration {
 	struct RemoteProcedureCall base;
 	struct RemoteProcedureCallFlags flags;
 	struct PlayersLobbyPermissionConfigurationNetSerializable playersPermissionConfiguration;
+};
+struct GetIsStartButtonEnabled {
+	struct RemoteProcedureCall base;
 };
 struct SetIsStartButtonEnabled {
 	struct RemoteProcedureCall base;
@@ -1412,6 +1420,7 @@ struct GetIsReady pkt_readGetIsReady(struct PacketContext ctx, const uint8_t **p
 void pkt_writeGetIsReady(struct PacketContext ctx, uint8_t **pkt, struct GetIsReady in);
 struct SetIsReady pkt_readSetIsReady(struct PacketContext ctx, const uint8_t **pkt);
 void pkt_writeSetIsReady(struct PacketContext ctx, uint8_t **pkt, struct SetIsReady in);
+void pkt_writeSetStartGameTime(struct PacketContext ctx, uint8_t **pkt, struct SetStartGameTime in);
 struct GetIsInLobby pkt_readGetIsInLobby(struct PacketContext ctx, const uint8_t **pkt);
 void pkt_writeGetIsInLobby(struct PacketContext ctx, uint8_t **pkt, struct GetIsInLobby in);
 struct SetIsInLobby pkt_readSetIsInLobby(struct PacketContext ctx, const uint8_t **pkt);
@@ -1423,6 +1432,7 @@ void pkt_writeGetOwnedSongPacks(struct PacketContext ctx, uint8_t **pkt, struct 
 struct SetOwnedSongPacks pkt_readSetOwnedSongPacks(struct PacketContext ctx, const uint8_t **pkt);
 struct GetPermissionConfiguration pkt_readGetPermissionConfiguration(struct PacketContext ctx, const uint8_t **pkt);
 void pkt_writeSetPermissionConfiguration(struct PacketContext ctx, uint8_t **pkt, struct SetPermissionConfiguration in);
+struct GetIsStartButtonEnabled pkt_readGetIsStartButtonEnabled(struct PacketContext ctx, const uint8_t **pkt);
 void pkt_writeSetIsStartButtonEnabled(struct PacketContext ctx, uint8_t **pkt, struct SetIsStartButtonEnabled in);
 void pkt_writeSetGameplaySceneSyncFinish(struct PacketContext ctx, uint8_t **pkt, struct SetGameplaySceneSyncFinish in);
 struct SetGameplaySceneReady pkt_readSetGameplaySceneReady(struct PacketContext ctx, const uint8_t **pkt);

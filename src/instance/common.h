@@ -4,11 +4,12 @@
 #define LOAD_TIMEOUT 15
 
 #define lengthof(x) (sizeof(x)/sizeof(*(x)))
+#define bitsize(e) (sizeof(e) * 8)
 #define indexof(a, e) ((e) - (a))
 #define String_eq(a, b) ((a).length == (b).length && memcmp((a).data, (b).data, (b).length) == 0)
 #define String_is(a, str) ((a).length == (lengthof(str) - 1) && memcmp((a).data, str, (lengthof(str) - 1)) == 0)
 
-#define SERIALIZE_SESSION(ctx, pkt, mtype, dtype, data) { \
+#define SERIALIZE_SESSION(ctx, pkt, mtype, dtype, ...) { \
 	SERIALIZE_CUSTOM(ctx, pkt, InternalMessageType_MultiplayerSession) { \
 		pkt_writeMultiplayerSessionMessageHeader(ctx, pkt, (struct MultiplayerSessionMessageHeader){ \
 			.type = MultiplayerSessionMessageType_##mtype, \
@@ -16,14 +17,13 @@
 		pkt_write##mtype##Header(ctx, pkt, (struct mtype##Header){ \
 			.type = mtype##Type_##dtype, \
 		}); \
-		pkt_write##dtype(ctx, pkt, data); \
+		pkt_write##dtype(ctx, pkt, __VA_ARGS__); \
 	} \
 }
 
-// TODO: explicit protocolVersion
-#define SERIALIZE_MENURPC(ctx, pkt, dtype, data) SERIALIZE_SESSION(ctx, pkt, MenuRpc, dtype, data)
-#define SERIALIZE_GAMEPLAYRPC(ctx, pkt, dtype, data) SERIALIZE_SESSION(ctx, pkt, GameplayRpc, dtype, data)
-#define SERIALIZE_BEATUP(ctx, pkt, dtype, data) SERIALIZE_SESSION(ctx, pkt, BeatUpMessage, dtype, data)
+#define SERIALIZE_MENURPC(ctx, pkt, dtype, ...) SERIALIZE_SESSION(ctx, pkt, MenuRpc, dtype, __VA_ARGS__)
+#define SERIALIZE_GAMEPLAYRPC(ctx, pkt, dtype, ...) SERIALIZE_SESSION(ctx, pkt, GameplayRpc, dtype, __VA_ARGS__)
+#define SERIALIZE_BEATUP(ctx, pkt, dtype, ...) SERIALIZE_SESSION(ctx, pkt, BeatUpMessage, dtype, __VA_ARGS__)
 
 #define CLEAR_BEATMAP (struct BeatmapIdentifierNetSerializable){{0}, {0}, 0}
 #define CLEAR_MODIFIERS (struct GameplayModifiers){EnergyType_Bar, 0, 0, 0, EnabledObstacleType_All, 0, 0, 0, 0, 0, 0, SongSpeed_Normal, 0, 0, 0, 0, 0}
@@ -31,23 +31,24 @@
 #define CLEAR_AVATARDATA (struct MultiplayerAvatarData){{0}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, {{0, 0, 0, 1}, {0, 0, 0, 1}}, {0}, {0}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0}, {0}, {0}}
 #define CLEAR_SETTINGS (struct PlayerSpecificSettingsNetSerializable){{0}, {0}, 0, 0, 0, 0, CLEAR_COLORSCHEME}
 
-typedef uint8_t ClientState;
-enum ClientState {
-	ClientState_disconnected,
-	ClientState_accepted,
-	ClientState_connected,
-};
-
-typedef uint8_t ServerState;
+typedef uint16_t ServerState;
 enum ServerState {
-	ServerState_Lobby = 1 << 0,
-	ServerState_Downloading = 1 << 1,
-	ServerState_LoadingScene = 1 << 2,
-	ServerState_LoadingSong = 1 << 3,
-	ServerState_Gameplay = 1 << 4,
-	ServerState_Results = 1 << 5,
-	ServerState_Menu = ServerState_Lobby | ServerState_Downloading,
-	ServerState_Game = ServerState_LoadingScene | ServerState_LoadingSong | ServerState_Gameplay | ServerState_Results,
+	// ServerState_Handshake_Accepted,
+	ServerState_Lobby_Idle = 1 << 0,
+	ServerState_Lobby_Entitlement = 1 << 1,
+	ServerState_Lobby_Ready = 1 << 2,
+	ServerState_Lobby_Countdown = 1 << 3,
+	ServerState_Lobby_Downloading = 1 << 4,
+	ServerState_Selected = ServerState_Lobby_Ready | ServerState_Lobby_Countdown | ServerState_Lobby_Downloading,
+	ServerState_Lobby = ServerState_Lobby_Idle | ServerState_Lobby_Entitlement | ServerState_Selected,
+	ServerState_Game_LoadingScene = 1 << 5,
+	ServerState_Game_LoadingSong = 1 << 6,
+	ServerState_Game_Gameplay = 1 << 7,
+	ServerState_Game_Results = 1 << 8,
+	ServerState_Game = ServerState_Game_LoadingScene | ServerState_Game_LoadingSong | ServerState_Game_Gameplay | ServerState_Game_Results,
+
+	ServerState_Timeout = ServerState_Lobby_Countdown | ServerState_Game_LoadingScene | ServerState_Game_LoadingSong | ServerState_Game_Results,
+	ServerState_Connected = ServerState_Lobby | ServerState_Game,
 };
 
 struct InstancePacket {

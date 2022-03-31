@@ -222,8 +222,12 @@ namespace BeatUpClient.Patches {
 			}
 			BeatmapLevelsModel.GetBeatmapLevelResult result = await LevelLoader.beatmapLevelsModel.GetBeatmapLevelAsync(levelId, default(System.Threading.CancellationToken));
 			Plugin.Log?.Debug($"GetBeatmapLevelResult.isError: {result.isError}");
-			if(result.isError)
-				return Plugin.directDownloads ? EntitlementsStatus.Unknown : EntitlementsStatus.NotOwned;
+			if(result.isError) {
+				if(Plugin.directDownloads && Patches.BeatmapLevelsModel_GetLevelPreviewForLevelId.resolvePreview?.Invoke(levelId) != null)
+					return EntitlementsStatus.Unknown;
+				else
+					return EntitlementsStatus.NotOwned;
+			}
 			if(Plugin.directDownloads && result.beatmapLevel is CustomBeatmapLevel level) {
 				Plugin.Log?.Debug("Zipping custom level");
 				if(lastData != null && Plugin.uploadLevel == levelId) {
@@ -245,7 +249,9 @@ namespace BeatUpClient.Patches {
 	[DiJack.Replace(typeof(MenuRpcManager))]
 	public class BeatUpMenuRpcManager : MenuRpcManager, IMenuRpcManager {
 		public Networking.PlayersDataModel? playersDataModel = null;
-		public BeatUpMenuRpcManager(IMultiplayerSessionManager multiplayerSessionManager) : base(multiplayerSessionManager) {}
+		public BeatUpMenuRpcManager(IMultiplayerSessionManager multiplayerSessionManager, INetworkConfig networkConfig) : base(multiplayerSessionManager) {
+			Plugin.networkConfig = networkConfig;
+		}
 		public static bool MissingRequirements(Networking.PacketHandler.RecommendPreview? preview, bool download) {
 			if(preview == null) {
 				Plugin.Log?.Debug($"Entitlement[good]: no preview");
@@ -826,7 +832,7 @@ namespace BeatUpClient.Networking {
 		public readonly NetworkPacketSerializer<MessageType, IConnectedPlayer> serializer = new NetworkPacketSerializer<MessageType, IConnectedPlayer>();
 		public PlayersDataModel? playersDataModel = null;
 
-		public PacketHandler(BeatmapCharacteristicCollectionSO beatmapCharacteristicCollection, IMultiplayerSessionManager multiplayerSessionManager, INetworkConfig networkConfig) {
+		public PacketHandler(BeatmapCharacteristicCollectionSO beatmapCharacteristicCollection, IMultiplayerSessionManager multiplayerSessionManager) {
 			Plugin.Log?.Debug("PacketHandler()");
 			PacketHandler.beatmapCharacteristicCollection = beatmapCharacteristicCollection;
 			System.Type ConnectedPlayer = typeof(ConnectedPlayerManager).Assembly.GetType("ConnectedPlayerManager+ConnectedPlayer");
@@ -835,13 +841,12 @@ namespace BeatUpClient.Networking {
 			fi_ConnectedPlayer_remoteConnectionId = ConnectedPlayer.GetField("_remoteConnectionId", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
 			mi_ConnectedPlayerManager_WriteOne = typeof(ConnectedPlayerManager).GetMethod("WriteOne", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
 			this.multiplayerSessionManager = (MultiplayerSessionManager)multiplayerSessionManager;
-			Plugin.networkConfig = networkConfig;
 		}
 
-		public static uint UpperBound(uint num, uint limit) {
-			if(num > limit)
+		public static uint UpperBound(uint value, uint limit) {
+			if(value > limit)
 				throw new System.ArgumentOutOfRangeException();
-			return num;
+			return value;
 		}
 
 		public void Initialize() {
@@ -1220,19 +1225,21 @@ namespace BeatUpClient {
 		public static void OnSceneLoaded(UnityEngine.SceneManagement.Scene scene, UnityEngine.SceneManagement.LoadSceneMode mode) {
 			if(scene.name != "MainMenu")
 				return;
-			UnityEngine.GameObject Fullscreen = System.Linq.Enumerable.First(System.Linq.Enumerable.Select(UnityEngine.Resources.FindObjectsOfTypeAll<UnityEngine.UI.Toggle>(), x => x.transform.parent.gameObject), p => p.name == "Fullscreen");
-			UnityEngine.GameObject MaxNumberOfPlayers = System.Linq.Enumerable.First(System.Linq.Enumerable.Select(UnityEngine.Resources.FindObjectsOfTypeAll<StepValuePicker>(), x => x.transform.parent.gameObject), p => p.name == "MaxNumberOfPlayers");
-			UnityEngine.Transform CreateServerFormView = MaxNumberOfPlayers.transform.parent;
-			UI.CreateValuePicker(MaxNumberOfPlayers, CreateServerFormView, "CountdownDuration", "Countdown Duration", () => ref Config.Instance.CountdownDuration, new byte[] {(byte)(Config.Instance.CountdownDuration * 4), 0, 12, 20, 32, 40, 60});
-			UI.CreateToggle(Fullscreen, CreateServerFormView, "SkipResults", "Skip Results Pyramid", () => ref Config.Instance.SkipResults);
-			UI.CreateToggle(Fullscreen, CreateServerFormView, "PerPlayerDifficulty", "Per-Player Difficulty", () => ref Config.Instance.PerPlayerDifficulty);
-			UI.CreateToggle(Fullscreen, CreateServerFormView, "PerPlayerModifiers", "Per-Player Modifiers", () => ref Config.Instance.PerPlayerModifiers);
-			CreateServerFormView.parent.gameObject.GetComponent<UnityEngine.UI.VerticalLayoutGroup>().enabled = true;
-			CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.VerticalLayoutGroup>().enabled = true;
-			CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.ContentSizeFitter>().enabled = true;
-			CreateServerFormView.parent.parent.gameObject.SetActive(true);
-			/*UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(CreateServerFormView.parent.parent as UnityEngine.RectTransform);
-			CreateServerFormView.parent.parent.gameObject.SetActive(false);*/
+			if(Plugin.networkConfig is CustomNetworkConfig) {
+				UnityEngine.GameObject Fullscreen = System.Linq.Enumerable.First(System.Linq.Enumerable.Select(UnityEngine.Resources.FindObjectsOfTypeAll<UnityEngine.UI.Toggle>(), x => x.transform.parent.gameObject), p => p.name == "Fullscreen");
+				UnityEngine.GameObject MaxNumberOfPlayers = System.Linq.Enumerable.First(System.Linq.Enumerable.Select(UnityEngine.Resources.FindObjectsOfTypeAll<StepValuePicker>(), x => x.transform.parent.gameObject), p => p.name == "MaxNumberOfPlayers");
+				UnityEngine.Transform CreateServerFormView = MaxNumberOfPlayers.transform.parent;
+				UI.CreateValuePicker(MaxNumberOfPlayers, CreateServerFormView, "CountdownDuration", "Countdown Duration", () => ref Config.Instance.CountdownDuration, new byte[] {(byte)(Config.Instance.CountdownDuration * 4), 0, 12, 20, 32, 40, 60});
+				UI.CreateToggle(Fullscreen, CreateServerFormView, "SkipResults", "Skip Results Pyramid", () => ref Config.Instance.SkipResults);
+				UI.CreateToggle(Fullscreen, CreateServerFormView, "PerPlayerDifficulty", "Per-Player Difficulty", () => ref Config.Instance.PerPlayerDifficulty);
+				UI.CreateToggle(Fullscreen, CreateServerFormView, "PerPlayerModifiers", "Per-Player Modifiers", () => ref Config.Instance.PerPlayerModifiers);
+				CreateServerFormView.parent.gameObject.GetComponent<UnityEngine.UI.VerticalLayoutGroup>().enabled = true;
+				CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.VerticalLayoutGroup>().enabled = true;
+				CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.ContentSizeFitter>().enabled = true;
+				CreateServerFormView.parent.parent.gameObject.SetActive(true);
+				/*UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(CreateServerFormView.parent.parent as UnityEngine.RectTransform);
+				CreateServerFormView.parent.parent.gameObject.SetActive(false);*/
+			}
 
 			StandardLevelDetailView LevelDetail = UnityEngine.Resources.FindObjectsOfTypeAll<StandardLevelDetailView>()[0];
 			UnityEngine.Transform LobbySetupViewController_Wrapper = UnityEngine.Resources.FindObjectsOfTypeAll<LobbySetupViewController>()[0].transform.GetChild(0);

@@ -14,9 +14,9 @@ static void PRF_Hash(uint8_t *key, uint32_t key_len, uint8_t *seed, uint32_t see
 	uint8_t hash[MBEDTLS_MD_MAX_SIZE];
 	const mbedtls_md_info_t *md_info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
 	mbedtls_md_hmac(md_info, key, key_len, seed, *length, hash);
-	uint32_t num = min(*length + mbedtls_md_get_size(md_info), seed_len);
-	memcpy(&seed[*length], hash, num - *length);
-	*length = num;
+	uint32_t end = min(*length + mbedtls_md_get_size(md_info), seed_len);
+	memcpy(&seed[*length], hash, end - *length);
+	*length = end;
 }
 
 static void PRF(uint8_t *out, uint8_t *key, uint32_t key_len, const uint8_t *seed, uint32_t seed_len, uint32_t length) {

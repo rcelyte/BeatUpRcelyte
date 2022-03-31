@@ -203,11 +203,12 @@ struct EnumEntry {
 
 const void *memmem(const uint8_t *ptr, const uint8_t *sub, size_t count, size_t subcount) {
 	for(; count >= subcount; ++ptr, --count) {
-		for(const uint8_t *a = ptr, *b = sub; b < &sub[subcount]; ++a, ++b)
-			if(*a != *b)
-				goto next;
-		return ptr;
-		next:
+		const uint8_t *a = ptr, *b = sub;
+		while(b < &sub[subcount])
+			if(*a++ != *b++)
+				break;
+		if(b >= &sub[subcount])
+			return ptr;
 	}
 	return NULL;
 }

@@ -1117,7 +1117,7 @@ u8 MultiplayerSessionMessage Type
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				b isReady
-		n SetStartGameTime
+		s SetStartGameTime
 			RemoteProcedureCall base
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
@@ -1159,7 +1159,7 @@ u8 MultiplayerSessionMessage Type
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				PlayersLobbyPermissionConfigurationNetSerializable playersPermissionConfiguration
-		n GetIsStartButtonEnabled
+		r GetIsStartButtonEnabled
 			RemoteProcedureCall base
 		s SetIsStartButtonEnabled
 			RemoteProcedureCall base

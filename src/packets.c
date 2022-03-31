@@ -1342,6 +1342,13 @@ void pkt_writeSetIsReady(struct PacketContext ctx, uint8_t **pkt, struct SetIsRe
 		pkt_writeUint8(ctx, pkt, in.isReady);
 	}
 }
+void pkt_writeSetStartGameTime(struct PacketContext ctx, uint8_t **pkt, struct SetStartGameTime in) {
+	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
+	pkt_writeRemoteProcedureCallFlags(ctx, pkt, in.flags);
+	if(in.flags.hasValue0) {
+		pkt_writeFloat32(ctx, pkt, in.newTime);
+	}
+}
 struct GetIsInLobby pkt_readGetIsInLobby(struct PacketContext ctx, const uint8_t **pkt) {
 	struct GetIsInLobby out;
 	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
@@ -1404,6 +1411,11 @@ void pkt_writeSetPermissionConfiguration(struct PacketContext ctx, uint8_t **pkt
 	if(in.flags.hasValue0) {
 		pkt_writePlayersLobbyPermissionConfigurationNetSerializable(ctx, pkt, in.playersPermissionConfiguration);
 	}
+}
+struct GetIsStartButtonEnabled pkt_readGetIsStartButtonEnabled(struct PacketContext ctx, const uint8_t **pkt) {
+	struct GetIsStartButtonEnabled out;
+	out.base = pkt_readRemoteProcedureCall(ctx, pkt);
+	return out;
 }
 void pkt_writeSetIsStartButtonEnabled(struct PacketContext ctx, uint8_t **pkt, struct SetIsStartButtonEnabled in) {
 	pkt_writeRemoteProcedureCall(ctx, pkt, in.base);
