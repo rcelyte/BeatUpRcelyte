@@ -77,6 +77,21 @@ namespace BeatUpClient.Patches {
 		}
 	}
 
+	[HarmonyLib.HarmonyPatch(typeof(PlatformAuthenticationTokenProvider), nameof(PlatformAuthenticationTokenProvider.GetAuthenticationToken))]
+	public class PlatformAuthenticationTokenProvider_GetAuthenticationToken { // fix for offline mode
+		public static async System.Threading.Tasks.Task<AuthenticationToken> AuthWrapper(System.Threading.Tasks.Task<AuthenticationToken> task, AuthenticationToken.Platform platform, string userId, string userName) {
+			try {
+				return await task;
+			} catch(System.Security.Authentication.AuthenticationException) {
+				return new AuthenticationToken(platform, userId, userName, "");
+			}
+		}
+		public static void Postfix(ref System.Threading.Tasks.Task<AuthenticationToken> __result, AuthenticationToken.Platform ____platform, string ____userId, string ____userName) {
+			if(Plugin.networkConfig is CustomNetworkConfig)
+				__result = AuthWrapper(__result, ____platform, ____userId, ____userName);
+		}
+	}
+
 	[HarmonyLib.HarmonyPatch(typeof(ClientCertificateValidator), "ValidateCertificateChainInternal")]
 	public class ClientCertificateValidator_ValidateCertificateChainInternal {
 		public static bool Prefix() =>
@@ -93,7 +108,7 @@ namespace BeatUpClient.Patches {
 	[HarmonyLib.HarmonyPatch(typeof(LobbySetupViewController), nameof(LobbySetupViewController.SetPlayersMissingLevelText))]
 	public class LobbySetupViewController_SetPlayersMissingLevelText {
 		public static void Prefix(LobbySetupViewController __instance, string playersMissingLevelText, ref UnityEngine.UI.Button ____startGameReadyButton) {
-			if (!string.IsNullOrEmpty(playersMissingLevelText) && ____startGameReadyButton.interactable)
+			if(!string.IsNullOrEmpty(playersMissingLevelText) && ____startGameReadyButton.interactable)
 				__instance.SetStartGameEnabled(CannotStartGameReason.DoNotOwnSong);
 		}
 	}
@@ -197,7 +212,6 @@ namespace BeatUpClient.Patches {
 			using(System.IO.MemoryStream memoryStream = new System.IO.MemoryStream()) {
 				using(System.IO.Compression.ZipArchive archive = new System.IO.Compression.ZipArchive(memoryStream, System.IO.Compression.ZipArchiveMode.Create, true)) {
 					await ZipFile(archive, level.songAudioClipPath, level.standardLevelInfoSaveData.songFilename);
-					await ZipFile(archive, System.IO.Path.Combine(level.customLevelPath, level.standardLevelInfoSaveData.coverImageFilename), level.standardLevelInfoSaveData.coverImageFilename);
 					await ZipFile(archive, System.IO.Path.Combine(level.customLevelPath, "Info.dat"), "Info.dat");
 					for(int i = 0; i < level.beatmapLevelData.difficultyBeatmapSets.Count; ++i) {
 						for(int j = 0; j < level.beatmapLevelData.difficultyBeatmapSets[i].difficultyBeatmaps.Count; ++j) {
@@ -286,7 +300,7 @@ namespace BeatUpClient.Patches {
 				entitlementStatus = EntitlementsStatus.NotOwned;
 			} else if(entitlementStatus == EntitlementsStatus.Ok && Plugin.uploadData != null) {
 				Plugin.Log?.Debug($"Announcing share for `{levelId}`");
-				multiplayerSessionManager.Send(new Networking.PacketHandler.SetCanShareBeatmap(levelId, "1234", (ulong)Plugin.uploadData.Length, true)); // No public method exposes the `onlyFirstDegree` option
+				multiplayerSessionManager.Send(new Networking.PacketHandler.SetCanShareBeatmap(levelId, "1234", (ulong)Plugin.uploadData.LongLength, true)); // No public method exposes the `onlyFirstDegree` option
 			}
 			Plugin.Log?.Debug($"entitlementStatus={entitlementStatus}");
 			base.SetIsEntitledToLevel(levelId, entitlementStatus);
@@ -296,15 +310,19 @@ namespace BeatUpClient.Patches {
 	[DiJack.ReplaceInterfacesAndSelf(typeof(MultiplayerLevelLoader))]
 	public class LevelLoader : MultiplayerLevelLoader {
 		public class MemorySpriteLoader : ISpriteAsyncLoader {
-			System.IO.Compression.ZipArchiveEntry data;
-			public MemorySpriteLoader(System.IO.Compression.ZipArchiveEntry data) {
-				this.data = data;
+			System.Threading.Tasks.Task<byte[]> dataTask;
+			public MemorySpriteLoader(System.Threading.Tasks.Task<byte[]> dataTask) {
+				this.dataTask = dataTask;
 			}
-			async System.Threading.Tasks.Task<UnityEngine.Sprite> ISpriteAsyncLoader.LoadSpriteAsync(string path, System.Threading.CancellationToken cancellationToken) {
-				byte[] imageData = new byte[data.Length];
-				await data.Open().ReadAsync(imageData, 0, imageData.Length);
+			public async System.Threading.Tasks.Task<UnityEngine.Sprite?> LoadSpriteAsync(string path, System.Threading.CancellationToken cancellationToken) {
+				byte[] data = await dataTask;
+				if(data.Length < 1) {
+					Plugin.Log?.Debug("Returning default sprite");
+					return null;
+				}
+				Plugin.Log?.Debug("Decoding sprite");
 				UnityEngine.Texture2D texture = new UnityEngine.Texture2D(2, 2);
-				UnityEngine.ImageConversion.LoadImage(texture, imageData);
+				UnityEngine.ImageConversion.LoadImage(texture, data);
 				UnityEngine.Rect rect = new UnityEngine.Rect(0, 0, texture.width, texture.height);
 				return UnityEngine.Sprite.Create(texture, rect, new UnityEngine.Vector2(0, 0), 0.1f);
 			}
@@ -346,7 +364,7 @@ namespace BeatUpClient.Patches {
 				environmentInfoSO = defaultInfo;
 			return environmentInfoSO;
 		}
-		public CustomPreviewBeatmapLevel? LoadZippedPreviewBeatmapLevel(string levelID, StandardLevelInfoSaveData standardLevelInfoSaveData, System.IO.Compression.ZipArchive archive) {
+		public CustomPreviewBeatmapLevel? LoadZippedPreviewBeatmapLevel(string levelID, StandardLevelInfoSaveData standardLevelInfoSaveData, System.Threading.Tasks.Task<byte[]> cover, System.IO.Compression.ZipArchive archive) {
 			try {
 				EnvironmentInfoSO environmentInfo = LoadEnvironmentInfo(standardLevelInfoSaveData.environmentName, defaultEnvironmentInfo);
 				EnvironmentInfoSO allDirectionsEnvironmentInfo = LoadEnvironmentInfo(standardLevelInfoSaveData.allDirectionsEnvironmentName, defaultAllDirectionsEnvironmentInfo);
@@ -363,14 +381,33 @@ namespace BeatUpClient.Patches {
 						sets.Add(new PreviewDifficultyBeatmapSet(beatmapCharacteristicBySerializedName, diffs));
 					}
 				}
-				System.IO.Compression.ZipArchiveEntry cover = archive.GetEntry(standardLevelInfoSaveData.coverImageFilename);
-				if(cover == null) {
-					Plugin.Log?.Error("File not found in archive: " + standardLevelInfoSaveData.coverImageFilename);
-					return null;
-				}
 				return new CustomPreviewBeatmapLevel(Plugin.defaultPackCover, standardLevelInfoSaveData, dataPath, new MemorySpriteLoader(cover), levelID, standardLevelInfoSaveData.songName, standardLevelInfoSaveData.songSubName, standardLevelInfoSaveData.songAuthorName, standardLevelInfoSaveData.levelAuthorName, standardLevelInfoSaveData.beatsPerMinute, standardLevelInfoSaveData.songTimeOffset, standardLevelInfoSaveData.shuffle, standardLevelInfoSaveData.shufflePeriod, standardLevelInfoSaveData.previewStartTime, standardLevelInfoSaveData.previewDuration, environmentInfo, allDirectionsEnvironmentInfo, sets.ToArray());
 			} catch {
 				return null;
+			}
+		}
+		public static async System.Threading.Tasks.Task<UnityEngine.AudioClip?> DecodeAudio(System.IO.Compression.ZipArchiveEntry song, UnityEngine.AudioType type) {
+			byte[] songData = new byte[song.Length];
+			song.Open().Read(songData, 0, songData.Length);
+			System.Net.Sockets.TcpListener host = new System.Net.Sockets.TcpListener(new System.Net.IPEndPoint(System.Net.IPAddress.Any, 0));
+			host.Start(1);
+			using(UnityEngine.Networking.UnityWebRequest www = UnityEngine.Networking.UnityWebRequestMultimedia.GetAudioClip("http://127.0.0.1:" + ((System.Net.IPEndPoint)host.LocalEndpoint).Port, type)) {
+				((UnityEngine.Networking.DownloadHandlerAudioClip)www.downloadHandler).streamAudio = true;
+				UnityEngine.AsyncOperation request = www.SendWebRequest();
+				System.Net.Sockets.TcpClient client = host.AcceptTcpClient();
+				System.Net.Sockets.NetworkStream stream = client.GetStream();
+				byte[] resp = System.Text.Encoding.ASCII.GetBytes($"HTTP/1.1 200 \r\naccept-ranges: bytes\r\ncontent-length: {songData.Length}\r\ncontent-type: audio/ogg\r\n\r\n");
+				stream.Write(resp, 0, resp.Length);
+				stream.Write(songData, 0, songData.Length);
+				while(!request.isDone)
+					await System.Threading.Tasks.Task.Delay(100);
+				client.Close();
+				host.Stop();
+				if(www.isNetworkError || www.isHttpError) {
+					UnityEngine.Debug.Log($"Audio load error: {www.error}");
+					return null;
+				}
+				return UnityEngine.Networking.DownloadHandlerAudioClip.GetContent(www);
 			}
 		}
 		public async System.Threading.Tasks.Task<CustomBeatmapLevel?> LoadZippedBeatmapLevelAsync(CustomPreviewBeatmapLevel customPreviewBeatmapLevel, System.IO.Compression.ZipArchive archive, bool modded, System.Threading.CancellationToken cancellationToken) {
@@ -408,13 +445,7 @@ namespace BeatUpClient.Patches {
 				Plugin.Log?.Error("File not found in archive: " + standardLevelInfoSaveData.songFilename);
 				return null;
 			}
-			if(!ValidatedPath(standardLevelInfoSaveData.songFilename, out string clipPath))
-				return null;
-			Plugin.Log?.Debug("Path: " + clipPath);
-			byte[] songData = new byte[song.Length];
-			song.Open().Read(songData, 0, songData.Length);
-			System.IO.File.WriteAllBytes(clipPath, songData); /*await System.IO.File.WriteAllBytesAsync(clipPath, songData);*/
-			UnityEngine.AudioClip? audioClip = await mediaAsyncLoader.LoadAudioClipFromFilePathAsync(clipPath);
+			UnityEngine.AudioClip? audioClip = await DecodeAudio(song, AudioTypeHelper.GetAudioTypeFromPath(standardLevelInfoSaveData.songFilename));
 			if(audioClip == null) {
 				Plugin.Log?.Debug("NULL AUDIO CLIP");
 				return null;
@@ -425,7 +456,7 @@ namespace BeatUpClient.Patches {
 		}
 		async System.Threading.Tasks.Task<BeatmapLevelsModel.GetBeatmapLevelResult> DownloadWrapper(System.Threading.Tasks.Task<BeatmapLevelsModel.GetBeatmapLevelResult> task, ILevelGameplaySetupData gameplaySetupData, System.Threading.CancellationToken cancellationToken) {
 			BeatmapLevelsModel.GetBeatmapLevelResult result = await task;
-			if(!result.isError || Plugin.downloadInfo == null)
+			if(!result.isError || Plugin.downloadInfo == null || Plugin.downloadPreview == null)
 				return result;
 			Plugin.Log?.Debug("Starting direct download");
 			try {
@@ -436,7 +467,7 @@ namespace BeatUpClient.Patches {
 				while(handler.gaps.Count > 0) {
 					cycle = (cycle + 1) % 64;
 					if(cycle == 0) {
-						ulong dl = (ulong)handler.buffer.Length;
+						ulong dl = (ulong)handler.buffer.LongLength;
 						foreach((ulong start, ulong end) in handler.gaps)
 							dl -= (end - start);
 						Plugin.Log?.Debug($"Progress: {dl} / {handler.buffer.Length}");
@@ -478,8 +509,7 @@ namespace BeatUpClient.Patches {
 						} else {
 							System.IO.Directory.CreateDirectory(dataPath);
 						}
-						bool modded = Plugin.downloadPreview?.requirements.Length > 0 || Plugin.downloadPreview?.suggestions.Length > 0;
-						StandardLevelInfoSaveData info;
+						bool modded = Plugin.downloadPreview.requirements.Length > 0 || Plugin.downloadPreview.suggestions.Length > 0;
 						byte[] rawInfo = new byte[infoFile.Length];
 						infoFile.Open().Read(rawInfo, 0, rawInfo.Length);
 						if(modded) {
@@ -488,11 +518,11 @@ namespace BeatUpClient.Patches {
 							else
 								return result;
 						}
-						info = StandardLevelInfoSaveData.DeserializeFromJSONString(System.Text.Encoding.UTF8.GetString(rawInfo, 0, rawInfo.Length));
-						CustomPreviewBeatmapLevel? previewBeatmapLevel = LoadZippedPreviewBeatmapLevel(gameplaySetupData.beatmapLevel.beatmapLevel.levelID, info, archive);
+						StandardLevelInfoSaveData info = StandardLevelInfoSaveData.DeserializeFromJSONString(System.Text.Encoding.UTF8.GetString(rawInfo, 0, rawInfo.Length));
+						CustomPreviewBeatmapLevel? previewBeatmapLevel = LoadZippedPreviewBeatmapLevel(gameplaySetupData.beatmapLevel.beatmapLevel.levelID, info, Plugin.downloadPreview.preview.coverRenderTask, archive);
 						if(previewBeatmapLevel == null)
 							return result;
-						Plugin.downloadPreview?.preview.Init(previewBeatmapLevel);
+						Plugin.downloadPreview.preview.Init(previewBeatmapLevel);
 						CustomBeatmapLevel? level = await LoadZippedBeatmapLevelAsync(previewBeatmapLevel, archive, modded, cancellationToken);
 						if(level == null)
 							return result;
@@ -592,21 +622,11 @@ namespace BeatUpClient.Networking {
 			public System.Collections.Generic.IReadOnlyList<PreviewDifficultyBeatmapSet> previewDifficultyBeatmapSets { get; set; } = null!;
 			public EnvironmentInfoSO environmentInfo { get; set; } = null!;
 			public EnvironmentInfoSO allDirectionsEnvironmentInfo { get; set; } = null!;
-			readonly ByteArrayNetSerializable cover = new ByteArrayNetSerializable("cover", 0, 8192);
+			public readonly ByteArrayNetSerializable cover = new ByteArrayNetSerializable("cover", 0, 8192);
 			public System.Threading.Tasks.Task<byte[]> coverRenderTask = System.Threading.Tasks.Task.FromResult<byte[]>(new byte[0]);
-			public System.Threading.Tasks.Task<UnityEngine.Sprite> GetCoverImageAsync(System.Threading.CancellationToken cancellationToken) {
+			public async System.Threading.Tasks.Task<UnityEngine.Sprite> GetCoverImageAsync(System.Threading.CancellationToken cancellationToken) {
 				Plugin.Log?.Debug("NetworkPreviewBeatmapLevel.GetCoverImageAsync()");
-				UnityEngine.Sprite sprite = Plugin.defaultPackCover;
-				if(cover.data.Length > 0) {
-					Plugin.Log?.Debug("Decoding sprite");
-					UnityEngine.Texture2D texture = new UnityEngine.Texture2D(2, 2);
-					UnityEngine.ImageConversion.LoadImage(texture, cover.data);
-					UnityEngine.Rect rect = new UnityEngine.Rect(0, 0, texture.width, texture.height);
-					sprite = UnityEngine.Sprite.Create(texture, rect, new UnityEngine.Vector2(0, 0), 0.1f);
-				} else {
-					Plugin.Log?.Debug("Returning default sprite");
-				}
-				return System.Threading.Tasks.Task.FromResult<UnityEngine.Sprite>(sprite);
+				return await new Patches.LevelLoader.MemorySpriteLoader(coverRenderTask).LoadSpriteAsync("", cancellationToken) ?? Plugin.defaultPackCover;
 			}
 			public async System.Threading.Tasks.Task<byte[]> RenderCoverImageAsync(IPreviewBeatmapLevel beatmapLevel) {
 				UnityEngine.Sprite fullSprite = await beatmapLevel.GetCoverImageAsync(default(System.Threading.CancellationToken));
@@ -673,6 +693,7 @@ namespace BeatUpClient.Networking {
 				}
 				previewDifficultyBeatmapSets = sets;
 				cover.Deserialize(reader);
+				coverRenderTask = System.Threading.Tasks.Task.FromResult<byte[]>(cover.data);
 			}
 			public void Init(IPreviewBeatmapLevel beatmapLevel) {
 				levelID = beatmapLevel.levelID;
@@ -906,18 +927,18 @@ namespace BeatUpClient.Networking {
 		}
 
 		public void HandleLevelFragmentRequest(LevelFragmentRequest packet, IConnectedPlayer player) {
-			if(Plugin.uploadData == null || packet.offset > (ulong)Plugin.uploadData.Length)
+			if(Plugin.uploadData == null || packet.offset > (ulong)Plugin.uploadData.LongLength)
 				return;
-			byte[] data = new byte[System.Math.Min(packet.maxSize, (ulong)Plugin.uploadData.Length - packet.offset)];
+			byte[] data = new byte[System.Math.Min(packet.maxSize, (ulong)Plugin.uploadData.LongLength - packet.offset)];
 			System.Buffer.BlockCopy(Plugin.uploadData, (int)packet.offset, data, 0, data.Length);
 			SendUnreliableToPlayer(new LevelFragment(packet.offset, data), player);
 		}
 
 		public void HandleLevelFragment(LevelFragment packet, IConnectedPlayer player) {
-			if(buffer == null || packet.offset >= (ulong)buffer.Length || packet.offset + (uint)packet.data.Length > (ulong)buffer.Length)
+			if(buffer == null || packet.offset >= (ulong)buffer.LongLength || packet.offset + (uint)packet.data.LongLength > (ulong)buffer.LongLength)
 				return;
 			System.Buffer.BlockCopy(packet.data, 0, buffer, (int)packet.offset, packet.data.Length);
-			ulong start = packet.offset, end = packet.offset + (ulong)packet.data.Length;
+			ulong start = packet.offset, end = packet.offset + (ulong)packet.data.LongLength;
 			int i = gaps.Count - 1;
 			while(i > 0 && gaps[i].start > start)
 				--i;
