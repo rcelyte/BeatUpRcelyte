@@ -1,0 +1,95 @@
+<!doctypehtml>
+<meta charset=utf-8>
+<meta content="width=device-width,initial-scale=1"name=viewport>
+<title>Server Status</title>
+<link href=/favicon.ico rel=icon type=image/x-icon>
+<style>
+	@keyframes sl{
+		from{background-position:0 0}
+		to{background-position:1470px 504px}
+	}
+	@keyframes sc{
+		from{transform:translate(0,-200%)}
+		to{transform:translate(-50%,-200%)}
+	}
+	@keyframes hint{
+		13.33%{max-width:6ch;padding:11pt 4pt 11pt 11pt}
+		70%{max-width:6ch;padding:11pt 4pt 11pt 11pt}
+	}
+	body:before{
+		content:"";
+		position:fixed;
+		width:150vmax;
+		height:150vmax;
+		top:50%;
+		left:50%;
+		z-index:-1;
+		background:url(data:image/png;base64,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) 0 0 repeat;
+		background-size:735px;
+		-webkit-transform:translate(-50%,-50%) rotate(30deg);
+		-moz-transform:translate(-50%,-50%) rotate(30deg);
+		-ms-transform:translate(-50%,-50%) rotate(30deg);
+		-o-transform:translate(-50%,-50%) rotate(30deg);
+		transform:translate(-50%,-50%) rotate(30deg);
+		animation:sl 120s linear infinite
+	}
+	#main td,#main th{
+		background:#222;
+		margin:4pt;
+		padding:0;
+		overflow:hidden
+	}
+	#main a,#main>thead th{
+		padding:0 8pt
+	}
+	#main a{
+		color:#fff;
+		text-decoration:none;
+		display:block
+	}
+	.ln{
+		height:29pt;
+		overflow:hidden
+	}
+	.ln>div{
+		float:left;
+		animation:sc 6s linear infinite
+	}
+	.ln>div,.ln>span{
+		white-space:nowrap
+	}
+	.ln>span:before{
+		content:" ";
+		float:right
+	}
+	#h>span{
+		float:left;
+		text-align:right;
+		font:14pt/18pt sans-serif;
+		max-width:0;
+		padding:11pt 0;
+		overflow:hidden;
+		transition:.2s ease-in;
+		animation:hint 1.5s ease-in-out
+	}
+	@media (hover:hover){
+		#h:hover>span{
+			max-width:6ch;
+			padding:11pt 4pt 11pt 11pt
+		}
+	}
+	@media (max-width:900px){
+		#main th:nth-child(6){display:none}
+	}
+	@media (min-width:651px){
+		#ph{width:8ch}
+	}
+	@media (max-width:650px){
+		#main td:nth-child(2),#main th:nth-child(2){display:none}
+	}
+	@media (max-width:460px){
+		#main th:nth-child(5){display:none}
+	}
+</style>
+<body style="background:#000;color:#fff;font:12pt/29pt sans-serif;margin:0">
+	<a href=/ id=h style=color:#fff;text-decoration:none;white-space:nowrap>

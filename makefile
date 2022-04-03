@@ -8,11 +8,10 @@ MAKEFLAGS += --no-print-directory -j$(command nproc 2>/dev/null || echo 2)
 HOST := $(shell uname -m)
 OBJDIR := .obj/$(shell $(CC) -dumpmachine)
 FILES := $(wildcard src/*.c src/*/*.c)
-OBJS := $(FILES:%=$(OBJDIR)/%.o) 
-DEPS := $(OBJS:.o=.d)
-
+HTMLS := $(wildcard src/*/*.html)
 LIBS := libmbedtls.a libmbedx509.a libmbedcrypto.a
-OBJS += $(LIBS:%=$(OBJDIR)/%)
+OBJS := $(FILES:%=$(OBJDIR)/%.o) $(HTMLS:%=$(OBJDIR)/%.s) $(LIBS:%=$(OBJDIR)/%)
+DEPS := $(FILES:%=$(OBJDIR)/%.d)
 
 CFLAGS := -g -std=gnu11 -Imbedtls/include -Wall -Wno-unused-function -Werror -pedantic-errors -DFORCE_MASSIVE_LOBBIES
 LDFLAGS := -O2 -Wl,--gc-sections,--fatal-warnings
@@ -33,6 +32,10 @@ $(OBJDIR)/%.c.o: %.c src/packets.h $(OBJDIR)/libs.mk mbedtls/.git makefile
 	@echo "[cc $(notdir $@)]"
 	@mkdir -p "$(@D)"
 	$(CC) $(CFLAGS) -c "$<" -o "$@" -MMD -MP
+
+$(OBJDIR)/%.html.s: %.html makefile
+	tr -d '\r\n\t' < "$<" > "$(basename $@)"
+	printf "\t.global $(basename $(notdir $<))_html\n$(basename $(notdir $<))_html:\n\t.incbin \"$(basename $@)\"\n\t.global $(basename $(notdir $<))_html_end\n$(basename $(notdir $<))_html_end:\n" > "$@"
 
 $(OBJDIR)/libmbed%.a: mbedtls/.git
 	@echo "[make $(notdir $@)]"

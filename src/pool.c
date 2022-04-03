@@ -52,7 +52,7 @@ _Bool pool_init() {
 	scramble_init();
 	ServerCode codes[] = {
 		StringToServerCode(NULL, 0),
-		StringToServerCode("INDEX", 5),
+		// StringToServerCode("INDEX", 5),
 	};
 	for(uint32_t a = 1; a < lengthof(codes); ++a) {
 		for(uint32_t b = a; b < lengthof(codes); ++b) {
