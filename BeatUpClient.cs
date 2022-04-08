@@ -113,6 +113,25 @@ namespace BeatUpClient.Patches {
 		}
 	}
 
+	[HarmonyLib.HarmonyPatch]
+	public static class MasterServerConnectionManager_HandleConnectToServerSuccess {
+		static System.Collections.Generic.IEnumerable<System.Reflection.MethodBase> TargetMethods() {
+			yield return typeof(MasterServerConnectionManager).GetMethod("HandleConnectToServerSuccess", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+			yield return typeof(GameLiftConnectionManager).GetMethod("HandleConnectToServerSuccess", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+		}
+		public static void Prefix(GameplayServerConfiguration configuration) {
+			Plugin.playerPreviews = new Networking.PacketHandler.RecommendPreview[configuration.maxPlayerCount];
+			Plugin.playerCells = new Plugin.PlayerCell[configuration.maxPlayerCount];
+			Plugin.UpdateDifficultyUI(null);
+		}
+	}
+	[HarmonyLib.HarmonyPatch(typeof(MultiplayerSessionManager), "HandlePlayerOrderChanged")]
+	public class MultiplayerSessionManager_HandlePlayerOrderChanged {
+		public static void Prefix(IConnectedPlayer player) {
+			Plugin.playerCells[player.sortIndex].SetData(new Networking.PacketHandler.LoadProgress(Networking.PacketHandler.LoadProgress.LoadState.None, 0, 0));
+		}
+	}
+
 	[HarmonyLib.HarmonyPatch(typeof(BasicConnectionRequestHandler), nameof(BasicConnectionRequestHandler.GetConnectionMessage))]
 	public class BasicConnectionRequestHandler_GetConnectionMessage {
 		public static void Postfix(LiteNetLib.Utils.NetDataWriter writer) {
@@ -263,8 +282,33 @@ namespace BeatUpClient.Patches {
 	[DiJack.Replace(typeof(MenuRpcManager))]
 	public class BeatUpMenuRpcManager : MenuRpcManager, IMenuRpcManager {
 		public Networking.PlayersDataModel? playersDataModel = null;
+		string selectedLevelId = System.String.Empty;
 		public BeatUpMenuRpcManager(IMultiplayerSessionManager multiplayerSessionManager, INetworkConfig networkConfig) : base(multiplayerSessionManager) {
 			Plugin.networkConfig = networkConfig;
+			setSelectedBeatmapEvent += HandleSetSelectedBeatmapEvent;
+			setIsEntitledToLevelEvent += HandleSetIsEntitledToLevel;
+		}
+		void HandleSetSelectedBeatmapEvent(string userId, BeatmapIdentifierNetSerializable beatmapId) {
+			selectedLevelId = beatmapId.levelID;
+			foreach(Plugin.PlayerCell cell in Plugin.playerCells)
+				cell.UpdateData(new Networking.PacketHandler.LoadProgress(Networking.PacketHandler.LoadProgress.LoadState.None, 0, 0), true);
+		}
+		void HandleSetIsEntitledToLevel(string userId, string levelId, EntitlementsStatus entitlementStatus) {
+			if(playersDataModel == null)
+				return;
+			IConnectedPlayer? player = playersDataModel.lobbyStateDataModel.GetPlayerById(userId);
+			HandleSetIsEntitledToLevel(player, levelId, entitlementStatus);
+		}
+		void HandleSetIsEntitledToLevel(IConnectedPlayer? player, string levelId, EntitlementsStatus entitlementStatus) {
+			if(player == null || levelId != selectedLevelId)
+				return;
+			Networking.PacketHandler.LoadProgress.LoadState state = entitlementStatus switch {
+				EntitlementsStatus.NotOwned => Networking.PacketHandler.LoadProgress.LoadState.Failed,
+				EntitlementsStatus.Ok => Networking.PacketHandler.LoadProgress.LoadState.Done,
+				_ => Networking.PacketHandler.LoadProgress.LoadState.None,
+			};
+			if(state != Networking.PacketHandler.LoadProgress.LoadState.None)
+				Plugin.playerCells[player.sortIndex].UpdateData(new Networking.PacketHandler.LoadProgress(state, 65535, 0), true);
 		}
 		public static bool MissingRequirements(Networking.PacketHandler.RecommendPreview? preview, bool download) {
 			if(preview == null) {
@@ -303,6 +347,7 @@ namespace BeatUpClient.Patches {
 				multiplayerSessionManager.Send(new Networking.PacketHandler.SetCanShareBeatmap(levelId, "1234", (ulong)Plugin.uploadData.LongLength, true)); // No public method exposes the `onlyFirstDegree` option
 			}
 			Plugin.Log?.Debug($"entitlementStatus={entitlementStatus}");
+			HandleSetIsEntitledToLevel(playersDataModel?.multiplayerSessionManager.localPlayer, levelId, entitlementStatus);
 			base.SetIsEntitledToLevel(levelId, entitlementStatus);
 		}
 	}
@@ -461,16 +506,21 @@ namespace BeatUpClient.Patches {
 			Plugin.Log?.Debug("Starting direct download");
 			try {
 				cancellationToken.ThrowIfCancellationRequested();
-				int it = 0, cycle = 0;
+				int it = 0, p = 0;
+				uint cycle = 0;
 				ulong off = handler.gaps[0].start;
-				IConnectedPlayer victim = handler.GetPlayerByUserId(Plugin.downloadInfo.sourcePlayers[0]);
+				IConnectedPlayer[] sources = new IConnectedPlayer[Plugin.downloadInfo.sourcePlayers.Length];
+				for(uint i = 0; i < sources.Length; ++i)
+					sources[i] = handler.GetPlayerByUserId(Plugin.downloadInfo.sourcePlayers[i]);
 				while(handler.gaps.Count > 0) {
-					cycle = (cycle + 1) % 64;
-					if(cycle == 0) {
+					if(++cycle == 4) {
 						ulong dl = (ulong)handler.buffer.LongLength;
 						foreach((ulong start, ulong end) in handler.gaps)
 							dl -= (end - start);
-						Plugin.Log?.Debug($"Progress: {dl} / {handler.buffer.Length}");
+						Networking.PacketHandler.LoadProgress packet = new Networking.PacketHandler.LoadProgress(Networking.PacketHandler.LoadProgress.LoadState.Downloading, (ushort)(dl * 65535 / (ulong)handler.buffer.Length));
+						handler.HandleLoadProgress(packet, handler.multiplayerSessionManager.localPlayer);
+						handler.multiplayerSessionManager.SendUnreliable(packet);
+						cycle = 0;
 					}
 					if(it >= handler.gaps.Count)
 						it = 0;
@@ -481,7 +531,8 @@ namespace BeatUpClient.Patches {
 							off = handler.gaps[it].start;
 						}
 						ushort len = (ushort)System.Math.Min(380, handler.gaps[it].end - off);
-						handler.SendUnreliableToPlayer(new Networking.PacketHandler.LevelFragmentRequest(off, len), victim);
+						handler.SendUnreliableToPlayer(new Networking.PacketHandler.LevelFragmentRequest(off, len), sources[p]);
+						p = (p + 1) % sources.Length;
 						off += 380;
 					}
 					await System.Threading.Tasks.Task.Delay(7, cancellationToken);
@@ -576,6 +627,34 @@ namespace BeatUpClient.Patches {
 		}
 	}
 
+	[HarmonyLib.HarmonyPatch(typeof(GameServerPlayersTableView), nameof(GameServerPlayersTableView.SetData))]
+	public class GameServerPlayersTableView_SetData {
+		public static void Postfix(System.Collections.Generic.List<IConnectedPlayer> sortedPlayers, HMUI.TableView ____tableView) {
+			for(uint i = 0; i < Plugin.playerCells.Length; ++i)
+				Plugin.playerCells[i].transform = null;
+			Plugin.Log?.Debug("GameServerPlayersTableView_SetData()");
+			foreach(HMUI.TableCell cell in ____tableView.visibleCells) {
+				foreach(UnityEngine.Transform child in cell.transform) {
+					if(child.gameObject.name == "BeatUpClient_Progress") {
+						Plugin.playerCells[sortedPlayers[cell.idx].sortIndex].SetTransform((UnityEngine.RectTransform)child);
+						break;
+					}
+				}
+			}
+		}
+	}
+
+	[HarmonyLib.HarmonyPatch(typeof(GameServerPlayerTableCell), nameof(GameServerPlayerTableCell.Awake))]
+	public class GameServerPlayerTableCell_Awake {
+		public static void Prefix(GameServerPlayerTableCell __instance, UnityEngine.UI.Image ____localPlayerBackgroundImage) {
+			UnityEngine.GameObject bar = UnityEngine.Object.Instantiate(____localPlayerBackgroundImage.gameObject, ____localPlayerBackgroundImage.transform.parent);
+			bar.name = "BeatUpClient_Progress";
+			HMUI.ImageView image = bar.GetComponent<HMUI.ImageView>();
+			image.color = new UnityEngine.Color(0.4782609f, 0.6956522f, 0.02173913f, 0.5434783f);
+			image.enabled = false;
+		}
+	}
+
 	[HarmonyLib.HarmonyPatch(typeof(Zenject.Context), "InstallInstallers", new[] {typeof(System.Collections.Generic.List<Zenject.InstallerBase>), typeof(System.Collections.Generic.List<System.Type>), typeof(System.Collections.Generic.List<Zenject.ScriptableObjectInstaller>), typeof(System.Collections.Generic.List<Zenject.MonoInstaller>), typeof(System.Collections.Generic.List<Zenject.MonoInstaller>)})]
 	public class Context_InstallInstallers {
 		class MenuInstaller : Zenject.Installer {
@@ -604,6 +683,7 @@ namespace BeatUpClient.Networking {
 			DirectDownloadInfo, // server -> client
 			LevelFragmentRequest, // client -> client (unreliable)
 			LevelFragment, // client -> client (unreliable)
+			LoadProgress, // client -> client (unreliable)
 		};
 
 		public class NetworkPreviewBeatmapLevel : IPreviewBeatmapLevel, LiteNetLib.Utils.INetSerializable {
@@ -843,6 +923,37 @@ namespace BeatUpClient.Networking {
 			}
 		}
 
+		public struct LoadProgress : LiteNetLib.Utils.INetSerializable {
+			public enum LoadState : byte {
+				None,
+				Failed,
+				Exporting,
+				Downloading,
+				Loading,
+				Done,
+			}
+			static uint localSequence = 0;
+			public uint sequence;
+			public LoadState state;
+			public ushort progress;
+			public void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
+				writer.Put((uint)sequence);
+				writer.Put((byte)state);
+				writer.Put((ushort)progress);
+			}
+			public void Deserialize(LiteNetLib.Utils.NetDataReader reader) {
+				sequence = reader.GetUInt();
+				state = (LoadState)reader.GetByte();
+				progress = reader.GetUShort();
+			}
+			public LoadProgress(LoadState state, ushort progress, uint sequence) {
+				this.sequence = sequence;
+				this.state = state;
+				this.progress = progress;
+			}
+			public LoadProgress(LoadState state, ushort progress) : this(state, progress, ++localSequence) {}
+		}
+
 		public static BeatmapCharacteristicCollectionSO beatmapCharacteristicCollection = null!;
 		public readonly System.Reflection.FieldInfo fi_ConnectedPlayer_connection;
 		public readonly System.Reflection.FieldInfo fi_ConnectedPlayer_connectionId;
@@ -878,6 +989,7 @@ namespace BeatUpClient.Networking {
 			serializer.RegisterCallback<DirectDownloadInfo>(MessageType.DirectDownloadInfo, HandleDirectDownloadInfo);
 			serializer.RegisterCallback<LevelFragmentRequest>(MessageType.LevelFragmentRequest, HandleLevelFragmentRequest);
 			serializer.RegisterCallback<LevelFragment>(MessageType.LevelFragment, HandleLevelFragment);
+			serializer.RegisterCallback<LoadProgress>(MessageType.LoadProgress, HandleLoadProgress);
 		}
 
 		public void Dispose() {
@@ -959,16 +1071,20 @@ namespace BeatUpClient.Networking {
 			if(gaps[i].end <= gaps[i].start)
 				gaps.RemoveAt(i);
 		}
+
+		public void HandleLoadProgress(LoadProgress packet, IConnectedPlayer player) =>
+			Plugin.playerCells[player.sortIndex].UpdateData(packet);
 	}
 
 	[DiJack.Replace(typeof(LobbyPlayersDataModel))]
 	public class PlayersDataModel : LobbyPlayersDataModel, ILobbyPlayersDataModel, System.IDisposable {
 		[Zenject.Inject]
+		public readonly ILobbyStateDataModel lobbyStateDataModel = null!;
+		[Zenject.Inject]
 		public readonly PacketHandler handler = null!;
 		[Zenject.Inject]
 		public readonly Patches.LevelLoader loader = null!;
 		public readonly MultiplayerSessionManager multiplayerSessionManager;
-		public System.Collections.Generic.Dictionary<IConnectedPlayer, PacketHandler.RecommendPreview> playerPreviews = new System.Collections.Generic.Dictionary<IConnectedPlayer, PacketHandler.RecommendPreview>();
 
 		public PlayersDataModel(IMultiplayerSessionManager multiplayerSessionManager) {
 			this.multiplayerSessionManager = (MultiplayerSessionManager)multiplayerSessionManager;
@@ -1004,20 +1120,22 @@ namespace BeatUpClient.Networking {
 
 		private void HandleRecommendPreview(PacketHandler.RecommendPreview packet, IConnectedPlayer player) {
 			Plugin.Log?.Debug($"PlayersDataModel.HandleRecommendPreview(\"{packet.preview.levelID}\", {player})");
-			playerPreviews[player] = packet;
+			Plugin.playerPreviews[player.sortIndex] = packet;
 		}
 
 		public PacketHandler.RecommendPreview? ResolvePreview(string levelId) =>
-			System.Linq.Enumerable.FirstOrDefault(playerPreviews.Values, (PacketHandler.RecommendPreview preview) => preview.preview.levelID == levelId);
+			System.Linq.Enumerable.FirstOrDefault(Plugin.playerPreviews, (PacketHandler.RecommendPreview? preview) => preview?.preview.levelID == levelId);
 
 		public override void HandleMenuRpcManagerGetRecommendedBeatmap(string userId) {
-			multiplayerSessionManager.Send(playerPreviews[multiplayerSessionManager.localPlayer]);
+			if(Plugin.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex] != null)
+				multiplayerSessionManager.Send(Plugin.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex]);
 			base.HandleMenuRpcManagerGetRecommendedBeatmap(userId);
 		}
 
 		public override void SetLocalPlayerBeatmapLevel(PreviewDifficultyBeatmap? beatmapLevel) {
 			if(beatmapLevel != null) {
-				if(!(playerPreviews.TryGetValue(multiplayerSessionManager.localPlayer, out PacketHandler.RecommendPreview localPreview) && localPreview.preview.levelID == beatmapLevel.beatmapLevel.levelID)) {
+				PacketHandler.RecommendPreview? localPreview = Plugin.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex];
+				if(!(localPreview?.preview.levelID == beatmapLevel.beatmapLevel.levelID)) {
 					string[]? requirementArray = null, suggestionArray = null;
 					PacketHandler.RecommendPreview? preview = ResolvePreview(beatmapLevel.beatmapLevel.levelID);
 					if(preview != null) {
@@ -1072,9 +1190,9 @@ namespace BeatUpClient.Networking {
 					} else {
 						Plugin.Log?.Debug($"No requirements for `{beatmapLevel.beatmapLevel.levelID}`");
 					}
-					playerPreviews[multiplayerSessionManager.localPlayer] = new PacketHandler.RecommendPreview(beatmapLevel.beatmapLevel, requirementArray, suggestionArray);
+					Plugin.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex] = new PacketHandler.RecommendPreview(beatmapLevel.beatmapLevel, requirementArray, suggestionArray);
 				}
-				multiplayerSessionManager.Send(playerPreviews[multiplayerSessionManager.localPlayer]);
+				multiplayerSessionManager.Send(Plugin.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex]);
 			}
 			Plugin.UpdateDifficultyUI(beatmapLevel, this);
 			base.SetLocalPlayerBeatmapLevel(beatmapLevel);
@@ -1176,6 +1294,31 @@ namespace BeatUpClient {
 
 	[IPA.Plugin(IPA.RuntimeOptions.SingleStartInit)]
 	public class Plugin {
+		public struct PlayerCell {
+			public UnityEngine.RectTransform? transform;
+			public Networking.PacketHandler.LoadProgress data;
+			public void SetTransform(UnityEngine.RectTransform transform) {
+				this.transform = transform;
+				Refresh(transform);
+			}
+			public void UpdateData(Networking.PacketHandler.LoadProgress data, bool replace = false) {
+				if(replace)
+					data.sequence = this.data.sequence;
+				else if(data.sequence < this.data.sequence)
+					return;
+				SetData(data);
+			}
+			public void SetData(Networking.PacketHandler.LoadProgress data) {
+				this.data = data;
+				if(transform != null)
+					Refresh(transform);
+			}
+			void Refresh(UnityEngine.RectTransform transform) {
+				transform.offsetMin = new UnityEngine.Vector2((65535u - data.progress) * 104 / 65535f, transform.offsetMin.y);
+				transform.gameObject.GetComponent<HMUI.ImageView>().enabled = (data.state != Networking.PacketHandler.LoadProgress.LoadState.None);
+			}
+		}
+
 		public const ulong MaxDownloadSize = 268435456;
 		public const ulong MaxUnzippedSize = 268435456;
 		public const string HarmonyId = "org.battletrains.BeatUpClient";
@@ -1188,6 +1331,8 @@ namespace BeatUpClient {
 		public static string uploadLevel = System.String.Empty;
 		public static byte[]? uploadData = null;
 		public static INetworkConfig? networkConfig;
+		public static Networking.PacketHandler.RecommendPreview?[] playerPreviews = null!;
+		public static PlayerCell[] playerCells = null!;
 		public static bool haveSongCore = false;
 		public static uint windowSize = 64;
 		public static bool directDownloads = false;
@@ -1246,6 +1391,7 @@ namespace BeatUpClient {
 		public static void OnSceneLoaded(UnityEngine.SceneManagement.Scene scene, UnityEngine.SceneManagement.LoadSceneMode mode) {
 			if(scene.name != "MainMenu")
 				return;
+			Plugin.Log?.Debug("load MainMenu");
 			if(Plugin.networkConfig is CustomNetworkConfig) {
 				UnityEngine.GameObject Fullscreen = System.Linq.Enumerable.First(System.Linq.Enumerable.Select(UnityEngine.Resources.FindObjectsOfTypeAll<UnityEngine.UI.Toggle>(), x => x.transform.parent.gameObject), p => p.name == "Fullscreen");
 				UnityEngine.GameObject MaxNumberOfPlayers = System.Linq.Enumerable.First(System.Linq.Enumerable.Select(UnityEngine.Resources.FindObjectsOfTypeAll<StepValuePicker>(), x => x.transform.parent.gameObject), p => p.name == "MaxNumberOfPlayers");
@@ -1270,7 +1416,6 @@ namespace BeatUpClient {
 			beatmapDifficultySegmentedControlController = beatmapDifficulty.GetChild(1).gameObject.GetComponent<BeatmapDifficultySegmentedControlController>();
 			fi_BeatmapCharacteristicSegmentedControlController_didSelectBeatmapCharacteristicEvent = typeof(BeatmapCharacteristicSegmentedControlController).GetField(typeof(BeatmapCharacteristicSegmentedControlController).GetEvent("didSelectBeatmapCharacteristicEvent").Name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
 			fi_BeatmapDifficultySegmentedControlController_didSelectDifficultyEvent = typeof(BeatmapDifficultySegmentedControlController).GetField(typeof(BeatmapDifficultySegmentedControlController).GetEvent("didSelectDifficultyEvent").Name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-			UpdateDifficultyUI(null);
 		}
 
 		[IPA.Init]

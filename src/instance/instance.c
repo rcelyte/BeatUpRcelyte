@@ -204,6 +204,7 @@ struct Room {
 		} lobby;
 		struct {
 			struct Counter128 levelFinished;
+			float startTime;
 			_Bool showResults;
 			union {
 				struct {
@@ -320,7 +321,9 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 		}
 	}
 	if(state & ServerState_Lobby) {
+		_Bool needSetSelectedBeatmap = (state & ServerState_Lobby_Entitlement) != 0;
 		if(!(session->state & ServerState_Lobby)) {
+			needSetSelectedBeatmap = 1;
 			session->recommendedBeatmap = CLEAR_BEATMAP;
 			SERIALIZE_GAMEPLAYRPC(session->net.version, &resp_end, ReturnToMenu, (struct ReturnToMenu){base});
 			SERIALIZE_MENURPC(session->net.version, &resp_end, SetMultiplayerGameState, (struct SetMultiplayerGameState){
@@ -331,6 +334,27 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 		} else if(STATE_EDGE(state, session->state, ServerState_Lobby_Countdown | ServerState_Lobby_Downloading)) {
 			SERIALIZE_MENURPC(session->net.version, &resp_end, CancelCountdown, (struct CancelCountdown){base});
 			SERIALIZE_MENURPC(session->net.version, &resp_end, CancelLevelStart, (struct CancelLevelStart){base});
+		}
+		if(needSetSelectedBeatmap) {
+			SERIALIZE_MENURPC(session->net.version, &resp_end, SetSelectedBeatmap, (struct SetSelectedBeatmap){
+				.base = base,
+				.flags = {1, 0, 0, 0},
+				.identifier = session_get_beatmap(room, session),
+			});
+		}
+		if(STATE_EDGE(session->state, state, ServerState_Lobby_Countdown | ServerState_Lobby_Downloading)) {
+			SERIALIZE_MENURPC(session->net.version, &resp_end, StartLevel, (struct StartLevel){
+				.base = base,
+				.flags = {1, 1, 1, 0},
+				.beatmapId = session_get_beatmap(room, session),
+				.gameplayModifiers = session_get_modifiers(room, session),
+				.startTime = room->global.timeout + 300,
+			});
+			SERIALIZE_MENURPC(session->net.version, &resp_end, SetCountdownEndTime, (struct SetCountdownEndTime){
+				.base = base,
+				.flags = {1, 0, 0, 0},
+				.newTime = room->global.timeout,
+			});
 		}
 	} else if(STATE_EDGE(session->state, state, ServerState_Game)) {
 		SERIALIZE_MENURPC(session->net.version, &resp_end, SetMultiplayerGameState, (struct SetMultiplayerGameState){
@@ -355,28 +379,9 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 				.flags = {1, 0, 0, 0},
 				.reason = room->lobby.reason,
 			});
-			SERIALIZE_MENURPC(session->net.version, &resp_end, SetSelectedBeatmap, (struct SetSelectedBeatmap){
-				.base = base,
-				.flags = {1, 0, 0, 0},
-				.identifier = session_get_beatmap(room, session),
-			});
 			break;
 		}
-		case ServerState_Lobby_Countdown: {
-			SERIALIZE_MENURPC(session->net.version, &resp_end, StartLevel, (struct StartLevel){
-				.base = base,
-				.flags = {1, 1, 1, 0},
-				.beatmapId = session_get_beatmap(room, session),
-				.gameplayModifiers = session_get_modifiers(room, session),
-				.startTime = room->global.timeout + 300,
-			});
-			SERIALIZE_MENURPC(session->net.version, &resp_end, SetCountdownEndTime, (struct SetCountdownEndTime){
-				.base = base,
-				.flags = {1, 0, 0, 0},
-				.newTime = room->global.timeout,
-			});
-			break;
-		}
+		case ServerState_Lobby_Countdown: break;
 		case ServerState_Lobby_Downloading: break;
 		case ServerState_Game_LoadingScene: {
 			SERIALIZE_MENURPC(session->net.version, &resp_end, SetStartGameTime, (struct SetStartGameTime){
@@ -404,7 +409,7 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 			SERIALIZE_GAMEPLAYRPC(session->net.version, &resp_end, SetSongStartTime, (struct SetSongStartTime){
 				.base = base,
 				.flags = {1, 0, 0, 0},
-				.startTime = base.syncTime + .25,
+				.startTime = room->game.startTime,
 			});
 			break;
 		}
@@ -548,7 +553,7 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 			room->global.timeout = room_get_syncTime(room) + LOAD_TIMEOUT;
 			break;
 		}
-		case ServerState_Game_Gameplay: break;
+		case ServerState_Game_Gameplay: room->game.startTime = room_get_syncTime(room) + .25; break;
 		case ServerState_Game_Results: room->global.timeout = room_get_syncTime(room) + 20; break;
 	}
 	room->state = state;
@@ -638,7 +643,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 				}
 				beatmap.identifier = CLEAR_BEATMAP;
 			}
-			if(!((room->state & ServerState_Lobby & ~ServerState_Lobby_Downloading) && session->permissions.hasRecommendBeatmapsPermission))
+			if(!((room->state & ServerState_Lobby) && session->permissions.hasRecommendBeatmapsPermission))
 				break;
 			session->recommendedBeatmap = beatmap.identifier;
 			room_set_state(ctx, room, ServerState_Lobby_Entitlement);
@@ -734,7 +739,24 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 		case MenuRpcType_StartLevel: uprintf("BAD TYPE: MenuRpcType_StartLevel\n"); break;
 		case MenuRpcType_GetStartedLevel: {
 			pkt_readGetStartedLevel(session->net.version, data);
-			uprintf("TODO: handle MenuRpcType_GetStartedLevel\n");
+			if(!(session->state & ServerState_Synchronizing)) {
+				break;
+			} else if(!(room->state & ServerState_Game)) {
+				session_set_state(ctx, room, session, room->state);
+				break;
+			}
+			struct RemoteProcedureCall base = {room_get_syncTime(room)};
+			uint8_t resp[65536], *resp_end = resp;
+			pkt_writeRoutingHeader(session->net.version, &resp_end, (struct RoutingHeader){0, 0, 0});
+			SERIALIZE_MENURPC(session->net.version, &resp_end, StartLevel, (struct StartLevel){
+				.base = base,
+				.flags = {1, 1, 1, 0},
+				.beatmapId = session_get_beatmap(room, session),
+				.gameplayModifiers = session_get_modifiers(room, session),
+				.startTime = base.syncTime,
+			});
+			instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+			session_set_state(ctx, room, session, ServerState_Game_LoadingScene);
 			break;
 		}
 		case MenuRpcType_CancelLevelStart: uprintf("BAD TYPE: MenuRpcType_CancelLevelStart\n"); break;
@@ -744,7 +766,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 			struct SetMultiplayerGameState r_state;
 			r_state.base.syncTime = room_get_syncTime(room);
 			r_state.flags = (struct RemoteProcedureCallFlags){1, 0, 0, 0};
-			r_state.lobbyState = (room->state & ServerState_Lobby & ~ServerState_Lobby_Downloading) ? MultiplayerGameState_Lobby : MultiplayerGameState_Game;
+			r_state.lobbyState = (room->state & ServerState_Lobby) ? MultiplayerGameState_Lobby : MultiplayerGameState_Game;
 			pkt_writeRoutingHeader(session->net.version, &resp_end, (struct RoutingHeader){0, 0, 0});
 			SERIALIZE_MENURPC(session->net.version, &resp_end, SetMultiplayerGameState, r_state);
 			instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
@@ -755,7 +777,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 		case MenuRpcType_SetIsReady: {
 			struct SetIsReady ready = pkt_readSetIsReady(session->net.version, data);
 			_Bool isReady = ready.flags.hasValue0 && ready.isReady;
-			if(room->state & ServerState_Lobby & ~ServerState_Lobby_Downloading)
+			if(room->state & ServerState_Lobby)
 				if(Counter128_set(&room->lobby.isReady, indexof(room->players, session), isReady) != isReady && (room->state & ServerState_Selected))
 					room_set_state(ctx, room, ServerState_Lobby_Ready);
 			break;
@@ -839,8 +861,11 @@ static void handle_GameplayRpc(struct Context *ctx, struct Room *room, struct In
 		case GameplayRpcType_SetGameplaySceneSyncFinish: uprintf("BAD TYPE: GameplayRpcType_SetGameplaySceneSyncFinish\n"); break;
 		case GameplayRpcType_SetGameplaySceneReady: {
 			struct SetGameplaySceneReady ready = pkt_readSetGameplaySceneReady(session->net.version, data);
-			if(!(room->state & ServerState_Game_LoadingScene))
+			if(!(room->state & ServerState_Game_LoadingScene)) {
+				if((room->state & ServerState_Game) && room->state > ServerState_Game_LoadingScene)
+					session_set_state(ctx, room, session, ServerState_Game_LoadingSong);
 				break;
+			}
 			session->settings = ready.flags.hasValue0 ? ready.playerSpecificSettingsNetSerializable : CLEAR_SETTINGS;
 			if(Counter128_set(&room->game.loadingScene.isLoaded, indexof(room->players, session), 1) == 0)
 				if(Counter128_contains(room->game.loadingScene.isLoaded, room->connected))
@@ -851,10 +876,14 @@ static void handle_GameplayRpc(struct Context *ctx, struct Room *room, struct In
 		NOT_IMPLEMENTED(GameplayRpcType_SetActivePlayerFailedToConnect);
 		case GameplayRpcType_SetGameplaySongReady: {
 			pkt_readSetGameplaySongReady(session->net.version, data);
-			if(room->state & ServerState_Game_LoadingSong)
-				if(Counter128_set(&room->game.loadingSong.isLoaded, indexof(room->players, session), 1) == 0)
-					if(Counter128_contains(room->game.loadingSong.isLoaded, room->playerSort))
-						room_set_state(ctx, room, ServerState_Game_Gameplay);
+			if(!(room->state & ServerState_Game_LoadingSong)) {
+				if((room->state & ServerState_Game) && room->state > ServerState_Game_LoadingSong)
+					session_set_state(ctx, room, session, ServerState_Game_Gameplay);
+				break;
+			}
+			if(Counter128_set(&room->game.loadingSong.isLoaded, indexof(room->players, session), 1) == 0)
+				if(Counter128_contains(room->game.loadingSong.isLoaded, room->connected))
+					room_set_state(ctx, room, ServerState_Game_Gameplay);
 			break;
 		}
 		case GameplayRpcType_GetGameplaySongReady: uprintf("BAD TYPE: GameplayRpcType_GetGameplaySongReady\n"); break;
@@ -928,6 +957,7 @@ static void handle_BeatUpMessage(struct Context *ctx, struct Room *room, struct 
 		case BeatUpMessageType_DirectDownloadInfo: uprintf("BAD TYPE: BeatUpMessageType_DirectDownloadInfo\n"); break;
 		case BeatUpMessageType_LevelFragmentRequest: uprintf("BAD TYPE: BeatUpMessageType_LevelFragmentRequest\n"); break;
 		case BeatUpMessageType_LevelFragment: uprintf("BAD TYPE: BeatUpMessageType_LevelFragment\n"); break;
+		case BeatUpMessageType_LoadProgress: pkt_readLoadProgress(session->net.version, data); break;
 		default: uprintf("BAD BEAT UP MESSAGE TYPE\n");
 	}
 }
@@ -1219,7 +1249,10 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 		pkt_writePlayerIdentity(session->net.version, &resp_end, r_identity);
 	instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 
-	session_set_state(ctx, room, session, room->state);
+	if(room->state & ServerState_Game)
+		session_set_state(ctx, room, session, ServerState_Synchronizing);
+	else
+		session_set_state(ctx, room, session, room->state); // TODO: potential for desync since `StartListeningToGameStart()` hasn't been called at this point
 }
 
 static void log_players(const struct Room *room, struct InstanceSession *session, const char *prefix) {

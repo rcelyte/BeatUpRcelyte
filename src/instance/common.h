@@ -41,14 +41,15 @@ enum ServerState {
 	ServerState_Lobby_Downloading = 1 << 4,
 	ServerState_Selected = ServerState_Lobby_Ready | ServerState_Lobby_Countdown | ServerState_Lobby_Downloading,
 	ServerState_Lobby = ServerState_Lobby_Idle | ServerState_Lobby_Entitlement | ServerState_Selected,
-	ServerState_Game_LoadingScene = 1 << 5,
-	ServerState_Game_LoadingSong = 1 << 6,
-	ServerState_Game_Gameplay = 1 << 7,
-	ServerState_Game_Results = 1 << 8,
+	ServerState_Synchronizing = 1 << 5,
+	ServerState_Game_LoadingScene = 1 << 6,
+	ServerState_Game_LoadingSong = 1 << 7,
+	ServerState_Game_Gameplay = 1 << 8,
+	ServerState_Game_Results = 1 << 9,
 	ServerState_Game = ServerState_Game_LoadingScene | ServerState_Game_LoadingSong | ServerState_Game_Gameplay | ServerState_Game_Results,
 
 	ServerState_Timeout = ServerState_Lobby_Countdown | ServerState_Game_LoadingScene | ServerState_Game_LoadingSong | ServerState_Game_Results,
-	ServerState_Connected = ServerState_Lobby | ServerState_Game,
+	ServerState_Connected = ServerState_Lobby | ServerState_Synchronizing | ServerState_Game,
 };
 
 struct InstancePacket {

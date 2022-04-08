@@ -300,12 +300,14 @@ ENUM(uint8_t, SliderMidAnchorMode, {
 	SliderMidAnchorMode_Clockwise,
 	SliderMidAnchorMode_CounterClockwise,
 })
+typedef uint8_t LoadState;
 ENUM(uint8_t, BeatUpMessageType, {
 	BeatUpMessageType_RecommendPreview,
 	BeatUpMessageType_SetCanShareBeatmap,
 	BeatUpMessageType_DirectDownloadInfo,
 	BeatUpMessageType_LevelFragmentRequest,
 	BeatUpMessageType_LevelFragment,
+	BeatUpMessageType_LoadProgress,
 })
 ENUM(uint8_t, MenuRpcType, {
 	MenuRpcType_SetPlayersMissingEntitlementsToLevel,
@@ -922,6 +924,11 @@ struct LevelFragment {
 	uint16_t size;
 	uint8_t data[1500];
 };
+struct LoadProgress {
+	uint32_t sequence;
+	LoadState state;
+	uint16_t progress;
+};
 struct BeatUpMessageHeader {
 	BeatUpMessageType type;
 };
@@ -1392,6 +1399,7 @@ void pkt_writeDirectDownloadInfo(struct PacketContext ctx, uint8_t **pkt, struct
 struct LevelFragmentRequest pkt_readLevelFragmentRequest(struct PacketContext ctx, const uint8_t **pkt);
 struct LevelFragment pkt_readLevelFragment(struct PacketContext ctx, const uint8_t **pkt);
 void pkt_writeLevelFragment(struct PacketContext ctx, uint8_t **pkt, struct LevelFragment in);
+struct LoadProgress pkt_readLoadProgress(struct PacketContext ctx, const uint8_t **pkt);
 struct BeatUpMessageHeader pkt_readBeatUpMessageHeader(struct PacketContext ctx, const uint8_t **pkt);
 void pkt_writeBeatUpMessageHeader(struct PacketContext ctx, uint8_t **pkt, struct BeatUpMessageHeader in);
 void pkt_writeSetPlayersMissingEntitlementsToLevel(struct PacketContext ctx, uint8_t **pkt, struct SetPlayersMissingEntitlementsToLevel in);

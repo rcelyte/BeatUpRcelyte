@@ -1169,6 +1169,13 @@ void pkt_writeLevelFragment(struct PacketContext ctx, uint8_t **pkt, struct Leve
 	pkt_writeUint16(ctx, pkt, in.size);
 	pkt_writeUint8Array(ctx, pkt, in.data, in.size);
 }
+struct LoadProgress pkt_readLoadProgress(struct PacketContext ctx, const uint8_t **pkt) {
+	struct LoadProgress out;
+	out.sequence = pkt_readUint32(ctx, pkt);
+	out.state = pkt_readUint8(ctx, pkt);
+	out.progress = pkt_readUint16(ctx, pkt);
+	return out;
+}
 struct BeatUpMessageHeader pkt_readBeatUpMessageHeader(struct PacketContext ctx, const uint8_t **pkt) {
 	struct BeatUpMessageHeader out;
 	out.type = pkt_readUint8(ctx, pkt);

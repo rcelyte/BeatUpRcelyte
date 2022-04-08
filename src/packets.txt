@@ -995,6 +995,13 @@ r NetworkPreviewBeatmapLevel
 	u8 count
 	PreviewDifficultyBeatmapSet[8,.count] previewDifficultyBeatmapSets
 	ByteArrayNetSerializable cover
+u8 LoadState
+	None
+	Failed
+	Exporting
+	Downloading
+	Loading
+	Done
 u8 BeatUpMessage Type
 	r RecommendPreview
 		NetworkPreviewBeatmapLevel preview
@@ -1020,6 +1027,10 @@ u8 BeatUpMessage Type
 		vu64 offset
 		u16 size
 		u8[1500,.size] data
+	r LoadProgress
+		u32 sequence
+		u8.LoadState state
+		u16 progress
 d BeatUpMessageHeader
 	u8.BeatUpMessageType type
 u8 MultiplayerSessionMessage Type
