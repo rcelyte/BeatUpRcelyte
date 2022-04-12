@@ -6,7 +6,7 @@
 
 #include "enum_reflection.h"
 #include "packets.h"
-static const uint8_t _trap[128] = {~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,};
+const uint8_t _trap[128] = {~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,};
 #include "scramble.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -284,12 +284,20 @@ void pkt_writeLongString(struct PacketContext ctx, uint8_t **pkt, struct LongStr
 		pkt_writeUint32(ctx, pkt, in.length);
 	pkt_writeInt8Array(ctx, pkt, in.data, in.length);
 }
+void pkt_writeExString(struct PacketContext ctx, uint8_t **pkt, struct ExString in) {
+	if(ctx.beatUpVersion)
+		in.base.data[in.base.length++] = in.tier + 16;
+	pkt_writeString(ctx, pkt, in.base);
+}
 #ifdef PACKET_LOGGING_FUNCS
 static void pkt_logString(struct PacketContext ctx, const char *name, char *buf, char *it, struct String in) {
 	uprintf("%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
 }
 static void pkt_logLongString(struct PacketContext ctx, const char *name, char *buf, char *it, struct LongString in) {
 	uprintf("%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
+}
+static void pkt_logExString(struct PacketContext ctx, const char *name, char *buf, char *it, struct ExString in) {
+	pkt_logString(ctx, name, buf, it, in.base);
 }
 #endif
 struct AuthenticationToken pkt_readAuthenticationToken(struct PacketContext ctx, const uint8_t **pkt) {
@@ -494,7 +502,13 @@ void pkt_writeConnectAccept(struct PacketContext ctx, uint8_t **pkt, struct Conn
 	}
 	if(ctx.beatUpVersion) {
 		pkt_writeUint32(ctx, pkt, in.windowSize);
-		pkt_writeUint8(ctx, pkt, in.skipResults);
+		pkt_writeUint8(ctx, pkt, in.countdownDuration);
+		uint8_t bits = 0;
+		bits |= (in.directDownloads << 0);
+		bits |= (in.skipResults << 1);
+		bits |= (in.perPlayerDifficulty << 2);
+		bits |= (in.perPlayerModifiers << 3);
+		pkt_writeUint8(ctx, pkt, bits);
 	}
 }
 struct Disconnect pkt_readDisconnect(struct PacketContext ctx, const uint8_t **pkt) {
@@ -646,7 +660,7 @@ void pkt_writeSyncTime(struct PacketContext ctx, uint8_t **pkt, struct SyncTime 
 void pkt_writePlayerConnected(struct PacketContext ctx, uint8_t **pkt, struct PlayerConnected in) {
 	pkt_writeUint8(ctx, pkt, in.remoteConnectionId);
 	pkt_writeString(ctx, pkt, in.userId);
-	pkt_writeString(ctx, pkt, in.userName);
+	pkt_writeExString(ctx, pkt, in.userName);
 	pkt_writeUint8(ctx, pkt, in.isConnectionOwner);
 }
 struct PlayerIdentity pkt_readPlayerIdentity(struct PacketContext ctx, const uint8_t **pkt) {
@@ -1112,6 +1126,18 @@ struct NetworkPreviewBeatmapLevel pkt_readNetworkPreviewBeatmapLevel(struct Pack
 	out.cover = pkt_readByteArrayNetSerializable(ctx, pkt);
 	return out;
 }
+struct ShareInfo pkt_readShareInfo(struct PacketContext ctx, const uint8_t **pkt) {
+	struct ShareInfo out;
+	out.levelId = pkt_readLongString(ctx, pkt);
+	pkt_readUint8Array(pkt, out.levelHash, 32);
+	out.fileSize = pkt_readVarUint64(ctx, pkt);
+	return out;
+}
+void pkt_writeShareInfo(struct PacketContext ctx, uint8_t **pkt, struct ShareInfo in) {
+	pkt_writeLongString(ctx, pkt, in.levelId);
+	pkt_writeUint8Array(ctx, pkt, in.levelHash, 32);
+	pkt_writeVarUint64(ctx, pkt, in.fileSize);
+}
 struct RecommendPreview pkt_readRecommendPreview(struct PacketContext ctx, const uint8_t **pkt) {
 	struct RecommendPreview out;
 	out.preview = pkt_readNetworkPreviewBeatmapLevel(ctx, pkt);
@@ -1133,16 +1159,12 @@ struct RecommendPreview pkt_readRecommendPreview(struct PacketContext ctx, const
 }
 struct SetCanShareBeatmap pkt_readSetCanShareBeatmap(struct PacketContext ctx, const uint8_t **pkt) {
 	struct SetCanShareBeatmap out;
-	out.levelId = pkt_readLongString(ctx, pkt);
-	out.levelHash = pkt_readString(ctx, pkt);
-	out.fileSize = pkt_readVarUint64(ctx, pkt);
+	out.base = pkt_readShareInfo(ctx, pkt);
 	out.canShare = pkt_readUint8(ctx, pkt);
 	return out;
 }
 void pkt_writeDirectDownloadInfo(struct PacketContext ctx, uint8_t **pkt, struct DirectDownloadInfo in) {
-	pkt_writeLongString(ctx, pkt, in.levelId);
-	pkt_writeString(ctx, pkt, in.levelHash);
-	pkt_writeVarUint64(ctx, pkt, in.fileSize);
+	pkt_writeShareInfo(ctx, pkt, in.base);
 	pkt_writeUint8(ctx, pkt, in.count);
 	for(uint32_t i = 0; i < in.count; ++i)
 		pkt_writeString(ctx, pkt, in.sourcePlayers[i]);

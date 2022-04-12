@@ -39,7 +39,7 @@ struct IPEndPoint wire_block_get_endpoint(struct WireBlockHandle block, _Bool ip
 	return instance_get_endpoint(ipv4);
 }
 
-struct NetSession *TEMPwire_room_resolve_session(struct WireRoomHandle handle, struct SS addr, struct String secret, struct String userId, struct String userName, struct PacketContext version) {
+struct NetSession *TEMPwire_room_resolve_session(struct WireRoomHandle handle, struct SS addr, struct String secret, struct String userId, struct ExString userName, struct PacketContext version) {
 	return instance_room_resolve_session(handle.block.thread, handle.block.group, handle.sub, addr, secret, userId, userName, version);
 }
 

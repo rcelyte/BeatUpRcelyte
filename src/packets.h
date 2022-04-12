@@ -18,6 +18,7 @@ struct PacketContext {
 	uint8_t beatUpVersion;
 };
 #define PV_LEGACY_DEFAULT (struct PacketContext){11, 6, 64, 0}
+extern const uint8_t _trap[128];
 
 ENUM(uint8_t, Platform, {
 	Platform_Test,
@@ -38,6 +39,10 @@ struct LongString {
 	uint32_t length;
 	_Bool isNull;
 	char data[4096];
+};
+struct ExString {
+	struct String base;
+	uint8_t tier;
 };
 ENUM(uint8_t, BeatmapDifficultyMask, {
 	BeatmapDifficultyMask_Easy = 1,
@@ -525,7 +530,11 @@ struct ConnectAccept {
 	_Bool reusedPeer;
 	int32_t peerId;
 	uint32_t windowSize;
+	uint8_t countdownDuration;
+	_Bool directDownloads;
 	_Bool skipResults;
+	_Bool perPlayerDifficulty;
+	_Bool perPlayerModifiers;
 };
 struct Disconnect {
 	uint8_t _pad0[8];
@@ -601,7 +610,7 @@ struct SyncTime {
 struct PlayerConnected {
 	uint8_t remoteConnectionId;
 	struct String userId;
-	struct String userName;
+	struct ExString userName;
 	_Bool isConnectionOwner;
 };
 struct PlayerIdentity {
@@ -895,6 +904,11 @@ struct NetworkPreviewBeatmapLevel {
 	struct PreviewDifficultyBeatmapSet previewDifficultyBeatmapSets[8];
 	struct ByteArrayNetSerializable cover;
 };
+struct ShareInfo {
+	struct LongString levelId;
+	uint8_t levelHash[32];
+	uint64_t fileSize;
+};
 struct RecommendPreview {
 	struct NetworkPreviewBeatmapLevel preview;
 	uint32_t requirements_len;
@@ -903,15 +917,11 @@ struct RecommendPreview {
 	struct String suggestions[16];
 };
 struct SetCanShareBeatmap {
-	struct LongString levelId;
-	struct String levelHash;
-	uint64_t fileSize;
+	struct ShareInfo base;
 	_Bool canShare;
 };
 struct DirectDownloadInfo {
-	struct LongString levelId;
-	struct String levelHash;
-	uint64_t fileSize;
+	struct ShareInfo base;
 	uint8_t count;
 	struct String sourcePlayers[128];
 };
@@ -1307,6 +1317,7 @@ struct String pkt_readString(struct PacketContext ctx, const uint8_t **pkt);
 struct LongString pkt_readLongString(struct PacketContext ctx, const uint8_t **pkt);
 void pkt_writeString(struct PacketContext ctx, uint8_t **pkt, struct String in);
 void pkt_writeLongString(struct PacketContext ctx, uint8_t **pkt, struct LongString in);
+void pkt_writeExString(struct PacketContext ctx, uint8_t **pkt, struct ExString in);
 struct AuthenticationToken pkt_readAuthenticationToken(struct PacketContext ctx, const uint8_t **pkt);
 struct BaseMasterServerMultipartMessage pkt_readBaseMasterServerMultipartMessage(struct PacketContext ctx, const uint8_t **pkt);
 void pkt_writeBaseMasterServerMultipartMessage(struct PacketContext ctx, uint8_t **pkt, struct BaseMasterServerMultipartMessage in);
@@ -1393,6 +1404,8 @@ struct ObstacleSpawnInfoNetSerializable pkt_readObstacleSpawnInfoNetSerializable
 struct SliderSpawnInfoNetSerializable pkt_readSliderSpawnInfoNetSerializable(struct PacketContext ctx, const uint8_t **pkt);
 struct PreviewDifficultyBeatmapSet pkt_readPreviewDifficultyBeatmapSet(struct PacketContext ctx, const uint8_t **pkt);
 struct NetworkPreviewBeatmapLevel pkt_readNetworkPreviewBeatmapLevel(struct PacketContext ctx, const uint8_t **pkt);
+struct ShareInfo pkt_readShareInfo(struct PacketContext ctx, const uint8_t **pkt);
+void pkt_writeShareInfo(struct PacketContext ctx, uint8_t **pkt, struct ShareInfo in);
 struct RecommendPreview pkt_readRecommendPreview(struct PacketContext ctx, const uint8_t **pkt);
 struct SetCanShareBeatmap pkt_readSetCanShareBeatmap(struct PacketContext ctx, const uint8_t **pkt);
 void pkt_writeDirectDownloadInfo(struct PacketContext ctx, uint8_t **pkt, struct DirectDownloadInfo in);

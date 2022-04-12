@@ -14,5 +14,5 @@ struct GameplayServerConfiguration instance_room_get_configuration(uint16_t thre
 struct PacketContext instance_room_get_protocol(uint16_t thread, uint16_t group, uint8_t sub);
 struct IPEndPoint instance_get_endpoint(_Bool ipv4);
 
-struct NetSession *instance_room_resolve_session(uint16_t thread, uint16_t group, uint8_t sub, struct SS addr, struct String secret, struct String userId, struct String userName, struct PacketContext version);
+struct NetSession *instance_room_resolve_session(uint16_t thread, uint16_t group, uint8_t sub, struct SS addr, struct String secret, struct String userId, struct ExString userName, struct PacketContext version);
 struct NetContext *instance_get_net(uint16_t thread);

@@ -422,7 +422,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 	req.selectionMask.songPacks.bloomFilter.d0 |= customs.d0;
 	req.selectionMask.songPacks.bloomFilter.d1 |= customs.d1;*/
 	{
-		isession = TEMPwire_room_resolve_session(handle, addr, req.secret, req.base.userId, req.base.userName, session->net.version);
+		isession = TEMPwire_room_resolve_session(handle, addr, req.secret, req.base.userId, (struct ExString){req.base.userName, 0}, session->net.version);
 		if(!isession) { // TODO: the room should close implicitly if the first user to connect fails
 			r_conn.result = ConnectToServerResponse_Result_UnknownError;
 			goto send;

@@ -244,11 +244,16 @@ enum
 		_Bool isNull;
 		char data[4096];
 	};
+	struct ExString {
+		struct String base;
+		uint8_t tier;
+	};
 head
 	struct String pkt_readString(struct PacketContext ctx, const uint8_t **pkt);
 	struct LongString pkt_readLongString(struct PacketContext ctx, const uint8_t **pkt);
 	void pkt_writeString(struct PacketContext ctx, uint8_t **pkt, struct String in);
 	void pkt_writeLongString(struct PacketContext ctx, uint8_t **pkt, struct LongString in);
+	void pkt_writeExString(struct PacketContext ctx, uint8_t **pkt, struct ExString in);
 code
 	struct String pkt_readString(struct PacketContext ctx, const uint8_t **pkt) {
 		struct String out;
@@ -302,12 +307,20 @@ code
 			pkt_writeUint32(ctx, pkt, in.length);
 		pkt_writeInt8Array(ctx, pkt, in.data, in.length);
 	}
+	void pkt_writeExString(struct PacketContext ctx, uint8_t **pkt, struct ExString in) {
+		if(ctx.beatUpVersion)
+			in.base.data[in.base.length++] = in.tier + 16;
+		pkt_writeString(ctx, pkt, in.base);
+	}
 	#ifdef PACKET_LOGGING_FUNCS
 	static void pkt_logString(struct PacketContext ctx, const char *name, char *buf, char *it, struct String in) {
 		uprintf("%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
 	}
 	static void pkt_logLongString(struct PacketContext ctx, const char *name, char *buf, char *it, struct LongString in) {
 		uprintf("%.*s%s=\"%.*s\"\n", (uint32_t)(it - buf), buf, name, in.length, in.data);
+	}
+	static void pkt_logExString(struct PacketContext ctx, const char *name, char *buf, char *it, struct ExString in) {
+		pkt_logString(ctx, name, buf, it, in.base);
 	}
 	#endif
 r AuthenticationToken
@@ -493,7 +506,12 @@ u8 PacketProperty
 			i32 peerId
 		if(ctx.beatUpVersion)
 			u32 windowSize
-			b skipResults
+			u8 countdownDuration
+			u8.e bits
+				u1.b directDownloads
+				u1.b skipResults
+				u1.b perPlayerDifficulty
+				u1.b perPlayerModifiers
 	r Disconnect
 		u8[8] _pad0
 	z UnconnectedMessage
@@ -579,7 +597,7 @@ u8 InternalMessage Type
 	s PlayerConnected
 		u8 remoteConnectionId
 		String userId
-		String userName
+		ExString userName
 		b isConnectionOwner
 	d PlayerIdentity
 		PlayerStateHash playerState
@@ -995,6 +1013,10 @@ r NetworkPreviewBeatmapLevel
 	u8 count
 	PreviewDifficultyBeatmapSet[8,.count] previewDifficultyBeatmapSets
 	ByteArrayNetSerializable cover
+d ShareInfo
+	LongString levelId
+	u8[32] levelHash
+	vu64 fileSize
 u8 LoadState
 	None
 	Failed
@@ -1010,14 +1032,10 @@ u8 BeatUpMessage Type
 		vu32 suggestions_len
 		String[16,.suggestions_len] suggestions
 	r SetCanShareBeatmap
-		LongString levelId
-		String levelHash
-		vu64 fileSize
+		ShareInfo base
 		b canShare
 	s DirectDownloadInfo
-		LongString levelId
-		String levelHash
-		vu64 fileSize
+		ShareInfo base
 		u8 count
 		String[128,.count] sourcePlayers
 	r LevelFragmentRequest

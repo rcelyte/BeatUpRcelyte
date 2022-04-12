@@ -8,14 +8,6 @@ namespace BeatUpClient {
 			}
 		}
 
-		[System.AttributeUsage(System.AttributeTargets.Class)]
-		public class ReplaceInterfacesAndSelfAttribute : System.Attribute {
-			public System.Type original;
-			public ReplaceInterfacesAndSelfAttribute(System.Type original) {
-				this.original = original;
-			}
-		}
-
 		public static System.Collections.Generic.Dictionary<System.Type, System.Type> InjectMap = new System.Collections.Generic.Dictionary<System.Type, System.Type>();
 		public static void ConcreteBinderNonGeneric_To(Zenject.ConcreteBinderNonGeneric __instance, ref System.Collections.Generic.IEnumerable<System.Type> concreteTypes) {
 			System.Type[] newTypes = System.Linq.Enumerable.ToArray(concreteTypes);
@@ -31,19 +23,6 @@ namespace BeatUpClient {
 			concreteTypes = newTypes;
 		}
 
-		public static System.Collections.Generic.Dictionary<System.Type, System.Type> InterfacesAndSelf_InjectMap = new System.Collections.Generic.Dictionary<System.Type, System.Type>();
-		public static bool DiContainer_BindInterfacesAndSelfTo(Zenject.DiContainer __instance, ref Zenject.FromBinderNonGeneric __result, System.Type type) {
-			if(InterfacesAndSelf_InjectMap.TryGetValue(type, out System.Type inject)) {
-				Plugin.Log?.Debug($"Replacing {type} with {inject}");
-				System.Collections.Generic.List<System.Type> types = new System.Collections.Generic.List<System.Type>(ModestTree.TypeExtensions.Interfaces(type));
-				types.Add(type);
-				types.Add(inject);
-				__result = __instance.Bind(types).To(inject);
-				return false;
-			}
-			return true;
-		}
-
 		static void Patch<Orig, Patch>(string fn, string patch, params System.Type[] args) {
 			System.Reflection.MethodBase original = typeof(Orig).GetMethod(fn, args);
 			System.Reflection.MethodInfo prefix = typeof(Patch).GetMethod(patch);
@@ -55,12 +34,9 @@ namespace BeatUpClient {
 				foreach(System.Attribute attrib in type.GetCustomAttributes(false)) {
 					if(attrib is ReplaceAttribute replaceAttribute)
 						InjectMap.Add(replaceAttribute.original, type);
-					if(attrib is ReplaceInterfacesAndSelfAttribute replaceInterfacesAndSelfAttribute)
-						InterfacesAndSelf_InjectMap.Add(replaceInterfacesAndSelfAttribute.original, type);
 				}
 			}
 			Patch<Zenject.ConcreteBinderNonGeneric, DiJack>(nameof(Zenject.ConcreteBinderNonGeneric.To), nameof(ConcreteBinderNonGeneric_To), typeof(System.Collections.Generic.IEnumerable<System.Type>));
-			Patch<Zenject.DiContainer, DiJack>(nameof(Zenject.DiContainer.BindInterfacesAndSelfTo), nameof(DiContainer_BindInterfacesAndSelfTo), typeof(System.Type));
 		}
 	}
 }
@@ -121,6 +97,7 @@ namespace BeatUpClient.Patches {
 		}
 		public static void Prefix(GameplayServerConfiguration configuration) {
 			Plugin.playerPreviews = new Networking.PacketHandler.RecommendPreview[configuration.maxPlayerCount];
+			System.Array.Fill(Plugin.playerPreviews, new Networking.PacketHandler.RecommendPreview());
 			Plugin.playerCells = new Plugin.PlayerCell[configuration.maxPlayerCount];
 			Plugin.UpdateDifficultyUI(null);
 		}
@@ -132,25 +109,67 @@ namespace BeatUpClient.Patches {
 		}
 	}
 
+	public class BeatUpConnectInfo : LiteNetLib.Utils.INetSerializable {
+		public const uint Size = 6;
+		public uint windowSize;
+		public byte countdownDuration;
+		public bool directDownloads;
+		public bool skipResults;
+		public bool perPlayerDifficulty;
+		public bool perPlayerModifiers;
+		public virtual void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
+			writer.Put((uint)windowSize);
+			writer.Put((byte)countdownDuration);
+			byte bits = 0;
+			bits |= directDownloads ? (byte)1 : (byte)0;
+			bits |= skipResults ? (byte)2 : (byte)0;
+			bits |= perPlayerDifficulty ? (byte)4 : (byte)0;
+			bits |= perPlayerModifiers ? (byte)8 : (byte)0;
+			writer.Put((byte)bits);
+		}
+		public virtual void Deserialize(LiteNetLib.Utils.NetDataReader reader) {
+			windowSize = reader.GetUInt();
+			countdownDuration = reader.GetByte();
+			byte bits = reader.GetByte();
+			directDownloads = (bits & 1) == 1;
+			skipResults = (bits & 2) == 2;
+			perPlayerDifficulty = (bits & 4) == 4;
+			perPlayerModifiers = (bits & 8) == 8;
+		}
+	}
+
+	public class BeatUpConnectHeader : BeatUpConnectInfo {
+		public uint protocolId = 1;
+		public override void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
+			writer.Put((uint)protocolId);
+			base.Serialize(writer);
+		}
+		public override void Deserialize(LiteNetLib.Utils.NetDataReader reader) {
+			protocolId = reader.GetUInt();
+			base.Deserialize(reader);
+		}
+	}
+
 	[HarmonyLib.HarmonyPatch(typeof(BasicConnectionRequestHandler), nameof(BasicConnectionRequestHandler.GetConnectionMessage))]
 	public class BasicConnectionRequestHandler_GetConnectionMessage {
 		public static void Postfix(LiteNetLib.Utils.NetDataWriter writer) {
 			Plugin.Log?.Debug("BasicConnectionRequestHandler_GetConnectionMessage()");
 			LiteNetLib.Utils.NetDataWriter sub = new LiteNetLib.Utils.NetDataWriter(false, 16);
-			sub.Put((uint)1);
-			sub.Put((uint)Config.Instance.WindowSize);
-			sub.Put((byte)(Config.Instance.CountdownDuration * 4));
-			byte bits = 0;
-			bits |= Config.Instance.DirectDownloads ? (byte)1 : (byte)0;
-			bits |= Config.Instance.SkipResults ? (byte)2 : (byte)0;
-			bits |= Config.Instance.PerPlayerDifficulty ? (byte)4 : (byte)0;
-			bits |= Config.Instance.PerPlayerModifiers ? (byte)8 : (byte)0;
-			sub.Put((byte)bits);
+			new BeatUpConnectHeader {
+				windowSize = Config.Instance.WindowSize,
+				countdownDuration = (byte)(Config.Instance.CountdownDuration * 4),
+				directDownloads = Config.Instance.DirectDownloads,
+				skipResults = Config.Instance.SkipResults,
+				perPlayerDifficulty = Config.Instance.PerPlayerDifficulty,
+				perPlayerModifiers = Config.Instance.PerPlayerModifiers,
+			}.Serialize(sub);
 			writer.PutVarUInt((uint)sub.Length);
 			writer.Put("BeatUpClient");
 			writer.Put(sub.CopyData());
 			Plugin.windowSize = 64;
 			Plugin.directDownloads = false;
+			Plugin.expectMetadata = false;
+			Plugin.playerTiers.Clear();
 			Plugin.skipResults = false;
 		}
 	}
@@ -170,14 +189,17 @@ namespace BeatUpClient.Patches {
 		}
 		public static void Prefix(ref object packet) {
 			int size = (int)fi_Size.GetValue(packet);
-			if(size == Size + 5) {
-				Plugin.skipResults = System.BitConverter.ToBoolean((byte[])fi_RawData.GetValue(packet), size -= 1);
-				uint windowSize = System.BitConverter.ToUInt32((byte[])fi_RawData.GetValue(packet), size -= 4);
-				if(windowSize < 32 || windowSize > 512)
+			if(size == Size + BeatUpConnectInfo.Size) {
+				size = Size;
+				BeatUpConnectInfo info = new BeatUpConnectInfo();
+				info.Deserialize(new LiteNetLib.Utils.NetDataReader((byte[])fi_RawData.GetValue(packet), size));
+				Plugin.skipResults = info.skipResults;
+				if(info.windowSize < 32 || info.windowSize > 512)
 					return;
-				Plugin.windowSize = windowSize;
-				Plugin.directDownloads = Config.Instance.DirectDownloads;
-				Plugin.Log?.Info($"Overriding window size - {windowSize}");
+				Plugin.windowSize = info.windowSize;
+				Plugin.directDownloads = Config.Instance.DirectDownloads && info.directDownloads;
+				Plugin.expectMetadata = true;
+				Plugin.Log?.Info($"Overriding window size - {info.windowSize}");
 				fi_Size.SetValue(packet, size);
 			}
 		}
@@ -248,6 +270,7 @@ namespace BeatUpClient.Patches {
 		public static async System.Threading.Tasks.Task<EntitlementsStatus> ShareWrapper(System.Threading.Tasks.Task<EntitlementsStatus> task, string levelId) {
 			byte[]? lastData = Plugin.uploadData;
 			Plugin.uploadData = null;
+			Plugin.downloadPending = false;
 			EntitlementsStatus status = await task;
 			Plugin.Log?.Debug($"EntitlementsStatus: {status}");
 			if(status != EntitlementsStatus.Ok) {
@@ -256,10 +279,12 @@ namespace BeatUpClient.Patches {
 			BeatmapLevelsModel.GetBeatmapLevelResult result = await LevelLoader.beatmapLevelsModel.GetBeatmapLevelAsync(levelId, default(System.Threading.CancellationToken));
 			Plugin.Log?.Debug($"GetBeatmapLevelResult.isError: {result.isError}");
 			if(result.isError) {
-				if(Plugin.directDownloads && Patches.BeatmapLevelsModel_GetLevelPreviewForLevelId.resolvePreview?.Invoke(levelId) != null)
+				if(Plugin.directDownloads && Patches.BeatmapLevelsModel_GetLevelPreviewForLevelId.resolvePreview?.Invoke(levelId) != null) {
+					Plugin.downloadPending = true;
 					return EntitlementsStatus.Unknown;
-				else
+				} else {
 					return EntitlementsStatus.NotOwned;
+				}
 			}
 			if(Plugin.directDownloads && result.beatmapLevel is CustomBeatmapLevel level) {
 				Plugin.Log?.Debug("Zipping custom level");
@@ -267,6 +292,9 @@ namespace BeatUpClient.Patches {
 					Plugin.uploadData = lastData;
 				} else {
 					Plugin.uploadData = await ZipLevel(level);
+					using(System.Security.Cryptography.SHA256 sha256 = System.Security.Cryptography.SHA256.Create()) {
+						Plugin.uploadHash = sha256.ComputeHash(Plugin.uploadData);
+					}
 					Plugin.uploadLevel = levelId;
 				}
 				Plugin.Log?.Debug($"Packed {Plugin.uploadData.Length} bytes");
@@ -304,11 +332,12 @@ namespace BeatUpClient.Patches {
 				return;
 			Networking.PacketHandler.LoadProgress.LoadState state = entitlementStatus switch {
 				EntitlementsStatus.NotOwned => Networking.PacketHandler.LoadProgress.LoadState.Failed,
+				EntitlementsStatus.NotDownloaded => Networking.PacketHandler.LoadProgress.LoadState.Downloading,
 				EntitlementsStatus.Ok => Networking.PacketHandler.LoadProgress.LoadState.Done,
 				_ => Networking.PacketHandler.LoadProgress.LoadState.None,
 			};
 			if(state != Networking.PacketHandler.LoadProgress.LoadState.None)
-				Plugin.playerCells[player.sortIndex].UpdateData(new Networking.PacketHandler.LoadProgress(state, 65535, 0), true);
+				Plugin.playerCells[player.sortIndex].UpdateData(new Networking.PacketHandler.LoadProgress(state, 0, 0), true);
 		}
 		public static bool MissingRequirements(Networking.PacketHandler.RecommendPreview? preview, bool download) {
 			if(preview == null) {
@@ -344,7 +373,7 @@ namespace BeatUpClient.Patches {
 				entitlementStatus = EntitlementsStatus.NotOwned;
 			} else if(entitlementStatus == EntitlementsStatus.Ok && Plugin.uploadData != null) {
 				Plugin.Log?.Debug($"Announcing share for `{levelId}`");
-				multiplayerSessionManager.Send(new Networking.PacketHandler.SetCanShareBeatmap(levelId, "1234", (ulong)Plugin.uploadData.LongLength, true)); // No public method exposes the `onlyFirstDegree` option
+				multiplayerSessionManager.Send(new Networking.PacketHandler.SetCanShareBeatmap(levelId, Plugin.uploadHash, (ulong)Plugin.uploadData.LongLength));
 			}
 			Plugin.Log?.Debug($"entitlementStatus={entitlementStatus}");
 			HandleSetIsEntitledToLevel(playersDataModel?.multiplayerSessionManager.localPlayer, levelId, entitlementStatus);
@@ -352,7 +381,7 @@ namespace BeatUpClient.Patches {
 		}
 	}
 
-	[DiJack.ReplaceInterfacesAndSelf(typeof(MultiplayerLevelLoader))]
+	[DiJack.Replace(typeof(MultiplayerLevelLoader))]
 	public class LevelLoader : MultiplayerLevelLoader {
 		public class MemorySpriteLoader : ISpriteAsyncLoader {
 			System.Threading.Tasks.Task<byte[]> dataTask;
@@ -385,6 +414,7 @@ namespace BeatUpClient.Patches {
 		public EnvironmentsListSO environmentSceneInfoCollection;
 		public static BeatmapLevelsModel beatmapLevelsModel = null!;
 		public System.Func<string, Networking.PacketHandler.RecommendPreview?>? resolvePreview = null;
+		public System.Collections.Generic.List<IConnectedPlayer> sources = new System.Collections.Generic.List<IConnectedPlayer>();
 		public readonly string dataPath = System.IO.Path.Combine(System.IO.Path.GetFullPath(CustomLevelPathHelper.baseProjectPath), "BeatUpClient_Data");
 		public LevelLoader(CustomLevelLoader customLevelLoader, BeatmapLevelsModel beatmapLevelsModel) {
 			defaultEnvironmentInfo = (EnvironmentInfoSO)typeof(CustomLevelLoader).GetField("_defaultEnvironmentInfo", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(customLevelLoader);
@@ -474,7 +504,7 @@ namespace BeatUpClient.Patches {
 					file.Open().Read(rawData, 0, rawData.Length);
 					if(modded) {
 						if(ValidatedPath(filename, out string path))
-							System.IO.File.WriteAllBytes(path, rawData); /*await System.IO.File.WriteAllBytesAsync(path, rawData);*/
+							System.IO.File.WriteAllBytes(path, rawData);
 						else
 							return null;
 					}
@@ -509,9 +539,9 @@ namespace BeatUpClient.Patches {
 				int it = 0, p = 0;
 				uint cycle = 0;
 				ulong off = handler.gaps[0].start;
-				IConnectedPlayer[] sources = new IConnectedPlayer[Plugin.downloadInfo.sourcePlayers.Length];
-				for(uint i = 0; i < sources.Length; ++i)
-					sources[i] = handler.GetPlayerByUserId(Plugin.downloadInfo.sourcePlayers[i]);
+				sources.Clear();
+				foreach(string userId in Plugin.downloadInfo.sourcePlayers)
+					sources.Add(handler.GetPlayerByUserId(userId));
 				while(handler.gaps.Count > 0) {
 					if(++cycle == 4) {
 						ulong dl = (ulong)handler.buffer.LongLength;
@@ -531,14 +561,24 @@ namespace BeatUpClient.Patches {
 							off = handler.gaps[it].start;
 						}
 						ushort len = (ushort)System.Math.Min(380, handler.gaps[it].end - off);
+						if(sources.Count < 1) {
+							Plugin.Log?.Error($"No available download sources!");
+							return result;
+						}
+						p = (p + 1) % sources.Count;
 						handler.SendUnreliableToPlayer(new Networking.PacketHandler.LevelFragmentRequest(off, len), sources[p]);
-						p = (p + 1) % sources.Length;
 						off += 380;
 					}
 					await System.Threading.Tasks.Task.Delay(7, cancellationToken);
 					cancellationToken.ThrowIfCancellationRequested();
 				}
 				Plugin.Log?.Debug($"Finished downloading {handler.buffer.Length} bytes");
+				using(System.Security.Cryptography.SHA256 sha256 = System.Security.Cryptography.SHA256.Create()) {
+					if(!System.Linq.Enumerable.SequenceEqual(Plugin.downloadInfo.levelHash, sha256.ComputeHash(handler.buffer))) {
+						Plugin.Log?.Error("Hash mismatch!");
+						return result;
+					}
+				}
 				using(System.IO.MemoryStream stream = new System.IO.MemoryStream(handler.buffer)) {
 					using(System.IO.Compression.ZipArchive archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Read)) {
 						if(archive == null)
@@ -633,10 +673,13 @@ namespace BeatUpClient.Patches {
 			for(uint i = 0; i < Plugin.playerCells.Length; ++i)
 				Plugin.playerCells[i].transform = null;
 			Plugin.Log?.Debug("GameServerPlayersTableView_SetData()");
-			foreach(HMUI.TableCell cell in ____tableView.visibleCells) {
-				foreach(UnityEngine.Transform child in cell.transform) {
+			System.Reflection.FieldInfo fi_GameServerPlayerTableCell__localPlayerBackgroundImage = typeof(GameServerPlayerTableCell).GetField("_localPlayerBackgroundImage", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+			foreach(GameServerPlayerTableCell cell in ____tableView.visibleCells) {
+				UnityEngine.UI.Image background = (UnityEngine.UI.Image)fi_GameServerPlayerTableCell__localPlayerBackgroundImage.GetValue(cell);
+				foreach(UnityEngine.Transform child in background.transform) {
 					if(child.gameObject.name == "BeatUpClient_Progress") {
-						Plugin.playerCells[sortedPlayers[cell.idx].sortIndex].SetTransform((UnityEngine.RectTransform)child);
+						IConnectedPlayer player = sortedPlayers[cell.idx];
+						Plugin.playerCells[player.sortIndex].SetBar((UnityEngine.RectTransform)child, background, player.isMe ? new UnityEngine.Color(0.1254902f, 0.7529412f, 1, 0.2509804f) : new UnityEngine.Color(0, 0, 0, 0));
 						break;
 					}
 				}
@@ -647,11 +690,35 @@ namespace BeatUpClient.Patches {
 	[HarmonyLib.HarmonyPatch(typeof(GameServerPlayerTableCell), nameof(GameServerPlayerTableCell.Awake))]
 	public class GameServerPlayerTableCell_Awake {
 		public static void Prefix(GameServerPlayerTableCell __instance, UnityEngine.UI.Image ____localPlayerBackgroundImage) {
-			UnityEngine.GameObject bar = UnityEngine.Object.Instantiate(____localPlayerBackgroundImage.gameObject, ____localPlayerBackgroundImage.transform.parent);
+			UnityEngine.GameObject bar = UnityEngine.Object.Instantiate(____localPlayerBackgroundImage.gameObject, ____localPlayerBackgroundImage.transform);
 			bar.name = "BeatUpClient_Progress";
-			HMUI.ImageView image = bar.GetComponent<HMUI.ImageView>();
-			image.color = new UnityEngine.Color(0.4782609f, 0.6956522f, 0.02173913f, 0.5434783f);
-			image.enabled = false;
+		}
+	}
+
+	[HarmonyLib.HarmonyPatch(typeof(ConnectedPlayerManager), "HandleServerPlayerConnected")]
+	public class ConnectedPlayerManager_HandleServerPlayerConnected {
+		public static void Prefix(object packet) {
+			if(!Plugin.expectMetadata)
+				return;
+			System.Type PlayerConnectedPacket = typeof(ConnectedPlayerManager).Assembly.GetType("ConnectedPlayerManager+PlayerConnectedPacket");
+			string userId = (string)PlayerConnectedPacket.GetField("userId").GetValue(packet);
+			string userName = (string)PlayerConnectedPacket.GetField("userName").GetValue(packet);
+			int tier = (int)userName[userName.Length-1] - 17;
+			if(tier < -1 || tier >= Plugin.badges.Length)
+				return;
+			if(tier >= 0)
+				Plugin.playerTiers[userId] = (byte)tier;
+			PlayerConnectedPacket.GetField("userName").SetValue(packet, userName.Substring(0, userName.Length - 1));
+		}
+	}
+
+	[HarmonyLib.HarmonyPatch(typeof(MultiplayerLobbyAvatarManager), nameof(MultiplayerLobbyAvatarManager.AddPlayer))]
+	public class MultiplayerLobbyAvatarManager_AddPlayer {
+		public static void Postfix(IConnectedPlayer connectedPlayer, System.Collections.Generic.Dictionary<string, MultiplayerLobbyAvatarController> ____playerIdToAvatarMap) {
+			if(connectedPlayer.isMe || !Plugin.expectMetadata)
+				return;
+			if(Plugin.playerTiers.TryGetValue(connectedPlayer.userId, out byte tier))
+				UnityEngine.Object.Instantiate(Plugin.badges[tier], ____playerIdToAvatarMap[connectedPlayer.userId].transform.GetChild(2));
 		}
 	}
 
@@ -699,7 +766,7 @@ namespace BeatUpClient.Networking {
 			public float previewStartTime { get; set; }
 			public float previewDuration { get; set; }
 			public float songDuration { get; set; }
-			public System.Collections.Generic.IReadOnlyList<PreviewDifficultyBeatmapSet> previewDifficultyBeatmapSets { get; set; } = null!;
+			public System.Collections.Generic.IReadOnlyList<PreviewDifficultyBeatmapSet> previewDifficultyBeatmapSets { get; set; } = new System.Collections.Generic.List<PreviewDifficultyBeatmapSet>(0);
 			public EnvironmentInfoSO environmentInfo { get; set; } = null!;
 			public EnvironmentInfoSO allDirectionsEnvironmentInfo { get; set; } = null!;
 			public readonly ByteArrayNetSerializable cover = new ByteArrayNetSerializable("cover", 0, 8192);
@@ -832,52 +899,60 @@ namespace BeatUpClient.Networking {
 			}
 		}
 
-		public class SetCanShareBeatmap : LiteNetLib.Utils.INetSerializable {
+		public abstract class ShareInfo : LiteNetLib.Utils.INetSerializable {
 			public string levelId = System.String.Empty;
-			public string levelHash = System.String.Empty;
+			public byte[] levelHash = new byte[32];
 			public ulong fileSize;
-			public bool canShare;
-			public void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
-				Plugin.Log?.Debug($"SetCanShareBeatmap.Serialize()");
-				writer.Put(levelId);
-				writer.Put(levelHash);
+			public virtual void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
+				Plugin.Log?.Debug($"ShareInfo.Serialize()");
+				writer.Put((string)levelId);
+				writer.Put((byte[])levelHash);
 				writer.PutVarULong(fileSize);
-				writer.Put(canShare);
 			}
-			public void Deserialize(LiteNetLib.Utils.NetDataReader reader) {
+			public virtual void Deserialize(LiteNetLib.Utils.NetDataReader reader) {
+				Plugin.Log?.Debug($"ShareInfo.Deserialize()");
 				levelId = reader.GetString();
-				levelHash = reader.GetString();
+				reader.GetBytes(levelHash, levelHash.Length);
 				fileSize = reader.GetVarULong();
+			}
+			public ShareInfo() {}
+			public ShareInfo(string levelId, byte[] levelHash, ulong fileSize) {
+				Plugin.Log?.Debug($"ShareInfo()");
+				this.levelId = levelId;
+				System.Buffer.BlockCopy(levelHash, 0, this.levelHash, 0, this.levelHash.Length);
+				this.fileSize = fileSize;
+			}
+		}
+
+		public class SetCanShareBeatmap : ShareInfo {
+			public bool canShare;
+			public override void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
+				Plugin.Log?.Debug($"SetCanShareBeatmap.Serialize()");
+				base.Serialize(writer);
+				writer.Put((bool)canShare);
+			}
+			public override void Deserialize(LiteNetLib.Utils.NetDataReader reader) {
+				base.Deserialize(reader);
 				canShare = reader.GetBool();
 			}
 			public SetCanShareBeatmap() {}
-			public SetCanShareBeatmap(string levelId, string levelHash, ulong fileSize, bool canShare) {
+			public SetCanShareBeatmap(string levelId, byte[] levelHash, ulong fileSize, bool canShare = true) : base(levelId, levelHash, fileSize) {
 				Plugin.Log?.Debug($"SetCanShareBeatmap()");
-				this.levelId = levelId;
-				this.levelHash = levelHash;
-				this.fileSize = fileSize;
 				this.canShare = canShare;
 			}
 		}
 
-		public class DirectDownloadInfo : LiteNetLib.Utils.INetSerializable {
-			public string levelId = System.String.Empty;
-			public string levelHash = System.String.Empty;
-			public ulong fileSize;
+		public class DirectDownloadInfo : ShareInfo {
 			public string[] sourcePlayers = new string[0];
-			public void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
-				writer.Put(levelId);
-				writer.Put(levelHash);
-				writer.PutVarULong(fileSize);
+			public override void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
+				base.Serialize(writer);
 				writer.Put((byte)UpperBound((uint)sourcePlayers.Length, 128));
 				foreach(string player in sourcePlayers)
 					writer.Put(player);
 			}
-			public void Deserialize(LiteNetLib.Utils.NetDataReader reader) {
+			public override void Deserialize(LiteNetLib.Utils.NetDataReader reader) {
 				Plugin.Log?.Debug("DirectDownloadInfo.Deserialize()");
-				levelId = reader.GetString();
-				levelHash = reader.GetString();
-				fileSize = reader.GetVarULong();
+				base.Deserialize(reader);
 				sourcePlayers = new string[UpperBound(reader.GetByte(), 128)];
 				for(byte i = 0; i < sourcePlayers.Length; ++i)
 					sourcePlayers[i] = reader.GetString();
@@ -1000,9 +1075,6 @@ namespace BeatUpClient.Networking {
 			return multiplayerSessionManager.GetPlayerByUserId(userId);
 		}
 
-		public void Send<T>(T message) where T : LiteNetLib.Utils.INetSerializable =>
-			multiplayerSessionManager.Send(message);
-
 		public void SendUnreliableToPlayer<T>(T message, IConnectedPlayer player) where T : LiteNetLib.Utils.INetSerializable {
 			ConnectedPlayerManager? connectedPlayerManager = multiplayerSessionManager.connectedPlayerManager;
 			if(connectedPlayerManager == null)
@@ -1036,6 +1108,11 @@ namespace BeatUpClient.Networking {
 			buffer = new byte[packet.fileSize];
 			gaps.Clear();
 			gaps.Add((0, packet.fileSize));
+			if(!Plugin.downloadPending)
+				return;
+			Networking.PacketHandler.LoadProgress progress = new Networking.PacketHandler.LoadProgress(Networking.PacketHandler.LoadProgress.LoadState.Downloading, 0);
+			HandleLoadProgress(progress, multiplayerSessionManager.localPlayer);
+			multiplayerSessionManager.Send(progress);
 		}
 
 		public void HandleLevelFragmentRequest(LevelFragmentRequest packet, IConnectedPlayer player) {
@@ -1047,8 +1124,12 @@ namespace BeatUpClient.Networking {
 		}
 
 		public void HandleLevelFragment(LevelFragment packet, IConnectedPlayer player) {
-			if(buffer == null || packet.offset >= (ulong)buffer.LongLength || packet.offset + (uint)packet.data.LongLength > (ulong)buffer.LongLength)
+			if(buffer == null)
 				return;
+			if(packet.offset >= (ulong)buffer.LongLength || packet.offset + (uint)packet.data.LongLength > (ulong)buffer.LongLength || packet.data.LongLength < 1) {
+				playersDataModel?.loader.sources.Remove(player);
+				return;
+			}
 			System.Buffer.BlockCopy(packet.data, 0, buffer, (int)packet.offset, packet.data.Length);
 			ulong start = packet.offset, end = packet.offset + (ulong)packet.data.LongLength;
 			int i = gaps.Count - 1;
@@ -1124,7 +1205,7 @@ namespace BeatUpClient.Networking {
 		}
 
 		public PacketHandler.RecommendPreview? ResolvePreview(string levelId) =>
-			System.Linq.Enumerable.FirstOrDefault(Plugin.playerPreviews, (PacketHandler.RecommendPreview? preview) => preview?.preview.levelID == levelId);
+			System.Linq.Enumerable.FirstOrDefault(Plugin.playerPreviews, (PacketHandler.RecommendPreview preview) => preview.preview.levelID == levelId);
 
 		public override void HandleMenuRpcManagerGetRecommendedBeatmap(string userId) {
 			if(Plugin.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex] != null)
@@ -1134,8 +1215,8 @@ namespace BeatUpClient.Networking {
 
 		public override void SetLocalPlayerBeatmapLevel(PreviewDifficultyBeatmap? beatmapLevel) {
 			if(beatmapLevel != null) {
-				PacketHandler.RecommendPreview? localPreview = Plugin.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex];
-				if(!(localPreview?.preview.levelID == beatmapLevel.beatmapLevel.levelID)) {
+				PacketHandler.RecommendPreview localPreview = Plugin.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex];
+				if(localPreview.preview.levelID != beatmapLevel.beatmapLevel.levelID) {
 					string[]? requirementArray = null, suggestionArray = null;
 					PacketHandler.RecommendPreview? preview = ResolvePreview(beatmapLevel.beatmapLevel.levelID);
 					if(preview != null) {
@@ -1296,9 +1377,16 @@ namespace BeatUpClient {
 	public class Plugin {
 		public struct PlayerCell {
 			public UnityEngine.RectTransform? transform;
-			public Networking.PacketHandler.LoadProgress data;
-			public void SetTransform(UnityEngine.RectTransform transform) {
+			UnityEngine.UI.Image background;
+			UnityEngine.UI.Image foreground;
+			UnityEngine.Color backgroundColor;
+			Networking.PacketHandler.LoadProgress data;
+			public void SetBar(UnityEngine.RectTransform transform, UnityEngine.UI.Image background, UnityEngine.Color backgroundColor) {
 				this.transform = transform;
+				this.background = background;
+				this.backgroundColor = backgroundColor;
+				foreground = transform.gameObject.GetComponent<HMUI.ImageView>();
+				background.enabled = true;
 				Refresh(transform);
 			}
 			public void UpdateData(Networking.PacketHandler.LoadProgress data, bool replace = false) {
@@ -1314,28 +1402,48 @@ namespace BeatUpClient {
 					Refresh(transform);
 			}
 			void Refresh(UnityEngine.RectTransform transform) {
-				transform.offsetMin = new UnityEngine.Vector2((65535u - data.progress) * 104 / 65535f, transform.offsetMin.y);
-				transform.gameObject.GetComponent<HMUI.ImageView>().enabled = (data.state != Networking.PacketHandler.LoadProgress.LoadState.None);
+				float delta = (65535u - data.progress) * -104 / 65534f;
+				transform.sizeDelta = new UnityEngine.Vector2(delta, transform.sizeDelta.y);
+				transform.localPosition = new UnityEngine.Vector3(delta * (data.state == Networking.PacketHandler.LoadProgress.LoadState.Exporting ? .5f : -.5f), 0, 0);
+				foreground.color = data.state switch {
+					Networking.PacketHandler.LoadProgress.LoadState.Exporting => new UnityEngine.Color(0.9130435f, 1, 0.1521739f, 0.5434783f),
+					Networking.PacketHandler.LoadProgress.LoadState.Downloading => new UnityEngine.Color(0.4782609f, 0.6956522f, 0.02173913f, 0.5434783f),
+					_ => new UnityEngine.Color(0, 0, 0, 0),
+				};
+				background.color = data.state switch {
+					Networking.PacketHandler.LoadProgress.LoadState.Failed => new UnityEngine.Color(0.7173913f, 0.2608696f, 0.02173913f, 0.7490196f),
+					Networking.PacketHandler.LoadProgress.LoadState.Exporting => new UnityEngine.Color(0.2608696f, 0.7173913f, 0.02173913f, 0.2509804f),
+					Networking.PacketHandler.LoadProgress.LoadState.Downloading => new UnityEngine.Color(0.2608696f, 0.7173913f, 0.02173913f, 0.2509804f),
+					Networking.PacketHandler.LoadProgress.LoadState.Done => new UnityEngine.Color(0.2608696f, 0.7173913f, 0.02173913f, 0.7490196f),
+					_ => backgroundColor,
+				};
+				foreground.enabled = (data.progress > 0);
+				/*background.enabled = ( != );
+				foreground.enabled = (data.state != Networking.PacketHandler.LoadProgress.LoadState.None);*/
 			}
 		}
 
 		public const ulong MaxDownloadSize = 268435456;
 		public const ulong MaxUnzippedSize = 268435456;
-		public const string HarmonyId = "org.battletrains.BeatUpClient";
-		public static readonly HarmonyLib.Harmony harmony = new HarmonyLib.Harmony(HarmonyId);
+		public static readonly HarmonyLib.Harmony harmony = new HarmonyLib.Harmony("BeatUpClient");
 		public static Plugin? Instance;
 		public static IPA.Logging.Logger? Log;
 		public static UnityEngine.Sprite defaultPackCover = null!;
+		public static UnityEngine.GameObject[] badges = null!;
+		public static System.Collections.Generic.Dictionary<string, byte> playerTiers = new System.Collections.Generic.Dictionary<string, byte>();
 		public static Networking.PacketHandler.DirectDownloadInfo? downloadInfo = null;
 		public static Networking.PacketHandler.RecommendPreview? downloadPreview = null;
+		public static bool downloadPending = false;
 		public static string uploadLevel = System.String.Empty;
 		public static byte[]? uploadData = null;
+		public static byte[] uploadHash = null!;
 		public static INetworkConfig? networkConfig;
-		public static Networking.PacketHandler.RecommendPreview?[] playerPreviews = null!;
+		public static Networking.PacketHandler.RecommendPreview[] playerPreviews = null!;
 		public static PlayerCell[] playerCells = null!;
 		public static bool haveSongCore = false;
 		public static uint windowSize = 64;
 		public static bool directDownloads = false;
+		public static bool expectMetadata = false;
 		public static bool skipResults = false;
 
 		public static System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> ReliableChannel_ctor(System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> instructions) {
@@ -1349,7 +1457,7 @@ namespace BeatUpClient {
 				}
 			}
 			if(notFound)
-				Plugin.Log?.Error("Failed to patch reliable window size");
+				Log?.Error("Failed to patch reliable window size");
 		}
 
 		public static BeatmapCharacteristicSegmentedControlController beatmapCharacteristicSegmentedControlController = null!;
@@ -1391,8 +1499,8 @@ namespace BeatUpClient {
 		public static void OnSceneLoaded(UnityEngine.SceneManagement.Scene scene, UnityEngine.SceneManagement.LoadSceneMode mode) {
 			if(scene.name != "MainMenu")
 				return;
-			Plugin.Log?.Debug("load MainMenu");
-			if(Plugin.networkConfig is CustomNetworkConfig) {
+			Log?.Debug("load MainMenu");
+			if(networkConfig is CustomNetworkConfig) {
 				UnityEngine.GameObject Fullscreen = System.Linq.Enumerable.First(System.Linq.Enumerable.Select(UnityEngine.Resources.FindObjectsOfTypeAll<UnityEngine.UI.Toggle>(), x => x.transform.parent.gameObject), p => p.name == "Fullscreen");
 				UnityEngine.GameObject MaxNumberOfPlayers = System.Linq.Enumerable.First(System.Linq.Enumerable.Select(UnityEngine.Resources.FindObjectsOfTypeAll<StepValuePicker>(), x => x.transform.parent.gameObject), p => p.name == "MaxNumberOfPlayers");
 				UnityEngine.Transform CreateServerFormView = MaxNumberOfPlayers.transform.parent;
@@ -1404,8 +1512,6 @@ namespace BeatUpClient {
 				CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.VerticalLayoutGroup>().enabled = true;
 				CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.ContentSizeFitter>().enabled = true;
 				CreateServerFormView.parent.parent.gameObject.SetActive(true);
-				/*UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(CreateServerFormView.parent.parent as UnityEngine.RectTransform);
-				CreateServerFormView.parent.parent.gameObject.SetActive(false);*/
 			}
 
 			StandardLevelDetailView LevelDetail = UnityEngine.Resources.FindObjectsOfTypeAll<StandardLevelDetailView>()[0];
@@ -1421,17 +1527,21 @@ namespace BeatUpClient {
 		[IPA.Init]
 		public void Init(IPA.Logging.Logger pluginLogger, IPA.Config.Config conf) {
 			Instance = this;
-			Plugin.Log = pluginLogger;
+			Log = pluginLogger;
 			Config.Instance = IPA.Config.Stores.GeneratedStore.Generated<Config>(conf);
-			Plugin.Log?.Debug("Logger initialized.");
+			Log?.Debug("Logger initialized.");
 		}
 		[IPA.OnEnable]
 		public void OnEnable() {
 			haveSongCore = (IPA.Loader.PluginManager.GetPluginFromId("SongCore") != null);
 			try {
-				Plugin.Log?.Debug("Loading assets");
-				defaultPackCover = UnityEngine.AssetBundle.LoadFromStream(System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("BeatUpClient.cover")).LoadAllAssets<UnityEngine.Sprite>()[0];
-				Plugin.Log?.Debug("Applying patches");
+				Log?.Debug("Loading assets");
+				UnityEngine.AssetBundle data = UnityEngine.AssetBundle.LoadFromStream(System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("BeatUpClient.data"));
+				defaultPackCover = data.LoadAllAssets<UnityEngine.Sprite>()[0];
+				badges = data.LoadAllAssets<UnityEngine.GameObject>();
+				foreach(UnityEngine.GameObject badge in badges)
+					Log?.Debug($"    {badge}");
+				Log?.Debug("Applying patches");
 				DiJack.ResolveInjections(System.Reflection.Assembly.GetExecutingAssembly());
 				harmony.PatchAll(System.Reflection.Assembly.GetExecutingAssembly());
 				if(Config.Instance.WindowSize != 64) {
@@ -1441,8 +1551,8 @@ namespace BeatUpClient {
 				}
 				UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnSceneLoaded;
 			} catch(System.Exception ex) {
-				Plugin.Log?.Error("Error applying patches: " + ex.Message);
-				Plugin.Log?.Debug(ex);
+				Log?.Error("Error applying patches: " + ex.Message);
+				Log?.Debug(ex);
 				OnDisable();
 			}
 		}
@@ -1452,8 +1562,8 @@ namespace BeatUpClient {
 				UnityEngine.SceneManagement.SceneManager.sceneLoaded -= OnSceneLoaded;
 				harmony.UnpatchSelf();
 			} catch(System.Exception ex) {
-				Plugin.Log?.Error("Error removing patches: " + ex.Message);
-				Plugin.Log?.Debug(ex);
+				Log?.Error("Error removing patches: " + ex.Message);
+				Log?.Debug(ex);
 			}
 		}
 	}

@@ -156,7 +156,8 @@ struct Counter128 Counter128_or(struct Counter128 a, struct Counter128 b) {
 
 struct InstanceSession {
 	struct NetSession net;
-	struct String secret, userName;
+	struct String secret;
+	struct ExString userName;
 	struct PlayerLobbyPermissionConfigurationNetSerializable permissions;
 	struct PingPong tableTennis;
 	struct Channels channels;
@@ -198,7 +199,8 @@ struct Room {
 				struct Counter128 missing;
 				struct Counter128 deferred;
 				struct Counter128 canShare;
-				struct String shareHash;
+				_Bool shareSet;
+				uint8_t shareHash[32];
 				uint64_t shareSize;
 			} entitlement;
 		} lobby;
@@ -298,6 +300,7 @@ static struct GameplayModifiers session_get_modifiers(const struct Room *room, c
 }
 
 #define STATE_EDGE(from, to, mask) ((to & (mask)) && !(from & (mask)))
+static void room_try_finish(struct Context *ctx, struct Room *room);
 static void session_set_state(struct Context *ctx, struct Room *room, struct InstanceSession *session, ServerState state) {
 	struct RemoteProcedureCall base = {
 		.syncTime = room_get_syncTime(room),
@@ -319,6 +322,8 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 				pkt_writePlayerDisconnected(room->players[id].net.version, &resp_end, r_disconnect);
 			instance_send_channeled(&room->players[id].net, &room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 		}
+		if(room->state & ServerState_Game)
+			room_try_finish(ctx, room);
 	}
 	if(state & ServerState_Lobby) {
 		_Bool needSetSelectedBeatmap = (state & ServerState_Lobby_Entitlement) != 0;
@@ -348,7 +353,7 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 				.flags = {1, 1, 1, 0},
 				.beatmapId = session_get_beatmap(room, session),
 				.gameplayModifiers = session_get_modifiers(room, session),
-				.startTime = room->global.timeout + 300,
+				.startTime = room->global.timeout + 1048576,
 			});
 			SERIALIZE_MENURPC(session->net.version, &resp_end, SetCountdownEndTime, (struct SetCountdownEndTime){
 				.base = base,
@@ -505,7 +510,7 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 				room->lobby.entitlement.missing = COUNTER128_CLEAR;
 				room->lobby.entitlement.deferred = COUNTER128_CLEAR;
 				room->lobby.entitlement.canShare = COUNTER128_CLEAR;
-				room->lobby.entitlement.shareHash.length = 0;
+				room->lobby.entitlement.shareSet = 0;
 				room->lobby.entitlement.shareSize = 0;
 			}
 			break;
@@ -584,15 +589,15 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 				Counter128_set(&room->lobby.entitlement.deferred, indexof(room->players, session), 1);
 			else if(entitlement.entitlementStatus != EntitlementsStatus_Ok && entitlement.entitlementStatus != EntitlementsStatus_NotDownloaded)
 				Counter128_set(&room->lobby.entitlement.missing, indexof(room->players, session), 1);
-			uprintf("entitlement[%.*s]: %s\n", session->userName.length, session->userName.data, reflect(EntitlementsStatus, entitlement.entitlementStatus));
+			uprintf("entitlement[%.*s]: %s\n", session->userName.base.length, session->userName.base.data, reflect(EntitlementsStatus, entitlement.entitlementStatus));
 			if(!Counter128_contains(room->lobby.isEntitled, room->connected))
 				break;
 			if(Counter128_isEmpty(room->lobby.entitlement.canShare))
 				room->lobby.entitlement.missing = Counter128_or(room->lobby.entitlement.missing, room->lobby.entitlement.deferred);
 			struct DirectDownloadInfo r_download;
-			r_download.levelId = room->global.selectedBeatmap.levelID;
-			r_download.levelHash = room->lobby.entitlement.shareHash;
-			r_download.fileSize = room->lobby.entitlement.shareSize;
+			r_download.base.levelId = room->global.selectedBeatmap.levelID;
+			memcpy(r_download.base.levelHash, room->lobby.entitlement.shareHash, sizeof(r_download.base.levelHash));
+			r_download.base.fileSize = room->lobby.entitlement.shareSize;
 			r_download.count = 0;
 			struct SetPlayersMissingEntitlementsToLevel r_missing;
 			r_missing.base.syncTime = room_get_syncTime(room);
@@ -855,6 +860,13 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 	}
 }
 
+static void room_try_finish(struct Context *ctx, struct Room *room) {
+	if(!Counter128_contains(room->game.levelFinished, room->connected))
+		return;
+	room->global.roundRobin = Counter128_get_next(room->connected, room->global.roundRobin);
+	room_set_state(ctx, room, room->game.showResults ? ServerState_Game_Results : ServerState_Lobby_Idle);
+}
+
 static void handle_GameplayRpc(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {
 	struct GameplayRpcHeader rpc = pkt_readGameplayRpcHeader(session->net.version, data);
 	switch(rpc.type) {
@@ -902,10 +914,7 @@ static void handle_GameplayRpc(struct Context *ctx, struct Room *room, struct In
 				else
 					room->game.showResults |= (results.playerLevelEndReason == MultiplayerPlayerLevelEndReason_Cleared);
 			}
-			if(Counter128_contains(room->game.levelFinished, room->connected)) {
-				room->global.roundRobin = Counter128_get_next(room->connected, room->global.roundRobin);
-				room_set_state(ctx, room, room->game.showResults ? ServerState_Game_Results : ServerState_Lobby_Idle);
-			}
+			room_try_finish(ctx, room);
 			break;
 		}
 		NOT_IMPLEMENTED(GameplayRpcType_ReturnToMenu);
@@ -938,12 +947,13 @@ static void handle_BeatUpMessage(struct Context *ctx, struct Room *room, struct 
 		case BeatUpMessageType_RecommendPreview: pkt_readRecommendPreview(session->net.version, data); break;
 		case BeatUpMessageType_SetCanShareBeatmap: {
 			struct SetCanShareBeatmap share = pkt_readSetCanShareBeatmap(session->net.version, data);
-			if(!((room->state & ServerState_Lobby_Entitlement) && share.fileSize && String_eq(share.levelId, room->global.selectedBeatmap.levelID)))
+			if(!((room->state & ServerState_Lobby_Entitlement) && share.base.fileSize && String_eq(share.base.levelId, room->global.selectedBeatmap.levelID)))
 				break;
-			if(room->lobby.entitlement.shareHash.length == 0) {
-				room->lobby.entitlement.shareHash = share.levelHash;
-				room->lobby.entitlement.shareSize = share.fileSize;
-			} else if(share.fileSize != room->lobby.entitlement.shareSize || !String_eq(share.levelHash, room->lobby.entitlement.shareHash)) {
+			if(!room->lobby.entitlement.shareSet) {
+				room->lobby.entitlement.shareSet = 1;
+				memcpy(room->lobby.entitlement.shareHash, share.base.levelHash, sizeof(share.base.levelHash));
+				room->lobby.entitlement.shareSize = share.base.fileSize;
+			} else if(share.base.fileSize != room->lobby.entitlement.shareSize || memcmp(share.base.levelHash, room->lobby.entitlement.shareHash, sizeof(share.base.levelHash))) {
 				if(room->lobby.entitlement.shareSize)
 					uprintf("Hash mismatch; Disabling direct downloads\n");
 				room->lobby.entitlement.canShare = COUNTER128_CLEAR;
@@ -1074,7 +1084,10 @@ static _Bool handle_RoutingHeader(struct Context *ctx, struct Room *room, struct
 }
 
 static void log_length_error(const char *msg, const uint8_t *read, const uint8_t *data, size_t length) {
-	uprintf("%s (expected %u, read %zu)\n", msg, length, read - (data - length));
+	if(read >= _trap && read < &_trap[sizeof(_trap)])
+		uprintf("%s (expected %u)\n", msg, length);
+	else
+		uprintf("%s (expected %u, read %zu)\n", msg, length, read - (data - length));
 	if(read < data) {
 		uprintf("\t");
 		for(const uint8_t *it = data - length; it < data; ++it)
@@ -1184,7 +1197,11 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 		.connectNum = 0,
 		.peerId = indexof(room->players, session),
 		.windowSize = session->net.version.windowSize,
+		.countdownDuration = room->countdownDuration * 4,
+		.directDownloads = session->directDownloads,
 		.skipResults = room->skipResults,
+		.perPlayerDifficulty = room->perPlayerDifficulty,
+		.perPlayerModifiers = room->perPlayerModifiers,
 	});
 	net_send_internal(&ctx->net, &session->net, resp, resp_end - resp, 1);
 	if(session->state & ServerState_Connected)
@@ -1198,7 +1215,7 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 		pkt_writeSyncTime(session->net.version, &resp_end, r_sync);
 	instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 
-	uprintf("connect[%zu]: %.*s (%.*s)\n", indexof(room->players, session), session->userName.length, session->userName.data, session->permissions.userId.length, session->permissions.userId.data);
+	uprintf("connect[%zu]: %.*s (%.*s)\n", indexof(room->players, session), session->userName.base.length, session->userName.base.data, session->permissions.userId.length, session->permissions.userId.data);
 
 	FOR_SOME_PLAYERS(room, id, room->connected,) {
 		struct PlayerConnected r_connected;
@@ -1271,8 +1288,6 @@ enum DisconnectMode {
 	DC_NOTIFY = 2,
 };
 static void room_disconnect(struct Context *ctx, struct Room **room, struct InstanceSession *session, enum DisconnectMode mode) {
-	if(!session->state)
-		return;
 	uint32_t id = indexof((*room)->players, session);
 	Counter128_set(&(*room)->playerSort, id, 0);
 	log_players(*room, session, (mode & DC_RESET) ? "re" : "dis");
@@ -1435,6 +1450,7 @@ static void instance_onResend(struct Context *ctx, uint32_t currentTime, uint32_
 			struct InstanceSession *session = &(*room)->players[id];
 			uint32_t kickTime = NetSession_get_lastKeepAlive(&session->net) + 10000;
 			if(currentTime > kickTime) {
+				uprintf("session timeout\n");
 				room_disconnect(ctx, room, session, DC_NOTIFY);
 			} else {
 				if(kickTime < *nextTick)
@@ -1642,7 +1658,7 @@ struct PacketContext instance_room_get_protocol(uint16_t thread, uint16_t group,
 	return version;
 }
 
-struct NetSession *instance_room_resolve_session(uint16_t thread, uint16_t group, uint8_t sub, struct SS addr, struct String secret, struct String userId, struct String userName, struct PacketContext version) {
+struct NetSession *instance_room_resolve_session(uint16_t thread, uint16_t group, uint8_t sub, struct SS addr, struct String secret, struct String userId, struct ExString userName, struct PacketContext version) {
 	struct Context *ctx = &contexts[thread];
 	net_lock(&ctx->net);
 	struct Room *room = ctx->rooms[group][sub];
