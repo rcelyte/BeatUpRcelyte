@@ -74,9 +74,12 @@ status_ssl_handler(struct Context *ctx) {
 	while((clientfd = accept(ctx->listenfd, &addr.sa, &addr.len)) != -1) {
 		mbedtls_ssl_set_bio(&ctx->ssl, &clientfd, status_send, status_recv, NULL);
 		int ret;
-		while((ret = mbedtls_ssl_handshake(&ctx->ssl)) != 0)
-			if(ret != STATUS_ERR_INTR)
+		while((ret = mbedtls_ssl_handshake(&ctx->ssl)) != 0) {
+			if(ret != STATUS_ERR_INTR) {
+				uprintf("mbedtls_ssl_handshake() failed: %s\n", mbedtls_high_level_strerr(ret));
 				goto reset;
+			}
+		}
 		uint8_t buf[65536];
 		do {
 			memset(buf, 0, sizeof(buf));

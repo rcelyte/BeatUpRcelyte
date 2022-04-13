@@ -34,6 +34,7 @@ $(OBJDIR)/%.c.o: %.c src/packets.h $(OBJDIR)/libs.mk mbedtls/.git makefile
 	$(CC) $(CFLAGS) -c "$<" -o "$@" -MMD -MP
 
 $(OBJDIR)/%.html.s: %.html makefile
+	@mkdir -p "$(@D)"
 	tr -d '\r\n\t' < "$<" > "$(basename $@)"
 	printf "\t.global $(basename $(notdir $<))_html\n$(basename $(notdir $<))_html:\n\t.incbin \"$(basename $@)\"\n\t.global $(basename $(notdir $<))_html_end\n$(basename $(notdir $<))_html_end:\n" > "$@"
 
@@ -59,7 +60,7 @@ $(OBJDIR)/libs.mk: makefile
 	#if 0
 	CFLAGS += -fsanitize=address -fno-omit-frame-pointer
 	LDFLAGS := -no-pie -fsanitize=address \$$(LDFLAGS)
-	#elif 0
+	#elif 1
 	LDFLAGS := --static \$$(LDFLAGS)
 	#endif
 	#endif
@@ -77,8 +78,8 @@ src/packets.h: src/packets.txt gen.c makefile
 BeatUpClient.dll: BeatUpClient.cs makefile
 	@echo "[csc $@]"
 	mkdir -p .obj/
-	printf "{\"\$$schema\":\"https://raw.githubusercontent.com/bsmg/BSIPA-MetadataFileSchema/master/Schema.json\",\"author\":\"rcelyte\",\"description\":\"Tweaks and enhancements for enabling modded multiplayer\",\"gameVersion\":\"1.20.0\",\"dependsOn\":{\"BSIPA\":\"*\"},\"loadAfter\":[\"MultiplayerCore\",\"SongCore\"],\"id\":\"BeatUpClient\",\"name\":\"BeatUpClient\",\"version\":\"0.1.0\",\"links\":{\"project-source\":\"https://github.com/rcelyte/BeatUpRcelyte\"}}" > .obj/manifest.json
-	csc -nologo -t:library -o+ -debug- -nullable+ -w:4 -warnaserror+ -langversion:8 "$<" -res:.obj/manifest.json,BeatUpClient.manifest.json -res:data.bundle,BeatUpClient.data -out:"$@" -r:$(BSINSTALL)/Libs/0Harmony.dll,$(BSINSTALL)/Plugins/SongCore.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/IPA.Loader.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/BGNet.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/BeatmapCore.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/GamePlayCore.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/HMLib.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/HMUI.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/Main.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.CoreModule.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.AssetBundleModule.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.AudioModule.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.ImageConversionModule.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.UnityWebRequestModule.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.UnityWebRequestAudioModule.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.UIModule.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.UI.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/Unity.TextMeshPro.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/Polyglot.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/System.IO.Compression.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/Newtonsoft.Json.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/LiteNetLib.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/Zenject.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/Zenject-usage.dll
+	printf "{\"\$$schema\":\"https://raw.githubusercontent.com/bsmg/BSIPA-MetadataFileSchema/master/Schema.json\",\"author\":\"rcelyte\",\"description\":\"Tweaks and enhancements for enabling modded multiplayer\",\"gameVersion\":\"1.20.0\",\"dependsOn\":{\"BSIPA\":\"*\"},\"loadAfter\":[\"SongCore\",\"MultiplayerCore\"],\"id\":\"BeatUpClient\",\"name\":\"BeatUpClient\",\"version\":\"0.1.0\",\"links\":{\"project-source\":\"https://github.com/rcelyte/BeatUpRcelyte\"}}" > .obj/manifest.json
+	csc -nologo -t:library -o+ -debug- -nullable+ -w:4 -warnaserror+ -langversion:8 "$<" -res:.obj/manifest.json,BeatUpClient.manifest.json -res:data.bundle,BeatUpClient.data -out:"$@" -r:$(BSINSTALL)/Libs/0Harmony.dll,$(BSINSTALL)/Plugins/SongCore.dll,$(BSINSTALL)/Plugins/SiraUtil.dll,$(BSINSTALL)/Plugins/MultiplayerCore.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/IPA.Loader.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/BGNet.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/BeatmapCore.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/GamePlayCore.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/HMLib.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/HMUI.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/Main.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.CoreModule.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.AssetBundleModule.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.AudioModule.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.ImageConversionModule.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.UnityWebRequestModule.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.UnityWebRequestAudioModule.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.UIModule.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.UI.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/Unity.TextMeshPro.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/Polyglot.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/System.IO.Compression.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/Newtonsoft.Json.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/LiteNetLib.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/Zenject.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/Zenject-usage.dll
 
 install: beatupserver
 	@echo "[install $(notdir $<)]"

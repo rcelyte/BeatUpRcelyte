@@ -201,9 +201,9 @@ struct EnumEntry {
 	const char *value;
 } parse_value(struct HeaderData *header, char **source, const char **in, uint32_t indent);
 
-const void *memmem(const uint8_t *ptr, const uint8_t *sub, size_t count, size_t subcount) {
+const void *memmem(const char *ptr, const char *sub, size_t count, size_t subcount) {
 	for(; count >= subcount; ++ptr, --count) {
-		const uint8_t *a = ptr, *b = sub;
+		const char *a = ptr, *b = sub;
 		while(b < &sub[subcount])
 			if(*a++ != *b++)
 				break;

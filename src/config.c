@@ -32,31 +32,29 @@ static _Bool load_cert(char *cert, uint32_t cert_len, mbedtls_x509_crt *out) {
 }
 
 static _Bool load_key(char *key, uint32_t key_len, mbedtls_pk_context *out) {
+	_Bool res = 0;
 	mbedtls_pk_init(out);
-	int32_t err;
-	char buf[4096];
+	int32_t err = 0;
+	char name[4096];
 	mbedtls_ctr_drbg_context ctr_drbg;
 	mbedtls_entropy_context entropy;
 	mbedtls_ctr_drbg_init(&ctr_drbg);
 	mbedtls_entropy_init(&entropy);
 	if(key_len > 52 && strncmp(key, "-----BEGIN ", 11) == 0) {
-		sprintf(buf, "inline certificate");
+		sprintf(name, "inline certificate");
 		err = mbedtls_pk_parse_key(out, (uint8_t*)key, key_len, NULL, 0, mbedtls_ctr_drbg_random, &ctr_drbg);
+	} else if(key_len < sizeof(name)) {
+		sprintf(name, "%.*s", key_len, key);
+		err = mbedtls_pk_parse_keyfile(out, name, NULL, mbedtls_ctr_drbg_random, &ctr_drbg);
 	} else {
-		if(key_len >= sizeof(buf)) {
-			uprintf("Failed to load %.*s: Path too long\n", key_len, key);
-			return 1;
-		}
-		sprintf(buf, "%.*s", key_len, key);
-		err = mbedtls_pk_parse_keyfile(out, buf, NULL, mbedtls_ctr_drbg_random, &ctr_drbg);
+		uprintf("Failed to load %.*s: Path too long\n", key_len, key);
+		res = 1;
 	}
 	mbedtls_entropy_free(&entropy);
 	mbedtls_ctr_drbg_free(&ctr_drbg);
-	if(err) {
-		uprintf("Failed to load %s: %s\n", buf, mbedtls_high_level_strerr(err));
-		return 1;
-	}
-	return 0;
+	if(err)
+		uprintf("Failed to load %s: %s\n", name, mbedtls_high_level_strerr(err));
+	return res || err != 0;
 }
 
 _Bool config_load(struct Config *out, const char *path) {
