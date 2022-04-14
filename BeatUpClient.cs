@@ -1061,6 +1061,35 @@ namespace BeatUpClient {
 		}
 	}
 
+	public interface ModelInvalidator {
+		static event System.Action? onInvalidate;
+		public static void Invalidate() {
+			onInvalidate?.Invoke();
+			MainFlowCoordinator mainFlowCoordinator = UnityEngine.Resources.FindObjectsOfTypeAll<MainFlowCoordinator>()[0];
+			if(mainFlowCoordinator.childFlowCoordinator is MultiplayerModeSelectionFlowCoordinator multiplayerModeSelectionFlowCoordinator) {
+				typeof(HMUI.FlowCoordinator).GetMethod("DismissFlowCoordinator", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(mainFlowCoordinator, new object[] {multiplayerModeSelectionFlowCoordinator, HMUI.ViewController.AnimationDirection.Horizontal, (System.Action)delegate() {
+					mainFlowCoordinator.PresentMultiplayerModeSelectionFlowCoordinatorWithDisclaimerAndAvatarCreator();
+				}, true});
+				/*try { // re-enter multiplayer mode selection
+				} catch(System.NullReferenceException) { // dismiss if `_playerDataModel.playerData.avatarCreated` is somehow false
+					mainFlowCoordinator.HandleMultiplayerModeSelectionFlowCoordinatorDidFinish(multiplayerModeSelectionFlowCoordinator);
+				}*/
+			}
+		}
+	}
+
+	[DiJack.Replace(typeof(MultiplayerStatusModel))]
+	public class MultiplayerStatusModelPatch : MultiplayerStatusModel, ModelInvalidator {
+		MultiplayerStatusModelPatch() =>
+			ModelInvalidator.onInvalidate += () => _request = null;
+	}
+
+	[DiJack.Replace(typeof(QuickPlaySetupModel))]
+	public class QuickPlaySetupModelPatch : QuickPlaySetupModel, ModelInvalidator {
+		QuickPlaySetupModelPatch() =>
+			ModelInvalidator.onInvalidate += () => _request = null;
+	}
+
 	public static class UI {
 		public class ToggleSetting : SwitchSettingsController {
 			public ValueCB<bool> valueCB = null!;
@@ -1070,7 +1099,10 @@ namespace BeatUpClient {
 				typeof(SwitchSettingsController).GetField("_toggle", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(this, toggle);
 			}
 			protected override bool GetInitValue() => valueCB();
-			protected override void ApplyValue(bool value) => valueCB() = value;
+			protected override void ApplyValue(bool value) {
+				valueCB() = value;
+				Config.Instance.Changed();
+			}
 		}
 		public class ValuePickerSetting : ListSettingsController {
 			public byte[] options = null!;
@@ -1089,15 +1121,43 @@ namespace BeatUpClient {
 				numberOfElements = options.Length - startIdx;
 				return true;
 			}
-			protected override void ApplyValue(int idx) => valueCB() = options[idx + startIdx] / 4.0f;
+			protected override void ApplyValue(int idx) {
+				valueCB() = options[idx + startIdx] / 4.0f;
+				Config.Instance.Changed();
+			}
 			protected override string TextForValue(int idx) => $"{options[idx + startIdx] / 4.0f}";
 		}
+		public class DropdownSetting : DropdownSettingsController {
+			public string[] options = null!;
+			public StringSO value = null!;
+			HMUI.SimpleTextDropdown dropdown;
+			public DropdownSetting() {
+				dropdown = GetComponent<HMUI.SimpleTextDropdown>();
+				typeof(DropdownSettingsController).GetField("_dropdown", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(this, dropdown);
+			}
+			protected override bool GetInitValues(out int idx, out int numberOfElements) {
+				idx = System.Array.IndexOf(options, value.value) + 1;
+				numberOfElements = options.Length + 1;
+				return true;
+			}
+			protected override void ApplyValue(int idx) {
+				string newValue = idx > 0 ? options[idx - 1] : "";
+				dropdown.Hide(value.value.Equals(newValue)); // Animation will break if MultiplayerLevelSelectionFlowCoordinator is immediately dismissed
+				value.value = newValue;
+			}
+			protected override string TextForValue(int idx) =>
+				idx > 0 ? options[idx - 1] : "Official Server";
+		}
 		public delegate ref T ValueCB<T>();
-		static UnityEngine.GameObject CreateElement(UnityEngine.GameObject template, UnityEngine.Transform parent, string name, string header) {
+		static UnityEngine.GameObject CreateElement(UnityEngine.GameObject template, UnityEngine.Transform parent, string name) {
 			UnityEngine.GameObject gameObject = UnityEngine.Object.Instantiate(template, parent);
 			((UnityEngine.RectTransform)gameObject.transform).sizeDelta = new UnityEngine.Vector2(90, ((UnityEngine.RectTransform)gameObject.transform).sizeDelta.y);
 			gameObject.name = "BeatUpClient_" + name;
 			gameObject.SetActive(false);
+			return gameObject;
+		}
+		static UnityEngine.GameObject CreateElementWithText(UnityEngine.GameObject template, UnityEngine.Transform parent, string name, string header) {
+			UnityEngine.GameObject gameObject = CreateElement(template, parent, name);
 			UnityEngine.GameObject nameText = gameObject.transform.Find("NameText").gameObject;
 			Polyglot.LocalizedTextMeshProUGUI localizedText = nameText.GetComponent<Polyglot.LocalizedTextMeshProUGUI>();
 			localizedText.enabled = false;
@@ -1108,16 +1168,22 @@ namespace BeatUpClient {
 			text.overflowMode = TMPro.TextOverflowModes.Ellipsis;
 			return gameObject;
 		}
-		public static UnityEngine.Transform CreateToggle(UnityEngine.GameObject template, UnityEngine.Transform parent, string name, string header, ValueCB<bool> valueCB) {
-			UnityEngine.GameObject gameObject = CreateElement(template, parent, name, header);
+		static UnityEngine.GameObject? toggleTemplate = null;
+		public static UnityEngine.Transform CreateToggle(UnityEngine.Transform parent, string name, string header, ValueCB<bool> valueCB) {
+			if(toggleTemplate == null)
+				toggleTemplate = System.Linq.Enumerable.First(System.Linq.Enumerable.Select(UnityEngine.Resources.FindObjectsOfTypeAll<UnityEngine.UI.Toggle>(), x => x.transform.parent.gameObject), p => p.name == "Fullscreen");
+			UnityEngine.GameObject gameObject = CreateElementWithText(toggleTemplate, parent, name, header);
 			UnityEngine.Object.Destroy(gameObject.GetComponent<BoolSettingsController>());
 			ToggleSetting toggleSetting = gameObject.AddComponent<ToggleSetting>();
 			toggleSetting.valueCB = valueCB;
 			gameObject.SetActive(true);
 			return gameObject.transform;
 		}
-		public static UnityEngine.Transform CreateValuePicker(UnityEngine.GameObject template, UnityEngine.Transform parent, string name, string header, ValueCB<float> valueCB, byte[] options) {
-			UnityEngine.GameObject gameObject = CreateElement(template, parent, name, header);
+		static UnityEngine.GameObject? pickerTemplate = null;
+		public static UnityEngine.Transform CreateValuePicker(UnityEngine.Transform parent, string name, string header, ValueCB<float> valueCB, byte[] options) {
+			if(pickerTemplate == null)
+				pickerTemplate = System.Linq.Enumerable.First(System.Linq.Enumerable.Select(UnityEngine.Resources.FindObjectsOfTypeAll<StepValuePicker>(), x => x.transform.parent.gameObject), p => p.name == "MaxNumberOfPlayers");
+			UnityEngine.GameObject gameObject = CreateElementWithText(pickerTemplate, parent, name, header);
 			UnityEngine.Object.Destroy(gameObject.GetComponent<FormattedFloatListSettingsController>());
 			ValuePickerSetting valuePickerSetting = gameObject.AddComponent<ValuePickerSetting>();
 			valuePickerSetting.options = options;
@@ -1125,12 +1191,24 @@ namespace BeatUpClient {
 			gameObject.SetActive(true);
 			return gameObject.transform;
 		}
+		static UnityEngine.GameObject? simpleDropdownTemplate = null;
+		public static UnityEngine.Transform CreateSimpleDropdown(UnityEngine.Transform parent, string name, StringSO value, string[] options) {
+			if(simpleDropdownTemplate == null)
+				simpleDropdownTemplate = System.Linq.Enumerable.First(UnityEngine.Resources.FindObjectsOfTypeAll<HMUI.SimpleTextDropdown>(), dropdown => dropdown.GetComponents(typeof(UnityEngine.Component)).Length == 2).gameObject;
+			UnityEngine.GameObject gameObject = CreateElement(simpleDropdownTemplate, parent, name);
+			DropdownSetting dropdownSetting = gameObject.AddComponent<DropdownSetting>();
+			dropdownSetting.options = options;
+			dropdownSetting.value = value;
+			foreach(UnityEngine.Transform tr in gameObject.transform)
+				tr.localPosition = new UnityEngine.Vector3(0, 0, 0);
+			gameObject.SetActive(true);
+			return gameObject.transform;
+		}
 		public static UnityEngine.Transform CreateClone(UnityEngine.GameObject template, UnityEngine.Transform parent, string name, int index) {
-			UnityEngine.GameObject gameObject = UnityEngine.Object.Instantiate(template, parent);
-			((UnityEngine.RectTransform)gameObject.transform).sizeDelta = new UnityEngine.Vector2(90, ((UnityEngine.RectTransform)gameObject.transform).sizeDelta.y);
-			gameObject.name = "BeatUpClient_" + name;
+			UnityEngine.GameObject gameObject = CreateElement(template, parent, name);
 			if(index >= 0)
 				gameObject.transform.SetSiblingIndex(index);
+			gameObject.SetActive(true);
 			return gameObject.transform;
 		}
 	}
@@ -1167,11 +1245,11 @@ namespace BeatUpClient {
 
 		[Patch(false, typeof(MainSettingsModelSO), nameof(MainSettingsModelSO.Load))]
 		public static void MainSettingsModelSO_Load(ref MainSettingsModelSO __instance) {
-			if(__instance.customServerHostName.value.Length != 0)
-				return;
+			Plugin.mainSettingsModel = __instance;
+			if(!string.IsNullOrEmpty(__instance.customServerHostName))
+				Config.Instance.Servers.TryAdd(__instance.customServerHostName, null);
 			__instance.useCustomServerEnvironment.value = true;
 			__instance.forceGameLiftServerEnvironment.value = false;
-			__instance.customServerHostName.value = "master.battletrains.org";
 		}
 
 		public static async System.Threading.Tasks.Task<AuthenticationToken> AuthWrapper(System.Threading.Tasks.Task<AuthenticationToken> task, AuthenticationToken.Platform platform, string userId, string userName) {
@@ -1188,9 +1266,34 @@ namespace BeatUpClient {
 				__result = AuthWrapper(__result, ____platform, ____userId, ____userName);
 		}
 
-		[Patch(false, typeof(MultiplayerLevelSelectionFlowCoordinator), "get_enableCustomLevels")]
-		public static void MultiplayerLevelSelectionFlowCoordinator_enableCustomLevels(ref bool __result, SongPackMask ____songPackMask) =>
-			__result |= ____songPackMask.Contains(new SongPackMask("custom_levelpack_CustomLevels"));
+		[Patch(true, typeof(MultiplayerModeSelectionFlowCoordinator), "TransitionDidFinish")]
+		public static void MultiplayerModeSelectionFlowCoordinator_TransitionDidFinish(MultiplayerModeSelectionFlowCoordinator __instance, JoiningLobbyViewController ____joiningLobbyViewController, MultiplayerModeSelectionViewController ____multiplayerModeSelectionViewController) {
+			if(__instance.topViewController == ____joiningLobbyViewController && ((string)HarmonyLib.AccessTools.Field(typeof(JoiningLobbyViewController), "_text").GetValue(____joiningLobbyViewController)) == Polyglot.Localization.Get("LABEL_CHECKING_SERVER_STATUS")) {
+				Plugin.Log?.Debug("MultiplayerModeSelectionFlowCoordinator_TransitionDidFinish()");
+				____multiplayerModeSelectionViewController.transform.Find("Buttons")?.gameObject.SetActive(false);
+				TMPro.TextMeshProUGUI maintenanceMessageText = (TMPro.TextMeshProUGUI)HarmonyLib.AccessTools.Field(typeof(MultiplayerModeSelectionViewController), "_maintenanceMessageText").GetValue(____multiplayerModeSelectionViewController);
+				maintenanceMessageText.gameObject.SetActive(false);
+				HarmonyLib.AccessTools.Method(typeof(HMUI.FlowCoordinator), "ReplaceTopViewController", new[] {typeof(HMUI.ViewController), typeof(System.Action), typeof(HMUI.ViewController.AnimationType), typeof(HMUI.ViewController.AnimationDirection)}).Invoke(__instance, new object[] {____multiplayerModeSelectionViewController, (System.Action)__instance.ProcessDeeplinkingToLobby, HMUI.ViewController.AnimationType.In, HMUI.ViewController.AnimationDirection.Horizontal});
+			}
+		}
+
+		[Patch(true, typeof(MultiplayerModeSelectionFlowCoordinator), nameof(MultiplayerModeSelectionFlowCoordinator.PresentMasterServerUnavailableErrorDialog))]
+		public static bool MultiplayerModeSelectionFlowCoordinator_PresentMasterServerUnavailableErrorDialog(MultiplayerModeSelectionViewController ____multiplayerModeSelectionViewController, MultiplayerUnavailableReason reason, long? maintenanceWindowEndTime, string? remoteLocalizedMessage) {
+			TMPro.TextMeshProUGUI maintenanceMessageText = (TMPro.TextMeshProUGUI)HarmonyLib.AccessTools.Field(typeof(MultiplayerModeSelectionViewController), "_maintenanceMessageText").GetValue(____multiplayerModeSelectionViewController);
+			maintenanceMessageText.text = remoteLocalizedMessage ?? ((reason == MultiplayerUnavailableReason.MaintenanceMode) ? Polyglot.Localization.GetFormat(MultiplayerUnavailableReasonMethods.LocalizedKey(reason), (TimeExtensions.AsUnixTime(maintenanceWindowEndTime.GetValueOrDefault()) - System.DateTime.UtcNow).ToString("h':'mm")) : (Polyglot.Localization.Get(MultiplayerUnavailableReasonMethods.LocalizedKey(reason)) + " (" + MultiplayerUnavailableReasonMethods.ErrorCode(reason) + ")"));
+			maintenanceMessageText.richText = true;
+			maintenanceMessageText.transform.localPosition = new UnityEngine.Vector3(0, 15, 0);
+			maintenanceMessageText.gameObject.SetActive(true);
+			Plugin.Log?.Debug($"MultiplayerModeSelectionFlowCoordinator.PresentMasterServerUnavailableErrorDialog(\"{maintenanceMessageText.text}\")");
+			return false;
+		}
+
+		[Patch(true, typeof(MultiplayerModeSelectionViewController), nameof(MultiplayerModeSelectionViewController.SetData))]
+		public static void MultiplayerModeSelectionViewController_SetData(MultiplayerModeSelectionViewController __instance, TMPro.TextMeshProUGUI ____maintenanceMessageText) {
+			____maintenanceMessageText.richText = false;
+			____maintenanceMessageText.transform.localPosition = new UnityEngine.Vector3(0, -5, 0);
+			__instance.transform.Find("Buttons")?.gameObject.SetActive(true);
+		}
 
 		[Patch(true, typeof(LobbySetupViewController), nameof(LobbySetupViewController.SetPlayersMissingLevelText))]
 		public static void LobbySetupViewController_SetPlayersMissingLevelText(LobbySetupViewController __instance, string playersMissingLevelText, ref UnityEngine.UI.Button ____startGameReadyButton) {
@@ -1198,14 +1301,20 @@ namespace BeatUpClient {
 				__instance.SetStartGameEnabled(CannotStartGameReason.DoNotOwnSong);
 		}
 
+		static bool enableCustomLevels = false;
 		[Patch(true, typeof(MasterServerConnectionManager), "HandleConnectToServerSuccess")]
 		[Patch(true, typeof(GameLiftConnectionManager), "HandleConnectToServerSuccess")]
-		public static void MasterServerConnectionManager_HandleConnectToServerSuccess(GameplayServerConfiguration configuration) {
+		public static void MasterServerConnectionManager_HandleConnectToServerSuccess(object __1, BeatmapLevelSelectionMask selectionMask, GameplayServerConfiguration configuration) {
+			enableCustomLevels = selectionMask.songPacks.Contains(new SongPackMask("custom_levelpack_CustomLevels")) && __1 is string;
 			PreviewProvider.Init(configuration.maxPlayerCount);
 			System.Array.Fill(PreviewProvider.playerPreviews, new PacketHandler.RecommendPreview());
 			Plugin.playerCells = new Plugin.PlayerCell[configuration.maxPlayerCount];
 			Plugin.UpdateDifficultyUI(null);
 		}
+
+		[Patch(false, typeof(MultiplayerLevelSelectionFlowCoordinator), "get_enableCustomLevels")]
+		public static void MultiplayerLevelSelectionFlowCoordinator_enableCustomLevels(ref bool __result) =>
+			__result |= enableCustomLevels;
 
 		[Patch(true, typeof(MultiplayerSessionManager), "HandlePlayerOrderChanged")]
 		public static void MultiplayerSessionManager_HandlePlayerOrderChanged(IConnectedPlayer player) =>
@@ -1462,6 +1571,10 @@ namespace BeatUpClient {
 		public bool UnreliableState = false;
 		public bool DirectDownloads = true;
 		public bool AllowModchartDownloads = false;
+		[IPA.Config.Stores.Attributes.NonNullable]
+		[IPA.Config.Stores.Attributes.UseConverter(typeof(IPA.Config.Stores.Converters.DictionaryConverter<string>))]
+		public System.Collections.Generic.Dictionary<string, string?> Servers = new System.Collections.Generic.Dictionary<string, string?>(new[] {new System.Collections.Generic.KeyValuePair<string, string?>("master.battletrains.org", null)});
+		public virtual void Changed() {}
 	}
 
 	[IPA.Plugin(IPA.RuntimeOptions.SingleStartInit)]
@@ -1527,7 +1640,8 @@ namespace BeatUpClient {
 		public static string uploadLevel = System.String.Empty;
 		public static byte[]? uploadData = null;
 		public static byte[] uploadHash = null!;
-		public static INetworkConfig? networkConfig;
+		public static MainSettingsModelSO mainSettingsModel = null!;
+		public static INetworkConfig? networkConfig = null;
 		public static PlayerCell[] playerCells = null!;
 		public static bool haveSongCore = false;
 		public static bool haveMpCore = false;
@@ -1586,22 +1700,56 @@ namespace BeatUpClient {
 			beatmapDifficultySegmentedControlController.transform.parent.gameObject.SetActive(true);
 		}
 
+		static void RefreshNetworkConfig() {
+			if(networkConfig is CustomNetworkConfig customNetworkConfig) {
+				MainSystemInit mainSystemInit = UnityEngine.Resources.FindObjectsOfTypeAll<MainSystemInit>()[0];
+				NetworkConfigSO networkConfigPrefab = (NetworkConfigSO)typeof(MainSystemInit).GetField("_networkConfig", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(mainSystemInit);
+				string[] hostname = new[] {networkConfigPrefab.masterServerEndPoint.hostName};
+				int port = networkConfigPrefab.masterServerEndPoint.port;
+				bool forceGameLift = networkConfigPrefab.forceGameLift;
+				string? multiplayerStatusUrl = networkConfigPrefab.multiplayerStatusUrl;
+				if(!string.IsNullOrEmpty(mainSettingsModel.customServerHostName)) {
+					hostname = mainSettingsModel.customServerHostName.value.ToLower().Split(new[] {':'});
+					if(hostname.Length >= 2)
+						int.TryParse(hostname[1], out port);
+					forceGameLift = mainSettingsModel.forceGameLiftServerEnvironment;
+					if(!Config.Instance.Servers.TryGetValue(mainSettingsModel.customServerHostName.value, out multiplayerStatusUrl))
+						multiplayerStatusUrl = null;
+				}
+				string oldMultiplayerStatusUrl = customNetworkConfig.multiplayerStatusUrl;
+				Plugin.Log?.Debug($"CustomNetworkConfig(customServerHostName=\"{hostname[0]}\", port={port}, forceGameLift={forceGameLift})");
+				typeof(CustomNetworkConfig).GetConstructors()[0].Invoke(customNetworkConfig, new object[] {networkConfigPrefab, hostname[0], port, forceGameLift});
+				if(!string.IsNullOrEmpty(multiplayerStatusUrl))
+					typeof(CustomNetworkConfig).GetField("<multiplayerStatusUrl>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(customNetworkConfig, multiplayerStatusUrl);
+				if(!forceGameLift)
+					typeof(CustomNetworkConfig).GetField("<serviceEnvironment>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(customNetworkConfig, networkConfigPrefab.serviceEnvironment);
+				if(customNetworkConfig.multiplayerStatusUrl != oldMultiplayerStatusUrl)
+					ModelInvalidator.Invalidate();
+			}
+		}
+
 		public static void OnSceneLoaded(UnityEngine.SceneManagement.Scene scene, UnityEngine.SceneManagement.LoadSceneMode mode) {
 			if(scene.name != "MainMenu")
 				return;
 			Log?.Debug("load MainMenu");
 			if(networkConfig is CustomNetworkConfig) {
-				UnityEngine.GameObject Fullscreen = System.Linq.Enumerable.First(System.Linq.Enumerable.Select(UnityEngine.Resources.FindObjectsOfTypeAll<UnityEngine.UI.Toggle>(), x => x.transform.parent.gameObject), p => p.name == "Fullscreen");
-				UnityEngine.GameObject MaxNumberOfPlayers = System.Linq.Enumerable.First(System.Linq.Enumerable.Select(UnityEngine.Resources.FindObjectsOfTypeAll<StepValuePicker>(), x => x.transform.parent.gameObject), p => p.name == "MaxNumberOfPlayers");
-				UnityEngine.Transform CreateServerFormView = MaxNumberOfPlayers.transform.parent;
-				UI.CreateValuePicker(MaxNumberOfPlayers, CreateServerFormView, "CountdownDuration", "Countdown Duration", () => ref Config.Instance.CountdownDuration, new byte[] {(byte)(Config.Instance.CountdownDuration * 4), 0, 12, 20, 32, 40, 60});
-				UI.CreateToggle(Fullscreen, CreateServerFormView, "SkipResults", "Skip Results Pyramid", () => ref Config.Instance.SkipResults);
-				UI.CreateToggle(Fullscreen, CreateServerFormView, "PerPlayerDifficulty", "Per-Player Difficulty", () => ref Config.Instance.PerPlayerDifficulty);
-				UI.CreateToggle(Fullscreen, CreateServerFormView, "PerPlayerModifiers", "Per-Player Modifiers", () => ref Config.Instance.PerPlayerModifiers);
+				UnityEngine.Transform CreateServerFormView = UnityEngine.Resources.FindObjectsOfTypeAll<CreateServerFormController>()[0].transform;
+				UI.CreateValuePicker(CreateServerFormView, "CountdownDuration", "Countdown Duration", () => ref Config.Instance.CountdownDuration, new byte[] {(byte)(Config.Instance.CountdownDuration * 4), 0, 12, 20, 32, 40, 60});
+				UI.CreateToggle(CreateServerFormView, "SkipResults", "Skip Results Pyramid", () => ref Config.Instance.SkipResults);
+				UI.CreateToggle(CreateServerFormView, "PerPlayerDifficulty", "Per-Player Difficulty", () => ref Config.Instance.PerPlayerDifficulty);
+				UI.CreateToggle(CreateServerFormView, "PerPlayerModifiers", "Per-Player Modifiers", () => ref Config.Instance.PerPlayerModifiers);
 				CreateServerFormView.parent.gameObject.GetComponent<UnityEngine.UI.VerticalLayoutGroup>().enabled = true;
 				CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.VerticalLayoutGroup>().enabled = true;
 				CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.ContentSizeFitter>().enabled = true;
 				CreateServerFormView.parent.parent.gameObject.SetActive(true);
+
+				TMPro.TextMeshProUGUI CustomServerEndPointText = (TMPro.TextMeshProUGUI)typeof(MultiplayerModeSelectionViewController).GetField("_customServerEndPointText", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerModeSelectionViewController>()[0]);
+				UnityEngine.Transform dropdown = UI.CreateSimpleDropdown(CustomServerEndPointText.transform, "Server", mainSettingsModel.customServerHostName, System.Linq.Enumerable.ToArray(Config.Instance.Servers.Keys));
+				dropdown.localPosition = new UnityEngine.Vector3(0, 39.5f, 0);
+				CustomServerEndPointText.enabled = false;
+				mainSettingsModel.customServerHostName.didChangeEvent -= RefreshNetworkConfig;
+				mainSettingsModel.customServerHostName.didChangeEvent += RefreshNetworkConfig;
+				RefreshNetworkConfig();
 			}
 
 			StandardLevelDetailView LevelDetail = UnityEngine.Resources.FindObjectsOfTypeAll<StandardLevelDetailView>()[0];
@@ -1635,6 +1783,8 @@ namespace BeatUpClient {
 			DiJack.Register(typeof(BeatUpMenuRpcManager));
 			DiJack.Register(typeof(LevelLoader));
 			DiJack.Register(typeof(PlayersDataModel));
+			DiJack.Register(typeof(MultiplayerStatusModelPatch));
+			DiJack.Register(typeof(QuickPlaySetupModelPatch));
 			if(haveMpCore)
 				OnEnable_MpCore();
 			try {
@@ -1646,11 +1796,9 @@ namespace BeatUpClient {
 				DiJack.Patch();
 				Patches.Init();
 				Patches.PatchAll(); // harmony.PatchAll() fails with ReflectionTypeLoadException
-				if(Config.Instance.WindowSize != 64) {
-					System.Reflection.MethodBase original = typeof(LiteNetLib.NetManager).Assembly.GetType("LiteNetLib.ReliableChannel").GetConstructor(new[] {typeof(LiteNetLib.NetPeer), typeof(bool), typeof(byte)});
-					System.Reflection.MethodInfo transpiler = typeof(Plugin).GetMethod("ReliableChannel_ctor", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public);
-					harmony.Patch(original, transpiler: new HarmonyLib.HarmonyMethod(transpiler));
-				}
+				System.Reflection.MethodBase original = typeof(LiteNetLib.NetManager).Assembly.GetType("LiteNetLib.ReliableChannel").GetConstructor(new[] {typeof(LiteNetLib.NetPeer), typeof(bool), typeof(byte)});
+				System.Reflection.MethodInfo transpiler = typeof(Plugin).GetMethod("ReliableChannel_ctor", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public);
+				harmony.Patch(original, transpiler: new HarmonyLib.HarmonyMethod(transpiler));
 				UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnSceneLoaded;
 			} catch(System.Exception ex) {
 				Log?.Error("Error applying patches: " + ex.Message);
