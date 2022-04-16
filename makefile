@@ -17,6 +17,9 @@ DEPS := $(FILES:%=$(OBJDIR)/%.d)
 CFLAGS := -g -std=gnu11 -Imbedtls/include -Wall -Wno-unused-function -Werror -pedantic-errors -DFORCE_MASSIVE_LOBBIES
 LDFLAGS := -O2 -Wl,--gc-sections,--fatal-warnings
 
+CSREFS := ../Libs/0Harmony.dll ../Plugins/SongCore.dll ../Plugins/SiraUtil.dll ../Plugins/MultiplayerCore.dll Managed/IPA.Loader.dll Managed/BGNet.dll Managed/BeatmapCore.dll Managed/GamePlayCore.dll Managed/HMLib.dll Managed/HMUI.dll Managed/Main.dll Managed/UnityEngine.CoreModule.dll Managed/UnityEngine.AssetBundleModule.dll Managed/UnityEngine.AudioModule.dll Managed/UnityEngine.ImageConversionModule.dll Managed/UnityEngine.UnityWebRequestModule.dll Managed/UnityEngine.UnityWebRequestAudioModule.dll Managed/UnityEngine.UIModule.dll Managed/UnityEngine.UI.dll Managed/Unity.TextMeshPro.dll Managed/Polyglot.dll Managed/System.IO.Compression.dll Managed/Newtonsoft.Json.dll Managed/LiteNetLib.dll Managed/VRUI.dll Managed/Zenject.dll Managed/Zenject-usage.dll
+PUBREFS := $(CSREFS:%=.obj/Refs/Data/%)
+
 sinclude makefile.user
 
 default: beatupserver
@@ -74,13 +77,25 @@ src/packets.h: src/packets.txt gen.c makefile
 
 .obj/gen.$(HOST): gen.c
 	@echo "[cc $(notdir $@)]"
+	@mkdir -p "$(@D)"
 	cc -std=c99 -no-pie "$<" -o "$@"
 
-BeatUpClient.dll: BeatUpClient.cs makefile
+.obj/MakeThingsPublic.exe: MakeThingsPublic.cs makefile
+	@echo "[csc $(notdir $@)]"
+	@mkdir -p "$(@D)"
+	csc -nologo -o+ -debug- -nullable+ -w:4 -warnaserror+ -langversion:8 "$<" -out:"$@" -r:$(BSINSTALL)/Libs/Mono.Cecil.dll
+	MONO_PATH=$(BSINSTALL)/Libs mono --aot -O=all "$@"
+
+.obj/Refs/Data/%.dll: $(BSINSTALL)/Beat\ Saber_Data/%.dll .obj/MakeThingsPublic.exe
+	@echo "[MakeThingsPublic $(notdir $@)]"
+	@mkdir -p "$(@D)"
+	MONO_PATH=$(BSINSTALL)/Libs mono .obj/MakeThingsPublic.exe "$<" "$@"
+
+BeatUpClient.dll: BeatUpClient.cs $(PUBREFS) makefile
 	@echo "[csc $@]"
-	mkdir -p .obj/
+	@mkdir -p .obj/
 	printf "{\"\$$schema\":\"https://raw.githubusercontent.com/bsmg/BSIPA-MetadataFileSchema/master/Schema.json\",\"author\":\"rcelyte\",\"description\":\"Tweaks and enhancements for enabling modded multiplayer\",\"gameVersion\":\"1.20.0\",\"dependsOn\":{\"BSIPA\":\"*\"},\"loadBefore\":[\"MultiplayerCore\"],\"id\":\"BeatUpClient\",\"name\":\"BeatUpClient\",\"version\":\"$(VERSION)\",\"links\":{\"project-source\":\"https://github.com/rcelyte/BeatUpRcelyte\"}}" > .obj/manifest.json
-	csc -nologo -t:library -o+ -debug- -nullable+ -unsafe+ -w:4 -warnaserror+ -langversion:8 "$<" -res:.obj/manifest.json,BeatUpClient.manifest.json -res:data.bundle,BeatUpClient.data -out:"$@" -r:$(BSINSTALL)/Libs/0Harmony.dll,$(BSINSTALL)/Plugins/SongCore.dll,$(BSINSTALL)/Plugins/SiraUtil.dll,$(BSINSTALL)/Plugins/MultiplayerCore.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/IPA.Loader.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/BGNet.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/BeatmapCore.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/GamePlayCore.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/HMLib.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/HMUI.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/Main.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.CoreModule.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.AssetBundleModule.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.AudioModule.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.ImageConversionModule.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.UnityWebRequestModule.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.UnityWebRequestAudioModule.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.UIModule.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/UnityEngine.UI.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/Unity.TextMeshPro.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/Polyglot.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/System.IO.Compression.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/Newtonsoft.Json.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/LiteNetLib.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/VRUI.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/Zenject.dll,$(BSINSTALL)/Beat\ Saber_Data/Managed/Zenject-usage.dll
+	csc -nologo -t:library -o+ -debug- -nullable+ -unsafe+ -w:4 -warnaserror+ -langversion:8 "$<" -res:.obj/manifest.json,BeatUpClient.manifest.json -res:data.bundle,BeatUpClient.data -out:"$@" $(PUBREFS:%=-r:%)
 
 install: beatupserver
 	@echo "[install $(notdir $<)]"

@@ -3,9 +3,8 @@ namespace BeatUpClient {
 		[System.AttributeUsage(System.AttributeTargets.Class)]
 		public class ReplaceAttribute : System.Attribute {
 			public System.Type original;
-			public ReplaceAttribute(System.Type original) {
+			public ReplaceAttribute(System.Type original) =>
 				this.original = original;
-			}
 		}
 
 		public static System.Collections.Generic.Dictionary<System.Type, System.Type?> InjectMap = new System.Collections.Generic.Dictionary<System.Type, System.Type?>();
@@ -28,9 +27,8 @@ namespace BeatUpClient {
 			concreteTypes = newTypes;
 		}
 
-		public static void Suppress(System.Type type) {
+		public static void Suppress(System.Type type) =>
 			InjectMap.Add(type, null);
-		}
 
 		public static void Register(System.Type type) {
 			foreach(System.Attribute attrib in type.GetCustomAttributes(false)) {
@@ -64,16 +62,6 @@ namespace BeatUpClient {
 		}
 		public static FieldProxy<T> Field<T>(object instance, string field) =>
 			new FieldProxy<T>(instance, HarmonyLib.AccessTools.Field(instance.GetType(), field));
-		public static System.Action<T1, T2> Method<T1, T2>(object instance, string method) {
-			System.Reflection.MethodInfo info = HarmonyLib.AccessTools.Method(instance.GetType(), method, new[] {typeof(T1), typeof(T2)});
-			return (T1 arg1, T2 arg2) =>
-				info.Invoke(instance, new object?[] {arg1, arg2});
-		}
-		public static System.Action<T1, T2, T3, T4> Method<T1, T2, T3, T4>(object instance, string method) {
-			System.Reflection.MethodInfo info = HarmonyLib.AccessTools.Method(instance.GetType(), method, new[] {typeof(T1), typeof(T2), typeof(T3), typeof(T4)});
-			return (T1 arg1, T2 arg2, T3 arg3, T4 arg4) =>
-				info.Invoke(instance, new object?[] {arg1, arg2, arg3, arg4});
-		}
 	}
 
 	public class BeatUpConnectInfo : LiteNetLib.Utils.INetSerializable {
@@ -220,16 +208,12 @@ namespace BeatUpClient {
 		public readonly BeatmapCharacteristicCollectionSO beatmapCharacteristicCollection = null!;
 		[Zenject.Inject]
 		public readonly IMediaAsyncLoader mediaAsyncLoader = null!;
-		public EnvironmentInfoSO defaultEnvironmentInfo;
-		public EnvironmentInfoSO defaultAllDirectionsEnvironmentInfo;
-		public EnvironmentsListSO environmentSceneInfoCollection;
+		[Zenject.Inject]
+		readonly CustomLevelLoader customLevelLoader = null!;
 		public static BeatmapLevelsModel beatmapLevelsModel = null!;
 		public readonly string dataPath = System.IO.Path.Combine(System.IO.Path.GetFullPath(CustomLevelPathHelper.baseProjectPath), "BeatUpClient_Data");
-		public LevelLoader(CustomLevelLoader customLevelLoader, BeatmapLevelsModel beatmapLevelsModel) {
+		public LevelLoader(BeatmapLevelsModel beatmapLevelsModel) {
 			Plugin.Log?.Debug("LevelLoader()");
-			defaultEnvironmentInfo = Reflection.Field<EnvironmentInfoSO>(customLevelLoader, "_defaultEnvironmentInfo");
-			defaultAllDirectionsEnvironmentInfo = Reflection.Field<EnvironmentInfoSO>(customLevelLoader, "_defaultAllDirectionsEnvironmentInfo");
-			environmentSceneInfoCollection = Reflection.Field<EnvironmentsListSO>(customLevelLoader, "_environmentSceneInfoCollection");
 			LevelLoader.beatmapLevelsModel = beatmapLevelsModel;
 		}
 		public bool ValidatedPath(string filename, out string path) {
@@ -244,15 +228,15 @@ namespace BeatUpClient {
 			return false;
 		}
 		public EnvironmentInfoSO LoadEnvironmentInfo(string environmentName, EnvironmentInfoSO defaultInfo) {
-			EnvironmentInfoSO environmentInfoSO = environmentSceneInfoCollection.GetEnvironmentInfoBySerializedName(environmentName);
+			EnvironmentInfoSO environmentInfoSO = customLevelLoader._environmentSceneInfoCollection.GetEnvironmentInfoBySerializedName(environmentName);
 			if(environmentInfoSO == null)
 				environmentInfoSO = defaultInfo;
 			return environmentInfoSO;
 		}
 		public CustomPreviewBeatmapLevel? LoadZippedPreviewBeatmapLevel(string levelID, StandardLevelInfoSaveData standardLevelInfoSaveData, System.Threading.Tasks.Task<byte[]> cover, System.IO.Compression.ZipArchive archive) {
 			try {
-				EnvironmentInfoSO environmentInfo = LoadEnvironmentInfo(standardLevelInfoSaveData.environmentName, defaultEnvironmentInfo);
-				EnvironmentInfoSO allDirectionsEnvironmentInfo = LoadEnvironmentInfo(standardLevelInfoSaveData.allDirectionsEnvironmentName, defaultAllDirectionsEnvironmentInfo);
+				EnvironmentInfoSO environmentInfo = LoadEnvironmentInfo(standardLevelInfoSaveData.environmentName, customLevelLoader._defaultEnvironmentInfo);
+				EnvironmentInfoSO allDirectionsEnvironmentInfo = LoadEnvironmentInfo(standardLevelInfoSaveData.allDirectionsEnvironmentName, customLevelLoader._defaultAllDirectionsEnvironmentInfo);
 				System.Collections.Generic.List<PreviewDifficultyBeatmapSet> sets = new System.Collections.Generic.List<PreviewDifficultyBeatmapSet>();
 				StandardLevelInfoSaveData.DifficultyBeatmapSet[] difficultyBeatmapSets = standardLevelInfoSaveData.difficultyBeatmapSets;
 				foreach(StandardLevelInfoSaveData.DifficultyBeatmapSet difficultyBeatmapSet in difficultyBeatmapSets) {
@@ -456,8 +440,8 @@ namespace BeatUpClient {
 	[DiJack.Replace(typeof(MultiplayerCore.Objects.MpLevelLoader))]
 	public class MpLevelLoader : MultiplayerCore.Objects.MpLevelLoader {
 		public LevelLoader loader;
-		public MpLevelLoader(IMultiplayerSessionManager sessionManager, MultiplayerCore.Objects.MpLevelDownloader levelDownloader, NetworkPlayerEntitlementChecker entitlementChecker, IMenuRpcManager rpcManager, SiraUtil.Logging.SiraLog logger, CustomLevelLoader customLevelLoader, BeatmapLevelsModel beatmapLevelsModel) : base(sessionManager, levelDownloader, entitlementChecker, rpcManager, logger) {
-			loader = new LevelLoader(customLevelLoader, beatmapLevelsModel);
+		public MpLevelLoader(IMultiplayerSessionManager sessionManager, MultiplayerCore.Objects.MpLevelDownloader levelDownloader, NetworkPlayerEntitlementChecker entitlementChecker, IMenuRpcManager rpcManager, SiraUtil.Logging.SiraLog logger, BeatmapLevelsModel beatmapLevelsModel) : base(sessionManager, levelDownloader, entitlementChecker, rpcManager, logger) {
+			loader = new LevelLoader(beatmapLevelsModel);
 			progressUpdated += (double progress) => loader.Progress(new PacketHandler.LoadProgress(PacketHandler.LoadProgress.LoadState.Downloading, (ushort)(progress * 65535)));
 		}
 		public override void LoadLevel(ILevelGameplaySetupData gameplaySetupData, float initialStartTime) {
@@ -767,10 +751,6 @@ namespace BeatUpClient {
 		}
 
 		public static BeatmapCharacteristicCollectionSO beatmapCharacteristicCollection = null!;
-		public readonly System.Reflection.FieldInfo fi_ConnectedPlayer_connection;
-		public readonly System.Reflection.FieldInfo fi_ConnectedPlayer_connectionId;
-		public readonly System.Reflection.FieldInfo fi_ConnectedPlayer_remoteConnectionId;
-		public readonly System.Reflection.MethodInfo mi_ConnectedPlayerManager_WriteOne;
 		public readonly MultiplayerSessionManager multiplayerSessionManager;
 		public readonly MultiplayerSessionManager.MessageType messageType = (MultiplayerSessionManager.MessageType)101;
 		public readonly NetworkPacketSerializer<MessageType, IConnectedPlayer> serializer = new NetworkPacketSerializer<MessageType, IConnectedPlayer>();
@@ -778,11 +758,6 @@ namespace BeatUpClient {
 		public PacketHandler(BeatmapCharacteristicCollectionSO beatmapCharacteristicCollection, IMultiplayerSessionManager multiplayerSessionManager) {
 			Plugin.Log?.Debug("PacketHandler()");
 			PacketHandler.beatmapCharacteristicCollection = beatmapCharacteristicCollection;
-			System.Type ConnectedPlayer = typeof(ConnectedPlayerManager).Assembly.GetType("ConnectedPlayerManager+ConnectedPlayer");
-			fi_ConnectedPlayer_connection = ConnectedPlayer.GetField("_connection", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-			fi_ConnectedPlayer_connectionId = ConnectedPlayer.GetField("_connectionId", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-			fi_ConnectedPlayer_remoteConnectionId = ConnectedPlayer.GetField("_remoteConnectionId", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-			mi_ConnectedPlayerManager_WriteOne = typeof(ConnectedPlayerManager).GetMethod("WriteOne", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
 			this.multiplayerSessionManager = (MultiplayerSessionManager)multiplayerSessionManager;
 		}
 
@@ -816,7 +791,7 @@ namespace BeatUpClient {
 			if(connectedPlayerManager == null)
 				return;
 			if(connectedPlayerManager.isConnected)
-				((IConnection)fi_ConnectedPlayer_connection.GetValue(player)).Send((LiteNetLib.Utils.NetDataWriter)mi_ConnectedPlayerManager_WriteOne.Invoke(connectedPlayerManager, new[] {(object)fi_ConnectedPlayer_connectionId.GetValue(connectedPlayerManager.localPlayer), (object)fi_ConnectedPlayer_remoteConnectionId.GetValue(player), (object)message}), LiteNetLib.DeliveryMethod.Unreliable);
+				((ConnectedPlayerManager.ConnectedPlayer)player)._connection.Send(connectedPlayerManager.WriteOne(((ConnectedPlayerManager.ConnectedPlayer)connectedPlayerManager.localPlayer)._connectionId, ((ConnectedPlayerManager.ConnectedPlayer)player)._remoteConnectionId, message), LiteNetLib.DeliveryMethod.Unreliable);
 			else if(message is IPoolablePacket poolable)
 				poolable.Release();
 		}
@@ -1098,9 +1073,9 @@ namespace BeatUpClient {
 			MainFlowCoordinator mainFlowCoordinator = UnityEngine.Resources.FindObjectsOfTypeAll<MainFlowCoordinator>()[0];
 			if(mainFlowCoordinator.childFlowCoordinator is MultiplayerModeSelectionFlowCoordinator multiplayerModeSelectionFlowCoordinator) {
 				Plugin.editServerViewController.Dismiss(true);
-				typeof(HMUI.FlowCoordinator).GetMethod("DismissFlowCoordinator", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(mainFlowCoordinator, new object[] {multiplayerModeSelectionFlowCoordinator, HMUI.ViewController.AnimationDirection.Horizontal, (System.Action)delegate() {
+				mainFlowCoordinator.DismissFlowCoordinator(multiplayerModeSelectionFlowCoordinator, HMUI.ViewController.AnimationDirection.Horizontal, (System.Action)delegate() {
 					mainFlowCoordinator.PresentMultiplayerModeSelectionFlowCoordinatorWithDisclaimerAndAvatarCreator();
-				}, true});
+				}, true);
 			}
 		}
 	}
@@ -1121,9 +1096,8 @@ namespace BeatUpClient {
 		public class ToggleSetting : SwitchSettingsController {
 			public ValueCB<bool> valueCB = null!;
 			public ToggleSetting() {
-				UnityEngine.UI.Toggle toggle = gameObject.transform.GetChild(1).gameObject.GetComponent<UnityEngine.UI.Toggle>();
-				toggle.onValueChanged.RemoveAllListeners();
-				Reflection.Field<UnityEngine.UI.Toggle>(this, "_toggle").Set(toggle);
+				_toggle = gameObject.transform.GetChild(1).gameObject.GetComponent<UnityEngine.UI.Toggle>();
+				_toggle.onValueChanged.RemoveAllListeners();
 			}
 			protected override bool GetInitValue() => valueCB();
 			protected override void ApplyValue(bool value) {
@@ -1135,10 +1109,8 @@ namespace BeatUpClient {
 			public byte[] options = null!;
 			public ValueCB<float> valueCB = null!;
 			public int startIdx = 1;
-			public ValuePickerSetting() {
-				StepValuePicker stepValuePicker = gameObject.transform.GetChild(1).gameObject.GetComponent<StepValuePicker>();
-				Reflection.Field<StepValuePicker>(this, "_stepValuePicker").Set(stepValuePicker);
-			}
+			public ValuePickerSetting() =>
+				_stepValuePicker = gameObject.transform.GetChild(1).gameObject.GetComponent<StepValuePicker>();
 			protected override bool GetInitValues(out int idx, out int numberOfElements) {
 				idx = System.Array.LastIndexOf(options, (byte)(valueCB() * 4));
 				if(idx == 0)
@@ -1157,11 +1129,8 @@ namespace BeatUpClient {
 		public class DropdownSetting : DropdownSettingsController {
 			string[] options = null!;
 			public StringSO value = null!;
-			HMUI.SimpleTextDropdown dropdown;
-			public DropdownSetting() {
-				dropdown = GetComponent<HMUI.SimpleTextDropdown>();
-				Reflection.Field<HMUI.SimpleTextDropdown>(this, "_dropdown").Set(dropdown);
-			}
+			public DropdownSetting() =>
+				_dropdown = GetComponent<HMUI.SimpleTextDropdown>();
 			public void SetOptions(System.Collections.Generic.Dictionary<string, string?>.KeyCollection options) {
 				this.options = System.Linq.Enumerable.ToArray(options);
 				if(gameObject.activeSelf) {
@@ -1176,7 +1145,7 @@ namespace BeatUpClient {
 			}
 			protected override void ApplyValue(int idx) {
 				string newValue = idx >= 1 ? options[idx - 1] : "";
-				dropdown.Hide(value.value.Equals(newValue)); // Animation will break if MultiplayerLevelSelectionFlowCoordinator is immediately dismissed
+				_dropdown.Hide(value.value.Equals(newValue)); // Animation will break if MultiplayerLevelSelectionFlowCoordinator is immediately dismissed
 				value.value = newValue;
 			}
 			protected override string TextForValue(int idx) =>
@@ -1233,12 +1202,12 @@ namespace BeatUpClient {
 		static UnityEngine.GameObject? textboxTemplate = null;
 		public static UnityEngine.RectTransform CreateTextbox(UnityEngine.Transform parent, string name, int index, System.Action<HMUI.InputFieldView> callback, string? placeholderKey = null) {
 			if(textboxTemplate == null)
-				textboxTemplate = Reflection.Field<HMUI.InputFieldView>(UnityEngine.Resources.FindObjectsOfTypeAll<EnterPlayerGuestNameViewController>()[0], "_nameInputFieldView").value.gameObject;
+				textboxTemplate = UnityEngine.Resources.FindObjectsOfTypeAll<EnterPlayerGuestNameViewController>()[0]._nameInputFieldView.gameObject;
 			UnityEngine.GameObject gameObject = CreateElement(textboxTemplate, parent, name);
 			HMUI.InputFieldView inputField = gameObject.GetComponent<HMUI.InputFieldView>();
 			inputField.onValueChanged = new HMUI.InputFieldView.InputFieldChanged();
 			inputField.onValueChanged.AddListener(callback.Invoke);
-			Polyglot.LocalizedTextMeshProUGUI localizedText = Reflection.Field<UnityEngine.GameObject>(inputField, "_placeholderText").value.GetComponent<Polyglot.LocalizedTextMeshProUGUI>();
+			Polyglot.LocalizedTextMeshProUGUI localizedText = inputField._placeholderText.GetComponent<Polyglot.LocalizedTextMeshProUGUI>();
 			localizedText.enabled = (placeholderKey == null);
 			localizedText.Key = placeholderKey ?? string.Empty;
 			gameObject.transform.SetSiblingIndex(index);
@@ -1251,11 +1220,11 @@ namespace BeatUpClient {
 			key.name = "" + keyCode;
 			key.transform.localPosition = new UnityEngine.Vector3(rightOf.localPosition.x + 7, rightOf.localPosition.y, rightOf.localPosition.z);
 			HMUI.UIKeyboardKey keyboardKey = key.GetComponent<HMUI.UIKeyboardKey>();
-			Reflection.Field<UnityEngine.KeyCode>(keyboardKey, "_keyCode").Set(keyCode);
-			Reflection.Field<string>(keyboardKey, "_overrideText").Set($"{charCode}");
-			Reflection.Field<bool>(keyboardKey, "_canBeUppercase").Set(canBeUppercase);
+			keyboardKey._keyCode = keyCode;
+			keyboardKey._overrideText = $"{charCode}";
+			keyboardKey._canBeUppercase = canBeUppercase;
 			keyboardKey.Awake();
-			Reflection.Field<HMUI.ButtonBinder>(keyboard, "_buttonBinder").value.AddBinding(key.GetComponent<HMUI.NoTransitionsButton>(), delegate {
+			keyboard._buttonBinder.AddBinding(key.GetComponent<HMUI.NoTransitionsButton>(), delegate {
 				System.Action<char>? evt = Reflection.Field<System.Action<char>>(keyboard, typeof(HMUI.UIKeyboard).GetEvent("keyWasPressedEvent").Name);
 				if(evt != null)
 					foreach(System.Delegate handler in evt.GetInvocationList())
@@ -1336,21 +1305,20 @@ namespace BeatUpClient {
 
 		[Patch(true, typeof(MultiplayerModeSelectionFlowCoordinator), "TransitionDidFinish")]
 		public static void MultiplayerModeSelectionFlowCoordinator_TransitionDidFinish(MultiplayerModeSelectionFlowCoordinator __instance, JoiningLobbyViewController ____joiningLobbyViewController, MultiplayerModeSelectionViewController ____multiplayerModeSelectionViewController) {
-			if(__instance.topViewController == ____joiningLobbyViewController && Reflection.Field<string>(____joiningLobbyViewController, "_text") == Polyglot.Localization.Get("LABEL_CHECKING_SERVER_STATUS")) {
+			if(__instance.topViewController == ____joiningLobbyViewController && ____joiningLobbyViewController._text == Polyglot.Localization.Get("LABEL_CHECKING_SERVER_STATUS")) {
 				____multiplayerModeSelectionViewController.transform.Find("Buttons")?.gameObject.SetActive(false);
-				TMPro.TextMeshProUGUI maintenanceMessageText = Reflection.Field<TMPro.TextMeshProUGUI>(____multiplayerModeSelectionViewController, "_maintenanceMessageText");
+				TMPro.TextMeshProUGUI maintenanceMessageText = ____multiplayerModeSelectionViewController._maintenanceMessageText;
 				maintenanceMessageText.gameObject.SetActive(false);
-				Reflection.Method<HMUI.ViewController, System.Action, HMUI.ViewController.AnimationType, HMUI.ViewController.AnimationDirection>(__instance, "ReplaceTopViewController")(____multiplayerModeSelectionViewController, __instance.ProcessDeeplinkingToLobby, HMUI.ViewController.AnimationType.In, HMUI.ViewController.AnimationDirection.Horizontal);
+				__instance.ReplaceTopViewController(____multiplayerModeSelectionViewController, __instance.ProcessDeeplinkingToLobby, HMUI.ViewController.AnimationType.In, HMUI.ViewController.AnimationDirection.Horizontal);
 			}
 		}
 
 		[Patch(true, typeof(MultiplayerModeSelectionFlowCoordinator), nameof(MultiplayerModeSelectionFlowCoordinator.PresentMasterServerUnavailableErrorDialog))]
 		public static bool MultiplayerModeSelectionFlowCoordinator_PresentMasterServerUnavailableErrorDialog(MultiplayerModeSelectionViewController ____multiplayerModeSelectionViewController, MultiplayerUnavailableReason reason, long? maintenanceWindowEndTime, string? remoteLocalizedMessage) {
-			TMPro.TextMeshProUGUI maintenanceMessageText = (TMPro.TextMeshProUGUI)HarmonyLib.AccessTools.Field(typeof(MultiplayerModeSelectionViewController), "_maintenanceMessageText").GetValue(____multiplayerModeSelectionViewController);
-			maintenanceMessageText.text = remoteLocalizedMessage ?? ((reason == MultiplayerUnavailableReason.MaintenanceMode) ? Polyglot.Localization.GetFormat(MultiplayerUnavailableReasonMethods.LocalizedKey(reason), (TimeExtensions.AsUnixTime(maintenanceWindowEndTime.GetValueOrDefault()) - System.DateTime.UtcNow).ToString("h':'mm")) : (Polyglot.Localization.Get(MultiplayerUnavailableReasonMethods.LocalizedKey(reason)) + " (" + MultiplayerUnavailableReasonMethods.ErrorCode(reason) + ")"));
-			maintenanceMessageText.richText = true;
-			maintenanceMessageText.transform.localPosition = new UnityEngine.Vector3(0, 15, 0);
-			maintenanceMessageText.gameObject.SetActive(true);
+			____multiplayerModeSelectionViewController._maintenanceMessageText.text = remoteLocalizedMessage ?? ((reason == MultiplayerUnavailableReason.MaintenanceMode) ? Polyglot.Localization.GetFormat(MultiplayerUnavailableReasonMethods.LocalizedKey(reason), (TimeExtensions.AsUnixTime(maintenanceWindowEndTime.GetValueOrDefault()) - System.DateTime.UtcNow).ToString("h':'mm")) : (Polyglot.Localization.Get(MultiplayerUnavailableReasonMethods.LocalizedKey(reason)) + " (" + MultiplayerUnavailableReasonMethods.ErrorCode(reason) + ")"));
+			____multiplayerModeSelectionViewController._maintenanceMessageText.richText = true;
+			____multiplayerModeSelectionViewController._maintenanceMessageText.transform.localPosition = new UnityEngine.Vector3(0, 15, 0);
+			____multiplayerModeSelectionViewController._maintenanceMessageText.gameObject.SetActive(true);
 			return false;
 		}
 
@@ -1408,17 +1376,12 @@ namespace BeatUpClient {
 			Plugin.skipResults = false;
 		}
 
-		public static int NetConnectAcceptPacket_Size;
-		public static System.Reflection.FieldInfo fi_NetPacket_RawData = null!;
-		public static System.Reflection.FieldInfo fi_NetPacket_Size = null!;
-
-		[Patch(true, typeof(LiteNetLib.NetManager), "LiteNetLib.NetConnectAcceptPacket", "FromData")]
-		public static void NetConnectAcceptPacket_FromData(ref object packet) {
-			int size = (int)fi_NetPacket_Size.GetValue(packet);
-			if(size == NetConnectAcceptPacket_Size + BeatUpConnectInfo.Size) {
-				size = NetConnectAcceptPacket_Size;
+		[Patch(true, typeof(LiteNetLib.NetConnectAcceptPacket), "FromData")]
+		public static void NetConnectAcceptPacket_FromData(ref LiteNetLib.NetPacket packet) {
+			if(packet.Size == LiteNetLib.NetConnectAcceptPacket.Size + BeatUpConnectInfo.Size) {
+				packet.Size = LiteNetLib.NetConnectAcceptPacket.Size;
 				BeatUpConnectInfo info = new BeatUpConnectInfo();
-				info.Deserialize(new LiteNetLib.Utils.NetDataReader((byte[])fi_NetPacket_RawData.GetValue(packet), size));
+				info.Deserialize(new LiteNetLib.Utils.NetDataReader(packet.RawData, packet.Size));
 				Plugin.skipResults = info.skipResults;
 				if(info.windowSize < 32 || info.windowSize > 512)
 					return;
@@ -1426,7 +1389,6 @@ namespace BeatUpClient {
 				Plugin.directDownloads = Config.Instance.DirectDownloads && info.directDownloads;
 				Plugin.expectMetadata = true;
 				Plugin.Log?.Info($"Overriding window size - {info.windowSize}");
-				fi_NetPacket_Size.SetValue(packet, size);
 			}
 		}
 
@@ -1448,9 +1410,8 @@ namespace BeatUpClient {
 			public EnvironmentInfoSO allDirectionsEnvironmentInfo { get; set; } = null!;
 			public System.Threading.Tasks.Task<UnityEngine.Sprite> GetCoverImageAsync(System.Threading.CancellationToken cancellationToken) =>
 				System.Threading.Tasks.Task.FromResult<UnityEngine.Sprite>(Plugin.defaultPackCover);
-			public ErrorPreviewBeatmapLevel(string levelId) {
+			public ErrorPreviewBeatmapLevel(string levelId) =>
 				levelID = levelId;
-			}
 		}
 
 		[Patch(false, typeof(BeatmapLevelsModel), nameof(BeatmapLevelsModel.GetLevelPreviewForLevelId))]
@@ -1496,9 +1457,8 @@ namespace BeatUpClient {
 			Plugin.downloadPending = false;
 			EntitlementsStatus status = await task;
 			Plugin.Log?.Debug($"EntitlementsStatus: {status}");
-			if(status != EntitlementsStatus.Ok) {
+			if(status != EntitlementsStatus.Ok)
 				return status;
-			}
 			BeatmapLevelsModel.GetBeatmapLevelResult result = await LevelLoader.beatmapLevelsModel.GetBeatmapLevelAsync(levelId, default(System.Threading.CancellationToken));
 			Plugin.Log?.Debug($"GetBeatmapLevelResult.isError: {result.isError}");
 			if(result.isError) {
@@ -1553,7 +1513,7 @@ namespace BeatUpClient {
 				Plugin.playerCells[i].transform = null;
 			Plugin.Log?.Debug("GameServerPlayersTableView_SetData()");
 			foreach(GameServerPlayerTableCell cell in ____tableView.visibleCells) {
-				UnityEngine.UI.Image background = Reflection.Field<UnityEngine.UI.Image>(cell, "_localPlayerBackgroundImage");
+				UnityEngine.UI.Image background = cell._localPlayerBackgroundImage;
 				foreach(UnityEngine.Transform child in background.transform) {
 					if(child.gameObject.name == "BeatUpClient_Progress") {
 						IConnectedPlayer player = sortedPlayers[cell.idx];
@@ -1572,17 +1532,15 @@ namespace BeatUpClient {
 
 		[Patch(true, typeof(ConnectedPlayerManager), "HandleServerPlayerConnected")]
 		public static void ConnectedPlayerManager_HandleServerPlayerConnected(object packet) {
+			PlayerConnectedPacket pkt = (PlayerConnectedPacket)packet;
 			if(!Plugin.expectMetadata)
 				return;
-			System.Type PlayerConnectedPacket = typeof(ConnectedPlayerManager).Assembly.GetType("ConnectedPlayerManager+PlayerConnectedPacket");
-			string userId = (string)PlayerConnectedPacket.GetField("userId").GetValue(packet);
-			string userName = (string)PlayerConnectedPacket.GetField("userName").GetValue(packet);
-			int tier = (int)userName[userName.Length-1] - 17;
+			int tier = (int)pkt.userName[pkt.userName.Length-1] - 17;
 			if(tier < -1 || tier >= Plugin.badges.Length)
 				return;
 			if(tier >= 0)
-				Plugin.playerTiers[userId] = (byte)tier;
-			PlayerConnectedPacket.GetField("userName").SetValue(packet, userName.Substring(0, userName.Length - 1));
+				Plugin.playerTiers[pkt.userId] = (byte)tier;
+			pkt.userName = pkt.userName.Substring(0, pkt.userName.Length - 1);
 		}
 
 		[Patch(false, typeof(MultiplayerLobbyAvatarManager), nameof(MultiplayerLobbyAvatarManager.AddPlayer))]
@@ -1608,14 +1566,6 @@ namespace BeatUpClient {
 					normalInstallerTypes.Add(typeof(MenuInstaller));
 				}
 			}
-		}
-
-		public static void Init() {
-			System.Type NetPacket = typeof(LiteNetLib.NetManager).Assembly.GetType("LiteNetLib.NetPacket");
-			fi_NetPacket_RawData = NetPacket.GetField("RawData", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
-			fi_NetPacket_Size = NetPacket.GetField("Size", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
-			System.Type NetConnectAcceptPacket = typeof(LiteNetLib.NetManager).Assembly.GetType("LiteNetLib.NetConnectAcceptPacket");
-			NetConnectAcceptPacket_Size = (int)NetConnectAcceptPacket.GetField("Size", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public).GetRawConstantValue();
 		}
 
 		public static void PatchAll() {
@@ -1770,7 +1720,7 @@ namespace BeatUpClient {
 			editServerButton.interactable = false;
 			if(networkConfig is CustomNetworkConfig customNetworkConfig) {
 				MainSystemInit mainSystemInit = UnityEngine.Resources.FindObjectsOfTypeAll<MainSystemInit>()[0];
-				NetworkConfigSO networkConfigPrefab = Reflection.Field<NetworkConfigSO>(mainSystemInit, "_networkConfig");
+				NetworkConfigSO networkConfigPrefab = mainSystemInit._networkConfig;
 				string[] hostname = new[] {networkConfigPrefab.masterServerEndPoint.hostName};
 				int port = networkConfigPrefab.masterServerEndPoint.port;
 				bool forceGameLift = networkConfigPrefab.forceGameLift;
@@ -1830,9 +1780,9 @@ namespace BeatUpClient {
 				editStatus.localPosition = new UnityEngine.Vector3(0, -8.5f, 0);
 				viewController.editHostnameTextbox = editHostname.GetComponent<HMUI.InputFieldView>();
 				viewController.editStatusTextbox = editStatus.GetComponent<HMUI.InputFieldView>();
-				Reflection.Field<int>(viewController.editHostnameTextbox, "_textLengthLimit").Set(41);
-				Reflection.Field<int>(viewController.editStatusTextbox, "_textLengthLimit").Set(41);
-				viewController.editStatusPlaceholder = Reflection.Field<UnityEngine.GameObject>(viewController.editStatusTextbox, "_placeholderText").value.GetComponent<HMUI.CurvedTextMeshPro>();
+				viewController.editHostnameTextbox._textLengthLimit = 41;
+				viewController.editStatusTextbox._textLengthLimit = 41;
+				viewController.editStatusPlaceholder = viewController.editStatusTextbox._placeholderText.GetComponent<HMUI.CurvedTextMeshPro>();
 				viewController.cancelButton = Wrapper.Find("Buttons/CancelButton").GetComponent<HMUI.NoTransitionsButton>();
 
 				viewController.keyboard = gameObject.GetComponentInChildren<HMUI.UIKeyboard>();
@@ -1893,7 +1843,7 @@ namespace BeatUpClient {
 
 			public void Dismiss(bool immediately = false) {
 				if(flowCoordinator != null)
-					Reflection.Method<HMUI.ViewController, HMUI.ViewController.AnimationDirection, System.Action?, bool>(flowCoordinator, "DismissViewController")(this, HMUI.ViewController.AnimationDirection.Vertical, null, immediately);
+					flowCoordinator.DismissViewController(this, HMUI.ViewController.AnimationDirection.Vertical, null, immediately);
 			}
 
 			void HandleOkButtonWasPressed() {
@@ -1936,8 +1886,8 @@ namespace BeatUpClient {
 
 				MainFlowCoordinator mainFlowCoordinator = UnityEngine.Resources.FindObjectsOfTypeAll<MainFlowCoordinator>()[0];
 				MultiplayerModeSelectionViewController multiplayerModeSelectionViewController = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerModeSelectionViewController>()[0];
-				TMPro.TextMeshProUGUI customServerEndPointText = Reflection.Field<TMPro.TextMeshProUGUI>(multiplayerModeSelectionViewController, "_customServerEndPointText");
-				UnityEngine.UI.Button editColorSchemeButton = Reflection.Field<UnityEngine.UI.Button>(UnityEngine.Resources.FindObjectsOfTypeAll<ColorsOverrideSettingsPanelController>()[0], "_editColorSchemeButton");
+				TMPro.TextMeshProUGUI customServerEndPointText = multiplayerModeSelectionViewController._customServerEndPointText;
+				UnityEngine.UI.Button editColorSchemeButton = UnityEngine.Resources.FindObjectsOfTypeAll<ColorsOverrideSettingsPanelController>()[0]._editColorSchemeButton;
 				customServerEndPointText.enabled = false;
 				UnityEngine.RectTransform server = UI.CreateSimpleDropdown(customServerEndPointText.transform, "Server", mainSettingsModel.customServerHostName, Config.Instance.Servers.Keys);
 				server.sizeDelta = new UnityEngine.Vector2(80, server.sizeDelta.y);
@@ -1948,9 +1898,9 @@ namespace BeatUpClient {
 				UnityEngine.RectTransform editButton = UI.CreateButtonFrom(editColorSchemeButton.gameObject, customServerEndPointText.transform, "EditServer", () => {
 					if(mainFlowCoordinator.childFlowCoordinator is MultiplayerModeSelectionFlowCoordinator multiplayerModeSelectionFlowCoordinator) {
 						editServerViewController.flowCoordinator = multiplayerModeSelectionFlowCoordinator;
-						Reflection.Method<HMUI.ViewController, System.Action?, HMUI.ViewController.AnimationDirection, bool>(multiplayerModeSelectionFlowCoordinator, "PresentViewController")(editServerViewController, null, HMUI.ViewController.AnimationDirection.Vertical, false);
-						Reflection.Method<string, HMUI.ViewController.AnimationType>(multiplayerModeSelectionFlowCoordinator, "SetTitle")(Polyglot.Localization.Get("BEATUPCLIENT_EDIT_SERVER"), HMUI.ViewController.AnimationType.In);
-						Reflection.Field<HMUI.ScreenSystem>(multiplayerModeSelectionFlowCoordinator, "_screenSystem").value.SetBackButton(false, true);
+						multiplayerModeSelectionFlowCoordinator.PresentViewController(editServerViewController, null, HMUI.ViewController.AnimationDirection.Vertical, false);
+						multiplayerModeSelectionFlowCoordinator.SetTitle(Polyglot.Localization.Get("BEATUPCLIENT_EDIT_SERVER"), HMUI.ViewController.AnimationType.In);
+						multiplayerModeSelectionFlowCoordinator._screenSystem.SetBackButton(false, true);
 					}
 				});
 				editButton.localPosition = new UnityEngine.Vector3(52, 39.5f, 0);
@@ -1965,9 +1915,9 @@ namespace BeatUpClient {
 
 			StandardLevelDetailView LevelDetail = UnityEngine.Resources.FindObjectsOfTypeAll<StandardLevelDetailView>()[0];
 			UnityEngine.Transform LobbySetupViewController_Wrapper = UnityEngine.Resources.FindObjectsOfTypeAll<LobbySetupViewController>()[0].transform.GetChild(0);
-			UnityEngine.RectTransform beatmapCharacteristic = UI.CreateClone(((BeatmapCharacteristicSegmentedControlController)typeof(StandardLevelDetailView).GetField("_beatmapCharacteristicSegmentedControlController", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(LevelDetail)).transform.parent.gameObject, LobbySetupViewController_Wrapper, "BeatmapCharacteristic", 2);
+			UnityEngine.RectTransform beatmapCharacteristic = UI.CreateClone(LevelDetail._beatmapCharacteristicSegmentedControlController.transform.parent.gameObject, LobbySetupViewController_Wrapper, "BeatmapCharacteristic", 2);
 			beatmapCharacteristic.sizeDelta = new UnityEngine.Vector2(90, beatmapCharacteristic.sizeDelta.y);
-			UnityEngine.RectTransform beatmapDifficulty = UI.CreateClone(((BeatmapDifficultySegmentedControlController)typeof(StandardLevelDetailView).GetField("_beatmapDifficultySegmentedControlController", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(LevelDetail)).transform.parent.gameObject, LobbySetupViewController_Wrapper, "BeatmapDifficulty", 3);
+			UnityEngine.RectTransform beatmapDifficulty = UI.CreateClone(LevelDetail._beatmapDifficultySegmentedControlController.transform.parent.gameObject, LobbySetupViewController_Wrapper, "BeatmapDifficulty", 3);
 			beatmapDifficulty.sizeDelta = new UnityEngine.Vector2(90, beatmapDifficulty.sizeDelta.y);
 			beatmapCharacteristicSegmentedControlController = beatmapCharacteristic.GetChild(1).gameObject.GetComponent<BeatmapCharacteristicSegmentedControlController>();
 			beatmapDifficultySegmentedControlController = beatmapDifficulty.GetChild(1).gameObject.GetComponent<BeatmapDifficultySegmentedControlController>();
@@ -1998,7 +1948,7 @@ namespace BeatUpClient {
 				"BEATUPCLIENT_ADD_SERVER\t\tAdd Server\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
 				"BEATUPCLIENT_EDIT_SERVER\t\tEdit Server\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
 				"BEATUPCLIENT_ENTER_HOSTNAME\t\tEnter Hostname\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n";
-			HarmonyLib.AccessTools.Method(typeof(Polyglot.LocalizationImporter), "Import").Invoke(null, new object[] {localization, Polyglot.GoogleDriveDownloadFormat.TSV});
+			Polyglot.LocalizationImporter.Import(localization, Polyglot.GoogleDriveDownloadFormat.TSV);
 
 			haveSongCore = (IPA.Loader.PluginManager.GetPluginFromId("SongCore") != null);
 			haveMpCore = (IPA.Loader.PluginManager.GetPluginFromId("MultiplayerCore") != null);
@@ -2018,7 +1968,6 @@ namespace BeatUpClient {
 				badges = data.LoadAllAssets<UnityEngine.GameObject>();
 				Log?.Debug("Applying patches");
 				DiJack.Patch();
-				Patches.Init();
 				Patches.PatchAll(); // harmony.PatchAll() fails with ReflectionTypeLoadException
 				System.Reflection.MethodBase original = typeof(LiteNetLib.NetManager).Assembly.GetType("LiteNetLib.ReliableChannel").GetConstructor(new[] {typeof(LiteNetLib.NetPeer), typeof(bool), typeof(byte)});
 				System.Reflection.MethodInfo transpiler = typeof(Plugin).GetMethod("ReliableChannel_ctor", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public);
