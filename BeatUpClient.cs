@@ -46,6 +46,36 @@ namespace BeatUpClient {
 		}
 	}
 
+	public static class Reflection {
+		public struct FieldProxy<T> {
+			System.Reflection.FieldInfo field;
+			public object instance;
+			public T value {
+				get => (T)field.GetValue(instance);
+			}
+			public FieldProxy(object instance, System.Reflection.FieldInfo field) {
+				this.instance = instance;
+				this.field = field;
+			}
+			public void Set(T value) =>
+				field.SetValue(instance, value);
+			public static implicit operator T(FieldProxy<T> self) =>
+				self.value;
+		}
+		public static FieldProxy<T> Field<T>(object instance, string field) =>
+			new FieldProxy<T>(instance, HarmonyLib.AccessTools.Field(instance.GetType(), field));
+		public static System.Action<T1, T2> Method<T1, T2>(object instance, string method) {
+			System.Reflection.MethodInfo info = HarmonyLib.AccessTools.Method(instance.GetType(), method, new[] {typeof(T1), typeof(T2)});
+			return (T1 arg1, T2 arg2) =>
+				info.Invoke(instance, new object?[] {arg1, arg2});
+		}
+		public static System.Action<T1, T2, T3, T4> Method<T1, T2, T3, T4>(object instance, string method) {
+			System.Reflection.MethodInfo info = HarmonyLib.AccessTools.Method(instance.GetType(), method, new[] {typeof(T1), typeof(T2), typeof(T3), typeof(T4)});
+			return (T1 arg1, T2 arg2, T3 arg3, T4 arg4) =>
+				info.Invoke(instance, new object?[] {arg1, arg2, arg3, arg4});
+		}
+	}
+
 	public class BeatUpConnectInfo : LiteNetLib.Utils.INetSerializable {
 		public const uint Size = 6;
 		public uint windowSize;
@@ -197,9 +227,9 @@ namespace BeatUpClient {
 		public readonly string dataPath = System.IO.Path.Combine(System.IO.Path.GetFullPath(CustomLevelPathHelper.baseProjectPath), "BeatUpClient_Data");
 		public LevelLoader(CustomLevelLoader customLevelLoader, BeatmapLevelsModel beatmapLevelsModel) {
 			Plugin.Log?.Debug("LevelLoader()");
-			defaultEnvironmentInfo = (EnvironmentInfoSO)typeof(CustomLevelLoader).GetField("_defaultEnvironmentInfo", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(customLevelLoader);
-			defaultAllDirectionsEnvironmentInfo = (EnvironmentInfoSO)typeof(CustomLevelLoader).GetField("_defaultAllDirectionsEnvironmentInfo", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(customLevelLoader);
-			environmentSceneInfoCollection = (EnvironmentsListSO)typeof(CustomLevelLoader).GetField("_environmentSceneInfoCollection", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(customLevelLoader);
+			defaultEnvironmentInfo = Reflection.Field<EnvironmentInfoSO>(customLevelLoader, "_defaultEnvironmentInfo");
+			defaultAllDirectionsEnvironmentInfo = Reflection.Field<EnvironmentInfoSO>(customLevelLoader, "_defaultAllDirectionsEnvironmentInfo");
+			environmentSceneInfoCollection = Reflection.Field<EnvironmentsListSO>(customLevelLoader, "_environmentSceneInfoCollection");
 			LevelLoader.beatmapLevelsModel = beatmapLevelsModel;
 		}
 		public bool ValidatedPath(string filename, out string path) {
@@ -323,7 +353,7 @@ namespace BeatUpClient {
 				int it = 0, p = 0;
 				uint cycle = 0;
 				ulong off = handler.gaps[0].start;
-				while(handler.gaps.Count > 0) {
+				while(handler.gaps.Count >= 1) {
 					if(++cycle == 4) {
 						ulong dl = (ulong)handler.buffer.LongLength;
 						foreach((ulong start, ulong end) in handler.gaps)
@@ -333,7 +363,7 @@ namespace BeatUpClient {
 					}
 					if(it >= handler.gaps.Count)
 						it = 0;
-					for(uint i = 64; i > 0; --i) {
+					for(uint i = 64; i >= 1; --i) {
 						if(off >= handler.gaps[it].end) {
 							if(++it >= handler.gaps.Count)
 								it = 0;
@@ -379,7 +409,7 @@ namespace BeatUpClient {
 						} else {
 							System.IO.Directory.CreateDirectory(dataPath);
 						}
-						bool modded = Plugin.downloadPreview.requirements.Length > 0 || Plugin.downloadPreview.suggestions.Length > 0;
+						bool modded = Plugin.downloadPreview.requirements.Length >= 1 || Plugin.downloadPreview.suggestions.Length >= 1;
 						byte[] rawInfo = new byte[infoFile.Length];
 						infoFile.Open().Read(rawInfo, 0, rawInfo.Length);
 						if(modded) {
@@ -840,7 +870,7 @@ namespace BeatUpClient {
 			System.Buffer.BlockCopy(packet.data, 0, buffer, (int)packet.offset, packet.data.Length);
 			ulong start = packet.offset, end = packet.offset + (ulong)packet.data.LongLength;
 			int i = gaps.Count - 1;
-			while(i > 0 && gaps[i].start > start)
+			while(i >= 1 && gaps[i].start > start)
 				--i;
 			if(gaps[i].end > end) {
 				gaps.Insert(i+1, (System.Math.Max(gaps[i].start, end), gaps[i].end));
@@ -948,7 +978,7 @@ namespace BeatUpClient {
 						requirementArray = new string[0];
 					if(suggestionArray == null)
 						suggestionArray = new string[0];
-					if(requirementArray.Length > 0) {
+					if(requirementArray.Length >= 1) {
 						Plugin.Log?.Debug($"{requirementArray.Length} requirements for `{beatmapLevel.beatmapLevel.levelID}`:");
 						foreach(string req in requirementArray)
 							Plugin.Log?.Debug($"    {req}");
@@ -1033,7 +1063,7 @@ namespace BeatUpClient {
 						requirementArray = new string[0];
 					if(suggestionArray == null)
 						suggestionArray = new string[0];
-					if(requirementArray.Length > 0) {
+					if(requirementArray.Length >= 1) {
 						Plugin.Log?.Debug($"{requirementArray.Length} requirements for `{beatmapLevel.beatmapLevel.levelID}`:");
 						foreach(string req in requirementArray)
 							Plugin.Log?.Debug($"    {req}");
@@ -1067,13 +1097,10 @@ namespace BeatUpClient {
 			onInvalidate?.Invoke();
 			MainFlowCoordinator mainFlowCoordinator = UnityEngine.Resources.FindObjectsOfTypeAll<MainFlowCoordinator>()[0];
 			if(mainFlowCoordinator.childFlowCoordinator is MultiplayerModeSelectionFlowCoordinator multiplayerModeSelectionFlowCoordinator) {
+				Plugin.editServerViewController.Dismiss(true);
 				typeof(HMUI.FlowCoordinator).GetMethod("DismissFlowCoordinator", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(mainFlowCoordinator, new object[] {multiplayerModeSelectionFlowCoordinator, HMUI.ViewController.AnimationDirection.Horizontal, (System.Action)delegate() {
 					mainFlowCoordinator.PresentMultiplayerModeSelectionFlowCoordinatorWithDisclaimerAndAvatarCreator();
 				}, true});
-				/*try { // re-enter multiplayer mode selection
-				} catch(System.NullReferenceException) { // dismiss if `_playerDataModel.playerData.avatarCreated` is somehow false
-					mainFlowCoordinator.HandleMultiplayerModeSelectionFlowCoordinatorDidFinish(multiplayerModeSelectionFlowCoordinator);
-				}*/
 			}
 		}
 	}
@@ -1096,7 +1123,7 @@ namespace BeatUpClient {
 			public ToggleSetting() {
 				UnityEngine.UI.Toggle toggle = gameObject.transform.GetChild(1).gameObject.GetComponent<UnityEngine.UI.Toggle>();
 				toggle.onValueChanged.RemoveAllListeners();
-				typeof(SwitchSettingsController).GetField("_toggle", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(this, toggle);
+				Reflection.Field<UnityEngine.UI.Toggle>(this, "_toggle").Set(toggle);
 			}
 			protected override bool GetInitValue() => valueCB();
 			protected override void ApplyValue(bool value) {
@@ -1110,7 +1137,7 @@ namespace BeatUpClient {
 			public int startIdx = 1;
 			public ValuePickerSetting() {
 				StepValuePicker stepValuePicker = gameObject.transform.GetChild(1).gameObject.GetComponent<StepValuePicker>();
-				typeof(IncDecSettingsController).GetField("_stepValuePicker", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(this, stepValuePicker);
+				Reflection.Field<StepValuePicker>(this, "_stepValuePicker").Set(stepValuePicker);
 			}
 			protected override bool GetInitValues(out int idx, out int numberOfElements) {
 				idx = System.Array.LastIndexOf(options, (byte)(valueCB() * 4));
@@ -1128,12 +1155,19 @@ namespace BeatUpClient {
 			protected override string TextForValue(int idx) => $"{options[idx + startIdx] / 4.0f}";
 		}
 		public class DropdownSetting : DropdownSettingsController {
-			public string[] options = null!;
+			string[] options = null!;
 			public StringSO value = null!;
 			HMUI.SimpleTextDropdown dropdown;
 			public DropdownSetting() {
 				dropdown = GetComponent<HMUI.SimpleTextDropdown>();
-				typeof(DropdownSettingsController).GetField("_dropdown", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(this, dropdown);
+				Reflection.Field<HMUI.SimpleTextDropdown>(this, "_dropdown").Set(dropdown);
+			}
+			public void SetOptions(System.Collections.Generic.Dictionary<string, string?>.KeyCollection options) {
+				this.options = System.Linq.Enumerable.ToArray(options);
+				if(gameObject.activeSelf) {
+					gameObject.SetActive(false);
+					gameObject.SetActive(true);
+				}
 			}
 			protected override bool GetInitValues(out int idx, out int numberOfElements) {
 				idx = System.Array.IndexOf(options, value.value) + 1;
@@ -1141,75 +1175,108 @@ namespace BeatUpClient {
 				return true;
 			}
 			protected override void ApplyValue(int idx) {
-				string newValue = idx > 0 ? options[idx - 1] : "";
+				string newValue = idx >= 1 ? options[idx - 1] : "";
 				dropdown.Hide(value.value.Equals(newValue)); // Animation will break if MultiplayerLevelSelectionFlowCoordinator is immediately dismissed
 				value.value = newValue;
 			}
 			protected override string TextForValue(int idx) =>
-				idx > 0 ? options[idx - 1] : "Official Server";
+				idx >= 1 ? options[idx - 1] : "Official Server";
 		}
 		public delegate ref T ValueCB<T>();
 		static UnityEngine.GameObject CreateElement(UnityEngine.GameObject template, UnityEngine.Transform parent, string name) {
 			UnityEngine.GameObject gameObject = UnityEngine.Object.Instantiate(template, parent);
-			((UnityEngine.RectTransform)gameObject.transform).sizeDelta = new UnityEngine.Vector2(90, ((UnityEngine.RectTransform)gameObject.transform).sizeDelta.y);
 			gameObject.name = "BeatUpClient_" + name;
 			gameObject.SetActive(false);
 			return gameObject;
 		}
-		static UnityEngine.GameObject CreateElementWithText(UnityEngine.GameObject template, UnityEngine.Transform parent, string name, string header) {
+		static UnityEngine.GameObject CreateElementWithText(UnityEngine.GameObject template, UnityEngine.Transform parent, string name, string headerKey) {
 			UnityEngine.GameObject gameObject = CreateElement(template, parent, name);
+			((UnityEngine.RectTransform)gameObject.transform).sizeDelta = new UnityEngine.Vector2(90, ((UnityEngine.RectTransform)gameObject.transform).sizeDelta.y);
 			UnityEngine.GameObject nameText = gameObject.transform.Find("NameText").gameObject;
-			Polyglot.LocalizedTextMeshProUGUI localizedText = nameText.GetComponent<Polyglot.LocalizedTextMeshProUGUI>();
-			localizedText.enabled = false;
-			localizedText.Key = string.Empty;
-			TMPro.TextMeshProUGUI text = nameText.GetComponent<TMPro.TextMeshProUGUI>();
-			text.text = header;
-			text.richText = true;
-			text.overflowMode = TMPro.TextOverflowModes.Ellipsis;
+			nameText.GetComponent<Polyglot.LocalizedTextMeshProUGUI>().Key = headerKey;
 			return gameObject;
 		}
 		static UnityEngine.GameObject? toggleTemplate = null;
-		public static UnityEngine.Transform CreateToggle(UnityEngine.Transform parent, string name, string header, ValueCB<bool> valueCB) {
+		public static UnityEngine.RectTransform CreateToggle(UnityEngine.Transform parent, string name, string headerKey, ValueCB<bool> valueCB) {
 			if(toggleTemplate == null)
 				toggleTemplate = System.Linq.Enumerable.First(System.Linq.Enumerable.Select(UnityEngine.Resources.FindObjectsOfTypeAll<UnityEngine.UI.Toggle>(), x => x.transform.parent.gameObject), p => p.name == "Fullscreen");
-			UnityEngine.GameObject gameObject = CreateElementWithText(toggleTemplate, parent, name, header);
+			UnityEngine.GameObject gameObject = CreateElementWithText(toggleTemplate, parent, name, headerKey);
 			UnityEngine.Object.Destroy(gameObject.GetComponent<BoolSettingsController>());
 			ToggleSetting toggleSetting = gameObject.AddComponent<ToggleSetting>();
 			toggleSetting.valueCB = valueCB;
 			gameObject.SetActive(true);
-			return gameObject.transform;
+			return (UnityEngine.RectTransform)gameObject.transform;
 		}
 		static UnityEngine.GameObject? pickerTemplate = null;
-		public static UnityEngine.Transform CreateValuePicker(UnityEngine.Transform parent, string name, string header, ValueCB<float> valueCB, byte[] options) {
+		public static UnityEngine.RectTransform CreateValuePicker(UnityEngine.Transform parent, string name, string headerKey, ValueCB<float> valueCB, byte[] options) {
 			if(pickerTemplate == null)
 				pickerTemplate = System.Linq.Enumerable.First(System.Linq.Enumerable.Select(UnityEngine.Resources.FindObjectsOfTypeAll<StepValuePicker>(), x => x.transform.parent.gameObject), p => p.name == "MaxNumberOfPlayers");
-			UnityEngine.GameObject gameObject = CreateElementWithText(pickerTemplate, parent, name, header);
+			UnityEngine.GameObject gameObject = CreateElementWithText(pickerTemplate, parent, name, headerKey);
 			UnityEngine.Object.Destroy(gameObject.GetComponent<FormattedFloatListSettingsController>());
 			ValuePickerSetting valuePickerSetting = gameObject.AddComponent<ValuePickerSetting>();
 			valuePickerSetting.options = options;
 			valuePickerSetting.valueCB = valueCB;
 			gameObject.SetActive(true);
-			return gameObject.transform;
+			return (UnityEngine.RectTransform)gameObject.transform;
 		}
 		static UnityEngine.GameObject? simpleDropdownTemplate = null;
-		public static UnityEngine.Transform CreateSimpleDropdown(UnityEngine.Transform parent, string name, StringSO value, string[] options) {
+		public static UnityEngine.RectTransform CreateSimpleDropdown(UnityEngine.Transform parent, string name, StringSO value, System.Collections.Generic.Dictionary<string, string?>.KeyCollection options) {
 			if(simpleDropdownTemplate == null)
 				simpleDropdownTemplate = System.Linq.Enumerable.First(UnityEngine.Resources.FindObjectsOfTypeAll<HMUI.SimpleTextDropdown>(), dropdown => dropdown.GetComponents(typeof(UnityEngine.Component)).Length == 2).gameObject;
 			UnityEngine.GameObject gameObject = CreateElement(simpleDropdownTemplate, parent, name);
 			DropdownSetting dropdownSetting = gameObject.AddComponent<DropdownSetting>();
-			dropdownSetting.options = options;
 			dropdownSetting.value = value;
-			foreach(UnityEngine.Transform tr in gameObject.transform)
-				tr.localPosition = new UnityEngine.Vector3(0, 0, 0);
+			dropdownSetting.SetOptions(options);
 			gameObject.SetActive(true);
-			return gameObject.transform;
+			return (UnityEngine.RectTransform)gameObject.transform;
 		}
-		public static UnityEngine.Transform CreateClone(UnityEngine.GameObject template, UnityEngine.Transform parent, string name, int index) {
+		static UnityEngine.GameObject? textboxTemplate = null;
+		public static UnityEngine.RectTransform CreateTextbox(UnityEngine.Transform parent, string name, int index, System.Action<HMUI.InputFieldView> callback, string? placeholderKey = null) {
+			if(textboxTemplate == null)
+				textboxTemplate = Reflection.Field<HMUI.InputFieldView>(UnityEngine.Resources.FindObjectsOfTypeAll<EnterPlayerGuestNameViewController>()[0], "_nameInputFieldView").value.gameObject;
+			UnityEngine.GameObject gameObject = CreateElement(textboxTemplate, parent, name);
+			HMUI.InputFieldView inputField = gameObject.GetComponent<HMUI.InputFieldView>();
+			inputField.onValueChanged = new HMUI.InputFieldView.InputFieldChanged();
+			inputField.onValueChanged.AddListener(callback.Invoke);
+			Polyglot.LocalizedTextMeshProUGUI localizedText = Reflection.Field<UnityEngine.GameObject>(inputField, "_placeholderText").value.GetComponent<Polyglot.LocalizedTextMeshProUGUI>();
+			localizedText.enabled = (placeholderKey == null);
+			localizedText.Key = placeholderKey ?? string.Empty;
+			gameObject.transform.SetSiblingIndex(index);
+			gameObject.SetActive(true);
+			return (UnityEngine.RectTransform)gameObject.transform;
+		}
+		public static UnityEngine.GameObject CreateKey(HMUI.UIKeyboard keyboard, UnityEngine.Transform rightOf, UnityEngine.KeyCode keyCode, char charCode, bool canBeUppercase = false) {
+			UnityEngine.GameObject keyTemplate = keyboard.GetComponentInChildren<HMUI.UIKeyboardKey>().gameObject;
+			UnityEngine.GameObject key = UnityEngine.Object.Instantiate(keyTemplate, rightOf.parent);
+			key.name = "" + keyCode;
+			key.transform.localPosition = new UnityEngine.Vector3(rightOf.localPosition.x + 7, rightOf.localPosition.y, rightOf.localPosition.z);
+			HMUI.UIKeyboardKey keyboardKey = key.GetComponent<HMUI.UIKeyboardKey>();
+			Reflection.Field<UnityEngine.KeyCode>(keyboardKey, "_keyCode").Set(keyCode);
+			Reflection.Field<string>(keyboardKey, "_overrideText").Set($"{charCode}");
+			Reflection.Field<bool>(keyboardKey, "_canBeUppercase").Set(canBeUppercase);
+			keyboardKey.Awake();
+			Reflection.Field<HMUI.ButtonBinder>(keyboard, "_buttonBinder").value.AddBinding(key.GetComponent<HMUI.NoTransitionsButton>(), delegate {
+				System.Action<char>? evt = Reflection.Field<System.Action<char>>(keyboard, typeof(HMUI.UIKeyboard).GetEvent("keyWasPressedEvent").Name);
+				if(evt != null)
+					foreach(System.Delegate handler in evt.GetInvocationList())
+						handler.Method.Invoke(handler.Target, new object[] {charCode});
+			});
+			return key;
+		}
+		public static UnityEngine.RectTransform CreateButtonFrom(UnityEngine.GameObject template, UnityEngine.Transform parent, string name, System.Action callback) {
+			UnityEngine.GameObject gameObject = CreateElement(template, parent, name);
+			UnityEngine.UI.Button button = gameObject.GetComponent<UnityEngine.UI.Button>();
+			button.onClick.RemoveAllListeners();
+			button.onClick.AddListener(callback.Invoke);
+			gameObject.SetActive(true);
+			return (UnityEngine.RectTransform)gameObject.transform;
+		}
+		public static UnityEngine.RectTransform CreateClone(UnityEngine.GameObject template, UnityEngine.Transform parent, string name, int index = -1) {
 			UnityEngine.GameObject gameObject = CreateElement(template, parent, name);
 			if(index >= 0)
 				gameObject.transform.SetSiblingIndex(index);
 			gameObject.SetActive(true);
-			return gameObject.transform;
+			return (UnityEngine.RectTransform)gameObject.transform;
 		}
 	}
 
@@ -1227,6 +1294,7 @@ namespace BeatUpClient {
 			public void Apply(System.Reflection.MethodInfo self) {
 				if(method == null)
 					throw new System.ArgumentException($"Missing original method for `{self}`");
+				// Plugin.Log?.Debug($"Patching {method.DeclaringType.FullName} : {method}");
 				if(prefix)
 					Plugin.harmony.Patch(method, prefix: new HarmonyLib.HarmonyMethod(self));
 				else
@@ -1268,12 +1336,11 @@ namespace BeatUpClient {
 
 		[Patch(true, typeof(MultiplayerModeSelectionFlowCoordinator), "TransitionDidFinish")]
 		public static void MultiplayerModeSelectionFlowCoordinator_TransitionDidFinish(MultiplayerModeSelectionFlowCoordinator __instance, JoiningLobbyViewController ____joiningLobbyViewController, MultiplayerModeSelectionViewController ____multiplayerModeSelectionViewController) {
-			if(__instance.topViewController == ____joiningLobbyViewController && ((string)HarmonyLib.AccessTools.Field(typeof(JoiningLobbyViewController), "_text").GetValue(____joiningLobbyViewController)) == Polyglot.Localization.Get("LABEL_CHECKING_SERVER_STATUS")) {
-				Plugin.Log?.Debug("MultiplayerModeSelectionFlowCoordinator_TransitionDidFinish()");
+			if(__instance.topViewController == ____joiningLobbyViewController && Reflection.Field<string>(____joiningLobbyViewController, "_text") == Polyglot.Localization.Get("LABEL_CHECKING_SERVER_STATUS")) {
 				____multiplayerModeSelectionViewController.transform.Find("Buttons")?.gameObject.SetActive(false);
-				TMPro.TextMeshProUGUI maintenanceMessageText = (TMPro.TextMeshProUGUI)HarmonyLib.AccessTools.Field(typeof(MultiplayerModeSelectionViewController), "_maintenanceMessageText").GetValue(____multiplayerModeSelectionViewController);
+				TMPro.TextMeshProUGUI maintenanceMessageText = Reflection.Field<TMPro.TextMeshProUGUI>(____multiplayerModeSelectionViewController, "_maintenanceMessageText");
 				maintenanceMessageText.gameObject.SetActive(false);
-				HarmonyLib.AccessTools.Method(typeof(HMUI.FlowCoordinator), "ReplaceTopViewController", new[] {typeof(HMUI.ViewController), typeof(System.Action), typeof(HMUI.ViewController.AnimationType), typeof(HMUI.ViewController.AnimationDirection)}).Invoke(__instance, new object[] {____multiplayerModeSelectionViewController, (System.Action)__instance.ProcessDeeplinkingToLobby, HMUI.ViewController.AnimationType.In, HMUI.ViewController.AnimationDirection.Horizontal});
+				Reflection.Method<HMUI.ViewController, System.Action, HMUI.ViewController.AnimationType, HMUI.ViewController.AnimationDirection>(__instance, "ReplaceTopViewController")(____multiplayerModeSelectionViewController, __instance.ProcessDeeplinkingToLobby, HMUI.ViewController.AnimationType.In, HMUI.ViewController.AnimationDirection.Horizontal);
 			}
 		}
 
@@ -1284,7 +1351,6 @@ namespace BeatUpClient {
 			maintenanceMessageText.richText = true;
 			maintenanceMessageText.transform.localPosition = new UnityEngine.Vector3(0, 15, 0);
 			maintenanceMessageText.gameObject.SetActive(true);
-			Plugin.Log?.Debug($"MultiplayerModeSelectionFlowCoordinator.PresentMasterServerUnavailableErrorDialog(\"{maintenanceMessageText.text}\")");
 			return false;
 		}
 
@@ -1486,9 +1552,8 @@ namespace BeatUpClient {
 			for(uint i = 0; i < Plugin.playerCells.Length; ++i)
 				Plugin.playerCells[i].transform = null;
 			Plugin.Log?.Debug("GameServerPlayersTableView_SetData()");
-			System.Reflection.FieldInfo fi_GameServerPlayerTableCell__localPlayerBackgroundImage = typeof(GameServerPlayerTableCell).GetField("_localPlayerBackgroundImage", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
 			foreach(GameServerPlayerTableCell cell in ____tableView.visibleCells) {
-				UnityEngine.UI.Image background = (UnityEngine.UI.Image)fi_GameServerPlayerTableCell__localPlayerBackgroundImage.GetValue(cell);
+				UnityEngine.UI.Image background = Reflection.Field<UnityEngine.UI.Image>(cell, "_localPlayerBackgroundImage");
 				foreach(UnityEngine.Transform child in background.transform) {
 					if(child.gameObject.name == "BeatUpClient_Progress") {
 						IConnectedPlayer player = sortedPlayers[cell.idx];
@@ -1573,7 +1638,7 @@ namespace BeatUpClient {
 		public bool AllowModchartDownloads = false;
 		[IPA.Config.Stores.Attributes.NonNullable]
 		[IPA.Config.Stores.Attributes.UseConverter(typeof(IPA.Config.Stores.Converters.DictionaryConverter<string>))]
-		public System.Collections.Generic.Dictionary<string, string?> Servers = new System.Collections.Generic.Dictionary<string, string?>(new[] {new System.Collections.Generic.KeyValuePair<string, string?>("master.battletrains.org", null)});
+		public virtual System.Collections.Generic.Dictionary<string, string?> Servers { get; set; } = new System.Collections.Generic.Dictionary<string, string?>(new[] {new System.Collections.Generic.KeyValuePair<string, string?>("master.battletrains.org", null)});
 		public virtual void Changed() {}
 	}
 
@@ -1620,7 +1685,7 @@ namespace BeatUpClient {
 					PacketHandler.LoadProgress.LoadState.Done => new UnityEngine.Color(0.2608696f, 0.7173913f, 0.02173913f, 0.7490196f),
 					_ => backgroundColor,
 				};
-				foreground.enabled = (data.progress > 0);
+				foreground.enabled = (data.progress >= 1);
 				background.enabled = true;
 			}
 		}
@@ -1666,11 +1731,11 @@ namespace BeatUpClient {
 
 		public static BeatmapCharacteristicSegmentedControlController beatmapCharacteristicSegmentedControlController = null!;
 		public static BeatmapDifficultySegmentedControlController beatmapDifficultySegmentedControlController = null!;
-		public static System.Reflection.FieldInfo fi_BeatmapCharacteristicSegmentedControlController_didSelectBeatmapCharacteristicEvent = null!;
-		public static System.Reflection.FieldInfo fi_BeatmapDifficultySegmentedControlController_didSelectDifficultyEvent = null!;
+		public static Reflection.FieldProxy<System.Action<BeatmapCharacteristicSegmentedControlController, BeatmapCharacteristicSO>> didSelectBeatmapCharacteristicEvent;
+		public static Reflection.FieldProxy<System.Action<BeatmapDifficultySegmentedControlController, BeatmapDifficulty>> didSelectDifficultyEvent;
 		public static void UpdateDifficultyUI(PreviewDifficultyBeatmap? beatmapLevel, ILobbyPlayersDataModel playersDataModel = null!) {
-			fi_BeatmapCharacteristicSegmentedControlController_didSelectBeatmapCharacteristicEvent.SetValue(beatmapCharacteristicSegmentedControlController, (System.Action<BeatmapCharacteristicSegmentedControlController, BeatmapCharacteristicSO>)delegate {});
-			fi_BeatmapDifficultySegmentedControlController_didSelectDifficultyEvent.SetValue(beatmapDifficultySegmentedControlController, (System.Action<BeatmapDifficultySegmentedControlController, BeatmapDifficulty>)delegate {});
+			didSelectBeatmapCharacteristicEvent.Set(delegate {});
+			didSelectDifficultyEvent.Set(delegate {});
 			if(beatmapLevel == null) {
 				beatmapCharacteristicSegmentedControlController.transform.parent.gameObject.SetActive(false);
 				beatmapDifficultySegmentedControlController.transform.parent.gameObject.SetActive(false);
@@ -1700,15 +1765,18 @@ namespace BeatUpClient {
 			beatmapDifficultySegmentedControlController.transform.parent.gameObject.SetActive(true);
 		}
 
+		static UnityEngine.UI.Button editServerButton = null!;
 		static void RefreshNetworkConfig() {
+			editServerButton.interactable = false;
 			if(networkConfig is CustomNetworkConfig customNetworkConfig) {
 				MainSystemInit mainSystemInit = UnityEngine.Resources.FindObjectsOfTypeAll<MainSystemInit>()[0];
-				NetworkConfigSO networkConfigPrefab = (NetworkConfigSO)typeof(MainSystemInit).GetField("_networkConfig", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(mainSystemInit);
+				NetworkConfigSO networkConfigPrefab = Reflection.Field<NetworkConfigSO>(mainSystemInit, "_networkConfig");
 				string[] hostname = new[] {networkConfigPrefab.masterServerEndPoint.hostName};
 				int port = networkConfigPrefab.masterServerEndPoint.port;
 				bool forceGameLift = networkConfigPrefab.forceGameLift;
 				string? multiplayerStatusUrl = networkConfigPrefab.multiplayerStatusUrl;
 				if(!string.IsNullOrEmpty(mainSettingsModel.customServerHostName)) {
+					editServerButton.interactable = true;
 					hostname = mainSettingsModel.customServerHostName.value.ToLower().Split(new[] {':'});
 					if(hostname.Length >= 2)
 						int.TryParse(hostname[1], out port);
@@ -1719,14 +1787,137 @@ namespace BeatUpClient {
 				string oldMultiplayerStatusUrl = customNetworkConfig.multiplayerStatusUrl;
 				Plugin.Log?.Debug($"CustomNetworkConfig(customServerHostName=\"{hostname[0]}\", port={port}, forceGameLift={forceGameLift})");
 				typeof(CustomNetworkConfig).GetConstructors()[0].Invoke(customNetworkConfig, new object[] {networkConfigPrefab, hostname[0], port, forceGameLift});
-				if(!string.IsNullOrEmpty(multiplayerStatusUrl))
-					typeof(CustomNetworkConfig).GetField("<multiplayerStatusUrl>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(customNetworkConfig, multiplayerStatusUrl);
+				if(!string.IsNullOrEmpty(multiplayerStatusUrl)) {
+					#pragma warning disable CS8604 // Possible null reference argument
+					Reflection.Field<string>(customNetworkConfig, "<multiplayerStatusUrl>k__BackingField").Set(multiplayerStatusUrl);
+					#pragma warning restore CS8604
+				}
 				if(!forceGameLift)
-					typeof(CustomNetworkConfig).GetField("<serviceEnvironment>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(customNetworkConfig, networkConfigPrefab.serviceEnvironment);
+					Reflection.Field<ServiceEnvironment>(customNetworkConfig, "<serviceEnvironment>k__BackingField").Set(networkConfigPrefab.serviceEnvironment);
 				if(customNetworkConfig.multiplayerStatusUrl != oldMultiplayerStatusUrl)
 					ModelInvalidator.Invalidate();
 			}
 		}
+
+		public class EditServerViewController : HMUI.ViewController {
+			public HMUI.FlowCoordinator? flowCoordinator = null;
+			VRUIControls.VRInputModule vrInputModule = null!;
+			HMUI.InputFieldView editHostnameTextbox = null!;
+			HMUI.InputFieldView editStatusTextbox = null!;
+			HMUI.CurvedTextMeshPro editStatusPlaceholder = null!;
+			HMUI.UIKeyboard keyboard = null!;
+			UnityEngine.UI.Button cancelButton = null!;
+			string? activeKey = null;
+
+			public static EditServerViewController Create(string name, UnityEngine.Transform parent) {
+				UnityEngine.GameObject gameObject = UnityEngine.Object.Instantiate(UnityEngine.Resources.FindObjectsOfTypeAll<ServerCodeEntryViewController>()[0].gameObject, parent);
+				gameObject.name = name;
+				UnityEngine.Object.Destroy(gameObject.GetComponent<ServerCodeEntryViewController>());
+				UnityEngine.Object.Destroy(gameObject.GetComponentInChildren<HMUI.InputFieldView>().gameObject);
+				EditServerViewController viewController = gameObject.AddComponent<EditServerViewController>();
+				viewController.rectTransform.anchorMin = new UnityEngine.Vector2(0f, 0f);
+				viewController.rectTransform.anchorMax = new UnityEngine.Vector2(1f, 1f);
+				viewController.rectTransform.sizeDelta = new UnityEngine.Vector2(0f, 0f);
+				viewController.rectTransform.anchoredPosition = new UnityEngine.Vector2(0f, 0f);
+				viewController.vrInputModule = UnityEngine.Resources.FindObjectsOfTypeAll<VRUIControls.VRInputModule>()[0];
+
+				UnityEngine.Transform Wrapper = gameObject.transform.GetChild(0);
+				UnityEngine.RectTransform editHostname = UI.CreateTextbox(Wrapper, "EditHostname", 1, viewController.RefreshStatusPlaceholder, "BEATUPCLIENT_ENTER_HOSTNAME");
+				UnityEngine.RectTransform editStatus = UI.CreateTextbox(Wrapper, "EditStatus", 2, viewController.RefreshStatusPlaceholder);
+				editHostname.sizeDelta = new UnityEngine.Vector2(80, editHostname.sizeDelta.y);
+				editHostname.localPosition = new UnityEngine.Vector3(0, -1.5f, 0);
+				editStatus.sizeDelta = new UnityEngine.Vector2(80, editStatus.sizeDelta.y);
+				editStatus.localPosition = new UnityEngine.Vector3(0, -8.5f, 0);
+				viewController.editHostnameTextbox = editHostname.GetComponent<HMUI.InputFieldView>();
+				viewController.editStatusTextbox = editStatus.GetComponent<HMUI.InputFieldView>();
+				Reflection.Field<int>(viewController.editHostnameTextbox, "_textLengthLimit").Set(41);
+				Reflection.Field<int>(viewController.editStatusTextbox, "_textLengthLimit").Set(41);
+				viewController.editStatusPlaceholder = Reflection.Field<UnityEngine.GameObject>(viewController.editStatusTextbox, "_placeholderText").value.GetComponent<HMUI.CurvedTextMeshPro>();
+				viewController.cancelButton = Wrapper.Find("Buttons/CancelButton").GetComponent<HMUI.NoTransitionsButton>();
+
+				viewController.keyboard = gameObject.GetComponentInChildren<HMUI.UIKeyboard>();
+				foreach(UnityEngine.RectTransform tr in new[] {viewController.keyboard.transform.parent, viewController.keyboard.transform})
+					tr.sizeDelta = new UnityEngine.Vector2(tr.sizeDelta.x + 7, tr.sizeDelta.y);
+				UnityEngine.Transform Letters = viewController.keyboard.transform.GetChild(0);
+				UI.CreateKey(viewController.keyboard, Letters.GetChild(0).Find("P"), UnityEngine.KeyCode.Slash, '/');
+				UI.CreateKey(viewController.keyboard, Letters.GetChild(1).Find("L"), UnityEngine.KeyCode.Colon, ':');
+				UI.CreateKey(viewController.keyboard, Letters.GetChild(2).Find("Del"), UnityEngine.KeyCode.Period, '.');
+
+				gameObject.SetActive(false);
+				return viewController;
+			}
+
+			void ProcessMousePress(UnityEngine.GameObject gameObject) {
+				HMUI.InputFieldView inputField = gameObject.GetComponent<HMUI.InputFieldView>();
+				if(inputField == editHostnameTextbox) {
+					editStatusTextbox.DeactivateKeyboard(keyboard);
+					editHostnameTextbox.ActivateKeyboard(keyboard);
+				} else if(inputField == editStatusTextbox) {
+					editHostnameTextbox.DeactivateKeyboard(keyboard);
+					editStatusTextbox.ActivateKeyboard(keyboard);
+				}
+			}
+
+			protected override void DidActivate(bool firstActivation, bool addedToHierarchy, bool screenSystemEnabling) {
+				if(firstActivation)
+					base.buttonBinder.AddBinding(cancelButton, () => Dismiss());
+				string? status = null;
+				if(Config.Instance.Servers.TryGetValue(mainSettingsModel.customServerHostName, out status))
+					activeKey = mainSettingsModel.customServerHostName;
+				else
+					activeKey = null;
+				editHostnameTextbox.SetText(activeKey ?? "");
+				editHostnameTextbox.onValueChanged.Invoke(editHostnameTextbox);
+				editStatusTextbox.SetText(status ?? "");
+				editHostnameTextbox.ActivateKeyboard(keyboard);
+				keyboard.okButtonWasPressedEvent += HandleOkButtonWasPressed;
+				vrInputModule.onProcessMousePressEvent += ProcessMousePress;
+			}
+
+			protected override void DidDeactivate(bool removedFromHierarchy, bool screenSystemDisabling) {
+				vrInputModule.onProcessMousePressEvent -= ProcessMousePress;
+				keyboard.okButtonWasPressedEvent -= HandleOkButtonWasPressed;
+				editStatusTextbox.DeactivateKeyboard(keyboard);
+				editHostnameTextbox.DeactivateKeyboard(keyboard);
+				flowCoordinator = null;
+			}
+
+			void RefreshStatusPlaceholder(HMUI.InputFieldView textbox) {
+				string text = editHostnameTextbox.text.Split(new[] {':'})[0];
+				bool enable = !string.IsNullOrEmpty(text);
+				if(enable != editStatusTextbox.gameObject.activeSelf)
+					editStatusTextbox.gameObject.SetActive(enable);
+				if(enable)
+					editStatusPlaceholder.text = "https://status." + text;
+			}
+
+			public void Dismiss(bool immediately = false) {
+				if(flowCoordinator != null)
+					Reflection.Method<HMUI.ViewController, HMUI.ViewController.AnimationDirection, System.Action?, bool>(flowCoordinator, "DismissViewController")(this, HMUI.ViewController.AnimationDirection.Vertical, null, immediately);
+			}
+
+			void HandleOkButtonWasPressed() {
+				if(activeKey != null)
+					Config.Instance.Servers.Remove(activeKey);
+				bool hostnameIsValid = !string.IsNullOrEmpty(editHostnameTextbox.text.Split(new[] {':'})[0]);
+				string hostname = editHostnameTextbox.text;
+				if(hostnameIsValid)
+					Config.Instance.Servers[editHostnameTextbox.text] = editStatusTextbox.text.Length < 1 ? null : editStatusTextbox.text;
+				else
+					hostname = "";
+				if(mainSettingsModel.customServerHostName.value.Equals(hostname))
+					RefreshNetworkConfig();
+				mainSettingsModel.customServerHostName.value = hostname;
+				RefreshDropdown();
+				Dismiss();
+			}
+		}
+
+		public static EditServerViewController editServerViewController = null!;
+
+		static UI.DropdownSetting serverDropdown = null!;
+		static void RefreshDropdown() =>
+			serverDropdown.SetOptions(Config.Instance.Servers.Keys);
 
 		public static void OnSceneLoaded(UnityEngine.SceneManagement.Scene scene, UnityEngine.SceneManagement.LoadSceneMode mode) {
 			if(scene.name != "MainMenu")
@@ -1734,19 +1925,39 @@ namespace BeatUpClient {
 			Log?.Debug("load MainMenu");
 			if(networkConfig is CustomNetworkConfig) {
 				UnityEngine.Transform CreateServerFormView = UnityEngine.Resources.FindObjectsOfTypeAll<CreateServerFormController>()[0].transform;
-				UI.CreateValuePicker(CreateServerFormView, "CountdownDuration", "Countdown Duration", () => ref Config.Instance.CountdownDuration, new byte[] {(byte)(Config.Instance.CountdownDuration * 4), 0, 12, 20, 32, 40, 60});
-				UI.CreateToggle(CreateServerFormView, "SkipResults", "Skip Results Pyramid", () => ref Config.Instance.SkipResults);
-				UI.CreateToggle(CreateServerFormView, "PerPlayerDifficulty", "Per-Player Difficulty", () => ref Config.Instance.PerPlayerDifficulty);
-				UI.CreateToggle(CreateServerFormView, "PerPlayerModifiers", "Per-Player Modifiers", () => ref Config.Instance.PerPlayerModifiers);
+				UI.CreateValuePicker(CreateServerFormView, "CountdownDuration", "BEATUPCLIENT_COUNTDOWN_DURATION", () => ref Config.Instance.CountdownDuration, new byte[] {(byte)(Config.Instance.CountdownDuration * 4), 0, 12, 20, 32, 40, 60});
+				UI.CreateToggle(CreateServerFormView, "SkipResults", "BEATUPCLIENT_SKIP_RESULTS_PYRAMID", () => ref Config.Instance.SkipResults);
+				UI.CreateToggle(CreateServerFormView, "PerPlayerDifficulty", "BEATUPCLIENT_PER_PLAYER_DIFFICULTY", () => ref Config.Instance.PerPlayerDifficulty);
+				UI.CreateToggle(CreateServerFormView, "PerPlayerModifiers", "BEATUPCLIENT_PER_PLAYER_MODIFIERS", () => ref Config.Instance.PerPlayerModifiers);
 				CreateServerFormView.parent.gameObject.GetComponent<UnityEngine.UI.VerticalLayoutGroup>().enabled = true;
 				CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.VerticalLayoutGroup>().enabled = true;
 				CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.ContentSizeFitter>().enabled = true;
 				CreateServerFormView.parent.parent.gameObject.SetActive(true);
 
-				TMPro.TextMeshProUGUI CustomServerEndPointText = (TMPro.TextMeshProUGUI)typeof(MultiplayerModeSelectionViewController).GetField("_customServerEndPointText", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerModeSelectionViewController>()[0]);
-				UnityEngine.Transform dropdown = UI.CreateSimpleDropdown(CustomServerEndPointText.transform, "Server", mainSettingsModel.customServerHostName, System.Linq.Enumerable.ToArray(Config.Instance.Servers.Keys));
-				dropdown.localPosition = new UnityEngine.Vector3(0, 39.5f, 0);
-				CustomServerEndPointText.enabled = false;
+				MainFlowCoordinator mainFlowCoordinator = UnityEngine.Resources.FindObjectsOfTypeAll<MainFlowCoordinator>()[0];
+				MultiplayerModeSelectionViewController multiplayerModeSelectionViewController = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerModeSelectionViewController>()[0];
+				TMPro.TextMeshProUGUI customServerEndPointText = Reflection.Field<TMPro.TextMeshProUGUI>(multiplayerModeSelectionViewController, "_customServerEndPointText");
+				UnityEngine.UI.Button editColorSchemeButton = Reflection.Field<UnityEngine.UI.Button>(UnityEngine.Resources.FindObjectsOfTypeAll<ColorsOverrideSettingsPanelController>()[0], "_editColorSchemeButton");
+				customServerEndPointText.enabled = false;
+				UnityEngine.RectTransform server = UI.CreateSimpleDropdown(customServerEndPointText.transform, "Server", mainSettingsModel.customServerHostName, Config.Instance.Servers.Keys);
+				server.sizeDelta = new UnityEngine.Vector2(80, server.sizeDelta.y);
+				server.localPosition = new UnityEngine.Vector3(0, 39.5f, 0);
+				foreach(UnityEngine.Transform tr in server)
+					tr.localPosition = new UnityEngine.Vector3(0, 0, 0);
+				serverDropdown = server.GetComponent<UI.DropdownSetting>();
+				UnityEngine.RectTransform editButton = UI.CreateButtonFrom(editColorSchemeButton.gameObject, customServerEndPointText.transform, "EditServer", () => {
+					if(mainFlowCoordinator.childFlowCoordinator is MultiplayerModeSelectionFlowCoordinator multiplayerModeSelectionFlowCoordinator) {
+						editServerViewController.flowCoordinator = multiplayerModeSelectionFlowCoordinator;
+						Reflection.Method<HMUI.ViewController, System.Action?, HMUI.ViewController.AnimationDirection, bool>(multiplayerModeSelectionFlowCoordinator, "PresentViewController")(editServerViewController, null, HMUI.ViewController.AnimationDirection.Vertical, false);
+						Reflection.Method<string, HMUI.ViewController.AnimationType>(multiplayerModeSelectionFlowCoordinator, "SetTitle")(Polyglot.Localization.Get("BEATUPCLIENT_EDIT_SERVER"), HMUI.ViewController.AnimationType.In);
+						Reflection.Field<HMUI.ScreenSystem>(multiplayerModeSelectionFlowCoordinator, "_screenSystem").value.SetBackButton(false, true);
+					}
+				});
+				editButton.localPosition = new UnityEngine.Vector3(52, 39.5f, 0);
+				editServerButton = editButton.GetComponent<UnityEngine.UI.Button>();
+				if(editServerViewController == null)
+					editServerViewController = EditServerViewController.Create("BeatUpClient_EditServerView", multiplayerModeSelectionViewController.transform.parent);
+
 				mainSettingsModel.customServerHostName.didChangeEvent -= RefreshNetworkConfig;
 				mainSettingsModel.customServerHostName.didChangeEvent += RefreshNetworkConfig;
 				RefreshNetworkConfig();
@@ -1754,12 +1965,14 @@ namespace BeatUpClient {
 
 			StandardLevelDetailView LevelDetail = UnityEngine.Resources.FindObjectsOfTypeAll<StandardLevelDetailView>()[0];
 			UnityEngine.Transform LobbySetupViewController_Wrapper = UnityEngine.Resources.FindObjectsOfTypeAll<LobbySetupViewController>()[0].transform.GetChild(0);
-			UnityEngine.Transform beatmapCharacteristic = UI.CreateClone(((BeatmapCharacteristicSegmentedControlController)typeof(StandardLevelDetailView).GetField("_beatmapCharacteristicSegmentedControlController", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(LevelDetail)).transform.parent.gameObject, LobbySetupViewController_Wrapper, "BeatmapCharacteristic", 2);
-			UnityEngine.Transform beatmapDifficulty = UI.CreateClone(((BeatmapDifficultySegmentedControlController)typeof(StandardLevelDetailView).GetField("_beatmapDifficultySegmentedControlController", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(LevelDetail)).transform.parent.gameObject, LobbySetupViewController_Wrapper, "BeatmapDifficulty", 3);
+			UnityEngine.RectTransform beatmapCharacteristic = UI.CreateClone(((BeatmapCharacteristicSegmentedControlController)typeof(StandardLevelDetailView).GetField("_beatmapCharacteristicSegmentedControlController", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(LevelDetail)).transform.parent.gameObject, LobbySetupViewController_Wrapper, "BeatmapCharacteristic", 2);
+			beatmapCharacteristic.sizeDelta = new UnityEngine.Vector2(90, beatmapCharacteristic.sizeDelta.y);
+			UnityEngine.RectTransform beatmapDifficulty = UI.CreateClone(((BeatmapDifficultySegmentedControlController)typeof(StandardLevelDetailView).GetField("_beatmapDifficultySegmentedControlController", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(LevelDetail)).transform.parent.gameObject, LobbySetupViewController_Wrapper, "BeatmapDifficulty", 3);
+			beatmapDifficulty.sizeDelta = new UnityEngine.Vector2(90, beatmapDifficulty.sizeDelta.y);
 			beatmapCharacteristicSegmentedControlController = beatmapCharacteristic.GetChild(1).gameObject.GetComponent<BeatmapCharacteristicSegmentedControlController>();
 			beatmapDifficultySegmentedControlController = beatmapDifficulty.GetChild(1).gameObject.GetComponent<BeatmapDifficultySegmentedControlController>();
-			fi_BeatmapCharacteristicSegmentedControlController_didSelectBeatmapCharacteristicEvent = typeof(BeatmapCharacteristicSegmentedControlController).GetField(typeof(BeatmapCharacteristicSegmentedControlController).GetEvent("didSelectBeatmapCharacteristicEvent").Name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-			fi_BeatmapDifficultySegmentedControlController_didSelectDifficultyEvent = typeof(BeatmapDifficultySegmentedControlController).GetField(typeof(BeatmapDifficultySegmentedControlController).GetEvent("didSelectDifficultyEvent").Name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+			didSelectBeatmapCharacteristicEvent = Reflection.Field<System.Action<BeatmapCharacteristicSegmentedControlController, BeatmapCharacteristicSO>>(beatmapCharacteristicSegmentedControlController, typeof(BeatmapCharacteristicSegmentedControlController).GetEvent("didSelectBeatmapCharacteristicEvent").Name);
+			didSelectDifficultyEvent = Reflection.Field<System.Action<BeatmapDifficultySegmentedControlController, BeatmapDifficulty>>(beatmapDifficultySegmentedControlController, typeof(BeatmapDifficultySegmentedControlController).GetEvent("didSelectDifficultyEvent").Name);
 		}
 
 		[IPA.Init]
@@ -1771,11 +1984,22 @@ namespace BeatUpClient {
 		}
 		void OnEnable_MpCore() {
 			DiJack.Suppress(typeof(MultiplayerCore.Patchers.CustomLevelsPatcher));
+			DiJack.Suppress(typeof(MultiplayerCore.Patchers.ModeSelectionPatcher));
 			DiJack.Register(typeof(MpLevelLoader));
 			DiJack.Register(typeof(MpPlayersDataModel));
 		}
 		[IPA.OnEnable]
 		public void OnEnable() {
+			string localization = "Polyglot\t100\n" +
+				"BEATUPCLIENT_COUNTDOWN_DURATION\t\tCountdown Duration\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
+				"BEATUPCLIENT_SKIP_RESULTS_PYRAMID\t\tSkip Results Pyramid\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
+				"BEATUPCLIENT_PER_PLAYER_DIFFICULTY\t\tPer-Player Difficulty\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
+				"BEATUPCLIENT_PER_PLAYER_MODIFIERS\t\tPer-Player Modifiers\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
+				"BEATUPCLIENT_ADD_SERVER\t\tAdd Server\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
+				"BEATUPCLIENT_EDIT_SERVER\t\tEdit Server\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
+				"BEATUPCLIENT_ENTER_HOSTNAME\t\tEnter Hostname\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n";
+			HarmonyLib.AccessTools.Method(typeof(Polyglot.LocalizationImporter), "Import").Invoke(null, new object[] {localization, Polyglot.GoogleDriveDownloadFormat.TSV});
+
 			haveSongCore = (IPA.Loader.PluginManager.GetPluginFromId("SongCore") != null);
 			haveMpCore = (IPA.Loader.PluginManager.GetPluginFromId("MultiplayerCore") != null);
 			Log?.Debug($"haveSongCore={haveSongCore}");
