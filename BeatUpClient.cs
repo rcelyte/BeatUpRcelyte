@@ -1070,11 +1070,10 @@ namespace BeatUpClient {
 		static event System.Action? onInvalidate;
 		public static void Invalidate() {
 			onInvalidate?.Invoke();
-			MainFlowCoordinator mainFlowCoordinator = UnityEngine.Resources.FindObjectsOfTypeAll<MainFlowCoordinator>()[0];
-			if(mainFlowCoordinator.childFlowCoordinator is MultiplayerModeSelectionFlowCoordinator multiplayerModeSelectionFlowCoordinator) {
+			if(Plugin.mainFlowCoordinator.childFlowCoordinator is MultiplayerModeSelectionFlowCoordinator multiplayerModeSelectionFlowCoordinator) {
 				Plugin.editServerViewController.Dismiss(true);
-				mainFlowCoordinator.DismissFlowCoordinator(multiplayerModeSelectionFlowCoordinator, HMUI.ViewController.AnimationDirection.Horizontal, (System.Action)delegate() {
-					mainFlowCoordinator.PresentMultiplayerModeSelectionFlowCoordinatorWithDisclaimerAndAvatarCreator();
+				Plugin.mainFlowCoordinator.DismissFlowCoordinator(multiplayerModeSelectionFlowCoordinator, HMUI.ViewController.AnimationDirection.Horizontal, (System.Action)delegate() {
+					Plugin.mainFlowCoordinator.PresentMultiplayerModeSelectionFlowCoordinatorWithDisclaimerAndAvatarCreator();
 				}, true);
 			}
 		}
@@ -1303,22 +1302,17 @@ namespace BeatUpClient {
 				__result = AuthWrapper(__result, ____platform, ____userId, ____userName);
 		}
 
-		[Patch(true, typeof(MultiplayerModeSelectionFlowCoordinator), "TransitionDidFinish")]
-		public static void MultiplayerModeSelectionFlowCoordinator_TransitionDidFinish(MultiplayerModeSelectionFlowCoordinator __instance, JoiningLobbyViewController ____joiningLobbyViewController, MultiplayerModeSelectionViewController ____multiplayerModeSelectionViewController) {
-			if(__instance.topViewController == ____joiningLobbyViewController && ____joiningLobbyViewController._text == Polyglot.Localization.Get("LABEL_CHECKING_SERVER_STATUS")) {
-				____multiplayerModeSelectionViewController.transform.Find("Buttons")?.gameObject.SetActive(false);
-				TMPro.TextMeshProUGUI maintenanceMessageText = ____multiplayerModeSelectionViewController._maintenanceMessageText;
-				maintenanceMessageText.gameObject.SetActive(false);
-				__instance.ReplaceTopViewController(____multiplayerModeSelectionViewController, __instance.ProcessDeeplinkingToLobby, HMUI.ViewController.AnimationType.In, HMUI.ViewController.AnimationDirection.Horizontal);
-			}
-		}
-
 		[Patch(true, typeof(MultiplayerModeSelectionFlowCoordinator), nameof(MultiplayerModeSelectionFlowCoordinator.PresentMasterServerUnavailableErrorDialog))]
-		public static bool MultiplayerModeSelectionFlowCoordinator_PresentMasterServerUnavailableErrorDialog(MultiplayerModeSelectionViewController ____multiplayerModeSelectionViewController, MultiplayerUnavailableReason reason, long? maintenanceWindowEndTime, string? remoteLocalizedMessage) {
+		public static bool MultiplayerModeSelectionFlowCoordinator_PresentMasterServerUnavailableErrorDialog(MultiplayerModeSelectionFlowCoordinator __instance, MultiplayerModeSelectionViewController ____multiplayerModeSelectionViewController, MultiplayerUnavailableReason reason, long? maintenanceWindowEndTime, string? remoteLocalizedMessage) {
+			if(Plugin.mainFlowCoordinator.childFlowCoordinator != __instance)
+				return false;
+			____multiplayerModeSelectionViewController.transform.Find("Buttons")?.gameObject.SetActive(false);
 			____multiplayerModeSelectionViewController._maintenanceMessageText.text = remoteLocalizedMessage ?? ((reason == MultiplayerUnavailableReason.MaintenanceMode) ? Polyglot.Localization.GetFormat(MultiplayerUnavailableReasonMethods.LocalizedKey(reason), (TimeExtensions.AsUnixTime(maintenanceWindowEndTime.GetValueOrDefault()) - System.DateTime.UtcNow).ToString("h':'mm")) : (Polyglot.Localization.Get(MultiplayerUnavailableReasonMethods.LocalizedKey(reason)) + " (" + MultiplayerUnavailableReasonMethods.ErrorCode(reason) + ")"));
 			____multiplayerModeSelectionViewController._maintenanceMessageText.richText = true;
 			____multiplayerModeSelectionViewController._maintenanceMessageText.transform.localPosition = new UnityEngine.Vector3(0, 15, 0);
 			____multiplayerModeSelectionViewController._maintenanceMessageText.gameObject.SetActive(true);
+			__instance.ReplaceTopViewController(____multiplayerModeSelectionViewController, __instance.ProcessDeeplinkingToLobby, HMUI.ViewController.AnimationType.In, HMUI.ViewController.AnimationDirection.Horizontal);
+			__instance.SetTitle(Polyglot.Localization.Get("LABEL_CONNECTION_ERROR"), HMUI.ViewController.AnimationType.In);
 			return false;
 		}
 
@@ -1657,6 +1651,7 @@ namespace BeatUpClient {
 		public static byte[] uploadHash = null!;
 		public static MainSettingsModelSO mainSettingsModel = null!;
 		public static INetworkConfig? networkConfig = null;
+		public static MainFlowCoordinator mainFlowCoordinator = null!;
 		public static PlayerCell[] playerCells = null!;
 		public static bool haveSongCore = false;
 		public static bool haveMpCore = false;
@@ -1849,7 +1844,7 @@ namespace BeatUpClient {
 			}
 
 			public void TryPresent(HMUI.FlowCoordinator flowCoordinator, bool edit) {
-				if(flowCoordinator is MultiplayerModeSelectionFlowCoordinator multiplayerModeSelectionFlowCoordinator) {
+				if(this.flowCoordinator == null && flowCoordinator is MultiplayerModeSelectionFlowCoordinator multiplayerModeSelectionFlowCoordinator) {
 					this.flowCoordinator = multiplayerModeSelectionFlowCoordinator;
 					this.edit = edit;
 					multiplayerModeSelectionFlowCoordinator.PresentViewController(editServerViewController, null, HMUI.ViewController.AnimationDirection.Vertical, false);
@@ -1901,7 +1896,7 @@ namespace BeatUpClient {
 				CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.ContentSizeFitter>().enabled = true;
 				CreateServerFormView.parent.parent.gameObject.SetActive(true);
 
-				MainFlowCoordinator mainFlowCoordinator = UnityEngine.Resources.FindObjectsOfTypeAll<MainFlowCoordinator>()[0];
+				mainFlowCoordinator = UnityEngine.Resources.FindObjectsOfTypeAll<MainFlowCoordinator>()[0];
 				MultiplayerModeSelectionViewController multiplayerModeSelectionViewController = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerModeSelectionViewController>()[0];
 				TMPro.TextMeshProUGUI customServerEndPointText = multiplayerModeSelectionViewController._customServerEndPointText;
 				UnityEngine.UI.Button editColorSchemeButton = UnityEngine.Resources.FindObjectsOfTypeAll<ColorsOverrideSettingsPanelController>()[0]._editColorSchemeButton;
