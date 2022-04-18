@@ -1750,7 +1750,8 @@ namespace BeatUpClient {
 		}
 
 		public class EditServerViewController : HMUI.ViewController {
-			public HMUI.FlowCoordinator? flowCoordinator = null;
+			HMUI.FlowCoordinator? flowCoordinator = null;
+			bool edit = false;
 			VRUIControls.VRInputModule vrInputModule = null!;
 			HMUI.InputFieldView editHostnameTextbox = null!;
 			HMUI.InputFieldView editStatusTextbox = null!;
@@ -1802,9 +1803,11 @@ namespace BeatUpClient {
 				if(inputField == editHostnameTextbox) {
 					editStatusTextbox.DeactivateKeyboard(keyboard);
 					editHostnameTextbox.ActivateKeyboard(keyboard);
+					editHostnameTextbox.UpdateClearButton();
 				} else if(inputField == editStatusTextbox) {
 					editHostnameTextbox.DeactivateKeyboard(keyboard);
 					editStatusTextbox.ActivateKeyboard(keyboard);
+					editStatusTextbox.UpdateClearButton();
 				}
 			}
 
@@ -1812,7 +1815,7 @@ namespace BeatUpClient {
 				if(firstActivation)
 					base.buttonBinder.AddBinding(cancelButton, () => Dismiss());
 				string? status = null;
-				if(Config.Instance.Servers.TryGetValue(mainSettingsModel.customServerHostName, out status))
+				if(edit && Config.Instance.Servers.TryGetValue(mainSettingsModel.customServerHostName, out status))
 					activeKey = mainSettingsModel.customServerHostName;
 				else
 					activeKey = null;
@@ -1820,6 +1823,7 @@ namespace BeatUpClient {
 				editHostnameTextbox.onValueChanged.Invoke(editHostnameTextbox);
 				editStatusTextbox.SetText(status ?? "");
 				editHostnameTextbox.ActivateKeyboard(keyboard);
+				editHostnameTextbox.UpdateClearButton();
 				keyboard.okButtonWasPressedEvent += HandleOkButtonWasPressed;
 				vrInputModule.onProcessMousePressEvent += ProcessMousePress;
 			}
@@ -1835,10 +1839,23 @@ namespace BeatUpClient {
 			void RefreshStatusPlaceholder(HMUI.InputFieldView textbox) {
 				string text = editHostnameTextbox.text.Split(new[] {':'})[0];
 				bool enable = !string.IsNullOrEmpty(text);
-				if(enable != editStatusTextbox.gameObject.activeSelf)
+				if(enable != editStatusTextbox.gameObject.activeSelf) {
 					editStatusTextbox.gameObject.SetActive(enable);
+					if(!enable)
+						editStatusTextbox.DeactivateKeyboard(keyboard);
+				}
 				if(enable)
 					editStatusPlaceholder.text = "https://status." + text;
+			}
+
+			public void TryPresent(HMUI.FlowCoordinator flowCoordinator, bool edit) {
+				if(flowCoordinator is MultiplayerModeSelectionFlowCoordinator multiplayerModeSelectionFlowCoordinator) {
+					this.flowCoordinator = multiplayerModeSelectionFlowCoordinator;
+					this.edit = edit;
+					multiplayerModeSelectionFlowCoordinator.PresentViewController(editServerViewController, null, HMUI.ViewController.AnimationDirection.Vertical, false);
+					multiplayerModeSelectionFlowCoordinator.SetTitle(Polyglot.Localization.Get(edit ? "BEATUPCLIENT_EDIT_SERVER" : "BEATUPCLIENT_ADD_SERVER"), HMUI.ViewController.AnimationType.In);
+					multiplayerModeSelectionFlowCoordinator._screenSystem.SetBackButton(false, true);
+				}
 			}
 
 			public void Dismiss(bool immediately = false) {
@@ -1895,14 +1912,12 @@ namespace BeatUpClient {
 				foreach(UnityEngine.Transform tr in server)
 					tr.localPosition = new UnityEngine.Vector3(0, 0, 0);
 				serverDropdown = server.GetComponent<UI.DropdownSetting>();
-				UnityEngine.RectTransform editButton = UI.CreateButtonFrom(editColorSchemeButton.gameObject, customServerEndPointText.transform, "EditServer", () => {
-					if(mainFlowCoordinator.childFlowCoordinator is MultiplayerModeSelectionFlowCoordinator multiplayerModeSelectionFlowCoordinator) {
-						editServerViewController.flowCoordinator = multiplayerModeSelectionFlowCoordinator;
-						multiplayerModeSelectionFlowCoordinator.PresentViewController(editServerViewController, null, HMUI.ViewController.AnimationDirection.Vertical, false);
-						multiplayerModeSelectionFlowCoordinator.SetTitle(Polyglot.Localization.Get("BEATUPCLIENT_EDIT_SERVER"), HMUI.ViewController.AnimationType.In);
-						multiplayerModeSelectionFlowCoordinator._screenSystem.SetBackButton(false, true);
-					}
-				});
+				UnityEngine.RectTransform addButton = UI.CreateButtonFrom(editColorSchemeButton.gameObject, customServerEndPointText.transform, "AddServer", () =>
+					editServerViewController.TryPresent(mainFlowCoordinator.childFlowCoordinator, false));
+				addButton.localPosition = new UnityEngine.Vector3(-40, 39.5f, 0);
+				addButton.Find("Icon").GetComponent<HMUI.ImageView>().sprite = System.Linq.Enumerable.First(UnityEngine.Resources.FindObjectsOfTypeAll<UnityEngine.Sprite>(), sprite => sprite.name == "AddIcon");
+				UnityEngine.RectTransform editButton = UI.CreateButtonFrom(editColorSchemeButton.gameObject, customServerEndPointText.transform, "EditServer", () =>
+					editServerViewController.TryPresent(mainFlowCoordinator.childFlowCoordinator, true));
 				editButton.localPosition = new UnityEngine.Vector3(52, 39.5f, 0);
 				editServerButton = editButton.GetComponent<UnityEngine.UI.Button>();
 				if(editServerViewController == null)
