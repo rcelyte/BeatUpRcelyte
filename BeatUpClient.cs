@@ -964,12 +964,12 @@ namespace BeatUpClient {
 				}
 				multiplayerSessionManager.Send(PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex]);
 			}
-			Plugin.UpdateDifficultyUI(beatmapLevel, this);
+			Plugin.lobbyDifficultyPanel.Update(beatmapLevel, SetLocalPlayerBeatmapLevel);
 			base.SetLocalPlayerBeatmapLevel(beatmapLevel);
 		}
 
 		public override void ClearLocalPlayerBeatmapLevel() {
-			Plugin.UpdateDifficultyUI(null);
+			Plugin.lobbyDifficultyPanel.Clear();
 			base.ClearLocalPlayerBeatmapLevel();
 		}
 	}
@@ -1049,7 +1049,7 @@ namespace BeatUpClient {
 				}
 				multiplayerSessionManager.Send(PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex]);
 			}
-			Plugin.UpdateDifficultyUI(beatmapLevel, this);
+			Plugin.lobbyDifficultyPanel.Update(beatmapLevel, SetLocalPlayerBeatmapLevel);
 			if(beatmapLevel == null) {
 				// `base.base` considered harmful; prefer function pointer hacks
 				System.IntPtr func = typeof(LobbyPlayersDataModel).GetMethod("SetLocalPlayerBeatmapLevel").MethodHandle.GetFunctionPointer();
@@ -1061,7 +1061,7 @@ namespace BeatUpClient {
 		}
 
 		public override void ClearLocalPlayerBeatmapLevel() {
-			Plugin.UpdateDifficultyUI(null);
+			Plugin.lobbyDifficultyPanel.Clear();
 			base.ClearLocalPlayerBeatmapLevel();
 		}
 	}
@@ -1248,6 +1248,92 @@ namespace BeatUpClient {
 		}
 	}
 
+	public class DifficultyPanel {
+		static UnityEngine.GameObject characteristicTemplate = null!;
+		static UnityEngine.GameObject difficultyTemplate = null!;
+		BeatmapCharacteristicSegmentedControlController beatmapCharacteristicSegmentedControlController;
+		BeatmapDifficultySegmentedControlController beatmapDifficultySegmentedControlController;
+		Reflection.FieldProxy<System.Action<BeatmapCharacteristicSegmentedControlController, BeatmapCharacteristicSO>> didSelectBeatmapCharacteristicEvent;
+		Reflection.FieldProxy<System.Action<BeatmapDifficultySegmentedControlController, BeatmapDifficulty>> didSelectDifficultyEvent;
+		public UnityEngine.RectTransform beatmapCharacteristic => (UnityEngine.RectTransform)beatmapCharacteristicSegmentedControlController.transform.parent;
+		public UnityEngine.RectTransform beatmapDifficulty => (UnityEngine.RectTransform)beatmapDifficultySegmentedControlController.transform.parent;
+
+		static UnityEngine.GameObject Clone(UnityEngine.GameObject template) {
+			UnityEngine.GameObject gameObject = UnityEngine.Object.Instantiate(template);
+			UnityEngine.RectTransform tr = (UnityEngine.RectTransform)gameObject.transform;
+			UnityEngine.RectTransform bg = (UnityEngine.RectTransform)tr.Find("BG");
+			bg.pivot = tr.pivot = new UnityEngine.Vector2(.5f, 1);
+			bg.localPosition = new UnityEngine.Vector3(0, 0, 0);
+			UnityEngine.Object.DontDestroyOnLoad(gameObject);
+			return gameObject;
+		}
+		public static void Init() {
+			StandardLevelDetailView LevelDetail = UnityEngine.Resources.FindObjectsOfTypeAll<StandardLevelDetailView>()[0];
+			characteristicTemplate = Clone(LevelDetail._beatmapCharacteristicSegmentedControlController.transform.parent.gameObject);
+			difficultyTemplate = Clone(LevelDetail._beatmapDifficultySegmentedControlController.transform.parent.gameObject);
+		}
+		static void ChangeBackground(UnityEngine.RectTransform target, HMUI.ImageView newBackground) {
+			HMUI.ImageView bg = target.Find("BG").GetComponent<HMUI.ImageView>();
+			bg._skew = newBackground._skew;
+			bg.color = newBackground.color;
+			bg.color0 = newBackground.color0;
+			bg.color1 = newBackground.color1;
+			bg._flipGradientColors = newBackground._flipGradientColors;
+		}
+		public DifficultyPanel(UnityEngine.Transform parent, int index, float width, HMUI.ImageView? background = null) {
+			UnityEngine.RectTransform beatmapCharacteristic = UI.CreateClone(characteristicTemplate, parent, "BeatmapCharacteristic", index);
+			UnityEngine.RectTransform beatmapDifficulty = UI.CreateClone(difficultyTemplate, parent, "BeatmapDifficulty", index + 1);
+			if(background != null) {
+				ChangeBackground(beatmapCharacteristic, background);
+				ChangeBackground(beatmapDifficulty, background);
+			}
+			beatmapCharacteristic.sizeDelta = new UnityEngine.Vector2(width, beatmapCharacteristic.sizeDelta.y);
+			beatmapDifficulty.sizeDelta = new UnityEngine.Vector2(width, beatmapDifficulty.sizeDelta.y);
+			beatmapCharacteristicSegmentedControlController = beatmapCharacteristic.GetComponentInChildren<BeatmapCharacteristicSegmentedControlController>();
+			beatmapDifficultySegmentedControlController = beatmapDifficulty.GetComponentInChildren<BeatmapDifficultySegmentedControlController>();
+			didSelectBeatmapCharacteristicEvent = Reflection.Field<System.Action<BeatmapCharacteristicSegmentedControlController, BeatmapCharacteristicSO>>(beatmapCharacteristicSegmentedControlController, typeof(BeatmapCharacteristicSegmentedControlController).GetEvent("didSelectBeatmapCharacteristicEvent").Name);
+			didSelectDifficultyEvent = Reflection.Field<System.Action<BeatmapDifficultySegmentedControlController, BeatmapDifficulty>>(beatmapDifficultySegmentedControlController, typeof(BeatmapDifficultySegmentedControlController).GetEvent("didSelectDifficultyEvent").Name);
+			beatmapCharacteristicSegmentedControlController._segmentedControl._container = new Zenject.DiContainer();
+			beatmapCharacteristicSegmentedControlController._segmentedControl._container.Bind<HMUI.HoverHintController>().FromInstance(UnityEngine.Resources.FindObjectsOfTypeAll<HMUI.HoverHintController>()[0]).AsSingle();
+			beatmapDifficultySegmentedControlController._difficultySegmentedControl._container = new Zenject.DiContainer();
+		}
+		public void Clear() {
+			beatmapCharacteristicSegmentedControlController.transform.parent.gameObject.SetActive(false);
+			beatmapDifficultySegmentedControlController.transform.parent.gameObject.SetActive(false);
+		}
+		public void Update(PreviewDifficultyBeatmap? beatmapLevel, System.Action<PreviewDifficultyBeatmap> onChange) {
+			didSelectBeatmapCharacteristicEvent.Set(delegate {});
+			didSelectDifficultyEvent.Set(delegate {});
+			if(beatmapLevel == null) {
+				Clear();
+				return;
+			}
+			BeatmapDifficulty[] beatmapDifficulties = null!;
+			beatmapCharacteristicSegmentedControlController.SetData(System.Linq.Enumerable.ToList(System.Linq.Enumerable.Select(beatmapLevel.beatmapLevel.previewDifficultyBeatmapSets, set => {
+				if(set.beatmapCharacteristic == beatmapLevel.beatmapCharacteristic) {
+					beatmapDifficulties = set.beatmapDifficulties;
+					beatmapDifficultySegmentedControlController.SetData(System.Linq.Enumerable.ToList(System.Linq.Enumerable.Select(set.beatmapDifficulties, diff => (IDifficultyBeatmap)new CustomDifficultyBeatmap(null, null, diff, 0, 0, 0, 0, null, null))), beatmapLevel.beatmapDifficulty);
+				}
+				return (IDifficultyBeatmapSet)new CustomDifficultyBeatmapSet(set.beatmapCharacteristic);
+			})), beatmapLevel.beatmapCharacteristic);
+			beatmapCharacteristicSegmentedControlController.didSelectBeatmapCharacteristicEvent += delegate(BeatmapCharacteristicSegmentedControlController controller, BeatmapCharacteristicSO beatmapCharacteristic) {
+				PreviewDifficultyBeatmapSet set = System.Linq.Enumerable.First(beatmapLevel.beatmapLevel.previewDifficultyBeatmapSets, set => set.beatmapCharacteristic == beatmapCharacteristic);
+				BeatmapDifficulty closestDifficulty = set.beatmapDifficulties[0];
+				foreach(BeatmapDifficulty difficulty in set.beatmapDifficulties) {
+					if(beatmapLevel.beatmapDifficulty < difficulty)
+						break;
+					closestDifficulty = difficulty;
+				}
+				onChange(new PreviewDifficultyBeatmap(beatmapLevel.beatmapLevel, beatmapCharacteristic, closestDifficulty));
+			};
+			beatmapDifficultySegmentedControlController.didSelectDifficultyEvent += delegate(BeatmapDifficultySegmentedControlController controller, BeatmapDifficulty difficulty) {
+				onChange(new PreviewDifficultyBeatmap(beatmapLevel.beatmapLevel, beatmapLevel.beatmapCharacteristic, difficulty));
+			};
+			beatmapCharacteristicSegmentedControlController.transform.parent.gameObject.SetActive(true);
+			beatmapDifficultySegmentedControlController.transform.parent.gameObject.SetActive(true);
+		}
+	}
+
 	public static class Patches {
 		[System.AttributeUsage(System.AttributeTargets.Method, AllowMultiple = true)]
 		public class PatchAttribute : System.Attribute {
@@ -1337,7 +1423,7 @@ namespace BeatUpClient {
 			PreviewProvider.Init(configuration.maxPlayerCount);
 			System.Array.Fill(PreviewProvider.playerPreviews, new PacketHandler.RecommendPreview());
 			Plugin.playerCells = new Plugin.PlayerCell[configuration.maxPlayerCount];
-			Plugin.UpdateDifficultyUI(null);
+			Plugin.lobbyDifficultyPanel.Clear();
 		}
 
 		[Patch(false, typeof(MultiplayerLevelSelectionFlowCoordinator), "get_enableCustomLevels")]
@@ -1361,13 +1447,14 @@ namespace BeatUpClient {
 				perPlayerModifiers = Config.Instance.PerPlayerModifiers,
 			}.Serialize(sub);
 			writer.PutVarUInt((uint)sub.Length);
-			writer.Put("BeatUpClient");
+			writer.Put("BeatUpClient beta0");
 			writer.Put(sub.CopyData());
 			Plugin.windowSize = 64;
 			Plugin.directDownloads = false;
 			Plugin.expectMetadata = false;
 			Plugin.playerTiers.Clear();
 			Plugin.skipResults = false;
+			Plugin.perPlayerDifficulty = false;
 		}
 
 		[Patch(true, typeof(LiteNetLib.NetConnectAcceptPacket), "FromData")]
@@ -1376,12 +1463,13 @@ namespace BeatUpClient {
 				packet.Size = LiteNetLib.NetConnectAcceptPacket.Size;
 				BeatUpConnectInfo info = new BeatUpConnectInfo();
 				info.Deserialize(new LiteNetLib.Utils.NetDataReader(packet.RawData, packet.Size));
-				Plugin.skipResults = info.skipResults;
 				if(info.windowSize < 32 || info.windowSize > 512)
 					return;
 				Plugin.windowSize = info.windowSize;
 				Plugin.directDownloads = Config.Instance.DirectDownloads && info.directDownloads;
 				Plugin.expectMetadata = true;
+				Plugin.skipResults = info.skipResults;
+				Plugin.perPlayerDifficulty = info.perPlayerDifficulty;
 				Plugin.Log?.Info($"Overriding window size - {info.windowSize}");
 			}
 		}
@@ -1545,6 +1633,45 @@ namespace BeatUpClient {
 				UnityEngine.Object.Instantiate(Plugin.badges[tier], ____playerIdToAvatarMap[connectedPlayer.userId].transform.GetChild(2));
 		}
 
+		[Patch(false, typeof(MultiplayerLocalActivePlayerInGameMenuViewController), nameof(MultiplayerLocalActivePlayerInGameMenuViewController.Start))]
+		public static void MultiplayerLocalActivePlayerInGameMenuViewController_Start(MultiplayerLocalActivePlayerInGameMenuViewController __instance) {
+			MultiplayerPlayersManager multiplayerPlayersManager = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerPlayersManager>()[0];
+			if(Plugin.perPlayerDifficulty && multiplayerPlayersManager.localPlayerStartSeekSongController is MultiplayerLocalActivePlayerFacade player) {
+				MenuTransitionsHelper menuTransitionsHelper = UnityEngine.Resources.FindObjectsOfTypeAll<MenuTransitionsHelper>()[0];
+				MultiplayerConnectedPlayerSongTimeSyncController audioTimeSyncController = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerConnectedPlayerSongTimeSyncController>()[0];
+				PreviewDifficultyBeatmap original = new PreviewDifficultyBeatmap(__instance._localPlayerInGameMenuInitData.previewBeatmapLevel, __instance._localPlayerInGameMenuInitData.beatmapCharacteristic, __instance._localPlayerInGameMenuInitData.beatmapDifficulty);
+				PreviewDifficultyBeatmap selectedPreview = original;
+				IDifficultyBeatmap? selectedBeatmap = null;
+				UnityEngine.RectTransform switchButton = UI.CreateButtonFrom(__instance._resumeButton.gameObject, __instance._resumeButton.transform.parent, "SwitchDifficulty", () => {
+					PracticeSettings practiceSettings = new PracticeSettings(0, menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameplayCoreSceneSetupData.gameplayModifiers.songSpeedMul);
+					menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.Init(menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameMode, selectedPreview.beatmapLevel, selectedPreview.beatmapDifficulty, selectedPreview.beatmapCharacteristic, selectedBeatmap, menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.colorScheme, menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameplayCoreSceneSetupData.gameplayModifiers, menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameplayCoreSceneSetupData.playerSpecificSettings, practiceSettings, menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameplayCoreSceneSetupData.useTestNoteCutSoundEffects);
+					menuTransitionsHelper._gameScenesManager.ReplaceScenes(menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData, null, .35f, null, container => {
+						MultiplayerController multiplayerController = container.Resolve<MultiplayerController>();
+						multiplayerController._songStartSyncController.syncStartSuccessEvent -= OnSongStart;
+						multiplayerController._songStartSyncController.syncStartSuccessEvent += OnSongStart;
+						void OnSongStart(float introAnimationStartSyncTime) {
+							multiplayerController._songStartSyncController.syncStartSuccessEvent -= OnSongStart;
+							multiplayerController._playersManager.activeLocalPlayerFacade._gameSongController._beatmapCallbacksController._startFilterTime = multiplayerController.GetCurrentSongTime(multiplayerController.GetSongStartSyncTime(introAnimationStartSyncTime)) * menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameplayCoreSceneSetupData.gameplayModifiers.songSpeedMul + 1;
+						}
+					});
+				});
+				switchButton.GetComponentInChildren<Polyglot.LocalizedTextMeshProUGUI>().Key = "BEATUPCLIENT_SWITCH";
+				switchButton.gameObject.SetActive(false);
+				DifficultyPanel panel = new DifficultyPanel(__instance._mainBar.transform, 1, -2, __instance._levelBar.transform.Find("BG").GetComponent<HMUI.ImageView>());
+				__instance._levelBar.transform.localPosition = new UnityEngine.Vector3(0, 13.25f, 0);
+				panel.beatmapCharacteristic.localPosition = new UnityEngine.Vector3(-1, -1.5f, 0);
+				panel.beatmapDifficulty.localPosition = new UnityEngine.Vector3(-1, -8.25f, 0);
+				panel.Update(original, OnSelect);
+				void OnSelect(PreviewDifficultyBeatmap preview) {
+					selectedPreview = preview;
+					selectedBeatmap = (preview == original) ? null : BeatmapLevelDataExtensions.GetDifficultyBeatmap(menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.difficultyBeatmap.level.beatmapLevelData, preview);
+					__instance._resumeButton.gameObject.SetActive(selectedBeatmap == null);
+					switchButton.gameObject.SetActive(selectedBeatmap != null);
+					panel.Update(preview, OnSelect);
+				}
+			}
+		}
+
 		class MenuInstaller : Zenject.Installer {
 			public override void InstallBindings() {
 				Plugin.Log?.Debug("MenuInstaller.InstallBindings()");
@@ -1659,6 +1786,7 @@ namespace BeatUpClient {
 		public static bool directDownloads = false;
 		public static bool expectMetadata = false;
 		public static bool skipResults = false;
+		public static bool perPlayerDifficulty = false;
 
 		public static System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> ReliableChannel_ctor(System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> instructions) {
 			bool notFound = true;
@@ -1674,41 +1802,7 @@ namespace BeatUpClient {
 				Log?.Error("Failed to patch reliable window size");
 		}
 
-		public static BeatmapCharacteristicSegmentedControlController beatmapCharacteristicSegmentedControlController = null!;
-		public static BeatmapDifficultySegmentedControlController beatmapDifficultySegmentedControlController = null!;
-		public static Reflection.FieldProxy<System.Action<BeatmapCharacteristicSegmentedControlController, BeatmapCharacteristicSO>> didSelectBeatmapCharacteristicEvent;
-		public static Reflection.FieldProxy<System.Action<BeatmapDifficultySegmentedControlController, BeatmapDifficulty>> didSelectDifficultyEvent;
-		public static void UpdateDifficultyUI(PreviewDifficultyBeatmap? beatmapLevel, ILobbyPlayersDataModel playersDataModel = null!) {
-			didSelectBeatmapCharacteristicEvent.Set(delegate {});
-			didSelectDifficultyEvent.Set(delegate {});
-			if(beatmapLevel == null) {
-				beatmapCharacteristicSegmentedControlController.transform.parent.gameObject.SetActive(false);
-				beatmapDifficultySegmentedControlController.transform.parent.gameObject.SetActive(false);
-				return;
-			}
-			BeatmapDifficulty[] beatmapDifficulties = null!;
-			beatmapCharacteristicSegmentedControlController.SetData(System.Linq.Enumerable.ToList(System.Linq.Enumerable.Select(beatmapLevel.beatmapLevel.previewDifficultyBeatmapSets, set => {
-				if(set.beatmapCharacteristic == beatmapLevel.beatmapCharacteristic) {
-					beatmapDifficulties = set.beatmapDifficulties;
-					beatmapDifficultySegmentedControlController.SetData(System.Linq.Enumerable.ToList(System.Linq.Enumerable.Select(set.beatmapDifficulties, diff => (IDifficultyBeatmap)new CustomDifficultyBeatmap(null, null, diff, 0, 0, 0, 0, null, null))), beatmapLevel.beatmapDifficulty);
-				}
-				return (IDifficultyBeatmapSet)new CustomDifficultyBeatmapSet(set.beatmapCharacteristic);
-			})), beatmapLevel.beatmapCharacteristic);
-			beatmapCharacteristicSegmentedControlController.didSelectBeatmapCharacteristicEvent += delegate(BeatmapCharacteristicSegmentedControlController controller, BeatmapCharacteristicSO beatmapCharacteristic) {
-				BeatmapDifficulty closestDifficulty = beatmapDifficulties[0];
-				foreach(BeatmapDifficulty difficulty in beatmapDifficulties) {
-					if(beatmapLevel.beatmapDifficulty < difficulty)
-						break;
-					closestDifficulty = difficulty;
-				}
-				playersDataModel.SetLocalPlayerBeatmapLevel(new PreviewDifficultyBeatmap(beatmapLevel.beatmapLevel, beatmapCharacteristic, closestDifficulty));
-			};
-			beatmapDifficultySegmentedControlController.didSelectDifficultyEvent += delegate(BeatmapDifficultySegmentedControlController controller, BeatmapDifficulty difficulty) {
-				playersDataModel.SetLocalPlayerBeatmapLevel(new PreviewDifficultyBeatmap(beatmapLevel.beatmapLevel, beatmapLevel.beatmapCharacteristic, difficulty));
-			};
-			beatmapCharacteristicSegmentedControlController.transform.parent.gameObject.SetActive(true);
-			beatmapDifficultySegmentedControlController.transform.parent.gameObject.SetActive(true);
-		}
+		public static DifficultyPanel lobbyDifficultyPanel = null!;
 
 		static UnityEngine.UI.Button editServerButton = null!;
 		static void RefreshNetworkConfig() {
@@ -1923,16 +2017,8 @@ namespace BeatUpClient {
 				RefreshNetworkConfig();
 			}
 
-			StandardLevelDetailView LevelDetail = UnityEngine.Resources.FindObjectsOfTypeAll<StandardLevelDetailView>()[0];
-			UnityEngine.Transform LobbySetupViewController_Wrapper = UnityEngine.Resources.FindObjectsOfTypeAll<LobbySetupViewController>()[0].transform.GetChild(0);
-			UnityEngine.RectTransform beatmapCharacteristic = UI.CreateClone(LevelDetail._beatmapCharacteristicSegmentedControlController.transform.parent.gameObject, LobbySetupViewController_Wrapper, "BeatmapCharacteristic", 2);
-			beatmapCharacteristic.sizeDelta = new UnityEngine.Vector2(90, beatmapCharacteristic.sizeDelta.y);
-			UnityEngine.RectTransform beatmapDifficulty = UI.CreateClone(LevelDetail._beatmapDifficultySegmentedControlController.transform.parent.gameObject, LobbySetupViewController_Wrapper, "BeatmapDifficulty", 3);
-			beatmapDifficulty.sizeDelta = new UnityEngine.Vector2(90, beatmapDifficulty.sizeDelta.y);
-			beatmapCharacteristicSegmentedControlController = beatmapCharacteristic.GetChild(1).gameObject.GetComponent<BeatmapCharacteristicSegmentedControlController>();
-			beatmapDifficultySegmentedControlController = beatmapDifficulty.GetChild(1).gameObject.GetComponent<BeatmapDifficultySegmentedControlController>();
-			didSelectBeatmapCharacteristicEvent = Reflection.Field<System.Action<BeatmapCharacteristicSegmentedControlController, BeatmapCharacteristicSO>>(beatmapCharacteristicSegmentedControlController, typeof(BeatmapCharacteristicSegmentedControlController).GetEvent("didSelectBeatmapCharacteristicEvent").Name);
-			didSelectDifficultyEvent = Reflection.Field<System.Action<BeatmapDifficultySegmentedControlController, BeatmapDifficulty>>(beatmapDifficultySegmentedControlController, typeof(BeatmapDifficultySegmentedControlController).GetEvent("didSelectDifficultyEvent").Name);
+			DifficultyPanel.Init();
+			lobbyDifficultyPanel = new DifficultyPanel(UnityEngine.Resources.FindObjectsOfTypeAll<LobbySetupViewController>()[0].transform.GetChild(0), 2, 90);
 		}
 
 		[IPA.Init]
@@ -1957,7 +2043,8 @@ namespace BeatUpClient {
 				"BEATUPCLIENT_PER_PLAYER_MODIFIERS\t\tPer-Player Modifiers\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
 				"BEATUPCLIENT_ADD_SERVER\t\tAdd Server\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
 				"BEATUPCLIENT_EDIT_SERVER\t\tEdit Server\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
-				"BEATUPCLIENT_ENTER_HOSTNAME\t\tEnter Hostname\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n";
+				"BEATUPCLIENT_ENTER_HOSTNAME\t\tEnter Hostname\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" + 
+				"BEATUPCLIENT_SWITCH\t\tSwitch\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n";
 			Polyglot.LocalizationImporter.Import(localization, Polyglot.GoogleDriveDownloadFormat.TSV);
 
 			haveSongCore = (IPA.Loader.PluginManager.GetPluginFromId("SongCore") != null);

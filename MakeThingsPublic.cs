@@ -1,5 +1,8 @@
 class MainClass {
 	static string[] overrides = new[] {
+		"BeatmapCallbacksController:_startFilterTime",
+		"BeatmapCharacteristicSegmentedControlController:_segmentedControl",
+		"BeatmapDifficultySegmentedControlController:_difficultySegmentedControl",
 		"ColorsOverrideSettingsPanelController:_editColorSchemeButton",
 		"ConnectedPlayer",
 		"ConnectedPlayer:_connection",
@@ -18,14 +21,28 @@ class MainClass {
 		"FlowCoordinator:ReplaceTopViewController",
 		"FlowCoordinator:SetTitle",
 		"GameServerPlayerTableCell:_localPlayerBackgroundImage",
+		"GameSongController:_beatmapCallbacksController",
+		"IconSegmentedControl:_container",
+		"ImageView:_flipGradientColors",
+		"ImageView:_skew",
 		"IncDecSettingsController:_stepValuePicker",
 		"InputFieldView:_placeholderText",
 		"InputFieldView:_textLengthLimit",
 		"JoiningLobbyViewController:_text",
+		"LevelScenesTransitionSetupDataSO:get_gameplayCoreSceneSetupData",
 		"LocalizationImporter:Import",
 		"MainSystemInit:_networkConfig",
+		"MenuTransitionsHelper:_gameScenesManager",
+		"MenuTransitionsHelper:_multiplayerLevelScenesTransitionSetupData",
 		"MpLevelLoader:.ctor",
 		"MpPlayersDataModel:.ctor",
+		"MultiplayerController:_playersManager",
+		"MultiplayerController:_songStartSyncController",
+		"MultiplayerLocalActivePlayerFacade:_gameSongController",
+		"MultiplayerLocalActivePlayerInGameMenuViewController:_levelBar",
+		"MultiplayerLocalActivePlayerInGameMenuViewController:_localPlayerInGameMenuInitData",
+		"MultiplayerLocalActivePlayerInGameMenuViewController:_mainBar",
+		"MultiplayerLocalActivePlayerInGameMenuViewController:_resumeButton",
 		"MultiplayerModeSelectionViewController:_customServerEndPointText",
 		"MultiplayerModeSelectionViewController:_maintenanceMessageText",
 		"NetConnectAcceptPacket",
@@ -34,6 +51,7 @@ class MainClass {
 		"StandardLevelDetailView:_beatmapCharacteristicSegmentedControlController",
 		"StandardLevelDetailView:_beatmapDifficultySegmentedControlController",
 		"SwitchSettingsController:_toggle",
+		"TextSegmentedControl:_container",
 		"UIKeyboard:_buttonBinder",
 		"UIKeyboardKey:_canBeUppercase",
 		"UIKeyboardKey:_keyCode",
@@ -54,9 +72,12 @@ class MainClass {
 			foreach(Mono.Cecil.MethodDefinition method in type.Methods)
 				if(names.Contains(method.Name))
 					method.IsPublic = true;
-			foreach(Mono.Cecil.FieldDefinition field in type.Fields)
-				if(names.Contains(field.Name))
+			foreach(Mono.Cecil.FieldDefinition field in type.Fields) {
+				if(names.Contains(field.Name)) {
 					field.IsPublic = true;
+					field.IsInitOnly = false;
+				}
+			}
 		}
 		assembly.MainModule.Write(args[1]);
 	}

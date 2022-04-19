@@ -413,10 +413,10 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		managerId = wire_room_get_managerId(handle);
 		req.configuration = wire_room_get_configuration(handle);
 
-		/*if(wire_room_get_protocol(handle).protocolVersion != session->net.version.protocolVersion) {
+		if(wire_room_get_protocol(handle).protocolVersion != session->net.version.protocolVersion) {
 			r_conn.result = ConnectToServerResponse_Result_VersionMismatch;
 			goto send;
-		}*/
+		}
 	}
 	/*struct BitMask128 customs = get_mask("custom_levelpack_CustomLevels");
 	req.selectionMask.songPacks.bloomFilter.d0 |= customs.d0;

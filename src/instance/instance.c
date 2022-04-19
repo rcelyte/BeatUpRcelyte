@@ -1168,7 +1168,7 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 		struct ModConnectHeader mod = pkt_readModConnectHeader(session->net.version, data);
 		const uint8_t *sub = *data;
 		*data += mod.length;
-		if(String_is(mod.name, "BeatUpClient")) {
+		if(String_is(mod.name, "BeatUpClient beta0")) {
 			struct BeatUpConnectHeader header = pkt_readBeatUpConnectHeader(session->net.version, &sub);
 			session->net.version.beatUpVersion = header.protocolId;
 			session->net.version.windowSize = header.windowSize;
