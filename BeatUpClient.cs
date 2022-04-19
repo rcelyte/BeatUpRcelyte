@@ -1613,16 +1613,15 @@ namespace BeatUpClient {
 		}
 
 		[Patch(true, typeof(ConnectedPlayerManager), "HandleServerPlayerConnected")]
-		public static void ConnectedPlayerManager_HandleServerPlayerConnected(object packet) {
-			PlayerConnectedPacket pkt = (PlayerConnectedPacket)packet;
+		public static void ConnectedPlayerManager_HandleServerPlayerConnected(ConnectedPlayerManager.PlayerConnectedPacket packet) {
 			if(!Plugin.expectMetadata)
 				return;
-			int tier = (int)pkt.userName[pkt.userName.Length-1] - 17;
+			int tier = (int)packet.userName[packet.userName.Length-1] - 17;
 			if(tier < -1 || tier >= Plugin.badges.Length)
 				return;
 			if(tier >= 0)
-				Plugin.playerTiers[pkt.userId] = (byte)tier;
-			pkt.userName = pkt.userName.Substring(0, pkt.userName.Length - 1);
+				Plugin.playerTiers[packet.userId] = (byte)tier;
+			packet.userName = packet.userName.Substring(0, packet.userName.Length - 1);
 		}
 
 		[Patch(false, typeof(MultiplayerLobbyAvatarManager), nameof(MultiplayerLobbyAvatarManager.AddPlayer))]
