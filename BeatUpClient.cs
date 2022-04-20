@@ -7,8 +7,8 @@ namespace BeatUpClient {
 				this.original = original;
 		}
 
-		public static System.Collections.Generic.Dictionary<System.Type, System.Type?> InjectMap = new System.Collections.Generic.Dictionary<System.Type, System.Type?>();
-		public static void ConcreteBinderNonGeneric_To(Zenject.ConcreteBinderNonGeneric __instance, ref System.Collections.Generic.IEnumerable<System.Type> concreteTypes) {
+		static System.Collections.Generic.Dictionary<System.Type, System.Type?> InjectMap = new System.Collections.Generic.Dictionary<System.Type, System.Type?>();
+		static void ConcreteBinderNonGeneric_To(Zenject.ConcreteBinderNonGeneric __instance, ref System.Collections.Generic.IEnumerable<System.Type> concreteTypes) {
 			System.Type[] newTypes = System.Linq.Enumerable.ToArray(concreteTypes);
 			uint i = 0;
 			foreach(System.Type type in concreteTypes) {
@@ -27,6 +27,9 @@ namespace BeatUpClient {
 			concreteTypes = newTypes;
 		}
 
+		public static System.Collections.Generic.IEnumerable<System.Type> RegisteredTypes() =>
+			InjectMap.Keys;
+
 		public static void Suppress(System.Type type) =>
 			InjectMap.Add(type, null);
 
@@ -37,9 +40,12 @@ namespace BeatUpClient {
 			}
 		}
 
+		public static void UnregisterAll() =>
+			InjectMap.Clear();
+
 		public static void Patch() {
 			System.Reflection.MethodInfo original = typeof(Zenject.ConcreteBinderNonGeneric).GetMethod(nameof(Zenject.ConcreteBinderNonGeneric.To), new[] {typeof(System.Collections.Generic.IEnumerable<System.Type>)});
-			System.Reflection.MethodInfo prefix = typeof(DiJack).GetMethod(nameof(ConcreteBinderNonGeneric_To));
+			System.Reflection.MethodInfo prefix = typeof(DiJack).GetMethod(nameof(ConcreteBinderNonGeneric_To), System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
 			Plugin.harmony.Patch(original, prefix: new HarmonyLib.HarmonyMethod(prefix));
 		}
 	}
@@ -62,47 +68,6 @@ namespace BeatUpClient {
 		}
 		public static FieldProxy<T> Field<T>(object instance, string field) =>
 			new FieldProxy<T>(instance, HarmonyLib.AccessTools.Field(instance.GetType(), field));
-	}
-
-	public class BeatUpConnectInfo : LiteNetLib.Utils.INetSerializable {
-		public const uint Size = 6;
-		public uint windowSize;
-		public byte countdownDuration;
-		public bool directDownloads;
-		public bool skipResults;
-		public bool perPlayerDifficulty;
-		public bool perPlayerModifiers;
-		public virtual void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
-			writer.Put((uint)windowSize);
-			writer.Put((byte)countdownDuration);
-			byte bits = 0;
-			bits |= directDownloads ? (byte)1 : (byte)0;
-			bits |= skipResults ? (byte)2 : (byte)0;
-			bits |= perPlayerDifficulty ? (byte)4 : (byte)0;
-			bits |= perPlayerModifiers ? (byte)8 : (byte)0;
-			writer.Put((byte)bits);
-		}
-		public virtual void Deserialize(LiteNetLib.Utils.NetDataReader reader) {
-			windowSize = reader.GetUInt();
-			countdownDuration = reader.GetByte();
-			byte bits = reader.GetByte();
-			directDownloads = (bits & 1) == 1;
-			skipResults = (bits & 2) == 2;
-			perPlayerDifficulty = (bits & 4) == 4;
-			perPlayerModifiers = (bits & 8) == 8;
-		}
-	}
-
-	public class BeatUpConnectHeader : BeatUpConnectInfo {
-		public uint protocolId = 1;
-		public override void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
-			writer.Put((uint)protocolId);
-			base.Serialize(writer);
-		}
-		public override void Deserialize(LiteNetLib.Utils.NetDataReader reader) {
-			protocolId = reader.GetUInt();
-			base.Deserialize(reader);
-		}
 	}
 
 	[DiJack.Replace(typeof(MenuRpcManager))]
@@ -1457,6 +1422,47 @@ namespace BeatUpClient {
 			Plugin.perPlayerDifficulty = false;
 		}
 
+		public class BeatUpConnectInfo : LiteNetLib.Utils.INetSerializable {
+			public const uint Size = 6;
+			public uint windowSize;
+			public byte countdownDuration;
+			public bool directDownloads;
+			public bool skipResults;
+			public bool perPlayerDifficulty;
+			public bool perPlayerModifiers;
+			public virtual void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
+				writer.Put((uint)windowSize);
+				writer.Put((byte)countdownDuration);
+				byte bits = 0;
+				bits |= directDownloads ? (byte)1 : (byte)0;
+				bits |= skipResults ? (byte)2 : (byte)0;
+				bits |= perPlayerDifficulty ? (byte)4 : (byte)0;
+				bits |= perPlayerModifiers ? (byte)8 : (byte)0;
+				writer.Put((byte)bits);
+			}
+			public virtual void Deserialize(LiteNetLib.Utils.NetDataReader reader) {
+				windowSize = reader.GetUInt();
+				countdownDuration = reader.GetByte();
+				byte bits = reader.GetByte();
+				directDownloads = (bits & 1) == 1;
+				skipResults = (bits & 2) == 2;
+				perPlayerDifficulty = (bits & 4) == 4;
+				perPlayerModifiers = (bits & 8) == 8;
+			}
+		}
+
+		public class BeatUpConnectHeader : BeatUpConnectInfo {
+			public uint protocolId = 1;
+			public override void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
+				writer.Put((uint)protocolId);
+				base.Serialize(writer);
+			}
+			public override void Deserialize(LiteNetLib.Utils.NetDataReader reader) {
+				protocolId = reader.GetUInt();
+				base.Deserialize(reader);
+			}
+		}
+
 		[Patch(true, typeof(LiteNetLib.NetConnectAcceptPacket), "FromData")]
 		public static void NetConnectAcceptPacket_FromData(ref LiteNetLib.NetPacket packet) {
 			if(packet.Size == LiteNetLib.NetConnectAcceptPacket.Size + BeatUpConnectInfo.Size) {
@@ -1710,6 +1716,15 @@ namespace BeatUpClient {
 		[IPA.Config.Stores.Attributes.UseConverter(typeof(IPA.Config.Stores.Converters.DictionaryConverter<string>))]
 		public virtual System.Collections.Generic.Dictionary<string, string?> Servers { get; set; } = new System.Collections.Generic.Dictionary<string, string?>(new[] {new System.Collections.Generic.KeyValuePair<string, string?>("master.battletrains.org", null)});
 		public virtual void Changed() {}
+	}
+
+	static class MpPlugin { // References to optional dependencies not allowed in `Plugin` class
+		public static void OnEnable() {
+			DiJack.Suppress(typeof(MultiplayerCore.Patchers.CustomLevelsPatcher));
+			DiJack.Suppress(typeof(MultiplayerCore.Patchers.ModeSelectionPatcher));
+			DiJack.Register(typeof(MpLevelLoader));
+			DiJack.Register(typeof(MpPlayersDataModel));
+		}
 	}
 
 	[IPA.Plugin(IPA.RuntimeOptions.SingleStartInit)]
@@ -2020,18 +2035,19 @@ namespace BeatUpClient {
 			lobbyDifficultyPanel = new DifficultyPanel(UnityEngine.Resources.FindObjectsOfTypeAll<LobbySetupViewController>()[0].transform.GetChild(0), 2, 90);
 		}
 
+		static void WarmMethods(System.Type type) {
+			foreach(System.Type nested in type.GetNestedTypes())
+				WarmMethods(nested);
+			foreach(System.Reflection.MethodInfo method in type.GetMethods(System.Reflection.BindingFlags.DeclaredOnly | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static))
+				method.MethodHandle.GetFunctionPointer(); // This forces compilation, catching `TypeLoadException`s at load time
+		}
+
 		[IPA.Init]
 		public void Init(IPA.Logging.Logger pluginLogger, IPA.Config.Config conf) {
 			Instance = this;
 			Log = pluginLogger;
 			Config.Instance = IPA.Config.Stores.GeneratedStore.Generated<Config>(conf);
 			Log?.Debug("Logger initialized.");
-		}
-		void OnEnable_MpCore() {
-			DiJack.Suppress(typeof(MultiplayerCore.Patchers.CustomLevelsPatcher));
-			DiJack.Suppress(typeof(MultiplayerCore.Patchers.ModeSelectionPatcher));
-			DiJack.Register(typeof(MpLevelLoader));
-			DiJack.Register(typeof(MpPlayersDataModel));
 		}
 		[IPA.OnEnable]
 		public void OnEnable() {
@@ -2050,14 +2066,20 @@ namespace BeatUpClient {
 			haveMpCore = (IPA.Loader.PluginManager.GetPluginFromId("MultiplayerCore") != null);
 			Log?.Debug($"haveSongCore={haveSongCore}");
 			Log?.Debug($"haveMpCore={haveMpCore}");
-			DiJack.Register(typeof(BeatUpMenuRpcManager));
-			DiJack.Register(typeof(LevelLoader));
-			DiJack.Register(typeof(PlayersDataModel));
-			DiJack.Register(typeof(MultiplayerStatusModelPatch));
-			DiJack.Register(typeof(QuickPlaySetupModelPatch));
-			if(haveMpCore)
-				OnEnable_MpCore();
 			try {
+				Log?.Debug("Enumerating injections");
+				DiJack.Register(typeof(BeatUpMenuRpcManager));
+				DiJack.Register(typeof(LevelLoader));
+				DiJack.Register(typeof(PlayersDataModel));
+				DiJack.Register(typeof(MultiplayerStatusModelPatch));
+				DiJack.Register(typeof(QuickPlaySetupModelPatch));
+				if(haveMpCore)
+					MpPlugin.OnEnable();
+				Log?.Debug("Warming methods");
+				WarmMethods(typeof(Plugin));
+				WarmMethods(typeof(Patches));
+				foreach(System.Type type in DiJack.RegisteredTypes())
+					WarmMethods(type);
 				Log?.Debug("Loading assets");
 				UnityEngine.AssetBundle data = UnityEngine.AssetBundle.LoadFromStream(System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("BeatUpClient.data"));
 				defaultPackCover = data.LoadAllAssets<UnityEngine.Sprite>()[0];
@@ -2080,6 +2102,7 @@ namespace BeatUpClient {
 			try {
 				UnityEngine.SceneManagement.SceneManager.sceneLoaded -= OnSceneLoaded;
 				harmony.UnpatchSelf();
+				DiJack.UnregisterAll();
 			} catch(System.Exception ex) {
 				Log?.Error("Error removing patches: " + ex.Message);
 				Log?.Debug(ex);
