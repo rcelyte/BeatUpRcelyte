@@ -61,24 +61,16 @@ namespace BeatUpClient {
 
 	public class BeatUpMenuRpcManager : MenuRpcManager, IMenuRpcManager {
 		string selectedLevelId = System.String.Empty;
-		[Zenject.Inject]
-		Zenject.DiContainer container = null!;
 		public BeatUpMenuRpcManager(IMultiplayerSessionManager multiplayerSessionManager, INetworkConfig networkConfig) : base(multiplayerSessionManager) {
 			Plugin.networkConfig = networkConfig;
 			setSelectedBeatmapEvent += HandleSetSelectedBeatmapEvent;
-			setIsEntitledToLevelEvent += HandleSetIsEntitledToLevel;
 		}
 		void HandleSetSelectedBeatmapEvent(string userId, BeatmapIdentifierNetSerializable beatmapId) {
 			selectedLevelId = beatmapId.levelID;
 			foreach(Plugin.PlayerCell cell in Plugin.playerCells)
 				cell.UpdateData(new PacketHandler.LoadProgress(PacketHandler.LoadProgress.LoadState.None, 0, 0), true);
 		}
-		void HandleSetIsEntitledToLevel(string userId, string levelId, EntitlementsStatus entitlementStatus) {
-			ILobbyStateDataModel lobbyStateDataModel = container.Resolve<ILobbyStateDataModel>();
-			IConnectedPlayer? player = lobbyStateDataModel.GetPlayerById(userId);
-			HandleSetIsEntitledToLevel(player, levelId, entitlementStatus);
-		}
-		void HandleSetIsEntitledToLevel(IConnectedPlayer? player, string levelId, EntitlementsStatus entitlementStatus) {
+		public void HandleSetIsEntitledToLevel(IConnectedPlayer? player, string levelId, EntitlementsStatus entitlementStatus) {
 			if(player == null || levelId != selectedLevelId)
 				return;
 			PacketHandler.LoadProgress.LoadState state = entitlementStatus switch {
@@ -822,7 +814,7 @@ namespace BeatUpClient {
 
 	public class PlayersDataModel : LobbyPlayersDataModel, ILobbyPlayersDataModel, System.IDisposable {
 		[Zenject.Inject]
-		public readonly PacketHandler handler = null!;
+		readonly ILobbyStateDataModel lobbyStateDataModel = null!;
 		public readonly MultiplayerSessionManager multiplayerSessionManager;
 
 		public PlayersDataModel(IMultiplayerSessionManager multiplayerSessionManager) {
@@ -834,10 +826,12 @@ namespace BeatUpClient {
 			base.Activate();
 			_menuRpcManager.getRecommendedBeatmapEvent -= base.HandleMenuRpcManagerGetRecommendedBeatmap;
 			_menuRpcManager.getRecommendedBeatmapEvent += this.HandleMenuRpcManagerGetRecommendedBeatmap;
+			_menuRpcManager.setIsEntitledToLevelEvent += HandleSetIsEntitledToLevel;
 		}
 
 		public override void Deactivate() {
 			Plugin.Log?.Debug("PlayersDataModel.Deactivate()");
+			_menuRpcManager.setIsEntitledToLevelEvent -= HandleSetIsEntitledToLevel;
 			_menuRpcManager.getRecommendedBeatmapEvent -= this.HandleMenuRpcManagerGetRecommendedBeatmap;
 			_menuRpcManager.getRecommendedBeatmapEvent += base.HandleMenuRpcManagerGetRecommendedBeatmap;
 			base.Deactivate();
@@ -845,6 +839,9 @@ namespace BeatUpClient {
 
 		public override void Dispose() =>
 			Deactivate();
+
+		void HandleSetIsEntitledToLevel(string userId, string levelId, EntitlementsStatus entitlementStatus) =>
+			((BeatUpMenuRpcManager)_menuRpcManager).HandleSetIsEntitledToLevel(lobbyStateDataModel.GetPlayerById(userId), levelId, entitlementStatus);
 
 		public override void HandleMenuRpcManagerGetRecommendedBeatmap(string userId) {
 			if(PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex] != null)
@@ -927,7 +924,7 @@ namespace BeatUpClient {
 	// Template inheritance considered harmful; prefer copy+paste
 	public class MpPlayersDataModel : MultiplayerCore.Objects.MpPlayersDataModel, ILobbyPlayersDataModel, System.IDisposable {
 		[Zenject.Inject]
-		public readonly PacketHandler handler = null!;
+		readonly ILobbyStateDataModel lobbyStateDataModel = null!;
 		public readonly MultiplayerSessionManager multiplayerSessionManager;
 
 		public MpPlayersDataModel(MultiplayerCore.Networking.MpPacketSerializer packetSerializer, MultiplayerCore.Beatmaps.Providers.MpBeatmapLevelProvider beatmapLevelProvider, SiraUtil.Logging.SiraLog logger, IMultiplayerSessionManager multiplayerSessionManager) : base(packetSerializer, beatmapLevelProvider, logger) {
@@ -939,14 +936,19 @@ namespace BeatUpClient {
 			base.Activate();
 			_menuRpcManager.getRecommendedBeatmapEvent -= base.HandleMenuRpcManagerGetRecommendedBeatmap;
 			_menuRpcManager.getRecommendedBeatmapEvent += this.HandleMenuRpcManagerGetRecommendedBeatmap;
+			_menuRpcManager.setIsEntitledToLevelEvent += HandleSetIsEntitledToLevel;
 		}
 
 		public override void Deactivate() {
 			Plugin.Log?.Debug("PlayersDataModel.Deactivate()");
+			_menuRpcManager.setIsEntitledToLevelEvent -= HandleSetIsEntitledToLevel;
 			_menuRpcManager.getRecommendedBeatmapEvent -= this.HandleMenuRpcManagerGetRecommendedBeatmap;
 			_menuRpcManager.getRecommendedBeatmapEvent += base.HandleMenuRpcManagerGetRecommendedBeatmap;
 			base.Deactivate();
 		}
+
+		void HandleSetIsEntitledToLevel(string userId, string levelId, EntitlementsStatus entitlementStatus) =>
+			((BeatUpMenuRpcManager)_menuRpcManager).HandleSetIsEntitledToLevel(lobbyStateDataModel.GetPlayerById(userId), levelId, entitlementStatus);
 
 		public override void HandleMenuRpcManagerGetRecommendedBeatmap(string userId) {
 			if(PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex] != null)
