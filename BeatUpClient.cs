@@ -1,12 +1,5 @@
 namespace BeatUpClient {
 	public class DiJack {
-		[System.AttributeUsage(System.AttributeTargets.Class)]
-		public class ReplaceAttribute : System.Attribute {
-			public System.Type original;
-			public ReplaceAttribute(System.Type original) =>
-				this.original = original;
-		}
-
 		static System.Collections.Generic.Dictionary<System.Type, System.Type?> InjectMap = new System.Collections.Generic.Dictionary<System.Type, System.Type?>();
 		static void ConcreteBinderNonGeneric_To(Zenject.ConcreteBinderNonGeneric __instance, ref System.Collections.Generic.IEnumerable<System.Type> concreteTypes) {
 			System.Type[] newTypes = System.Linq.Enumerable.ToArray(concreteTypes);
@@ -30,15 +23,11 @@ namespace BeatUpClient {
 		public static System.Collections.Generic.IEnumerable<System.Type> RegisteredTypes() =>
 			InjectMap.Keys;
 
-		public static void Suppress(System.Type type) =>
-			InjectMap.Add(type, null);
+		public static void Suppress(System.Type original) =>
+			InjectMap.Add(original, null);
 
-		public static void Register(System.Type type) {
-			foreach(System.Attribute attrib in type.GetCustomAttributes(false)) {
-				if(attrib is ReplaceAttribute replaceAttribute)
-					InjectMap.Add(replaceAttribute.original, type);
-			}
-		}
+		public static void Register(System.Type type) =>
+			InjectMap.Add(type.BaseType, type);
 
 		public static void UnregisterAll() =>
 			InjectMap.Clear();
@@ -70,7 +59,6 @@ namespace BeatUpClient {
 			new FieldProxy<T>(instance, HarmonyLib.AccessTools.Field(instance.GetType(), field));
 	}
 
-	[DiJack.Replace(typeof(MenuRpcManager))]
 	public class BeatUpMenuRpcManager : MenuRpcManager, IMenuRpcManager {
 		string selectedLevelId = System.String.Empty;
 		[Zenject.Inject]
@@ -163,7 +151,6 @@ namespace BeatUpClient {
 		}
 	}
 
-	[DiJack.Replace(typeof(MultiplayerLevelLoader))]
 	public class LevelLoader : MultiplayerLevelLoader {
 		[Zenject.Inject]
 		public PacketHandler handler = null!;
@@ -402,7 +389,6 @@ namespace BeatUpClient {
 		}
 	}
 
-	[DiJack.Replace(typeof(MultiplayerCore.Objects.MpLevelLoader))]
 	public class MpLevelLoader : MultiplayerCore.Objects.MpLevelLoader {
 		public LevelLoader loader;
 		public MpLevelLoader(IMultiplayerSessionManager sessionManager, MultiplayerCore.Objects.MpLevelDownloader levelDownloader, NetworkPlayerEntitlementChecker entitlementChecker, IMenuRpcManager rpcManager, SiraUtil.Logging.SiraLog logger, BeatmapLevelsModel beatmapLevelsModel) : base(sessionManager, levelDownloader, entitlementChecker, rpcManager, logger) {
@@ -834,7 +820,6 @@ namespace BeatUpClient {
 			Plugin.playerCells[player.sortIndex].UpdateData(packet);
 	}
 
-	[DiJack.Replace(typeof(LobbyPlayersDataModel))]
 	public class PlayersDataModel : LobbyPlayersDataModel, ILobbyPlayersDataModel, System.IDisposable {
 		[Zenject.Inject]
 		public readonly PacketHandler handler = null!;
@@ -940,7 +925,6 @@ namespace BeatUpClient {
 	}
 
 	// Template inheritance considered harmful; prefer copy+paste
-	[DiJack.Replace(typeof(MultiplayerCore.Objects.MpPlayersDataModel))]
 	public class MpPlayersDataModel : MultiplayerCore.Objects.MpPlayersDataModel, ILobbyPlayersDataModel, System.IDisposable {
 		[Zenject.Inject]
 		public readonly PacketHandler handler = null!;
@@ -1044,13 +1028,11 @@ namespace BeatUpClient {
 		}
 	}
 
-	[DiJack.Replace(typeof(MultiplayerStatusModel))]
 	public class MultiplayerStatusModelPatch : MultiplayerStatusModel, ModelInvalidator {
 		MultiplayerStatusModelPatch() =>
 			ModelInvalidator.onInvalidate += () => _request = null;
 	}
 
-	[DiJack.Replace(typeof(QuickPlaySetupModel))]
 	public class QuickPlaySetupModelPatch : QuickPlaySetupModel, ModelInvalidator {
 		QuickPlaySetupModelPatch() =>
 			ModelInvalidator.onInvalidate += () => _request = null;
