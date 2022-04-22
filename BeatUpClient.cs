@@ -57,6 +57,44 @@ namespace BeatUpClient {
 		}
 		public static FieldProxy<T> Field<T>(object instance, string field) =>
 			new FieldProxy<T>(instance, HarmonyLib.AccessTools.Field(instance.GetType(), field));
+		// Inline IL considered harmful; prefer runtime codegen (http://www.simplygoodcode.com/2012/08/invoke-base-method-using-reflection/)
+		static void DirectInvoke(System.Reflection.MethodInfo methodInfo, object instance, params object?[] arguments) {
+			var parameters = methodInfo.GetParameters();
+			if(parameters.Length == 0) {
+				if(arguments != null && arguments.Length != 0) 
+					throw new System.ArgumentException("Arguments cont doesn't match");
+			} else {
+				if(parameters.Length != arguments.Length)
+					throw new System.ArgumentException("Arguments cont doesn't match");
+			}
+			System.Type type = instance.GetType();
+			System.Reflection.Emit.DynamicMethod dynamicMethod = new System.Reflection.Emit.DynamicMethod("", null, new[] {type, typeof(object)}, type);
+			System.Reflection.Emit.ILGenerator iLGenerator = dynamicMethod.GetILGenerator();
+			iLGenerator.Emit(System.Reflection.Emit.OpCodes.Ldarg_0);
+			for (var i = 0; i < parameters.Length; i++) {
+				var parameter = parameters[i];
+				iLGenerator.Emit(System.Reflection.Emit.OpCodes.Ldarg_1);
+				iLGenerator.Emit(System.Reflection.Emit.OpCodes.Ldc_I4_S, i);
+				iLGenerator.Emit(System.Reflection.Emit.OpCodes.Ldelem_Ref);
+				var parameterType = parameter.ParameterType;
+				if(parameterType.IsPrimitive) {
+					iLGenerator.Emit(System.Reflection.Emit.OpCodes.Unbox_Any, parameterType);
+				} else if(parameterType != typeof(object)) {
+					iLGenerator.Emit(System.Reflection.Emit.OpCodes.Castclass, parameterType);
+				}
+			}
+			iLGenerator.Emit(System.Reflection.Emit.OpCodes.Call, methodInfo);
+			iLGenerator.Emit(System.Reflection.Emit.OpCodes.Ret);
+			dynamicMethod.Invoke(null, new[] {instance, arguments});
+		}
+		public static System.Action<T> BaseBaseMethod<T>(object instance, string method) {
+			System.Reflection.MethodInfo info = instance.GetType().BaseType.BaseType.GetMethod(method);
+			return (T arg1) => DirectInvoke(info, instance, arg1);
+		}
+		public static System.Action<T1, T2> BaseBaseMethod<T1, T2>(object instance, string method) {
+			System.Reflection.MethodInfo info = instance.GetType().BaseType.BaseType.GetMethod(method);
+			return (T1 arg1, T2 arg2) => DirectInvoke(info, instance, arg1, arg2);
+		}
 	}
 
 	public class BeatUpMenuRpcManager : MenuRpcManager, IMenuRpcManager {
@@ -383,8 +421,9 @@ namespace BeatUpClient {
 
 	public class MpLevelLoader : MultiplayerCore.Objects.MpLevelLoader {
 		public LevelLoader loader;
-		public MpLevelLoader(IMultiplayerSessionManager sessionManager, MultiplayerCore.Objects.MpLevelDownloader levelDownloader, NetworkPlayerEntitlementChecker entitlementChecker, IMenuRpcManager rpcManager, SiraUtil.Logging.SiraLog logger, BeatmapLevelsModel beatmapLevelsModel) : base(sessionManager, levelDownloader, entitlementChecker, rpcManager, logger) {
+		public MpLevelLoader(IMultiplayerSessionManager sessionManager, MultiplayerCore.Objects.MpLevelDownloader levelDownloader, NetworkPlayerEntitlementChecker entitlementChecker, IMenuRpcManager rpcManager, SiraUtil.Logging.SiraLog logger, BeatmapLevelsModel beatmapLevelsModel, Zenject.DiContainer container) : base(sessionManager, levelDownloader, entitlementChecker, rpcManager, logger) {
 			loader = new LevelLoader(beatmapLevelsModel);
+			container.Inject(loader);
 			progressUpdated += (double progress) => loader.Progress(new PacketHandler.LoadProgress(PacketHandler.LoadProgress.LoadState.Downloading, (ushort)(progress * 65535)));
 		}
 		public override void LoadLevel(ILevelGameplaySetupData gameplaySetupData, float initialStartTime) {
@@ -398,13 +437,70 @@ namespace BeatUpClient {
 		}
 	}
 
+	public static class SongCorePreviewProvider {
+		public static void GetInfo(CustomPreviewBeatmapLevel previewBeatmapLevel, System.Collections.Generic.HashSet<string> requirementSet, System.Collections.Generic.HashSet<string> suggestionSet) {
+			string? levelHash = MultiplayerCore.Utilities.HashForLevelID(previewBeatmapLevel.levelID);
+			if(string.IsNullOrEmpty(levelHash))
+				return;
+			SongCore.Data.ExtraSongData? extraSongData = SongCore.Collections.RetrieveExtraSongData(levelHash);
+			if(extraSongData == null)
+				return;
+			foreach(SongCore.Data.ExtraSongData.DifficultyData difficulty in extraSongData._difficulties) {
+				foreach(string requirement in difficulty.additionalDifficultyData._requirements)
+					requirementSet.Add(requirement);
+				foreach(string suggestion in difficulty.additionalDifficultyData._suggestions)
+					suggestionSet.Add(suggestion);
+			}
+		}
+	}
+
 	public static class PreviewProvider {
-		public static PacketHandler.RecommendPreview[] playerPreviews = null!;
+		public static PacketHandler.RecommendPreview[] playerPreviews = new PacketHandler.RecommendPreview[0];
 		public static void Init(int playerCount) {
 			playerPreviews = new PacketHandler.RecommendPreview[playerCount];
 		}
 		public static PacketHandler.RecommendPreview? ResolvePreview(string levelId) =>
 			System.Linq.Enumerable.FirstOrDefault(playerPreviews, (PacketHandler.RecommendPreview preview) => preview.preview.levelID == levelId);
+		public static PacketHandler.RecommendPreview SetFromLocal(int index, CustomPreviewBeatmapLevel previewBeatmapLevel) {
+			System.Collections.Generic.HashSet<string> requirementSet = new System.Collections.Generic.HashSet<string>();
+			System.Collections.Generic.HashSet<string> suggestionSet = new System.Collections.Generic.HashSet<string>();
+			string path = System.IO.Path.Combine(previewBeatmapLevel.customLevelPath, "Info.dat");
+			if(Plugin.haveSongCore) {
+				SongCorePreviewProvider.GetInfo(previewBeatmapLevel, requirementSet, suggestionSet);
+			} else if(System.IO.File.Exists(path)) {
+				Newtonsoft.Json.Linq.JObject info = Newtonsoft.Json.Linq.JObject.Parse(System.IO.File.ReadAllText(path));
+				if(info.TryGetValue("_difficultyBeatmapSets", out Newtonsoft.Json.Linq.JToken? diffSets)) {
+					foreach(Newtonsoft.Json.Linq.JObject diffSet in (diffSets as Newtonsoft.Json.Linq.JArray) ?? new Newtonsoft.Json.Linq.JArray()) {
+						if(diffSet.TryGetValue("_difficultyBeatmaps", out Newtonsoft.Json.Linq.JToken? diffBeatmaps)) {
+							foreach(Newtonsoft.Json.Linq.JObject diffBeatmap in (diffBeatmaps as Newtonsoft.Json.Linq.JArray) ?? new Newtonsoft.Json.Linq.JArray()) {
+								if(diffBeatmap.TryGetValue("_customData", out Newtonsoft.Json.Linq.JToken? customData_token)) {
+									if(customData_token is Newtonsoft.Json.Linq.JObject customData) {
+										if(customData.TryGetValue("_requirements", out Newtonsoft.Json.Linq.JToken? requirements))
+											foreach(string? requirement in (requirements as Newtonsoft.Json.Linq.JArray) ?? new Newtonsoft.Json.Linq.JArray())
+												if(requirement != null)
+													requirementSet.Add(requirement);
+										if(customData.TryGetValue("_suggestions", out Newtonsoft.Json.Linq.JToken? suggestions))
+											foreach(string? suggestion in (suggestions as Newtonsoft.Json.Linq.JArray) ?? new Newtonsoft.Json.Linq.JArray())
+												if(suggestion != null)
+													suggestionSet.Add(suggestion);
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+			string[] requirementArray = System.Linq.Enumerable.ToArray(requirementSet);
+			string[] suggestionArray = System.Linq.Enumerable.ToArray(suggestionSet);
+			if(requirementArray.Length >= 1) {
+				Plugin.Log?.Debug($"{requirementArray.Length} requirements for `{previewBeatmapLevel.levelID}`:");
+				foreach(string req in requirementArray)
+					Plugin.Log?.Debug($"    {req}");
+			} else {
+				Plugin.Log?.Debug($"No requirements for `{previewBeatmapLevel.levelID}`");
+			}
+			return (playerPreviews[index] = new PacketHandler.RecommendPreview(previewBeatmapLevel, requirementArray, suggestionArray));
+		}
 	}
 
 	public class PacketHandler : Zenject.IInitializable, System.IDisposable {
@@ -430,9 +526,9 @@ namespace BeatUpClient {
 			public float previewStartTime { get; set; }
 			public float previewDuration { get; set; }
 			public float songDuration { get; set; }
-			public System.Collections.Generic.IReadOnlyList<PreviewDifficultyBeatmapSet> previewDifficultyBeatmapSets { get; set; } = new System.Collections.Generic.List<PreviewDifficultyBeatmapSet>(0);
-			public EnvironmentInfoSO environmentInfo { get; set; } = null!;
-			public EnvironmentInfoSO allDirectionsEnvironmentInfo { get; set; } = null!;
+			public System.Collections.Generic.IReadOnlyList<PreviewDifficultyBeatmapSet>? previewDifficultyBeatmapSets { get; set; } = null;
+			public EnvironmentInfoSO? environmentInfo { get; set; } = null;
+			public EnvironmentInfoSO? allDirectionsEnvironmentInfo { get; set; } = null;
 			public readonly ByteArrayNetSerializable cover = new ByteArrayNetSerializable("cover", 0, 8192);
 			public System.Threading.Tasks.Task<byte[]> coverRenderTask = System.Threading.Tasks.Task.FromResult<byte[]>(new byte[0]);
 			public async System.Threading.Tasks.Task<UnityEngine.Sprite> GetCoverImageAsync(System.Threading.CancellationToken cancellationToken) {
@@ -470,8 +566,8 @@ namespace BeatUpClient {
 				writer.Put((float)previewStartTime);
 				writer.Put((float)previewDuration);
 				writer.Put((float)songDuration);
-				writer.Put((byte)UpperBound((uint)previewDifficultyBeatmapSets.Count, 8));
-				foreach(PreviewDifficultyBeatmapSet previewDifficultyBeatmapSet in previewDifficultyBeatmapSets) {
+				writer.Put((byte)UpperBound((uint)(previewDifficultyBeatmapSets?.Count ?? 0), 8));
+				foreach(PreviewDifficultyBeatmapSet previewDifficultyBeatmapSet in previewDifficultyBeatmapSets ?? new PreviewDifficultyBeatmapSet[0]) {
 					writer.Put((string)previewDifficultyBeatmapSet.beatmapCharacteristic.serializedName);
 					writer.Put((byte)UpperBound((uint)previewDifficultyBeatmapSet.beatmapDifficulties.Length, 5));
 					foreach(BeatmapDifficulty difficulty in previewDifficultyBeatmapSet.beatmapDifficulties)
@@ -494,8 +590,9 @@ namespace BeatUpClient {
 				previewStartTime = reader.GetFloat();
 				previewDuration = reader.GetFloat();
 				songDuration = reader.GetFloat();
-				PreviewDifficultyBeatmapSet[] sets = new PreviewDifficultyBeatmapSet[(int)UpperBound(reader.GetByte(), 8)];
-				for(int i = 0; i < sets.Length; ++i) {
+				uint count = UpperBound(reader.GetByte(), 8);
+				PreviewDifficultyBeatmapSet[] sets = count >= 1 ? new PreviewDifficultyBeatmapSet[count] : null!;
+				for(uint i = 0; i < count; ++i) {
 					BeatmapCharacteristicSO beatmapCharacteristic = beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(reader.GetString());
 					BeatmapDifficulty[] beatmapDifficulties = new BeatmapDifficulty[UpperBound(reader.GetByte(), 5)];
 					for(uint j = 0; j < beatmapDifficulties.Length; ++j)
@@ -524,9 +621,7 @@ namespace BeatUpClient {
 				coverRenderTask = RenderCoverImageAsync(beatmapLevel);
 				environmentInfo = beatmapLevel.environmentInfo;
 				allDirectionsEnvironmentInfo = beatmapLevel.allDirectionsEnvironmentInfo;
-				Plugin.Log?.Debug($"ASSIGN:");
-				Plugin.Log?.Debug($"    beatmapLevel={beatmapLevel}");
-				Plugin.Log?.Debug($"    previewDifficultyBeatmapSets={previewDifficultyBeatmapSets}");
+				Plugin.Log?.Debug($"NetworkPreviewBeatmapLevel.Init(beatmapLevel={beatmapLevel}, previewDifficultyBeatmapSets={previewDifficultyBeatmapSets})");
 			}
 			public NetworkPreviewBeatmapLevel() {}
 			public NetworkPreviewBeatmapLevel(IPreviewBeatmapLevel beatmapLevel) =>
@@ -712,6 +807,7 @@ namespace BeatUpClient {
 
 		public void Initialize() {
 			Plugin.Log?.Debug("multiplayerSessionManager.RegisterSerializer()");
+			multiplayerSessionManager.SetLocalPlayerState("modded", true);
 			multiplayerSessionManager.RegisterSerializer(messageType, serializer);
 			serializer.RegisterCallback<RecommendPreview>(MessageType.RecommendPreview, HandleRecommendPreview);
 			serializer.RegisterCallback<SetCanShareBeatmap>(MessageType.SetCanShareBeatmap, HandleSetCanShareBeatmap);
@@ -779,7 +875,7 @@ namespace BeatUpClient {
 		}
 
 		public void HandleLevelFragment(LevelFragment packet, IConnectedPlayer player) {
-			if(buffer == null)
+			if(buffer == null || gaps.Count < 1 || !Plugin.downloadSources.Contains(player))
 				return;
 			if(packet.offset >= (ulong)buffer.LongLength || packet.offset + (uint)packet.data.LongLength > (ulong)buffer.LongLength || packet.data.LongLength < 1) {
 				Plugin.downloadSources.Remove(player);
@@ -844,72 +940,22 @@ namespace BeatUpClient {
 			((BeatUpMenuRpcManager)_menuRpcManager).HandleSetIsEntitledToLevel(lobbyStateDataModel.GetPlayerById(userId), levelId, entitlementStatus);
 
 		public override void HandleMenuRpcManagerGetRecommendedBeatmap(string userId) {
-			if(PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex] != null)
-				multiplayerSessionManager.Send(PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex]);
+			multiplayerSessionManager.Send(PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex]);
 			base.HandleMenuRpcManagerGetRecommendedBeatmap(userId);
 		}
 
 		public override void SetLocalPlayerBeatmapLevel(PreviewDifficultyBeatmap? beatmapLevel) {
 			if(beatmapLevel != null) {
-				PacketHandler.RecommendPreview localPreview = PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex];
-				if(localPreview.preview.levelID != beatmapLevel.beatmapLevel.levelID) {
-					string[]? requirementArray = null, suggestionArray = null;
-					PacketHandler.RecommendPreview? preview = PreviewProvider.ResolvePreview(beatmapLevel.beatmapLevel.levelID);
-					if(preview != null) {
-						requirementArray = preview.requirements;
-						suggestionArray = preview.suggestions;
-					} else if(beatmapLevel.beatmapLevel is CustomPreviewBeatmapLevel previewBeatmapLevel) {
-						System.Collections.Generic.HashSet<string> requirementSet = new System.Collections.Generic.HashSet<string>();
-						System.Collections.Generic.HashSet<string> suggestionSet = new System.Collections.Generic.HashSet<string>();
-						string path = System.IO.Path.Combine(previewBeatmapLevel.customLevelPath, "Info.dat");
-						if(System.IO.File.Exists(path)) {
-							Newtonsoft.Json.Linq.JObject info = Newtonsoft.Json.Linq.JObject.Parse(System.IO.File.ReadAllText(path));
-							if(info.TryGetValue("_difficultyBeatmapSets", out Newtonsoft.Json.Linq.JToken? diffSets_token)) {
-								if(diffSets_token is Newtonsoft.Json.Linq.JArray diffSets) {
-									foreach(Newtonsoft.Json.Linq.JObject diffSet in diffSets) {
-										if(diffSet.TryGetValue("_difficultyBeatmaps", out Newtonsoft.Json.Linq.JToken? diffBeatmaps_token)) {
-											if(diffBeatmaps_token is Newtonsoft.Json.Linq.JArray diffBeatmaps) {
-												foreach(Newtonsoft.Json.Linq.JObject diffBeatmap in diffBeatmaps) {
-													if(diffBeatmap.TryGetValue("_customData", out Newtonsoft.Json.Linq.JToken? customData_token)) {
-														if(customData_token is Newtonsoft.Json.Linq.JObject customData) {
-															if(customData.TryGetValue("_requirements", out Newtonsoft.Json.Linq.JToken? requirements_token))
-																if(requirements_token is Newtonsoft.Json.Linq.JArray requirements)
-																	foreach(string? requirement in requirements)
-																		if(requirement != null)
-																			requirementSet.Add(requirement);
-															if(customData.TryGetValue("_suggestions", out Newtonsoft.Json.Linq.JToken? suggestions_token))
-																if(suggestions_token is Newtonsoft.Json.Linq.JArray suggestions)
-																	foreach(string? suggestion in suggestions)
-																		if(suggestion != null)
-																			suggestionSet.Add(suggestion);
-														}
-													}
-												}
-											}
-										}
-									}
-								}
-							}
-							requirementArray = new string[requirementSet.Count];
-							suggestionArray = new string[suggestionSet.Count];
-							requirementSet.CopyTo(requirementArray);
-							suggestionSet.CopyTo(suggestionArray);
-						}
-					}
-					if(requirementArray == null)
-						requirementArray = new string[0];
-					if(suggestionArray == null)
-						suggestionArray = new string[0];
-					if(requirementArray.Length >= 1) {
-						Plugin.Log?.Debug($"{requirementArray.Length} requirements for `{beatmapLevel.beatmapLevel.levelID}`:");
-						foreach(string req in requirementArray)
-							Plugin.Log?.Debug($"    {req}");
-					} else {
-						Plugin.Log?.Debug($"No requirements for `{beatmapLevel.beatmapLevel.levelID}`");
-					}
-					PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex] = new PacketHandler.RecommendPreview(beatmapLevel.beatmapLevel, requirementArray, suggestionArray);
+				PacketHandler.RecommendPreview? preview = PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex];
+				if(preview.preview.levelID != beatmapLevel.beatmapLevel.levelID) {
+					preview = PreviewProvider.ResolvePreview(beatmapLevel.beatmapLevel.levelID);
+					if(preview != null)
+						PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex] = preview;
+					else if(beatmapLevel.beatmapLevel is CustomPreviewBeatmapLevel previewBeatmapLevel)
+						preview = PreviewProvider.SetFromLocal(multiplayerSessionManager.localPlayer.sortIndex, previewBeatmapLevel);
 				}
-				multiplayerSessionManager.Send(PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex]);
+				if(preview != null)
+					multiplayerSessionManager.Send(preview);
 			}
 			Plugin.lobbyDifficultyPanel.Update(beatmapLevel, SetLocalPlayerBeatmapLevel);
 			base.SetLocalPlayerBeatmapLevel(beatmapLevel);
@@ -934,81 +980,62 @@ namespace BeatUpClient {
 		public override void Activate() {
 			Plugin.Log?.Debug("PlayersDataModel.Activate()");
 			base.Activate();
+			_packetSerializer.UnregisterCallback<MultiplayerCore.Beatmaps.Packets.MpBeatmapPacket>();
+			_packetSerializer.RegisterCallback<MultiplayerCore.Beatmaps.Packets.MpBeatmapPacket>(HandleMpexBeatmapPacket);
 			_menuRpcManager.getRecommendedBeatmapEvent -= base.HandleMenuRpcManagerGetRecommendedBeatmap;
 			_menuRpcManager.getRecommendedBeatmapEvent += this.HandleMenuRpcManagerGetRecommendedBeatmap;
+			_menuRpcManager.recommendBeatmapEvent -= base.HandleMenuRpcManagerRecommendBeatmap;
+			_menuRpcManager.recommendBeatmapEvent += this.HandleMenuRpcManagerRecommendBeatmap;
 			_menuRpcManager.setIsEntitledToLevelEvent += HandleSetIsEntitledToLevel;
 		}
 
 		public override void Deactivate() {
 			Plugin.Log?.Debug("PlayersDataModel.Deactivate()");
 			_menuRpcManager.setIsEntitledToLevelEvent -= HandleSetIsEntitledToLevel;
+			_menuRpcManager.recommendBeatmapEvent -= this.HandleMenuRpcManagerRecommendBeatmap;
+			_menuRpcManager.recommendBeatmapEvent += base.HandleMenuRpcManagerRecommendBeatmap;
 			_menuRpcManager.getRecommendedBeatmapEvent -= this.HandleMenuRpcManagerGetRecommendedBeatmap;
 			_menuRpcManager.getRecommendedBeatmapEvent += base.HandleMenuRpcManagerGetRecommendedBeatmap;
 			base.Deactivate();
+		}
+
+		private void HandleMpexBeatmapPacket(MultiplayerCore.Beatmaps.Packets.MpBeatmapPacket packet, IConnectedPlayer player) {
+			BeatmapCharacteristicSO characteristic = _beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(packet.characteristic);
+			IPreviewBeatmapLevel preview = _beatmapLevelProvider.GetBeatmapFromPacket(packet);
+			PacketHandler.NetworkPreviewBeatmapLevel current = PreviewProvider.playerPreviews[player.sortIndex].preview;
+			if(preview.levelID != current.levelID || current.previewDifficultyBeatmapSets == null) // Ignore if we already have a BeatUpClient preview for this level
+				current.Init(preview);
 		}
 
 		void HandleSetIsEntitledToLevel(string userId, string levelId, EntitlementsStatus entitlementStatus) =>
 			((BeatUpMenuRpcManager)_menuRpcManager).HandleSetIsEntitledToLevel(lobbyStateDataModel.GetPlayerById(userId), levelId, entitlementStatus);
 
 		public override void HandleMenuRpcManagerGetRecommendedBeatmap(string userId) {
-			if(PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex] != null)
-				multiplayerSessionManager.Send(PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex]);
+			multiplayerSessionManager.Send(PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex]);
 			base.HandleMenuRpcManagerGetRecommendedBeatmap(userId);
 		}
 
+		public override void HandleMenuRpcManagerRecommendBeatmap(string userId, BeatmapIdentifierNetSerializable beatmapId) =>
+			Reflection.BaseBaseMethod<string, BeatmapIdentifierNetSerializable>(this, "HandleMenuRpcManagerRecommendBeatmap")(userId, beatmapId);
+
 		public override void SetLocalPlayerBeatmapLevel(PreviewDifficultyBeatmap? beatmapLevel) {
 			if(beatmapLevel != null) {
-				PacketHandler.RecommendPreview localPreview = PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex];
-				if(localPreview.preview.levelID != beatmapLevel.beatmapLevel.levelID) {
-					string[]? requirementArray = null, suggestionArray = null;
-					PacketHandler.RecommendPreview? preview = PreviewProvider.ResolvePreview(beatmapLevel.beatmapLevel.levelID);
-					if(preview != null) {
-						requirementArray = preview.requirements;
-						suggestionArray = preview.suggestions;
-					} else if(beatmapLevel.beatmapLevel is CustomPreviewBeatmapLevel previewBeatmapLevel) {
-						string? levelHash = MultiplayerCore.Utilities.HashForLevelID(beatmapLevel.beatmapLevel.levelID);
-						if(!string.IsNullOrEmpty(levelHash)) {
-							SongCore.Data.ExtraSongData? extraSongData = SongCore.Collections.RetrieveExtraSongData(levelHash);
-							if(extraSongData != null) {
-								System.Collections.Generic.HashSet<string> requirementSet = new System.Collections.Generic.HashSet<string>();
-								System.Collections.Generic.HashSet<string> suggestionSet = new System.Collections.Generic.HashSet<string>();
-								foreach(SongCore.Data.ExtraSongData.DifficultyData difficulty in extraSongData._difficulties) {
-									foreach(string requirement in difficulty.additionalDifficultyData._requirements)
-										requirementSet.Add(requirement);
-									foreach(string suggestion in difficulty.additionalDifficultyData._suggestions)
-										suggestionSet.Add(suggestion);
-								}
-								requirementArray = new string[requirementSet.Count];
-								suggestionArray = new string[suggestionSet.Count];
-								requirementSet.CopyTo(requirementArray);
-								suggestionSet.CopyTo(suggestionArray);
-							}
-						}
-					}
-					if(requirementArray == null)
-						requirementArray = new string[0];
-					if(suggestionArray == null)
-						suggestionArray = new string[0];
-					if(requirementArray.Length >= 1) {
-						Plugin.Log?.Debug($"{requirementArray.Length} requirements for `{beatmapLevel.beatmapLevel.levelID}`:");
-						foreach(string req in requirementArray)
-							Plugin.Log?.Debug($"    {req}");
-					} else {
-						Plugin.Log?.Debug($"No requirements for `{beatmapLevel.beatmapLevel.levelID}`");
-					}
-					PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex] = new PacketHandler.RecommendPreview(beatmapLevel.beatmapLevel, requirementArray, suggestionArray);
+				PacketHandler.RecommendPreview? preview = PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex];
+				if(preview.preview.levelID != beatmapLevel.beatmapLevel.levelID) {
+					preview = PreviewProvider.ResolvePreview(beatmapLevel.beatmapLevel.levelID);
+					if(preview != null)
+						PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex] = preview;
+					else if(beatmapLevel.beatmapLevel is CustomPreviewBeatmapLevel previewBeatmapLevel)
+						preview = PreviewProvider.SetFromLocal(multiplayerSessionManager.localPlayer.sortIndex, previewBeatmapLevel);
 				}
-				multiplayerSessionManager.Send(PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex]);
+				if(preview != null)
+					multiplayerSessionManager.Send(preview);
 			}
 			Plugin.lobbyDifficultyPanel.Update(beatmapLevel, SetLocalPlayerBeatmapLevel);
-			if(beatmapLevel == null) {
-				// `base.base` considered harmful; prefer function pointer hacks
-				System.IntPtr func = typeof(LobbyPlayersDataModel).GetMethod("SetLocalPlayerBeatmapLevel").MethodHandle.GetFunctionPointer();
-				System.Action<PreviewDifficultyBeatmap?> base_base_SetLocalPlayerBeatmapLevel = (System.Action<PreviewDifficultyBeatmap?>)System.Activator.CreateInstance(typeof(System.Action<PreviewDifficultyBeatmap?>), this, func);
-				base_base_SetLocalPlayerBeatmapLevel(beatmapLevel);
-			} else {
+			if(beatmapLevel == null)
+				Reflection.BaseBaseMethod<PreviewDifficultyBeatmap?>(this, "SetLocalPlayerBeatmapLevel")(beatmapLevel);
+			else
 				base.SetLocalPlayerBeatmapLevel(beatmapLevel);
-			}
 		}
 
 		public override void ClearLocalPlayerBeatmapLevel() {
@@ -1253,7 +1280,7 @@ namespace BeatUpClient {
 		public void Update(PreviewDifficultyBeatmap? beatmapLevel, System.Action<PreviewDifficultyBeatmap> onChange) {
 			didSelectBeatmapCharacteristicEvent.Set(delegate {});
 			didSelectDifficultyEvent.Set(delegate {});
-			if(beatmapLevel == null) {
+			if(beatmapLevel == null || beatmapLevel.beatmapLevel.previewDifficultyBeatmapSets == null) {
 				Clear();
 				return;
 			}
@@ -1283,9 +1310,9 @@ namespace BeatUpClient {
 		}
 	}
 
-	public static class Patches {
+	public abstract class PatchGroup {
 		[System.AttributeUsage(System.AttributeTargets.Method, AllowMultiple = true)]
-		public class PatchAttribute : System.Attribute {
+		protected class PatchAttribute : System.Attribute {
 			System.Reflection.MethodInfo? method;
 			bool prefix;
 			protected PatchAttribute(bool prefix, System.Reflection.MethodInfo? method, System.Type? genericType) {
@@ -1306,10 +1333,19 @@ namespace BeatUpClient {
 		}
 
 		[System.AttributeUsage(System.AttributeTargets.Method)]
-		public class PatchOverloadAttribute : PatchAttribute {
+		protected class PatchOverloadAttribute : PatchAttribute {
 			public PatchOverloadAttribute(bool prefix, System.Type type, string fn, params System.Type[] args) : base(prefix, type.GetMethod(fn, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.GetField | System.Reflection.BindingFlags.SetField | System.Reflection.BindingFlags.GetProperty | System.Reflection.BindingFlags.SetProperty, null, args, null), null) {}
 		}
 
+		public void PatchAll() {
+			foreach(System.Reflection.MethodInfo method in this.GetType().GetMethods())
+				foreach(System.Attribute attrib in method.GetCustomAttributes(false))
+					if(attrib is PatchAttribute patch)
+						patch.Apply(method);
+		}
+	}
+
+	public class Patches : PatchGroup {
 		[Patch(true, typeof(ClientCertificateValidator), "ValidateCertificateChainInternal")]
 		public static bool ClientCertificateValidator_ValidateCertificateChainInternal() =>
 			!(Plugin.networkConfig is CustomNetworkConfig);
@@ -1464,38 +1500,20 @@ namespace BeatUpClient {
 			}
 		}
 
-		public class ErrorPreviewBeatmapLevel : IPreviewBeatmapLevel {
-			public string levelID { get; set; }
-			public string songName { get; set; } = "[ERROR]";
-			public string songSubName { get; set; } = System.String.Empty;
-			public string songAuthorName { get; set; } = "[ERROR]";
-			public string levelAuthorName { get; set; } = System.String.Empty;
-			public float beatsPerMinute { get; set; }
-			public float songTimeOffset { get; set; }
-			public float shuffle { get; set; }
-			public float shufflePeriod { get; set; }
-			public float previewStartTime { get; set; }
-			public float previewDuration { get; set; }
-			public float songDuration { get; set; }
-			public System.Collections.Generic.IReadOnlyList<PreviewDifficultyBeatmapSet> previewDifficultyBeatmapSets { get; set; } = null!;
-			public EnvironmentInfoSO environmentInfo { get; set; } = null!;
-			public EnvironmentInfoSO allDirectionsEnvironmentInfo { get; set; } = null!;
-			public System.Threading.Tasks.Task<UnityEngine.Sprite> GetCoverImageAsync(System.Threading.CancellationToken cancellationToken) =>
+		public class ErrorBeatmapLevel : EmptyBeatmapLevel, IPreviewBeatmapLevel {
+			string levelId;
+			string IPreviewBeatmapLevel.levelID => levelId;
+			string IPreviewBeatmapLevel.songName => "[ERROR]";
+			string IPreviewBeatmapLevel.songAuthorName => "[ERROR]";
+			public override System.Threading.Tasks.Task<UnityEngine.Sprite> GetCoverImageAsync(System.Threading.CancellationToken cancellationToken) =>
 				System.Threading.Tasks.Task.FromResult<UnityEngine.Sprite>(Plugin.defaultPackCover);
-			public ErrorPreviewBeatmapLevel(string levelId) =>
-				levelID = levelId;
+			public ErrorBeatmapLevel(string levelId) =>
+				this.levelId = levelId;
 		}
 
 		[Patch(false, typeof(BeatmapLevelsModel), nameof(BeatmapLevelsModel.GetLevelPreviewForLevelId))]
-		public static void BeatmapLevelsModel_GetLevelPreviewForLevelId(ref IPreviewBeatmapLevel? __result, string levelId) {
-			if(__result == null) {
-				__result = (IPreviewBeatmapLevel?)PreviewProvider.ResolvePreview(levelId)?.preview ?? new ErrorPreviewBeatmapLevel(levelId);
-				Plugin.Log?.Debug("Overriding GetLevelPreviewForLevelId()");
-			} else {
-				Plugin.Log?.Debug("Fail GetLevelPreviewForLevelId()");
-			}
-			Plugin.Log?.Debug($"    result={__result}");
-		}
+		public static void BeatmapLevelsModel_GetLevelPreviewForLevelId(ref IPreviewBeatmapLevel? __result, string levelId) =>
+			__result ??= (IPreviewBeatmapLevel?)PreviewProvider.ResolvePreview(levelId)?.preview ?? new ErrorBeatmapLevel(levelId);
 
 		public static async System.Threading.Tasks.Task ZipFile(System.IO.Compression.ZipArchive archive, string path, string name) {
 			Plugin.Log?.Debug($"Zipping `{path}`");
@@ -1560,7 +1578,8 @@ namespace BeatUpClient {
 		[Patch(false, typeof(NetworkPlayerEntitlementChecker), "GetEntitlementStatus")]
 		public static void NetworkPlayerEntitlementChecker_GetEntitlementStatus(ref System.Threading.Tasks.Task<EntitlementsStatus> __result, string levelId) {
 			Plugin.Log?.Debug($"NetworkPlayerEntitlementChecker_GetEntitlementStatus");
-			__result = ShareWrapper(__result, levelId);
+			if(!Plugin.haveMpCore)
+				__result = ShareWrapper(__result, levelId);
 		}
 
 		[Patch(true, typeof(ConnectedPlayerManager), "Send", typeof(LiteNetLib.Utils.INetSerializable))]
@@ -1650,7 +1669,6 @@ namespace BeatUpClient {
 				__instance._levelBar.transform.localPosition = new UnityEngine.Vector3(0, 13.25f, 0);
 				panel.beatmapCharacteristic.localPosition = new UnityEngine.Vector3(-1, -1.5f, 0);
 				panel.beatmapDifficulty.localPosition = new UnityEngine.Vector3(-1, -8.25f, 0);
-				panel.Update(original, OnSelect);
 				void OnSelect(PreviewDifficultyBeatmap preview) {
 					selectedPreview = preview;
 					selectedBeatmap = (preview == original) ? null : BeatmapLevelDataExtensions.GetDifficultyBeatmap(menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.difficultyBeatmap.level.beatmapLevelData, preview);
@@ -1658,6 +1676,7 @@ namespace BeatUpClient {
 					switchButton.gameObject.SetActive(selectedBeatmap != null);
 					panel.Update(preview, OnSelect);
 				}
+				panel.Update(original, OnSelect);
 			}
 		}
 
@@ -1677,12 +1696,33 @@ namespace BeatUpClient {
 				}
 			}
 		}
+	}
 
-		public static void PatchAll() {
-			foreach(System.Reflection.MethodInfo method in typeof(Patches).GetMethods())
-				foreach(System.Attribute attrib in method.GetCustomAttributes(false))
-					if(attrib is PatchAttribute patch)
-						patch.Apply(method);
+	public class MpPatches : PatchGroup {
+		public static async System.Threading.Tasks.Task<EntitlementsStatus> MpShareWrapper(System.Threading.Tasks.Task<EntitlementsStatus> task, string levelId, NetworkPlayerEntitlementChecker checker) {
+			EntitlementsStatus status = await task;
+			if(status != EntitlementsStatus.NotOwned)
+				return status;
+			return await checker._additionalContentModel.GetLevelEntitlementStatusAsync(levelId, default(System.Threading.CancellationToken)) switch {
+				AdditionalContentModel.EntitlementStatus.Owned => EntitlementsStatus.Ok, 
+				AdditionalContentModel.EntitlementStatus.NotOwned => EntitlementsStatus.NotOwned, 
+				_ => EntitlementsStatus.Unknown, 
+			};
+		}
+
+		[Patch(false, typeof(LobbyPlayersDataModel), nameof(LobbyPlayersDataModel.Deactivate))]
+		public static void LobbyPlayersDataModel_Deactivate() =>
+			Plugin.Log?.Debug("LobbyPlayersDataModel_Deactivate()");
+
+		[Patch(false, typeof(LobbyPlayersDataModel), nameof(LobbyPlayersDataModel.ClearData))]
+		public static void LobbyPlayersDataModel_ClearData() =>
+			Plugin.Log?.Debug("LobbyPlayersDataModel_ClearData()");
+
+		[Patch(false, typeof(MultiplayerCore.Objects.MpEntitlementChecker), "GetEntitlementStatus")] // Temporary fix since DiJack doesn't currently support `FromComponentInNewPrefab` and `FromNewComponentOnRoot` binds
+		public static void MpEntitlementChecker_GetEntitlementStatus(MultiplayerCore.Objects.MpEntitlementChecker __instance, ref System.Threading.Tasks.Task<EntitlementsStatus> __result, string levelId) {
+			Plugin.Log?.Debug($"NetworkPlayerEntitlementChecker_GetEntitlementStatus");
+			__result = MpShareWrapper(__result, levelId, __instance);
+			__result = Patches.ShareWrapper(__result, levelId);
 		}
 	}
 
@@ -2061,7 +2101,12 @@ namespace BeatUpClient {
 					MpPlugin.OnEnable();
 				Log?.Debug("Warming methods");
 				WarmMethods(typeof(Plugin));
+				WarmMethods(typeof(PreviewProvider));
+				if(haveSongCore)
+					WarmMethods(typeof(SongCorePreviewProvider));
 				WarmMethods(typeof(Patches));
+				if(haveMpCore)
+					WarmMethods(typeof(MpPatches));
 				foreach(System.Type type in DiJack.RegisteredTypes())
 					WarmMethods(type);
 				Log?.Debug("Loading assets");
@@ -2070,7 +2115,9 @@ namespace BeatUpClient {
 				badges = data.LoadAllAssets<UnityEngine.GameObject>();
 				Log?.Debug("Applying patches");
 				DiJack.Patch();
-				Patches.PatchAll(); // harmony.PatchAll() fails with ReflectionTypeLoadException
+				new Patches().PatchAll(); // harmony.PatchAll() fails with `ReflectionTypeLoadException`
+				if(haveMpCore)
+					new MpPatches().PatchAll();
 				System.Reflection.MethodBase original = typeof(LiteNetLib.NetManager).Assembly.GetType("LiteNetLib.ReliableChannel").GetConstructor(new[] {typeof(LiteNetLib.NetPeer), typeof(bool), typeof(byte)});
 				System.Reflection.MethodInfo transpiler = typeof(Plugin).GetMethod("ReliableChannel_ctor", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public);
 				harmony.Patch(original, transpiler: new HarmonyLib.HarmonyMethod(transpiler));

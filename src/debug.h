@@ -130,13 +130,14 @@ static const uint8_t *debug_logRouting(const uint8_t *pkt, const uint8_t *data, 
 					#endif
 					case MultiplayerSessionMessageType_MpCore: {
 						struct MpCore mpHeader = pkt_readMpCore(version, &sub);
-						if(mpHeader.type.length == 15 && memcmp(mpHeader.type.data, "MpBeatmapPacket", 15) == 0) {
+						if(String_is(mpHeader.type, "MpBeatmapPacket"))
 							pkt_logMpBeatmapPacket(version, "\tMpBeatmapPacket", buf, buf, pkt_readMpBeatmapPacket(version, &sub));
-						} else if(mpHeader.type.length == 12 && memcmp(mpHeader.type.data, "MpPlayerData", 12) == 0) {
+						else if(String_is(mpHeader.type, "MpPlayerData"))
 							pkt_logMpPlayerData(version, "\tMpPlayerData", buf, buf, pkt_readMpPlayerData(version, &sub));
-						} else {
-							uprintf("[INSTANCE] BAD MPCORE MESSAGE TYPE: '%.*s'\n", mpHeader.type.length, mpHeader.type.data);
-						}
+						else if(String_is(mpHeader.type, "CustomAvatarPacket"))
+							pkt_logCustomAvatarPacket(version, "\tCustomAvatarPacket", buf, buf, pkt_readCustomAvatarPacket(version, &sub));
+						else
+							uprintf("BAD MPCORE MESSAGE TYPE: '%.*s'\n", mpHeader.type.length, mpHeader.type.data);
 						break;
 					}
 					case MultiplayerSessionMessageType_BeatUpMessage: {

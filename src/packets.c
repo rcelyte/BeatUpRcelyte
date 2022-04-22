@@ -1647,6 +1647,13 @@ struct MpPlayerData pkt_readMpPlayerData(struct PacketContext ctx, const uint8_t
 	out.platform = pkt_readInt32(ctx, pkt);
 	return out;
 }
+struct CustomAvatarPacket pkt_readCustomAvatarPacket(struct PacketContext ctx, const uint8_t **pkt) {
+	struct CustomAvatarPacket out;
+	out.hash = pkt_readString(ctx, pkt);
+	out.scale = pkt_readFloat32(ctx, pkt);
+	out.floor = pkt_readFloat32(ctx, pkt);
+	return out;
+}
 struct AuthenticateUserRequest pkt_readAuthenticateUserRequest(struct PacketContext ctx, const uint8_t **pkt) {
 	struct AuthenticateUserRequest out;
 	out.base = pkt_readBaseMasterServerReliableResponse(ctx, pkt);

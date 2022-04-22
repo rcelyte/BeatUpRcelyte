@@ -1186,6 +1186,11 @@ struct MpPlayerData {
 	struct String platformId;
 	MpPlatform platform;
 };
+struct CustomAvatarPacket {
+	struct String hash;
+	float scale;
+	float floor;
+};
 struct AuthenticateUserRequest {
 	struct BaseMasterServerReliableResponse base;
 	struct AuthenticationToken authenticationToken;
@@ -1482,6 +1487,7 @@ struct GameplayRpcHeader pkt_readGameplayRpcHeader(struct PacketContext ctx, con
 void pkt_writeGameplayRpcHeader(struct PacketContext ctx, uint8_t **pkt, struct GameplayRpcHeader in);
 struct MpBeatmapPacket pkt_readMpBeatmapPacket(struct PacketContext ctx, const uint8_t **pkt);
 struct MpPlayerData pkt_readMpPlayerData(struct PacketContext ctx, const uint8_t **pkt);
+struct CustomAvatarPacket pkt_readCustomAvatarPacket(struct PacketContext ctx, const uint8_t **pkt);
 struct AuthenticateUserRequest pkt_readAuthenticateUserRequest(struct PacketContext ctx, const uint8_t **pkt);
 void pkt_writeAuthenticateUserResponse(struct PacketContext ctx, uint8_t **pkt, struct AuthenticateUserResponse in);
 void pkt_writeConnectToServerResponse(struct PacketContext ctx, uint8_t **pkt, struct ConnectToServerResponse in);

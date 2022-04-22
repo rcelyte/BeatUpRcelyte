@@ -1318,6 +1318,10 @@ i32 MpPlatform
 r MpPlayerData
 	String platformId
 	i32.MpPlatform platform
+r CustomAvatarPacket
+	String hash
+	f32 scale
+	f32 floor
 u8 UserMessage Type
 	r AuthenticateUserRequest
 		BaseMasterServerReliableResponse base

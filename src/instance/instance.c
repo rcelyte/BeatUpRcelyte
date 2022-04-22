@@ -937,6 +937,8 @@ static void handle_MpCore(struct Context *ctx, struct Room *room, struct Instanc
 		pkt_readMpBeatmapPacket(session->net.version, data);
 	else if(String_is(mpHeader.type, "MpPlayerData"))
 		pkt_readMpPlayerData(session->net.version, data);
+	else if(String_is(mpHeader.type, "CustomAvatarPacket"))
+		pkt_readCustomAvatarPacket(session->net.version, data);
 	else
 		uprintf("BAD MPCORE MESSAGE TYPE: '%.*s'\n", mpHeader.type.length, mpHeader.type.data);
 }
