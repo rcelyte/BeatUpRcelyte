@@ -97,6 +97,11 @@ namespace BeatUpClient {
 		}
 	}
 
+	static class NullableStringHelper {
+		public static bool IsNullOrEmpty([System.Diagnostics.CodeAnalysis.NotNullWhen(false)] string? str) =>
+			string.IsNullOrEmpty(str);
+	}
+
 	public class BeatUpMenuRpcManager : MenuRpcManager, IMenuRpcManager {
 		string selectedLevelId = System.String.Empty;
 		public BeatUpMenuRpcManager(IMultiplayerSessionManager multiplayerSessionManager, INetworkConfig networkConfig) : base(multiplayerSessionManager) {
@@ -137,9 +142,9 @@ namespace BeatUpClient {
 				Plugin.Log?.Debug($"Entitlement[fail]: need SongCore");
 				return true;
 			}
-			if(!System.Linq.Enumerable.All(preview.requirements, x => string.IsNullOrEmpty(x) || SongCore.Collections.capabilities.Contains(x))) {
+			if(!System.Linq.Enumerable.All(preview.requirements, x => NullableStringHelper.IsNullOrEmpty(x) || SongCore.Collections.capabilities.Contains(x))) {
 				Plugin.Log?.Debug($"Entitlement[fail]: missing requirements; need:");
-				foreach(string requirement in preview.requirements)
+				foreach(string? requirement in preview.requirements)
 					Plugin.Log?.Debug($"    " + requirement);
 				return true;
 			}
@@ -222,7 +227,7 @@ namespace BeatUpClient {
 				System.Collections.Generic.List<PreviewDifficultyBeatmapSet> sets = new System.Collections.Generic.List<PreviewDifficultyBeatmapSet>();
 				StandardLevelInfoSaveData.DifficultyBeatmapSet[] difficultyBeatmapSets = standardLevelInfoSaveData.difficultyBeatmapSets;
 				foreach(StandardLevelInfoSaveData.DifficultyBeatmapSet difficultyBeatmapSet in difficultyBeatmapSets) {
-					BeatmapCharacteristicSO beatmapCharacteristicBySerializedName = beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(difficultyBeatmapSet.beatmapCharacteristicName);
+					BeatmapCharacteristicSO? beatmapCharacteristicBySerializedName = beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(difficultyBeatmapSet.beatmapCharacteristicName);
 					if(beatmapCharacteristicBySerializedName != null) {
 						BeatmapDifficulty[] diffs = new BeatmapDifficulty[difficultyBeatmapSet.difficultyBeatmaps.Length];
 						for(int j = 0; j < difficultyBeatmapSet.difficultyBeatmaps.Length; j++) {
@@ -266,7 +271,7 @@ namespace BeatUpClient {
 			CustomBeatmapLevel customBeatmapLevel = new CustomBeatmapLevel(customPreviewBeatmapLevel);
 			CustomDifficultyBeatmapSet[] difficultyBeatmapSets = new CustomDifficultyBeatmapSet[standardLevelInfoSaveData.difficultyBeatmapSets.Length];
 			for(int i = 0; i < difficultyBeatmapSets.Length; ++i) {
-				BeatmapCharacteristicSO beatmapCharacteristicBySerializedName = beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(standardLevelInfoSaveData.difficultyBeatmapSets[i].beatmapCharacteristicName);
+				BeatmapCharacteristicSO? beatmapCharacteristicBySerializedName = beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(standardLevelInfoSaveData.difficultyBeatmapSets[i].beatmapCharacteristicName);
 				CustomDifficultyBeatmap[] difficultyBeatmaps = new CustomDifficultyBeatmap[standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps.Length];
 				difficultyBeatmapSets[i] = new CustomDifficultyBeatmapSet(beatmapCharacteristicBySerializedName);
 				for(int j = 0; j < standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps.Length; ++j) {
@@ -438,19 +443,15 @@ namespace BeatUpClient {
 	}
 
 	public static class SongCorePreviewProvider {
-		public static void GetInfo(CustomPreviewBeatmapLevel previewBeatmapLevel, System.Collections.Generic.HashSet<string> requirementSet, System.Collections.Generic.HashSet<string> suggestionSet) {
+		public static void GetInfo(CustomPreviewBeatmapLevel previewBeatmapLevel, ref System.Collections.Generic.IEnumerable<string?> requirements, ref System.Collections.Generic.IEnumerable<string?> suggestions) {
 			string? levelHash = MultiplayerCore.Utilities.HashForLevelID(previewBeatmapLevel.levelID);
 			if(string.IsNullOrEmpty(levelHash))
 				return;
 			SongCore.Data.ExtraSongData? extraSongData = SongCore.Collections.RetrieveExtraSongData(levelHash);
 			if(extraSongData == null)
 				return;
-			foreach(SongCore.Data.ExtraSongData.DifficultyData difficulty in extraSongData._difficulties) {
-				foreach(string requirement in difficulty.additionalDifficultyData._requirements)
-					requirementSet.Add(requirement);
-				foreach(string suggestion in difficulty.additionalDifficultyData._suggestions)
-					suggestionSet.Add(suggestion);
-			}
+			requirements = System.Linq.Enumerable.SelectMany(extraSongData._difficulties, diff => diff.additionalDifficultyData._requirements);
+			suggestions = System.Linq.Enumerable.SelectMany(extraSongData._difficulties, diff => diff.additionalDifficultyData._suggestions);
 		}
 	}
 
@@ -462,39 +463,21 @@ namespace BeatUpClient {
 		public static PacketHandler.RecommendPreview? ResolvePreview(string levelId) =>
 			System.Linq.Enumerable.FirstOrDefault(playerPreviews, (PacketHandler.RecommendPreview preview) => preview.preview.levelID == levelId);
 		public static PacketHandler.RecommendPreview SetFromLocal(int index, CustomPreviewBeatmapLevel previewBeatmapLevel) {
-			System.Collections.Generic.HashSet<string> requirementSet = new System.Collections.Generic.HashSet<string>();
-			System.Collections.Generic.HashSet<string> suggestionSet = new System.Collections.Generic.HashSet<string>();
+			System.Collections.Generic.IEnumerable<string?> requirements = new string[0], suggestions = new string[0];
 			string path = System.IO.Path.Combine(previewBeatmapLevel.customLevelPath, "Info.dat");
 			if(Plugin.haveSongCore) {
-				SongCorePreviewProvider.GetInfo(previewBeatmapLevel, requirementSet, suggestionSet);
+				SongCorePreviewProvider.GetInfo(previewBeatmapLevel, ref requirements, ref suggestions);
 			} else if(System.IO.File.Exists(path)) {
 				Newtonsoft.Json.Linq.JObject info = Newtonsoft.Json.Linq.JObject.Parse(System.IO.File.ReadAllText(path));
-				if(info.TryGetValue("_difficultyBeatmapSets", out Newtonsoft.Json.Linq.JToken? diffSets)) {
-					foreach(Newtonsoft.Json.Linq.JObject diffSet in (diffSets as Newtonsoft.Json.Linq.JArray) ?? new Newtonsoft.Json.Linq.JArray()) {
-						if(diffSet.TryGetValue("_difficultyBeatmaps", out Newtonsoft.Json.Linq.JToken? diffBeatmaps)) {
-							foreach(Newtonsoft.Json.Linq.JObject diffBeatmap in (diffBeatmaps as Newtonsoft.Json.Linq.JArray) ?? new Newtonsoft.Json.Linq.JArray()) {
-								if(diffBeatmap.TryGetValue("_customData", out Newtonsoft.Json.Linq.JToken? customData_token)) {
-									if(customData_token is Newtonsoft.Json.Linq.JObject customData) {
-										if(customData.TryGetValue("_requirements", out Newtonsoft.Json.Linq.JToken? requirements))
-											foreach(string? requirement in (requirements as Newtonsoft.Json.Linq.JArray) ?? new Newtonsoft.Json.Linq.JArray())
-												if(requirement != null)
-													requirementSet.Add(requirement);
-										if(customData.TryGetValue("_suggestions", out Newtonsoft.Json.Linq.JToken? suggestions))
-											foreach(string? suggestion in (suggestions as Newtonsoft.Json.Linq.JArray) ?? new Newtonsoft.Json.Linq.JArray())
-												if(suggestion != null)
-													suggestionSet.Add(suggestion);
-									}
-								}
-							}
-						}
-					}
-				}
+				Newtonsoft.Json.Linq.IJEnumerable<Newtonsoft.Json.Linq.JToken> customData = Newtonsoft.Json.Linq.Extensions.Children(info["_difficultyBeatmapSets"]?.Children()["_difficultyBeatmaps"] ?? new Newtonsoft.Json.Linq.JArray())["_customData"];
+				requirements = Newtonsoft.Json.Linq.Extensions.Values<string>(customData["_requirements"]);
+				suggestions = Newtonsoft.Json.Linq.Extensions.Values<string>(customData["_suggestions"]);
 			}
-			string[] requirementArray = System.Linq.Enumerable.ToArray(requirementSet);
-			string[] suggestionArray = System.Linq.Enumerable.ToArray(suggestionSet);
+			string?[] requirementArray = System.Linq.Enumerable.ToArray(System.Linq.Enumerable.ToHashSet(requirements));
+			string?[] suggestionArray = System.Linq.Enumerable.ToArray(System.Linq.Enumerable.ToHashSet(suggestions));
 			if(requirementArray.Length >= 1) {
 				Plugin.Log?.Debug($"{requirementArray.Length} requirements for `{previewBeatmapLevel.levelID}`:");
-				foreach(string req in requirementArray)
+				foreach(string? req in requirementArray)
 					Plugin.Log?.Debug($"    {req}");
 			} else {
 				Plugin.Log?.Debug($"No requirements for `{previewBeatmapLevel.levelID}`");
@@ -514,11 +497,11 @@ namespace BeatUpClient {
 		};
 
 		public class NetworkPreviewBeatmapLevel : IPreviewBeatmapLevel, LiteNetLib.Utils.INetSerializable {
-			public string levelID { get; set; } = System.String.Empty;
-			public string songName { get; set; } = System.String.Empty;
-			public string songSubName { get; set; } = System.String.Empty;
-			public string songAuthorName { get; set; } = System.String.Empty;
-			public string levelAuthorName { get; set; } = System.String.Empty;
+			public string? levelID { get; set; } = System.String.Empty;
+			public string? songName { get; set; } = System.String.Empty;
+			public string? songSubName { get; set; } = System.String.Empty;
+			public string? songAuthorName { get; set; } = System.String.Empty;
+			public string? levelAuthorName { get; set; } = System.String.Empty;
 			public float beatsPerMinute { get; set; }
 			public float songTimeOffset { get; set; }
 			public float shuffle { get; set; }
@@ -554,11 +537,11 @@ namespace BeatUpClient {
 				return new byte[0];
 			}
 			public void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
-				writer.Put((string)levelID);
-				writer.Put((string)songName);
-				writer.Put((string)songSubName);
-				writer.Put((string)songAuthorName);
-				writer.Put((string)levelAuthorName);
+				writer.Put((string?)levelID);
+				writer.Put((string?)songName);
+				writer.Put((string?)songSubName);
+				writer.Put((string?)songAuthorName);
+				writer.Put((string?)levelAuthorName);
 				writer.Put((float)beatsPerMinute);
 				writer.Put((float)songTimeOffset);
 				writer.Put((float)shuffle);
@@ -593,7 +576,7 @@ namespace BeatUpClient {
 				uint count = UpperBound(reader.GetByte(), 8);
 				PreviewDifficultyBeatmapSet[] sets = count >= 1 ? new PreviewDifficultyBeatmapSet[count] : null!;
 				for(uint i = 0; i < count; ++i) {
-					BeatmapCharacteristicSO beatmapCharacteristic = beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(reader.GetString());
+					BeatmapCharacteristicSO? beatmapCharacteristic = beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(reader.GetString());
 					BeatmapDifficulty[] beatmapDifficulties = new BeatmapDifficulty[UpperBound(reader.GetByte(), 5)];
 					for(uint j = 0; j < beatmapDifficulties.Length; ++j)
 						beatmapDifficulties[j] = (BeatmapDifficulty)reader.GetVarUInt();
@@ -630,16 +613,16 @@ namespace BeatUpClient {
 
 		public class RecommendPreview : LiteNetLib.Utils.INetSerializable {
 			public NetworkPreviewBeatmapLevel preview = new NetworkPreviewBeatmapLevel();
-			public string[] requirements = new string[0];
-			public string[] suggestions = new string[0];
+			public string?[] requirements = new string[0];
+			public string?[] suggestions = new string[0];
 			public void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
 				preview.Serialize(writer);
 				writer.PutVarUInt(UpperBound((uint)requirements.Length, 16));
-				foreach(string requirement in requirements)
-					writer.Put((string)requirement);
+				foreach(string? requirement in requirements)
+					writer.Put((string?)requirement);
 				writer.PutVarUInt(UpperBound((uint)suggestions.Length, 16));
-				foreach(string suggestion in suggestions)
-					writer.Put((string)suggestion);
+				foreach(string? suggestion in suggestions)
+					writer.Put((string?)suggestion);
 			}
 			public void Deserialize(LiteNetLib.Utils.NetDataReader reader) {
 				preview.Deserialize(reader);
@@ -651,7 +634,7 @@ namespace BeatUpClient {
 					suggestions[i] = reader.GetString();
 			}
 			public RecommendPreview() {}
-			public RecommendPreview(IPreviewBeatmapLevel beatmapLevel, string[] requirements, string[] suggestions) {
+			public RecommendPreview(IPreviewBeatmapLevel beatmapLevel, string?[] requirements, string?[] suggestions) {
 				this.preview = new NetworkPreviewBeatmapLevel(beatmapLevel);
 				this.requirements = requirements;
 				this.suggestions = suggestions;
@@ -1000,7 +983,7 @@ namespace BeatUpClient {
 		}
 
 		private void HandleMpexBeatmapPacket(MultiplayerCore.Beatmaps.Packets.MpBeatmapPacket packet, IConnectedPlayer player) {
-			BeatmapCharacteristicSO characteristic = _beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(packet.characteristic);
+			BeatmapCharacteristicSO? characteristic = _beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(packet.characteristic);
 			IPreviewBeatmapLevel preview = _beatmapLevelProvider.GetBeatmapFromPacket(packet);
 			PacketHandler.NetworkPreviewBeatmapLevel current = PreviewProvider.playerPreviews[player.sortIndex].preview;
 			if(preview.levelID != current.levelID || current.previewDifficultyBeatmapSets == null) // Ignore if we already have a BeatUpClient preview for this level
@@ -1502,9 +1485,9 @@ namespace BeatUpClient {
 
 		public class ErrorBeatmapLevel : EmptyBeatmapLevel, IPreviewBeatmapLevel {
 			string levelId;
-			string IPreviewBeatmapLevel.levelID => levelId;
-			string IPreviewBeatmapLevel.songName => "[ERROR]";
-			string IPreviewBeatmapLevel.songAuthorName => "[ERROR]";
+			string? IPreviewBeatmapLevel.levelID => levelId;
+			string? IPreviewBeatmapLevel.songName => "[ERROR]";
+			string? IPreviewBeatmapLevel.songAuthorName => "[ERROR]";
 			public override System.Threading.Tasks.Task<UnityEngine.Sprite> GetCoverImageAsync(System.Threading.CancellationToken cancellationToken) =>
 				System.Threading.Tasks.Task.FromResult<UnityEngine.Sprite>(Plugin.defaultPackCover);
 			public ErrorBeatmapLevel(string levelId) =>
@@ -1864,11 +1847,8 @@ namespace BeatUpClient {
 				string oldMultiplayerStatusUrl = customNetworkConfig.multiplayerStatusUrl;
 				Plugin.Log?.Debug($"CustomNetworkConfig(customServerHostName=\"{hostname[0]}\", port={port}, forceGameLift={forceGameLift})");
 				typeof(CustomNetworkConfig).GetConstructors()[0].Invoke(customNetworkConfig, new object[] {networkConfigPrefab, hostname[0], port, forceGameLift});
-				if(!string.IsNullOrEmpty(multiplayerStatusUrl)) {
-					#pragma warning disable CS8604 // Possible null reference argument
+				if(!NullableStringHelper.IsNullOrEmpty(multiplayerStatusUrl))
 					Reflection.Field<string>(customNetworkConfig, "<multiplayerStatusUrl>k__BackingField").Set(multiplayerStatusUrl);
-					#pragma warning restore CS8604
-				}
 				if(!forceGameLift)
 					Reflection.Field<ServiceEnvironment>(customNetworkConfig, "<serviceEnvironment>k__BackingField").Set(networkConfigPrefab.serviceEnvironment);
 				if(customNetworkConfig.multiplayerStatusUrl != oldMultiplayerStatusUrl)
