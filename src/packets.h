@@ -353,6 +353,8 @@ ENUM(uint8_t, MenuRpcType, {
 	MenuRpcType_SetPermissionConfiguration,
 	MenuRpcType_GetIsStartButtonEnabled,
 	MenuRpcType_SetIsStartButtonEnabled,
+	MenuRpcType_ClearSelectedBeatmap,
+	MenuRpcType_ClearSelectedGameplayModifiers,
 })
 ENUM(uint8_t, GameplayRpcType, {
 	GameplayRpcType_SetGameplaySceneSyncFinish,

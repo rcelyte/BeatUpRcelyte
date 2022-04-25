@@ -1195,6 +1195,10 @@ u8 MultiplayerSessionMessage Type
 			RemoteProcedureCallFlags flags
 			if(.flags.hasValue0)
 				vi32.CannotStartGameReason reason
+		n ClearSelectedBeatmap
+			RemoteProcedureCall base
+		n ClearSelectedGameplayModifiers
+			RemoteProcedureCall base
 	u8 GameplayRpc Type
 		s SetGameplaySceneSyncFinish
 			RemoteProcedureCall base

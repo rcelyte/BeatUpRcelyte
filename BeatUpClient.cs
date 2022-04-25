@@ -103,16 +103,19 @@ namespace BeatUpClient {
 	}
 
 	public class BeatUpMenuRpcManager : MenuRpcManager, IMenuRpcManager {
-		string selectedLevelId = System.String.Empty;
+		string? selectedLevelId = null;
 		public BeatUpMenuRpcManager(IMultiplayerSessionManager multiplayerSessionManager, INetworkConfig networkConfig) : base(multiplayerSessionManager) {
 			Plugin.networkConfig = networkConfig;
 			setSelectedBeatmapEvent += HandleSetSelectedBeatmapEvent;
+			clearSelectedBeatmapEvent += HandleClearSelectedBeatmapEvent;
 		}
-		void HandleSetSelectedBeatmapEvent(string userId, BeatmapIdentifierNetSerializable beatmapId) {
-			selectedLevelId = beatmapId.levelID;
-			foreach(Plugin.PlayerCell cell in Plugin.playerCells)
-				cell.UpdateData(new PacketHandler.LoadProgress(PacketHandler.LoadProgress.LoadState.None, 0, 0), true);
+		void HandleSetSelectedBeatmapEvent(string userId, BeatmapIdentifierNetSerializable? beatmapId) {
+			selectedLevelId = beatmapId?.levelID;
+			for(uint i = 0; i < Plugin.playerCells.Length; ++i)
+				Plugin.playerCells[i].UpdateData(new PacketHandler.LoadProgress(PacketHandler.LoadProgress.LoadState.None, 0, 0), true);
 		}
+		void HandleClearSelectedBeatmapEvent(string userId) =>
+			HandleSetSelectedBeatmapEvent(userId, null);
 		public void HandleSetIsEntitledToLevel(IConnectedPlayer? player, string levelId, EntitlementsStatus entitlementStatus) {
 			if(player == null || levelId != selectedLevelId)
 				return;
