@@ -16,7 +16,11 @@
 #include <string.h>
 #include <time.h>
 
+#ifdef DEBUG
 #define NOT_IMPLEMENTED(type) case type: uprintf(#type " not implemented\n"); abort();
+#else
+#define NOT_IMPLEMENTED(type) case type: uprintf(#type " not implemented\n"); break;
+#endif
 
 #define COUNTER_VAR CONCAT(_i_,__LINE__)
 

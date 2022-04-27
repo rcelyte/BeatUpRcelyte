@@ -1,6 +1,6 @@
 #!make
 DESTDIR := /usr/local
-VERSION := 0.2.0
+VERSION := 0.2.1
 
 MAKEFLAGS += --no-print-directory -j$(command nproc 2>/dev/null || echo 2)
 .SILENT:
@@ -21,6 +21,10 @@ CSREFS := ../Libs/0Harmony.dll ../Plugins/SongCore.dll ../Plugins/SiraUtil.dll .
 PUBREFS := $(CSREFS:%=.obj/Refs/Data/%)
 
 sinclude makefile.user
+
+ifdef DEBUG
+CFLAGS += -DDEBUG
+endif
 
 default: beatupserver
 

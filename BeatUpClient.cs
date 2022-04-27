@@ -103,6 +103,8 @@ namespace BeatUpClient {
 	}
 
 	public class BeatUpMenuRpcManager : MenuRpcManager, IMenuRpcManager {
+		[Zenject.Inject]
+		public PacketHandler handler = null!;
 		string? selectedLevelId = null;
 		public BeatUpMenuRpcManager(IMultiplayerSessionManager multiplayerSessionManager, INetworkConfig networkConfig) : base(multiplayerSessionManager) {
 			Plugin.networkConfig = networkConfig;
@@ -160,9 +162,9 @@ namespace BeatUpClient {
 			Plugin.Log?.Debug($"entitlementStatus={entitlementStatus}");
 			if(MissingRequirements(preview, entitlementStatus == EntitlementsStatus.Unknown)) {
 				entitlementStatus = EntitlementsStatus.NotOwned;
-			} else if(entitlementStatus == EntitlementsStatus.Ok && Plugin.uploadData != null) {
+			} else if(entitlementStatus == EntitlementsStatus.Ok && Plugin.uploadLevel == levelId) {
 				Plugin.Log?.Debug($"Announcing share for `{levelId}`");
-				multiplayerSessionManager.Send(new PacketHandler.SetCanShareBeatmap(levelId, Plugin.uploadHash, (ulong)Plugin.uploadData.LongLength));
+				multiplayerSessionManager.Send(new PacketHandler.SetCanShareBeatmap(levelId, Plugin.uploadHash, (ulong)Plugin.uploadData.Count));
 			}
 			Plugin.Log?.Debug($"entitlementStatus={entitlementStatus}");
 			HandleSetIsEntitledToLevel(multiplayerSessionManager.localPlayer, levelId, entitlementStatus);
@@ -357,7 +359,9 @@ namespace BeatUpClient {
 				}
 				Plugin.Log?.Debug($"Finished downloading {handler.buffer.Length} bytes");
 				using(System.Security.Cryptography.SHA256 sha256 = System.Security.Cryptography.SHA256.Create()) {
-					if(!System.Linq.Enumerable.SequenceEqual(Plugin.downloadInfo.levelHash, sha256.ComputeHash(handler.buffer))) {
+					byte[] hash = await System.Threading.Tasks.Task.Run(() =>
+						sha256.ComputeHash(handler.buffer));
+					if(!System.Linq.Enumerable.SequenceEqual(Plugin.downloadInfo.levelHash, hash)) {
 						Plugin.Log?.Error("Hash mismatch!");
 						return result;
 					}
@@ -446,9 +450,15 @@ namespace BeatUpClient {
 	}
 
 	public static class SongCorePreviewProvider {
+		static string? HashForLevelID(string? levelId) {
+			string[] parts = (levelId ?? "").Split('_', ' ');
+			if(parts.Length < 3 || parts[2].Length != 40)
+				return null;
+			return parts[2];
+		}
 		public static void GetInfo(CustomPreviewBeatmapLevel previewBeatmapLevel, ref System.Collections.Generic.IEnumerable<string?> requirements, ref System.Collections.Generic.IEnumerable<string?> suggestions) {
-			string? levelHash = MultiplayerCore.Utilities.HashForLevelID(previewBeatmapLevel.levelID);
-			if(string.IsNullOrEmpty(levelHash))
+			string? levelHash = HashForLevelID(previewBeatmapLevel.levelID);
+			if(NullableStringHelper.IsNullOrEmpty(levelHash))
 				return;
 			SongCore.Data.ExtraSongData? extraSongData = SongCore.Collections.RetrieveExtraSongData(levelHash);
 			if(extraSongData == null)
@@ -853,10 +863,10 @@ namespace BeatUpClient {
 		}
 
 		public void HandleLevelFragmentRequest(LevelFragmentRequest packet, IConnectedPlayer player) {
-			if(Plugin.uploadData == null || packet.offset > (ulong)Plugin.uploadData.LongLength)
+			if(packet.offset >= (ulong)Plugin.uploadData.Count)
 				return;
-			byte[] data = new byte[System.Math.Min(packet.maxSize, (ulong)Plugin.uploadData.LongLength - packet.offset)];
-			System.Buffer.BlockCopy(Plugin.uploadData, (int)packet.offset, data, 0, data.Length);
+			byte[] data = new byte[System.Math.Min(packet.maxSize, (ulong)Plugin.uploadData.Count - packet.offset)];
+			System.Buffer.BlockCopy(Plugin.uploadData.Array, Plugin.uploadData.Offset + (int)packet.offset, data, 0, data.Length);
 			SendUnreliableToPlayer(new LevelFragment(packet.offset, data), player);
 		}
 
@@ -1501,35 +1511,105 @@ namespace BeatUpClient {
 		public static void BeatmapLevelsModel_GetLevelPreviewForLevelId(ref IPreviewBeatmapLevel? __result, string levelId) =>
 			__result ??= (IPreviewBeatmapLevel?)PreviewProvider.ResolvePreview(levelId)?.preview ?? new ErrorBeatmapLevel(levelId);
 
-		public static async System.Threading.Tasks.Task ZipFile(System.IO.Compression.ZipArchive archive, string path, string name) {
-			Plugin.Log?.Debug($"Zipping `{path}`");
-			using System.IO.Stream file = System.IO.File.Open(path, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read);
-			using System.IO.Stream entry = archive.CreateEntry(name).Open();
-			await file.CopyToAsync(entry);
+		class CallbackStream : System.IO.Stream {
+			public readonly System.IO.Stream stream;
+			public readonly System.Action<int> onProgress;
+			public override bool CanRead {get => stream.CanRead;}
+			public override bool CanSeek {get => stream.CanSeek;}
+			public override bool CanWrite {get => stream.CanWrite;}
+			public override long Length {get => stream.Length;}
+			public override long Position {
+				get => stream.Position;
+				set => stream.Position = value;
+			}
+			public CallbackStream(System.IO.Stream stream, System.Action<int> onProgress) {
+				this.stream = stream;
+				this.onProgress = onProgress;
+			}
+			public override void Flush() => stream.Flush();
+			public override long Seek(long offset, System.IO.SeekOrigin origin) => stream.Seek(offset, origin);
+			public override void SetLength(long value) => stream.SetLength(value);
+			public override int Read(byte[] buffer, int offset, int count) {
+				count = stream.Read(buffer, offset, count);
+				onProgress(count);
+				return count;
+			}
+			public override void Write(byte[] buffer, int offset, int count) => stream.Write(buffer, offset, count);
+			public override async System.Threading.Tasks.Task WriteAsync(byte[] buffer, int offset, int count, System.Threading.CancellationToken cancellationToken) {
+				await stream.WriteAsync(buffer, offset, count, cancellationToken);
+				onProgress(count);
+			}
 		}
 
-		public static async System.Threading.Tasks.Task<byte[]> ZipLevel(CustomBeatmapLevel level) {
+		public static async System.Threading.Tasks.Task<(System.ArraySegment<byte> data, byte[] hash)> ZipLevel(CustomBeatmapLevel level, PacketHandler handler) {
+			System.ArraySegment<byte> buffer = new System.ArraySegment<byte>(new byte[0]);
+			byte[] hash = new byte[32];
 			using(System.IO.MemoryStream memoryStream = new System.IO.MemoryStream()) {
+				ulong progress = 0, total = 0, progressWidth = 53738, progressStart = 0;
+				System.Diagnostics.Stopwatch lastUpdate = new System.Diagnostics.Stopwatch();
+				lastUpdate.Start();
+				void UpdateProgress(ulong p, bool reliable = false) {
+					PacketHandler.LoadProgress packet = new PacketHandler.LoadProgress(PacketHandler.LoadProgress.LoadState.Exporting, (ushort)p);
+					handler.HandleLoadProgress(packet, handler.multiplayerSessionManager.localPlayer);
+					if(reliable)
+						handler.multiplayerSessionManager.Send(packet);
+					else
+						handler.multiplayerSessionManager.SendUnreliable(packet);
+				}
+				void HandleProgress(int count) {
+					progress += (ulong)count;
+					if(lastUpdate.ElapsedMilliseconds > 10) {
+						lastUpdate.Restart();
+						UpdateProgress(progress * progressWidth / total + progressStart);
+					}
+				}
 				using(System.IO.Compression.ZipArchive archive = new System.IO.Compression.ZipArchive(memoryStream, System.IO.Compression.ZipArchiveMode.Create, true)) {
-					await ZipFile(archive, level.songAudioClipPath, level.standardLevelInfoSaveData.songFilename);
-					await ZipFile(archive, System.IO.Path.Combine(level.customLevelPath, "Info.dat"), "Info.dat");
+					System.Collections.Generic.List<(string path, string name)> files = new System.Collections.Generic.List<(string, string)>(new[] {
+						(level.songAudioClipPath, level.standardLevelInfoSaveData.songFilename),
+						(System.IO.Path.Combine(level.customLevelPath, "Info.dat"), "Info.dat"),
+					});
 					for(int i = 0; i < level.beatmapLevelData.difficultyBeatmapSets.Count; ++i) {
 						for(int j = 0; j < level.beatmapLevelData.difficultyBeatmapSets[i].difficultyBeatmaps.Count; ++j) {
 							if(level.beatmapLevelData.difficultyBeatmapSets[i].difficultyBeatmaps[j] is CustomDifficultyBeatmap beatmap) {
 								string filename = level.standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps[j].beatmapFilename;
-								await ZipFile(archive, System.IO.Path.Combine(level.customLevelPath, filename), filename);
+								files.Add((System.IO.Path.Combine(level.customLevelPath, filename), filename));
+							}
+						}
+					}
+					total = (ulong)System.Linq.Enumerable.Aggregate(files, 0L, (total, file) => total + new System.IO.FileInfo(file.path).Length);
+					if(total > Plugin.MaxUnzippedSize) {
+						Plugin.Log?.Debug("Level too large!");
+						return (buffer, hash);
+					}
+					UpdateProgress(0);
+					foreach((string path, string name) info in files) {
+						Plugin.Log?.Debug($"Zipping `{info.path}`");
+						using(System.IO.Stream file = System.IO.File.Open(info.path, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read)) {
+							using(System.IO.Stream entry = archive.CreateEntry(info.name).Open()) {
+								await file.CopyToAsync(new CallbackStream(entry, HandleProgress));
 							}
 						}
 					}
 				}
-				memoryStream.Seek(0, System.IO.SeekOrigin.Begin);
-				return memoryStream.ToArray();
+				if(memoryStream.TryGetBuffer(out buffer)) {
+					progress = 0;
+					total = (ulong)buffer.Count;
+					progressStart = progressWidth;
+					progressWidth = 65535 - progressStart;
+					memoryStream.Seek(0, System.IO.SeekOrigin.Begin);
+					using(System.Security.Cryptography.SHA256 sha256 = System.Security.Cryptography.SHA256.Create()) {
+						hash = await System.Threading.Tasks.Task.Run(() =>
+							sha256.ComputeHash(new CallbackStream(memoryStream, HandleProgress)));
+					}
+				}
+				UpdateProgress(65535, true);
+				return (buffer, hash);
 			}
 		}
 
-		public static async System.Threading.Tasks.Task<EntitlementsStatus> ShareWrapper(System.Threading.Tasks.Task<EntitlementsStatus> task, string levelId) {
-			byte[]? lastData = Plugin.uploadData;
-			Plugin.uploadData = null;
+		public static async System.Threading.Tasks.Task<EntitlementsStatus> ShareWrapper(System.Threading.Tasks.Task<EntitlementsStatus> task, string levelId, PacketHandler handler) {
+			string? lastLevel = Plugin.uploadLevel;
+			Plugin.uploadLevel = null;
 			Plugin.downloadPending = false;
 			EntitlementsStatus status = await task;
 			Plugin.Log?.Debug($"EntitlementsStatus: {status}");
@@ -1546,26 +1626,28 @@ namespace BeatUpClient {
 				}
 			}
 			if(Plugin.directDownloads && result.beatmapLevel is CustomBeatmapLevel level) {
-				Plugin.Log?.Debug("Zipping custom level");
-				if(lastData != null && Plugin.uploadLevel == levelId) {
-					Plugin.uploadData = lastData;
+				if(lastLevel == levelId) {
+					Plugin.Log?.Debug("Custom level already zipped");
+					Plugin.uploadLevel = lastLevel;
 				} else {
-					Plugin.uploadData = await ZipLevel(level);
-					using(System.Security.Cryptography.SHA256 sha256 = System.Security.Cryptography.SHA256.Create()) {
-						Plugin.uploadHash = sha256.ComputeHash(Plugin.uploadData);
+					Plugin.Log?.Debug("Zipping custom level");
+					(Plugin.uploadData, Plugin.uploadHash) = await ZipLevel(level, handler);
+					if(Plugin.uploadData.Count >= 1) {
+						Plugin.uploadLevel = levelId;
+						Plugin.Log?.Debug($"Packed {Plugin.uploadData.Count} bytes");
+					} else {
+						Plugin.Log?.Debug("Zip failed");
 					}
-					Plugin.uploadLevel = levelId;
 				}
-				Plugin.Log?.Debug($"Packed {Plugin.uploadData.Length} bytes");
 			}
 			return EntitlementsStatus.Ok;
 		}
 
 		[Patch(false, typeof(NetworkPlayerEntitlementChecker), "GetEntitlementStatus")]
-		public static void NetworkPlayerEntitlementChecker_GetEntitlementStatus(ref System.Threading.Tasks.Task<EntitlementsStatus> __result, string levelId) {
+		public static void NetworkPlayerEntitlementChecker_GetEntitlementStatus(NetworkPlayerEntitlementChecker __instance, ref System.Threading.Tasks.Task<EntitlementsStatus> __result, string levelId) {
 			Plugin.Log?.Debug($"NetworkPlayerEntitlementChecker_GetEntitlementStatus");
 			if(!Plugin.haveMpCore)
-				__result = ShareWrapper(__result, levelId);
+				__result = ShareWrapper(__result, levelId, ((BeatUpMenuRpcManager)__instance._rpcManager).handler);
 		}
 
 		[Patch(true, typeof(ConnectedPlayerManager), "Send", typeof(LiteNetLib.Utils.INetSerializable))]
@@ -1666,9 +1748,9 @@ namespace BeatUpClient {
 			}
 		}
 
-		class MenuInstaller : Zenject.Installer {
+		class InitInstaller : Zenject.Installer {
 			public override void InstallBindings() {
-				Plugin.Log?.Debug("MenuInstaller.InstallBindings()");
+				Plugin.Log?.Debug("InitInstaller.InstallBindings()");
 				Container.BindInterfacesAndSelfTo<PacketHandler>().AsSingle();
 			}
 		}
@@ -1676,9 +1758,9 @@ namespace BeatUpClient {
 		[PatchOverload(true, typeof(Zenject.Context), "InstallInstallers", new[] {typeof(System.Collections.Generic.List<Zenject.InstallerBase>), typeof(System.Collections.Generic.List<System.Type>), typeof(System.Collections.Generic.List<Zenject.ScriptableObjectInstaller>), typeof(System.Collections.Generic.List<Zenject.MonoInstaller>), typeof(System.Collections.Generic.List<Zenject.MonoInstaller>)})]
 		public static void Context_InstallInstallers(ref Zenject.Context __instance, ref System.Collections.Generic.List<Zenject.InstallerBase> normalInstallers, ref System.Collections.Generic.List<System.Type> normalInstallerTypes, ref System.Collections.Generic.List<Zenject.ScriptableObjectInstaller> scriptableObjectInstallers, ref System.Collections.Generic.List<Zenject.MonoInstaller> installers, ref System.Collections.Generic.List<Zenject.MonoInstaller> installerPrefabs) {
 			foreach(Zenject.MonoInstaller installer in installers) {
-				if(installer.GetType() == typeof(MultiplayerMenuInstaller)) {
-					Plugin.Log?.Debug($"Adding {typeof(MenuInstaller)}");
-					normalInstallerTypes.Add(typeof(MenuInstaller));
+				if(installer.GetType() == typeof(PCAppInit)) {
+					Plugin.Log?.Debug($"Adding {typeof(PCAppInit)}");
+					normalInstallerTypes.Add(typeof(InitInstaller));
 				}
 			}
 		}
@@ -1708,7 +1790,7 @@ namespace BeatUpClient {
 		public static void MpEntitlementChecker_GetEntitlementStatus(MultiplayerCore.Objects.MpEntitlementChecker __instance, ref System.Threading.Tasks.Task<EntitlementsStatus> __result, string levelId) {
 			Plugin.Log?.Debug($"NetworkPlayerEntitlementChecker_GetEntitlementStatus");
 			__result = MpShareWrapper(__result, levelId, __instance);
-			__result = Patches.ShareWrapper(__result, levelId);
+			__result = Patches.ShareWrapper(__result, levelId, ((BeatUpMenuRpcManager)__instance._rpcManager).handler);
 		}
 	}
 
@@ -1797,9 +1879,9 @@ namespace BeatUpClient {
 		public static System.Collections.Generic.List<IConnectedPlayer> downloadSources = new System.Collections.Generic.List<IConnectedPlayer>();
 		public static PacketHandler.RecommendPreview? downloadPreview = null;
 		public static bool downloadPending = false;
-		public static string uploadLevel = System.String.Empty;
-		public static byte[]? uploadData = null;
-		public static byte[] uploadHash = null!;
+		public static string? uploadLevel = null;
+		public static System.ArraySegment<byte> uploadData = new System.ArraySegment<byte>(new byte[0]);
+		public static byte[] uploadHash = new byte[32];
 		public static MainSettingsModelSO mainSettingsModel = null!;
 		public static INetworkConfig? networkConfig = null;
 		public static MainFlowCoordinator mainFlowCoordinator = null!;
@@ -2043,6 +2125,7 @@ namespace BeatUpClient {
 		}
 
 		static void WarmMethods(System.Type type) {
+			// Plugin.Log?.Debug($"WarmMethods({type})");
 			foreach(System.Type nested in type.GetNestedTypes())
 				WarmMethods(nested);
 			foreach(System.Reflection.MethodInfo method in type.GetMethods(System.Reflection.BindingFlags.DeclaredOnly | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static))

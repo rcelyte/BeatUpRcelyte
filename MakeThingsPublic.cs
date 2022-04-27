@@ -50,6 +50,7 @@ class MainClass {
 		"NetConnectAcceptPacket",
 		"NetPacket",
 		"NetworkPlayerEntitlementChecker:_additionalContentModel",
+		"NetworkPlayerEntitlementChecker:_rpcManager",
 		"PlayerConnectedPacket",
 		"StandardLevelDetailView:_beatmapCharacteristicSegmentedControlController",
 		"StandardLevelDetailView:_beatmapDifficultySegmentedControlController",
