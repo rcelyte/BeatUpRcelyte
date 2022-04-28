@@ -52,6 +52,7 @@ class MainClass {
 		"NetworkPlayerEntitlementChecker:_additionalContentModel",
 		"NetworkPlayerEntitlementChecker:_rpcManager",
 		"PlayerConnectedPacket",
+		"ReliableChannel",
 		"StandardLevelDetailView:_beatmapCharacteristicSegmentedControlController",
 		"StandardLevelDetailView:_beatmapDifficultySegmentedControlController",
 		"SwitchSettingsController:_toggle",

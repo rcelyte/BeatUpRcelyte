@@ -1307,30 +1307,33 @@ namespace BeatUpClient {
 	}
 
 	public abstract class PatchGroup {
+		protected enum PatchType : byte {
+			Prefix,
+			Postfix,
+			Transpiler,
+		}
 		[System.AttributeUsage(System.AttributeTargets.Method, AllowMultiple = true)]
 		protected class PatchAttribute : System.Attribute {
-			System.Reflection.MethodInfo? method;
-			bool prefix;
-			protected PatchAttribute(bool prefix, System.Reflection.MethodInfo? method, System.Type? genericType) {
-				this.method = (method == null || genericType == null) ? method : method.MakeGenericMethod(genericType);
-				this.prefix = prefix;
+			System.Reflection.MethodBase? method;
+			PatchType patchType;
+			protected PatchAttribute(PatchType patchType, System.Reflection.MethodBase? method, System.Type? genericType) {
+				this.method = (method == null || genericType == null) ? method : ((System.Reflection.MethodInfo)method).MakeGenericMethod(genericType);
+				this.patchType = patchType;
 			}
-			public PatchAttribute(bool prefix, System.Type type, string fn, System.Type? genericType = null) : this(prefix, type.GetMethod(fn, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.GetField | System.Reflection.BindingFlags.SetField | System.Reflection.BindingFlags.GetProperty | System.Reflection.BindingFlags.SetProperty), genericType) {}
-			public PatchAttribute(bool prefix, System.Type refType, string type, string fn) : this(prefix, refType.Assembly.GetType(type), fn) {}
+			public PatchAttribute(PatchType patchType, System.Type type, string fn, System.Type? genericType = null) : this(patchType, fn == ".ctor" ? (System.Reflection.MethodBase)type.GetConstructors()[0] : HarmonyLib.AccessTools.Method(type, fn), genericType) {}
+			public PatchAttribute(PatchType patchType, System.Type refType, string type, string fn) : this(patchType, refType.Assembly.GetType(type), fn) {}
 			public void Apply(System.Reflection.MethodInfo self) {
 				if(method == null)
 					throw new System.ArgumentException($"Missing original method for `{self}`");
 				// Plugin.Log?.Debug($"Patching {method.DeclaringType.FullName} : {method}");
-				if(prefix)
-					Plugin.harmony.Patch(method, prefix: new HarmonyLib.HarmonyMethod(self));
-				else
-					Plugin.harmony.Patch(method, postfix: new HarmonyLib.HarmonyMethod(self));
+				HarmonyLib.HarmonyMethod hm = new HarmonyLib.HarmonyMethod(self);
+				Plugin.harmony.Patch(method, prefix: patchType == PatchType.Prefix ? hm : null, postfix: patchType == PatchType.Postfix ? hm : null, transpiler: patchType == PatchType.Transpiler ? hm : null);
 			}
 		}
 
 		[System.AttributeUsage(System.AttributeTargets.Method)]
 		protected class PatchOverloadAttribute : PatchAttribute {
-			public PatchOverloadAttribute(bool prefix, System.Type type, string fn, params System.Type[] args) : base(prefix, type.GetMethod(fn, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.GetField | System.Reflection.BindingFlags.SetField | System.Reflection.BindingFlags.GetProperty | System.Reflection.BindingFlags.SetProperty, null, args, null), null) {}
+			public PatchOverloadAttribute(PatchType patchType, System.Type type, string fn, params System.Type[] args) : base(patchType, HarmonyLib.AccessTools.Method(type, fn, args), null) {}
 		}
 
 		public void PatchAll() {
@@ -1342,17 +1345,16 @@ namespace BeatUpClient {
 	}
 
 	public class Patches : PatchGroup {
-		[Patch(true, typeof(ClientCertificateValidator), "ValidateCertificateChainInternal")]
+		[Patch(PatchType.Prefix, typeof(ClientCertificateValidator), "ValidateCertificateChainInternal")]
 		public static bool ClientCertificateValidator_ValidateCertificateChainInternal() =>
 			!(Plugin.networkConfig is CustomNetworkConfig);
 
-		[Patch(false, typeof(MainSettingsModelSO), nameof(MainSettingsModelSO.Load))]
+		[Patch(PatchType.Postfix, typeof(MainSettingsModelSO), nameof(MainSettingsModelSO.Load))]
 		public static void MainSettingsModelSO_Load(ref MainSettingsModelSO __instance) {
 			Plugin.mainSettingsModel = __instance;
 			if(!string.IsNullOrEmpty(__instance.customServerHostName))
 				Config.Instance.Servers.TryAdd(__instance.customServerHostName, null);
-			__instance.useCustomServerEnvironment.value = true;
-			__instance.forceGameLiftServerEnvironment.value = false;
+			__instance.useCustomServerEnvironment.value = false;
 		}
 
 		public static async System.Threading.Tasks.Task<AuthenticationToken> AuthWrapper(System.Threading.Tasks.Task<AuthenticationToken> task, AuthenticationToken.Platform platform, string userId, string userName) {
@@ -1363,13 +1365,13 @@ namespace BeatUpClient {
 			}
 		}
 
-		[Patch(false, typeof(PlatformAuthenticationTokenProvider), nameof(PlatformAuthenticationTokenProvider.GetAuthenticationToken))]
+		[Patch(PatchType.Postfix, typeof(PlatformAuthenticationTokenProvider), nameof(PlatformAuthenticationTokenProvider.GetAuthenticationToken))]
 		public static void PlatformAuthenticationTokenProvider_GetAuthenticationToken(ref System.Threading.Tasks.Task<AuthenticationToken> __result, AuthenticationToken.Platform ____platform, string ____userId, string ____userName) {
 			if(Plugin.networkConfig is CustomNetworkConfig)
 				__result = AuthWrapper(__result, ____platform, ____userId, ____userName);
 		}
 
-		[Patch(true, typeof(MultiplayerModeSelectionFlowCoordinator), nameof(MultiplayerModeSelectionFlowCoordinator.PresentMasterServerUnavailableErrorDialog))]
+		[Patch(PatchType.Prefix, typeof(MultiplayerModeSelectionFlowCoordinator), nameof(MultiplayerModeSelectionFlowCoordinator.PresentMasterServerUnavailableErrorDialog))]
 		public static bool MultiplayerModeSelectionFlowCoordinator_PresentMasterServerUnavailableErrorDialog(MultiplayerModeSelectionFlowCoordinator __instance, MultiplayerModeSelectionViewController ____multiplayerModeSelectionViewController, MultiplayerUnavailableReason reason, long? maintenanceWindowEndTime, string? remoteLocalizedMessage) {
 			if(Plugin.mainFlowCoordinator.childFlowCoordinator != __instance)
 				return false;
@@ -1383,22 +1385,22 @@ namespace BeatUpClient {
 			return false;
 		}
 
-		[Patch(true, typeof(MultiplayerModeSelectionViewController), nameof(MultiplayerModeSelectionViewController.SetData))]
+		[Patch(PatchType.Prefix, typeof(MultiplayerModeSelectionViewController), nameof(MultiplayerModeSelectionViewController.SetData))]
 		public static void MultiplayerModeSelectionViewController_SetData(MultiplayerModeSelectionViewController __instance, TMPro.TextMeshProUGUI ____maintenanceMessageText) {
 			____maintenanceMessageText.richText = false;
 			____maintenanceMessageText.transform.localPosition = new UnityEngine.Vector3(0, -5, 0);
 			__instance.transform.Find("Buttons")?.gameObject.SetActive(true);
 		}
 
-		[Patch(true, typeof(LobbySetupViewController), nameof(LobbySetupViewController.SetPlayersMissingLevelText))]
+		[Patch(PatchType.Prefix, typeof(LobbySetupViewController), nameof(LobbySetupViewController.SetPlayersMissingLevelText))]
 		public static void LobbySetupViewController_SetPlayersMissingLevelText(LobbySetupViewController __instance, string playersMissingLevelText, ref UnityEngine.UI.Button ____startGameReadyButton) {
 			if(!string.IsNullOrEmpty(playersMissingLevelText) && ____startGameReadyButton.interactable)
 				__instance.SetStartGameEnabled(CannotStartGameReason.DoNotOwnSong);
 		}
 
 		static bool enableCustomLevels = false;
-		[Patch(true, typeof(MasterServerConnectionManager), "HandleConnectToServerSuccess")]
-		[Patch(true, typeof(GameLiftConnectionManager), "HandleConnectToServerSuccess")]
+		[Patch(PatchType.Prefix, typeof(MasterServerConnectionManager), "HandleConnectToServerSuccess")]
+		[Patch(PatchType.Prefix, typeof(GameLiftConnectionManager), "HandleConnectToServerSuccess")]
 		public static void MasterServerConnectionManager_HandleConnectToServerSuccess(object __1, BeatmapLevelSelectionMask selectionMask, GameplayServerConfiguration configuration) {
 			enableCustomLevels = selectionMask.songPacks.Contains(new SongPackMask("custom_levelpack_CustomLevels")) && __1 is string;
 			PreviewProvider.Init(configuration.maxPlayerCount);
@@ -1407,15 +1409,15 @@ namespace BeatUpClient {
 			Plugin.lobbyDifficultyPanel.Clear();
 		}
 
-		[Patch(false, typeof(MultiplayerLevelSelectionFlowCoordinator), "get_enableCustomLevels")]
+		[Patch(PatchType.Postfix, typeof(MultiplayerLevelSelectionFlowCoordinator), "get_enableCustomLevels")]
 		public static void MultiplayerLevelSelectionFlowCoordinator_enableCustomLevels(ref bool __result) =>
 			__result |= enableCustomLevels;
 
-		[Patch(true, typeof(MultiplayerSessionManager), "HandlePlayerOrderChanged")]
+		[Patch(PatchType.Prefix, typeof(MultiplayerSessionManager), "HandlePlayerOrderChanged")]
 		public static void MultiplayerSessionManager_HandlePlayerOrderChanged(IConnectedPlayer player) =>
 			Plugin.playerCells[player.sortIndex].SetData(new PacketHandler.LoadProgress(PacketHandler.LoadProgress.LoadState.None, 0, 0));
 
-		[Patch(false, typeof(BasicConnectionRequestHandler), nameof(BasicConnectionRequestHandler.GetConnectionMessage))]
+		[Patch(PatchType.Postfix, typeof(BasicConnectionRequestHandler), nameof(BasicConnectionRequestHandler.GetConnectionMessage))]
 		public static void BasicConnectionRequestHandler_GetConnectionMessage(LiteNetLib.Utils.NetDataWriter writer) {
 			Plugin.Log?.Debug("BasicConnectionRequestHandler_GetConnectionMessage()");
 			LiteNetLib.Utils.NetDataWriter sub = new LiteNetLib.Utils.NetDataWriter(false, 16);
@@ -1479,7 +1481,7 @@ namespace BeatUpClient {
 			}
 		}
 
-		[Patch(true, typeof(LiteNetLib.NetConnectAcceptPacket), "FromData")]
+		[Patch(PatchType.Prefix, typeof(LiteNetLib.NetConnectAcceptPacket), "FromData")]
 		public static void NetConnectAcceptPacket_FromData(ref LiteNetLib.NetPacket packet) {
 			if(packet.Size == LiteNetLib.NetConnectAcceptPacket.Size + BeatUpConnectInfo.Size) {
 				packet.Size = LiteNetLib.NetConnectAcceptPacket.Size;
@@ -1507,7 +1509,7 @@ namespace BeatUpClient {
 				this.levelId = levelId;
 		}
 
-		[Patch(false, typeof(BeatmapLevelsModel), nameof(BeatmapLevelsModel.GetLevelPreviewForLevelId))]
+		[Patch(PatchType.Postfix, typeof(BeatmapLevelsModel), nameof(BeatmapLevelsModel.GetLevelPreviewForLevelId))]
 		public static void BeatmapLevelsModel_GetLevelPreviewForLevelId(ref IPreviewBeatmapLevel? __result, string levelId) =>
 			__result ??= (IPreviewBeatmapLevel?)PreviewProvider.ResolvePreview(levelId)?.preview ?? new ErrorBeatmapLevel(levelId);
 
@@ -1643,14 +1645,14 @@ namespace BeatUpClient {
 			return EntitlementsStatus.Ok;
 		}
 
-		[Patch(false, typeof(NetworkPlayerEntitlementChecker), "GetEntitlementStatus")]
+		[Patch(PatchType.Postfix, typeof(NetworkPlayerEntitlementChecker), "GetEntitlementStatus")]
 		public static void NetworkPlayerEntitlementChecker_GetEntitlementStatus(NetworkPlayerEntitlementChecker __instance, ref System.Threading.Tasks.Task<EntitlementsStatus> __result, string levelId) {
 			Plugin.Log?.Debug($"NetworkPlayerEntitlementChecker_GetEntitlementStatus");
 			if(!Plugin.haveMpCore)
 				__result = ShareWrapper(__result, levelId, ((BeatUpMenuRpcManager)__instance._rpcManager).handler);
 		}
 
-		[Patch(true, typeof(ConnectedPlayerManager), "Send", typeof(LiteNetLib.Utils.INetSerializable))]
+		[Patch(PatchType.Prefix, typeof(ConnectedPlayerManager), "Send", typeof(LiteNetLib.Utils.INetSerializable))]
 		public static bool ConnectedPlayerManager_Send(ConnectedPlayerManager __instance, LiteNetLib.Utils.INetSerializable message) {
 			if(Config.Instance.UnreliableState && (message is NodePoseSyncStateNetSerializable || message is StandardScoreSyncStateNetSerializable)) {
 				__instance.SendUnreliable(message);
@@ -1659,14 +1661,14 @@ namespace BeatUpClient {
 			return true;
 		}
 
-		[Patch(true, typeof(MultiplayerOutroAnimationController), nameof(MultiplayerOutroAnimationController.AnimateOutro))]
+		[Patch(PatchType.Prefix, typeof(MultiplayerOutroAnimationController), nameof(MultiplayerOutroAnimationController.AnimateOutro))]
 		public static bool MultiplayerOutroAnimationController_AnimateOutro(System.Action onCompleted) {
 			if(Plugin.skipResults)
 				onCompleted.Invoke();
 			return !Plugin.skipResults;
 		}
 
-		[Patch(false, typeof(GameServerPlayersTableView), nameof(GameServerPlayersTableView.SetData))]
+		[Patch(PatchType.Postfix, typeof(GameServerPlayersTableView), nameof(GameServerPlayersTableView.SetData))]
 		public static void GameServerPlayersTableView_SetData(System.Collections.Generic.List<IConnectedPlayer> sortedPlayers, HMUI.TableView ____tableView) {
 			for(uint i = 0; i < Plugin.playerCells.Length; ++i)
 				Plugin.playerCells[i].transform = null;
@@ -1683,13 +1685,13 @@ namespace BeatUpClient {
 			}
 		}
 
-		[Patch(true, typeof(GameServerPlayerTableCell), nameof(GameServerPlayerTableCell.Awake))]
+		[Patch(PatchType.Prefix, typeof(GameServerPlayerTableCell), nameof(GameServerPlayerTableCell.Awake))]
 		public static void GameServerPlayerTableCell_Awake(GameServerPlayerTableCell __instance, UnityEngine.UI.Image ____localPlayerBackgroundImage) {
 			UnityEngine.GameObject bar = UnityEngine.Object.Instantiate(____localPlayerBackgroundImage.gameObject, ____localPlayerBackgroundImage.transform);
 			bar.name = "BeatUpClient_Progress";
 		}
 
-		[Patch(true, typeof(ConnectedPlayerManager), "HandleServerPlayerConnected")]
+		[Patch(PatchType.Prefix, typeof(ConnectedPlayerManager), "HandleServerPlayerConnected")]
 		public static void ConnectedPlayerManager_HandleServerPlayerConnected(ConnectedPlayerManager.PlayerConnectedPacket packet) {
 			if(!Plugin.expectMetadata)
 				return;
@@ -1701,7 +1703,7 @@ namespace BeatUpClient {
 			packet.userName = packet.userName.Substring(0, packet.userName.Length - 1);
 		}
 
-		[Patch(false, typeof(MultiplayerLobbyAvatarManager), nameof(MultiplayerLobbyAvatarManager.AddPlayer))]
+		[Patch(PatchType.Postfix, typeof(MultiplayerLobbyAvatarManager), nameof(MultiplayerLobbyAvatarManager.AddPlayer))]
 		public static void MultiplayerLobbyAvatarManager_AddPlayer(IConnectedPlayer connectedPlayer, System.Collections.Generic.Dictionary<string, MultiplayerLobbyAvatarController> ____playerIdToAvatarMap) {
 			if(connectedPlayer.isMe || !Plugin.expectMetadata)
 				return;
@@ -1709,7 +1711,7 @@ namespace BeatUpClient {
 				UnityEngine.Object.Instantiate(Plugin.badges[tier], ____playerIdToAvatarMap[connectedPlayer.userId].transform.GetChild(2));
 		}
 
-		[Patch(false, typeof(MultiplayerLocalActivePlayerInGameMenuViewController), nameof(MultiplayerLocalActivePlayerInGameMenuViewController.Start))]
+		[Patch(PatchType.Postfix, typeof(MultiplayerLocalActivePlayerInGameMenuViewController), nameof(MultiplayerLocalActivePlayerInGameMenuViewController.Start))]
 		public static void MultiplayerLocalActivePlayerInGameMenuViewController_Start(MultiplayerLocalActivePlayerInGameMenuViewController __instance) {
 			MultiplayerPlayersManager multiplayerPlayersManager = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerPlayersManager>()[0];
 			if(Plugin.perPlayerDifficulty && multiplayerPlayersManager.localPlayerStartSeekSongController is MultiplayerLocalActivePlayerFacade player) {
@@ -1755,7 +1757,7 @@ namespace BeatUpClient {
 			}
 		}
 
-		[PatchOverload(true, typeof(Zenject.Context), "InstallInstallers", new[] {typeof(System.Collections.Generic.List<Zenject.InstallerBase>), typeof(System.Collections.Generic.List<System.Type>), typeof(System.Collections.Generic.List<Zenject.ScriptableObjectInstaller>), typeof(System.Collections.Generic.List<Zenject.MonoInstaller>), typeof(System.Collections.Generic.List<Zenject.MonoInstaller>)})]
+		[PatchOverload(PatchType.Prefix, typeof(Zenject.Context), "InstallInstallers", new[] {typeof(System.Collections.Generic.List<Zenject.InstallerBase>), typeof(System.Collections.Generic.List<System.Type>), typeof(System.Collections.Generic.List<Zenject.ScriptableObjectInstaller>), typeof(System.Collections.Generic.List<Zenject.MonoInstaller>), typeof(System.Collections.Generic.List<Zenject.MonoInstaller>)})]
 		public static void Context_InstallInstallers(ref Zenject.Context __instance, ref System.Collections.Generic.List<Zenject.InstallerBase> normalInstallers, ref System.Collections.Generic.List<System.Type> normalInstallerTypes, ref System.Collections.Generic.List<Zenject.ScriptableObjectInstaller> scriptableObjectInstallers, ref System.Collections.Generic.List<Zenject.MonoInstaller> installers, ref System.Collections.Generic.List<Zenject.MonoInstaller> installerPrefabs) {
 			foreach(Zenject.MonoInstaller installer in installers) {
 				if(installer.GetType() == typeof(PCAppInit)) {
@@ -1763,6 +1765,39 @@ namespace BeatUpClient {
 					normalInstallerTypes.Add(typeof(InitInstaller));
 				}
 			}
+		}
+
+		static readonly BoolSO customServerEnvironmentOverride = UnityEngine.ScriptableObject.CreateInstance<BoolSO>();
+
+		[Patch(PatchType.Transpiler, typeof(MainSystemInit), nameof(MainSystemInit.InstallBindings))]
+		public static System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> MainSystemInit_InstallBindings(System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> instructions) {
+			customServerEnvironmentOverride.value = true;
+			System.Reflection.FieldInfo original = HarmonyLib.AccessTools.Field(typeof(MainSettingsModelSO), "useCustomServerEnvironment");
+			System.Reflection.FieldInfo replace = HarmonyLib.AccessTools.Field(typeof(Patches), "customServerEnvironmentOverride");
+			foreach(HarmonyLib.CodeInstruction instruction in instructions) {
+				if(HarmonyLib.CodeInstructionExtensions.LoadsField(instruction, original)) {
+					yield return new HarmonyLib.CodeInstruction(System.Reflection.Emit.OpCodes.Pop);
+					yield return new HarmonyLib.CodeInstruction(System.Reflection.Emit.OpCodes.Ldsfld, replace);
+				} else {
+					yield return instruction;
+				}
+			}
+		}
+
+		[Patch(PatchType.Transpiler, typeof(LiteNetLib.ReliableChannel), ".ctor")]
+		public static System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> ReliableChannel_ctor(System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> instructions) {
+			System.Reflection.FieldInfo replace = HarmonyLib.AccessTools.Field(typeof(Plugin), "windowSize");
+			bool notFound = true;
+			foreach(HarmonyLib.CodeInstruction instruction in instructions) {
+				if(notFound && HarmonyLib.CodeInstructionExtensions.LoadsConstant(instruction, 64)) {
+					yield return new HarmonyLib.CodeInstruction(System.Reflection.Emit.OpCodes.Ldsfld, replace);
+					notFound = false;
+				} else {
+					yield return instruction;
+				}
+			}
+			if(notFound)
+				Plugin.Log?.Error("Failed to patch reliable window size");
 		}
 	}
 
@@ -1778,15 +1813,15 @@ namespace BeatUpClient {
 			};
 		}
 
-		[Patch(false, typeof(LobbyPlayersDataModel), nameof(LobbyPlayersDataModel.Deactivate))]
+		[Patch(PatchType.Postfix, typeof(LobbyPlayersDataModel), nameof(LobbyPlayersDataModel.Deactivate))]
 		public static void LobbyPlayersDataModel_Deactivate() =>
 			Plugin.Log?.Debug("LobbyPlayersDataModel_Deactivate()");
 
-		[Patch(false, typeof(LobbyPlayersDataModel), nameof(LobbyPlayersDataModel.ClearData))]
+		[Patch(PatchType.Postfix, typeof(LobbyPlayersDataModel), nameof(LobbyPlayersDataModel.ClearData))]
 		public static void LobbyPlayersDataModel_ClearData() =>
 			Plugin.Log?.Debug("LobbyPlayersDataModel_ClearData()");
 
-		[Patch(false, typeof(MultiplayerCore.Objects.MpEntitlementChecker), "GetEntitlementStatus")] // Temporary fix since DiJack doesn't currently support `FromComponentInNewPrefab` and `FromNewComponentOnRoot` binds
+		[Patch(PatchType.Postfix, typeof(MultiplayerCore.Objects.MpEntitlementChecker), "GetEntitlementStatus")] // Temporary fix since DiJack doesn't currently support `FromComponentInNewPrefab` and `FromNewComponentOnRoot` binds
 		public static void MpEntitlementChecker_GetEntitlementStatus(MultiplayerCore.Objects.MpEntitlementChecker __instance, ref System.Threading.Tasks.Task<EntitlementsStatus> __result, string levelId) {
 			Plugin.Log?.Debug($"NetworkPlayerEntitlementChecker_GetEntitlementStatus");
 			__result = MpShareWrapper(__result, levelId, __instance);
@@ -1894,20 +1929,6 @@ namespace BeatUpClient {
 		public static bool skipResults = false;
 		public static bool perPlayerDifficulty = false;
 
-		public static System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> ReliableChannel_ctor(System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> instructions) {
-			bool notFound = true;
-			foreach(HarmonyLib.CodeInstruction instruction in instructions) {
-				if(notFound && HarmonyLib.CodeInstructionExtensions.LoadsConstant(instruction, 64)) {
-					yield return new HarmonyLib.CodeInstruction(System.Reflection.Emit.OpCodes.Ldsfld, typeof(Plugin).GetField("windowSize", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public));
-					notFound = false;
-				} else {
-					yield return instruction;
-				}
-			}
-			if(notFound)
-				Log?.Error("Failed to patch reliable window size");
-		}
-
 		public static DifficultyPanel lobbyDifficultyPanel = null!;
 
 		static UnityEngine.UI.Button editServerButton = null!;
@@ -1925,7 +1946,7 @@ namespace BeatUpClient {
 					hostname = mainSettingsModel.customServerHostName.value.ToLower().Split(new[] {':'});
 					if(hostname.Length >= 2)
 						int.TryParse(hostname[1], out port);
-					forceGameLift = mainSettingsModel.forceGameLiftServerEnvironment;
+					forceGameLift = false;
 					if(!Config.Instance.Servers.TryGetValue(mainSettingsModel.customServerHostName.value, out multiplayerStatusUrl))
 						multiplayerStatusUrl = null;
 				}
@@ -2184,9 +2205,6 @@ namespace BeatUpClient {
 				new Patches().PatchAll(); // harmony.PatchAll() fails with `ReflectionTypeLoadException`
 				if(haveMpCore)
 					new MpPatches().PatchAll();
-				System.Reflection.MethodBase original = typeof(LiteNetLib.NetManager).Assembly.GetType("LiteNetLib.ReliableChannel").GetConstructor(new[] {typeof(LiteNetLib.NetPeer), typeof(bool), typeof(byte)});
-				System.Reflection.MethodInfo transpiler = typeof(Plugin).GetMethod("ReliableChannel_ctor", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public);
-				harmony.Patch(original, transpiler: new HarmonyLib.HarmonyMethod(transpiler));
 				UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnSceneLoaded;
 			} catch(System.Exception ex) {
 				Log?.Error("Error applying patches: " + ex.Message);
