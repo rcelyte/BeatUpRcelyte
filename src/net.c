@@ -55,7 +55,7 @@ _Bool NetSession_signature(const struct NetSession *session, struct NetContext *
 		uprintf("Key should be RSA\n");
 		return 1;
 	}
-	mbedtls_rsa_context *rsa = key->MBEDTLS_PRIVATE(pk_ctx);
+	mbedtls_rsa_context *rsa = mbedtls_pk_rsa(*key);
 	uint8_t hash[32];
 	int32_t err = mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), in, in_len, hash);
 	if(err != 0) {
@@ -67,7 +67,7 @@ _Bool NetSession_signature(const struct NetSession *session, struct NetContext *
 		uprintf("mbedtls_rsa_pkcs1_sign() failed: %s\n", mbedtls_high_level_strerr(err));
 		return 1;
 	}
-	out->length = rsa->MBEDTLS_PRIVATE(len);
+	out->length = mbedtls_rsa_get_len(rsa);
 	return 0;
 }
 _Bool NetSession_set_clientPublicKey(struct NetSession *session, struct NetContext *ctx, const struct ByteArrayNetSerializable *in) {
