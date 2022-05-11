@@ -563,7 +563,7 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 			break;
 		}
 		case ServerState_Game_Gameplay: room->game.startTime = room_get_syncTime(room) + .25; break;
-		case ServerState_Game_Results: room->global.timeout = room_get_syncTime(room) + 20; break;
+		case ServerState_Game_Results: room->global.timeout = room_get_syncTime(room) + (room->game.showResults ? 20 : 1); break;
 	}
 	room->state = state;
 	FOR_SOME_PLAYERS(room, id, room->connected,)
@@ -868,7 +868,7 @@ static void room_try_finish(struct Context *ctx, struct Room *room) {
 	if(!Counter128_contains(room->game.levelFinished, room->connected))
 		return;
 	room->global.roundRobin = Counter128_get_next(room->connected, room->global.roundRobin);
-	room_set_state(ctx, room, room->game.showResults ? ServerState_Game_Results : ServerState_Lobby_Idle);
+	room_set_state(ctx, room, ServerState_Game_Results);
 }
 
 static void handle_GameplayRpc(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data) {

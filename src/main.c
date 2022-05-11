@@ -13,7 +13,7 @@
 static const char *config_path = "./config.json";
 static _Bool headless = 0;
 
-int main(int argc, char const *argv[]) {
+int main(int argc, const char *argv[]) {
 	// fprintf(stderr, "MAX CODE: %u\n", StringToServerCode("99999", 5));
 	for(const char **arg = &argv[1]; arg < &argv[argc]; ++arg) {
 		if(strcmp(*arg, "--daemon") == 0) {

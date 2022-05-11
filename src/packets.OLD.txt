@@ -1018,12 +1018,12 @@ d ShareInfo
 	u8[32] levelHash
 	vu64 fileSize
 u8 LoadState
-	None
-	Failed
-	Exporting
-	Downloading
-	Loading
-	Done
+	z None
+	z Failed
+	z Exporting
+	z Downloading
+	z Loading
+	z Done
 u8 BeatUpMessage Type
 	r RecommendPreview
 		NetworkPreviewBeatmapLevel preview
@@ -1038,10 +1038,10 @@ u8 BeatUpMessage Type
 		ShareInfo base
 		u8 count
 		String[128,.count] sourcePlayers
-	r LevelFragmentRequest
+	n LevelFragmentRequest
 		vu64 offset
 		u16 maxSize
-	d LevelFragment
+	n LevelFragment
 		vu64 offset
 		u16 size
 		u8[1500,.size] data
@@ -1336,7 +1336,7 @@ u8 UserMessage Type
 	s ConnectToServerResponse 8
 		BaseMasterServerReliableResponse base
 		u8.ConnectToServerResponse_Result result
-		if(.result == GetPublicServersResponse_Result_Success)
+		if(.result == ConnectToServerResponse_Result_Success)
 			String userId
 			String userName
 			String secret

@@ -1,44 +1,7 @@
-namespace BeatUpClient {
-	public class DiJack {
-		static System.Collections.Generic.Dictionary<System.Type, System.Type?> InjectMap = new System.Collections.Generic.Dictionary<System.Type, System.Type?>();
-		static void ConcreteBinderNonGeneric_To(Zenject.ConcreteBinderNonGeneric __instance, ref System.Collections.Generic.IEnumerable<System.Type> concreteTypes) {
-			System.Type[] newTypes = System.Linq.Enumerable.ToArray(concreteTypes);
-			uint i = 0;
-			foreach(System.Type type in concreteTypes) {
-				if(InjectMap.TryGetValue(type, out System.Type? inject)) {
-					if(inject == null) {
-						Plugin.Log?.Debug($"Suppressing {type}");
-						concreteTypes = new System.Type[0];
-						return;
-					}
-					Plugin.Log?.Debug($"Replacing {type} with {inject}");
-					newTypes[i] = inject;
-					__instance.BindInfo.ContractTypes.Add(inject);
-				}
-				++i;
-			}
-			concreteTypes = newTypes;
-		}
+using static BeatUpClient;
 
-		public static System.Collections.Generic.IEnumerable<System.Type> RegisteredTypes() =>
-			InjectMap.Keys;
-
-		public static void Suppress(System.Type original) =>
-			InjectMap.Add(original, null);
-
-		public static void Register(System.Type type) =>
-			InjectMap.Add(type.BaseType, type);
-
-		public static void UnregisterAll() =>
-			InjectMap.Clear();
-
-		public static void Patch() {
-			System.Reflection.MethodInfo original = typeof(Zenject.ConcreteBinderNonGeneric).GetMethod(nameof(Zenject.ConcreteBinderNonGeneric.To), new[] {typeof(System.Collections.Generic.IEnumerable<System.Type>)});
-			System.Reflection.MethodInfo prefix = typeof(DiJack).GetMethod(nameof(ConcreteBinderNonGeneric_To), System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
-			Plugin.harmony.Patch(original, prefix: new HarmonyLib.HarmonyMethod(prefix));
-		}
-	}
-
+[IPA.Plugin(IPA.RuntimeOptions.SingleStartInit)]
+public class BeatUpClient {
 	public static class Reflection {
 		public struct FieldProxy<T> {
 			System.Reflection.FieldInfo field;
@@ -97,93 +60,75 @@ namespace BeatUpClient {
 		}
 	}
 
-	static class NullableStringHelper {
+	public class Config {
+		public static Config Instance = new Config();
+		public float CountdownDuration = 5;
+		public bool SkipResults = false;
+		public bool PerPlayerDifficulty = false;
+		public bool PerPlayerModifiers = false;
+		public ushort WindowSize = 64;
+		public bool UnreliableState = false;
+		public bool DirectDownloads = true;
+		public bool AllowModchartDownloads = false;
+		[IPA.Config.Stores.Attributes.NonNullable]
+		[IPA.Config.Stores.Attributes.UseConverter(typeof(IPA.Config.Stores.Converters.DictionaryConverter<string>))]
+		public virtual System.Collections.Generic.Dictionary<string, string?> Servers { get; set; } = new System.Collections.Generic.Dictionary<string, string?>(new[] {new System.Collections.Generic.KeyValuePair<string, string?>("master.battletrains.org", null)});
+		public virtual void Changed() {}
+	}
+
+	public enum PatchType : byte {
+		Prefix,
+		Postfix,
+		Transpiler,
+	}
+
+	[System.AttributeUsage(System.AttributeTargets.Method, AllowMultiple = true)]
+	public class PatchAttribute : System.Attribute {
+		System.Reflection.MethodBase? method;
+		PatchType patchType;
+		public PatchAttribute(PatchType patchType, System.Reflection.MethodBase? method, System.Type? genericType) {
+			this.method = (method == null || genericType == null) ? method : ((System.Reflection.MethodInfo)method).MakeGenericMethod(genericType);
+			this.patchType = patchType;
+		}
+		public PatchAttribute(PatchType patchType, System.Type type, string fn, System.Type? genericType = null) : this(patchType, fn == ".ctor" ? (System.Reflection.MethodBase)type.GetConstructors()[0] : HarmonyLib.AccessTools.Method(type, fn), genericType) {}
+		public PatchAttribute(PatchType patchType, System.Type refType, string type, string fn) : this(patchType, refType.Assembly.GetType(type), fn) {}
+		public void Apply(System.Reflection.MethodInfo self) {
+			if(method == null)
+				throw new System.ArgumentException($"Missing original method for `{self}`");
+			// Log?.Debug($"Patching {method.DeclaringType.FullName} : {method}");
+			HarmonyLib.HarmonyMethod hm = new HarmonyLib.HarmonyMethod(self);
+			harmony.Patch(method, prefix: patchType == PatchType.Prefix ? hm : null, postfix: patchType == PatchType.Postfix ? hm : null, transpiler: patchType == PatchType.Transpiler ? hm : null);
+		}
+	}
+
+	[System.AttributeUsage(System.AttributeTargets.Method)]
+	public class PatchOverloadAttribute : PatchAttribute {
+		public PatchOverloadAttribute(PatchType patchType, System.Type type, string fn, params System.Type[] args) : base(patchType, HarmonyLib.AccessTools.Method(type, fn, args), null) {}
+	}
+
+	public static void PatchAll(System.Type type) {
+		foreach(System.Reflection.MethodInfo method in type.GetMethods())
+			foreach(System.Attribute attrib in method.GetCustomAttributes(false))
+				if(attrib is PatchAttribute patch)
+					patch.Apply(method);
+	}
+
+	public static class NullableStringHelper {
 		public static bool IsNullOrEmpty([System.Diagnostics.CodeAnalysis.NotNullWhen(false)] string? str) =>
 			string.IsNullOrEmpty(str);
 	}
 
-	public class BeatUpMenuRpcManager : MenuRpcManager, IMenuRpcManager {
-		[Zenject.Inject]
-		public PacketHandler handler = null!;
-		string? selectedLevelId = null;
-		public BeatUpMenuRpcManager(IMultiplayerSessionManager multiplayerSessionManager, INetworkConfig networkConfig) : base(multiplayerSessionManager) {
-			Plugin.networkConfig = networkConfig;
-			setSelectedBeatmapEvent += HandleSetSelectedBeatmapEvent;
-			clearSelectedBeatmapEvent += HandleClearSelectedBeatmapEvent;
-		}
-		void HandleSetSelectedBeatmapEvent(string userId, BeatmapIdentifierNetSerializable? beatmapId) {
-			selectedLevelId = beatmapId?.levelID;
-			for(uint i = 0; i < Plugin.playerCells.Length; ++i)
-				Plugin.playerCells[i].UpdateData(new PacketHandler.LoadProgress(PacketHandler.LoadProgress.LoadState.None, 0, 0), true);
-		}
-		void HandleClearSelectedBeatmapEvent(string userId) =>
-			HandleSetSelectedBeatmapEvent(userId, null);
-		public void HandleSetIsEntitledToLevel(IConnectedPlayer? player, string levelId, EntitlementsStatus entitlementStatus) {
-			if(player == null || levelId != selectedLevelId)
-				return;
-			PacketHandler.LoadProgress.LoadState state = entitlementStatus switch {
-				EntitlementsStatus.NotOwned => PacketHandler.LoadProgress.LoadState.Failed,
-				EntitlementsStatus.NotDownloaded => PacketHandler.LoadProgress.LoadState.Downloading,
-				EntitlementsStatus.Ok => PacketHandler.LoadProgress.LoadState.Done,
-				_ => PacketHandler.LoadProgress.LoadState.None,
-			};
-			if(state != PacketHandler.LoadProgress.LoadState.None)
-				Plugin.playerCells[player.sortIndex].UpdateData(new PacketHandler.LoadProgress(state, 0, 0), true);
-		}
-		public static bool MissingRequirements(PacketHandler.RecommendPreview? preview, bool download) {
-			if(preview == null) {
-				Plugin.Log?.Debug($"Entitlement[good]: no preview");
-				return false;
-			}
-			if(preview.requirements.Length + preview.suggestions.Length >= 1 && download && !Config.Instance.AllowModchartDownloads) {
-				Plugin.Log?.Debug($"Entitlement[fail]: blocked by `AllowModchartDownloads`");
-				return true;
-			}
-			if(preview.requirements.Length < 1) {
-				Plugin.Log?.Debug($"Entitlement[good]: no requirements");
-				return false;
-			}
-			if(!Plugin.haveSongCore) {
-				Plugin.Log?.Debug($"Entitlement[fail]: need SongCore");
-				return true;
-			}
-			if(!System.Linq.Enumerable.All(preview.requirements, x => NullableStringHelper.IsNullOrEmpty(x) || SongCore.Collections.capabilities.Contains(x))) {
-				Plugin.Log?.Debug($"Entitlement[fail]: missing requirements; need:");
-				foreach(string? requirement in preview.requirements)
-					Plugin.Log?.Debug($"    " + requirement);
-				return true;
-			}
-			Plugin.Log?.Debug($"Entitlement[good]: have all requirements");
-			return false;
-		}
-		void IMenuRpcManager.SetIsEntitledToLevel(string levelId, EntitlementsStatus entitlementStatus) {
-			Plugin.Log?.Debug("MenuRpcManager_SetIsEntitledToLevel");
-			PacketHandler.RecommendPreview? preview = PreviewProvider.ResolvePreview(levelId);
-			Plugin.Log?.Debug($"entitlementStatus={entitlementStatus}");
-			if(MissingRequirements(preview, entitlementStatus == EntitlementsStatus.Unknown)) {
-				entitlementStatus = EntitlementsStatus.NotOwned;
-			} else if(entitlementStatus == EntitlementsStatus.Ok && Plugin.uploadLevel == levelId) {
-				Plugin.Log?.Debug($"Announcing share for `{levelId}`");
-				multiplayerSessionManager.Send(new PacketHandler.SetCanShareBeatmap(levelId, Plugin.uploadHash, (ulong)Plugin.uploadData.Count));
-			}
-			Plugin.Log?.Debug($"entitlementStatus={entitlementStatus}");
-			HandleSetIsEntitledToLevel(multiplayerSessionManager.localPlayer, levelId, entitlementStatus);
-			base.SetIsEntitledToLevel(levelId, entitlementStatus);
-		}
-	}
-
 	public class MemorySpriteLoader : ISpriteAsyncLoader {
 		System.Threading.Tasks.Task<byte[]> dataTask;
-		public MemorySpriteLoader(System.Threading.Tasks.Task<byte[]> dataTask) {
+		public MemorySpriteLoader(System.Threading.Tasks.Task<byte[]> dataTask) =>
 			this.dataTask = dataTask;
-		}
 		public async System.Threading.Tasks.Task<UnityEngine.Sprite?> LoadSpriteAsync(string path, System.Threading.CancellationToken cancellationToken) {
 			byte[] data = await dataTask;
 			if(data.Length < 1) {
-				Plugin.Log?.Debug("Returning default sprite");
+				Log?.Debug("Returning default sprite");
 				return null;
 			}
-			Plugin.Log?.Debug("Decoding sprite");
+			Log?.Debug("Decoding sprite");
 			UnityEngine.Texture2D texture = new UnityEngine.Texture2D(2, 2);
 			UnityEngine.ImageConversion.LoadImage(texture, data);
 			UnityEngine.Rect rect = new UnityEngine.Rect(0, 0, texture.width, texture.height);
@@ -191,315 +136,37 @@ namespace BeatUpClient {
 		}
 	}
 
-	public class LevelLoader : MultiplayerLevelLoader {
-		[Zenject.Inject]
-		public PacketHandler handler = null!;
-		[Zenject.Inject]
-		public readonly IMenuRpcManager rpcManager = null!;
-		[Zenject.Inject]
-		public readonly BeatmapCharacteristicCollectionSO beatmapCharacteristicCollection = null!;
-		[Zenject.Inject]
-		public readonly IMediaAsyncLoader mediaAsyncLoader = null!;
-		[Zenject.Inject]
-		readonly CustomLevelLoader customLevelLoader = null!;
-		public static BeatmapLevelsModel beatmapLevelsModel = null!;
-		public readonly string dataPath = System.IO.Path.Combine(System.IO.Path.GetFullPath(CustomLevelPathHelper.baseProjectPath), "BeatUpClient_Data");
-		public LevelLoader(BeatmapLevelsModel beatmapLevelsModel) {
-			Plugin.Log?.Debug("LevelLoader()");
-			LevelLoader.beatmapLevelsModel = beatmapLevelsModel;
+	public static PacketHandler.RecommendPreview[] playerPreviews = new PacketHandler.RecommendPreview[0];
+	static void InitPreviews(int playerCount) {
+		playerPreviews = new PacketHandler.RecommendPreview[playerCount];
+		System.Array.Fill(playerPreviews, new PacketHandler.RecommendPreview());
+	}
+	static PacketHandler.RecommendPreview? ResolvePreview(string levelId) =>
+		System.Linq.Enumerable.FirstOrDefault(playerPreviews, (PacketHandler.RecommendPreview preview) => preview.preview.levelID == levelId);
+	static PacketHandler.RecommendPreview SetPreviewFromLocal(int index, CustomPreviewBeatmapLevel previewBeatmapLevel) {
+		System.Collections.Generic.IEnumerable<string?> requirements = new string[0], suggestions = new string[0];
+		string path = System.IO.Path.Combine(previewBeatmapLevel.customLevelPath, "Info.dat");
+		if(haveSongCore) {
+			BeatUpClient_SongCore.GetPreviewInfo(previewBeatmapLevel, ref requirements, ref suggestions);
+		} else if(System.IO.File.Exists(path)) {
+			Newtonsoft.Json.Linq.JObject info = Newtonsoft.Json.Linq.JObject.Parse(System.IO.File.ReadAllText(path));
+			Newtonsoft.Json.Linq.IJEnumerable<Newtonsoft.Json.Linq.JToken> customData = Newtonsoft.Json.Linq.Extensions.Children(info["_difficultyBeatmapSets"]?.Children()["_difficultyBeatmaps"] ?? new Newtonsoft.Json.Linq.JArray())["_customData"];
+			requirements = Newtonsoft.Json.Linq.Extensions.Values<string>(customData["_requirements"]);
+			suggestions = Newtonsoft.Json.Linq.Extensions.Values<string>(customData["_suggestions"]);
 		}
-		public bool ValidatedPath(string filename, out string path) {
-			path = System.IO.Path.Combine(dataPath, filename);
-			if(System.IO.Path.GetDirectoryName(path) != dataPath)
-				Plugin.Log?.Error($"PATH MISMATCH: `{System.IO.Path.GetDirectoryName(path)}` != `{dataPath}`");
-			else if(System.IO.Path.GetFileName(path) != filename)
-				Plugin.Log?.Error($"FILENAME MISMATCH: `{System.IO.Path.GetFileName(path)}` != `{filename}`");
-			else
-				return true;
-			path = System.String.Empty;
-			return false;
+		string?[] requirementArray = System.Linq.Enumerable.ToArray(System.Linq.Enumerable.ToHashSet(requirements));
+		string?[] suggestionArray = System.Linq.Enumerable.ToArray(System.Linq.Enumerable.ToHashSet(suggestions));
+		if(requirementArray.Length >= 1) {
+			Log?.Debug($"{requirementArray.Length} requirements for `{previewBeatmapLevel.levelID}`:");
+			foreach(string? req in requirementArray)
+				Log?.Debug($"    {req}");
+		} else {
+			Log?.Debug($"No requirements for `{previewBeatmapLevel.levelID}`");
 		}
-		public EnvironmentInfoSO LoadEnvironmentInfo(string environmentName, EnvironmentInfoSO defaultInfo) {
-			EnvironmentInfoSO environmentInfoSO = customLevelLoader._environmentSceneInfoCollection.GetEnvironmentInfoBySerializedName(environmentName);
-			if(environmentInfoSO == null)
-				environmentInfoSO = defaultInfo;
-			return environmentInfoSO;
-		}
-		public CustomPreviewBeatmapLevel? LoadZippedPreviewBeatmapLevel(string levelID, StandardLevelInfoSaveData standardLevelInfoSaveData, System.Threading.Tasks.Task<byte[]> cover, System.IO.Compression.ZipArchive archive) {
-			try {
-				EnvironmentInfoSO environmentInfo = LoadEnvironmentInfo(standardLevelInfoSaveData.environmentName, customLevelLoader._defaultEnvironmentInfo);
-				EnvironmentInfoSO allDirectionsEnvironmentInfo = LoadEnvironmentInfo(standardLevelInfoSaveData.allDirectionsEnvironmentName, customLevelLoader._defaultAllDirectionsEnvironmentInfo);
-				System.Collections.Generic.List<PreviewDifficultyBeatmapSet> sets = new System.Collections.Generic.List<PreviewDifficultyBeatmapSet>();
-				StandardLevelInfoSaveData.DifficultyBeatmapSet[] difficultyBeatmapSets = standardLevelInfoSaveData.difficultyBeatmapSets;
-				foreach(StandardLevelInfoSaveData.DifficultyBeatmapSet difficultyBeatmapSet in difficultyBeatmapSets) {
-					BeatmapCharacteristicSO? beatmapCharacteristicBySerializedName = beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(difficultyBeatmapSet.beatmapCharacteristicName);
-					if(beatmapCharacteristicBySerializedName != null) {
-						BeatmapDifficulty[] diffs = new BeatmapDifficulty[difficultyBeatmapSet.difficultyBeatmaps.Length];
-						for(int j = 0; j < difficultyBeatmapSet.difficultyBeatmaps.Length; j++) {
-							difficultyBeatmapSet.difficultyBeatmaps[j].difficulty.BeatmapDifficultyFromSerializedName(out BeatmapDifficulty difficulty);
-							diffs[j] = difficulty;
-						}
-						sets.Add(new PreviewDifficultyBeatmapSet(beatmapCharacteristicBySerializedName, diffs));
-					}
-				}
-				return new CustomPreviewBeatmapLevel(Plugin.defaultPackCover, standardLevelInfoSaveData, dataPath, new MemorySpriteLoader(cover), levelID, standardLevelInfoSaveData.songName, standardLevelInfoSaveData.songSubName, standardLevelInfoSaveData.songAuthorName, standardLevelInfoSaveData.levelAuthorName, standardLevelInfoSaveData.beatsPerMinute, standardLevelInfoSaveData.songTimeOffset, standardLevelInfoSaveData.shuffle, standardLevelInfoSaveData.shufflePeriod, standardLevelInfoSaveData.previewStartTime, standardLevelInfoSaveData.previewDuration, environmentInfo, allDirectionsEnvironmentInfo, sets.ToArray());
-			} catch {
-				return null;
-			}
-		}
-		public static async System.Threading.Tasks.Task<UnityEngine.AudioClip?> DecodeAudio(System.IO.Compression.ZipArchiveEntry song, UnityEngine.AudioType type) {
-			byte[] songData = new byte[song.Length];
-			song.Open().Read(songData, 0, songData.Length);
-			System.Net.Sockets.TcpListener host = new System.Net.Sockets.TcpListener(new System.Net.IPEndPoint(System.Net.IPAddress.Any, 0));
-			host.Start(1);
-			using(UnityEngine.Networking.UnityWebRequest www = UnityEngine.Networking.UnityWebRequestMultimedia.GetAudioClip("http://127.0.0.1:" + ((System.Net.IPEndPoint)host.LocalEndpoint).Port, type)) {
-				((UnityEngine.Networking.DownloadHandlerAudioClip)www.downloadHandler).streamAudio = true;
-				UnityEngine.AsyncOperation request = www.SendWebRequest();
-				System.Net.Sockets.TcpClient client = host.AcceptTcpClient();
-				System.Net.Sockets.NetworkStream stream = client.GetStream();
-				byte[] resp = System.Text.Encoding.ASCII.GetBytes($"HTTP/1.1 200 \r\naccept-ranges: bytes\r\ncontent-length: {songData.Length}\r\ncontent-type: audio/ogg\r\n\r\n");
-				stream.Write(resp, 0, resp.Length);
-				stream.Write(songData, 0, songData.Length);
-				while(!request.isDone)
-					await System.Threading.Tasks.Task.Delay(100);
-				client.Close();
-				host.Stop();
-				if(www.isNetworkError || www.isHttpError) {
-					UnityEngine.Debug.Log($"Audio load error: {www.error}");
-					return null;
-				}
-				return UnityEngine.Networking.DownloadHandlerAudioClip.GetContent(www);
-			}
-		}
-		public async System.Threading.Tasks.Task<CustomBeatmapLevel?> LoadZippedBeatmapLevelAsync(CustomPreviewBeatmapLevel customPreviewBeatmapLevel, System.IO.Compression.ZipArchive archive, bool modded, System.Threading.CancellationToken cancellationToken) {
-			StandardLevelInfoSaveData standardLevelInfoSaveData = customPreviewBeatmapLevel.standardLevelInfoSaveData;
-			CustomBeatmapLevel customBeatmapLevel = new CustomBeatmapLevel(customPreviewBeatmapLevel);
-			CustomDifficultyBeatmapSet[] difficultyBeatmapSets = new CustomDifficultyBeatmapSet[standardLevelInfoSaveData.difficultyBeatmapSets.Length];
-			for(int i = 0; i < difficultyBeatmapSets.Length; ++i) {
-				BeatmapCharacteristicSO? beatmapCharacteristicBySerializedName = beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(standardLevelInfoSaveData.difficultyBeatmapSets[i].beatmapCharacteristicName);
-				CustomDifficultyBeatmap[] difficultyBeatmaps = new CustomDifficultyBeatmap[standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps.Length];
-				difficultyBeatmapSets[i] = new CustomDifficultyBeatmapSet(beatmapCharacteristicBySerializedName);
-				for(int j = 0; j < standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps.Length; ++j) {
-					string filename = standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps[j].beatmapFilename;
-					System.IO.Compression.ZipArchiveEntry file = archive.GetEntry(filename);
-					if(file == null) {
-						Plugin.Log?.Error("File not found in archive: " + filename);
-						return null;
-					}
-					byte[] rawData = new byte[file.Length];
-					file.Open().Read(rawData, 0, rawData.Length);
-					if(modded) {
-						if(ValidatedPath(filename, out string path))
-							System.IO.File.WriteAllBytes(path, rawData);
-						else
-							return null;
-					}
-					BeatmapSaveDataVersion3.BeatmapSaveData beatmapSaveData = BeatmapSaveDataVersion3.BeatmapSaveData.DeserializeFromJSONString(System.Text.Encoding.UTF8.GetString(rawData, 0, rawData.Length));
-					BeatmapDataBasicInfo beatmapDataBasicInfoFromSaveData = BeatmapDataLoader.GetBeatmapDataBasicInfoFromSaveData(beatmapSaveData);
-					standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps[j].difficulty.BeatmapDifficultyFromSerializedName(out BeatmapDifficulty difficulty);
-					difficultyBeatmaps[j] = new CustomDifficultyBeatmap(customBeatmapLevel, difficultyBeatmapSets[i], difficulty, standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps[j].difficultyRank, standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps[j].noteJumpMovementSpeed, standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps[j].noteJumpStartBeatOffset, standardLevelInfoSaveData.beatsPerMinute, beatmapSaveData, beatmapDataBasicInfoFromSaveData);
-				}
-				difficultyBeatmapSets[i].SetCustomDifficultyBeatmaps(difficultyBeatmaps);
-			}
-			System.IO.Compression.ZipArchiveEntry song = archive.GetEntry(standardLevelInfoSaveData.songFilename);
-			if(song == null) {
-				Plugin.Log?.Error("File not found in archive: " + standardLevelInfoSaveData.songFilename);
-				return null;
-			}
-			UnityEngine.AudioClip? audioClip = await DecodeAudio(song, AudioTypeHelper.GetAudioTypeFromPath(standardLevelInfoSaveData.songFilename));
-			if(audioClip == null) {
-				Plugin.Log?.Debug("NULL AUDIO CLIP");
-				return null;
-			}
-			Plugin.Log?.Debug("customBeatmapLevel.SetBeatmapLevelData()");
-			customBeatmapLevel.SetBeatmapLevelData(new BeatmapLevelData(audioClip, difficultyBeatmapSets));
-			return customBeatmapLevel;
-		}
-		public void Progress(PacketHandler.LoadProgress packet) {
-			handler.HandleLoadProgress(packet, handler.multiplayerSessionManager.localPlayer);
-			handler.multiplayerSessionManager.SendUnreliable(packet);
-		}
-		public async System.Threading.Tasks.Task<BeatmapLevelsModel.GetBeatmapLevelResult> DownloadWrapper(System.Threading.Tasks.Task<BeatmapLevelsModel.GetBeatmapLevelResult> task, ILevelGameplaySetupData gameplaySetupData, System.Threading.CancellationToken cancellationToken) {
-			BeatmapLevelsModel.GetBeatmapLevelResult result = await task;
-			if(!result.isError || Plugin.downloadInfo == null || Plugin.downloadPreview == null)
-				return result;
-			Plugin.Log?.Debug("Starting direct download");
-			try {
-				cancellationToken.ThrowIfCancellationRequested();
-				int it = 0, p = 0;
-				uint cycle = 0;
-				ulong off = handler.gaps[0].start;
-				while(handler.gaps.Count >= 1) {
-					if(++cycle == 4) {
-						ulong dl = (ulong)handler.buffer.LongLength;
-						foreach((ulong start, ulong end) in handler.gaps)
-							dl -= (end - start);
-						Progress(new PacketHandler.LoadProgress(PacketHandler.LoadProgress.LoadState.Downloading, (ushort)(dl * 65535 / (ulong)handler.buffer.Length)));
-						cycle = 0;
-					}
-					if(it >= handler.gaps.Count)
-						it = 0;
-					for(uint i = 64; i >= 1; --i) {
-						if(off >= handler.gaps[it].end) {
-							if(++it >= handler.gaps.Count)
-								it = 0;
-							off = handler.gaps[it].start;
-						}
-						ushort len = (ushort)System.Math.Min(380, handler.gaps[it].end - off);
-						if(Plugin.downloadSources.Count < 1) {
-							Plugin.Log?.Error($"No available download sources!");
-							return result;
-						}
-						p = (p + 1) % Plugin.downloadSources.Count;
-						handler.SendUnreliableToPlayer(new PacketHandler.LevelFragmentRequest(off, len), Plugin.downloadSources[p]);
-						off += 380;
-					}
-					await System.Threading.Tasks.Task.Delay(7, cancellationToken);
-					cancellationToken.ThrowIfCancellationRequested();
-				}
-				Plugin.Log?.Debug($"Finished downloading {handler.buffer.Length} bytes");
-				using(System.Security.Cryptography.SHA256 sha256 = System.Security.Cryptography.SHA256.Create()) {
-					byte[] hash = await System.Threading.Tasks.Task.Run(() =>
-						sha256.ComputeHash(handler.buffer));
-					if(!System.Linq.Enumerable.SequenceEqual(Plugin.downloadInfo.levelHash, hash)) {
-						Plugin.Log?.Error("Hash mismatch!");
-						return result;
-					}
-				}
-				using(System.IO.MemoryStream stream = new System.IO.MemoryStream(handler.buffer)) {
-					using(System.IO.Compression.ZipArchive archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Read)) {
-						if(archive == null)
-							return result;
-						ulong totalLength = 0;
-						foreach(System.IO.Compression.ZipArchiveEntry entry in archive.Entries) {
-							totalLength += (ulong)entry.Length;
-							if((ulong)entry.Length > Plugin.MaxUnzippedSize || totalLength > Plugin.MaxUnzippedSize)
-								return result;
-						}
-						System.IO.Compression.ZipArchiveEntry infoFile = archive.GetEntry("Info.dat");
-						if(infoFile == null) {
-							Plugin.Log?.Error("File not found in archive: Info.dat");
-							return result;
-						}
-						if(System.IO.Directory.Exists(dataPath)) {
-							foreach(System.IO.FileInfo file in new System.IO.DirectoryInfo(dataPath).GetFiles())
-								file.Delete();
-						} else {
-							System.IO.Directory.CreateDirectory(dataPath);
-						}
-						bool modded = Plugin.downloadPreview.requirements.Length >= 1 || Plugin.downloadPreview.suggestions.Length >= 1;
-						byte[] rawInfo = new byte[infoFile.Length];
-						infoFile.Open().Read(rawInfo, 0, rawInfo.Length);
-						if(modded) {
-							if(ValidatedPath("Info.dat", out string path))
-								System.IO.File.WriteAllBytes(path, rawInfo);
-							else
-								return result;
-						}
-						StandardLevelInfoSaveData info = StandardLevelInfoSaveData.DeserializeFromJSONString(System.Text.Encoding.UTF8.GetString(rawInfo, 0, rawInfo.Length));
-						CustomPreviewBeatmapLevel? previewBeatmapLevel = LoadZippedPreviewBeatmapLevel(gameplaySetupData.beatmapLevel.beatmapLevel.levelID, info, Plugin.downloadPreview.preview.coverRenderTask, archive);
-						if(previewBeatmapLevel == null)
-							return result;
-						Plugin.downloadPreview.preview.Init(previewBeatmapLevel);
-						CustomBeatmapLevel? level = await LoadZippedBeatmapLevelAsync(previewBeatmapLevel, archive, modded, cancellationToken);
-						if(level == null)
-							return result;
-						Plugin.Log?.Debug($"level: {level}");
-						return new BeatmapLevelsModel.GetBeatmapLevelResult(isError: false, level);
-					}
-				}
-			} catch(System.Exception ex) {
-				Plugin.Log?.Error("Direct download error: " + ex);
-				Plugin.Log?.Error(ex.StackTrace);
-				return result;
-			}
-		}
-		public override void LoadLevel(ILevelGameplaySetupData gameplaySetupData, float initialStartTime) {
-			bool pass = (_loaderState != MultiplayerBeatmapLoaderState.NotLoading);
-			base.LoadLevel(gameplaySetupData, initialStartTime);
-			Plugin.Log?.Debug($"LevelLoader.LoadLevel({gameplaySetupData.beatmapLevel.beatmapLevel.levelID})");
-			if(pass || Plugin.downloadInfo == null || gameplaySetupData.beatmapLevel.beatmapLevel.levelID != Plugin.downloadInfo.levelId)
-				return;
-			Plugin.Log?.Debug("DownloadWrapper()");
-			_getBeatmapLevelResultTask = DownloadWrapper(_getBeatmapLevelResultTask, gameplaySetupData, _getBeatmapCancellationTokenSource.Token);
-		}
-		public override void Tick() {
-			MultiplayerBeatmapLoaderState prevState = _loaderState;
-			base.Tick();
-			if(prevState == MultiplayerBeatmapLoaderState.LoadingBeatmap && _loaderState == MultiplayerBeatmapLoaderState.WaitingForCountdown)
-				rpcManager.SetIsEntitledToLevel(_gameplaySetupData.beatmapLevel.beatmapLevel.levelID, EntitlementsStatus.Ok);
-		}
+		return (playerPreviews[index] = new PacketHandler.RecommendPreview(previewBeatmapLevel, requirementArray, suggestionArray));
 	}
 
-	public class MpLevelLoader : MultiplayerCore.Objects.MpLevelLoader {
-		public LevelLoader loader;
-		public MpLevelLoader(IMultiplayerSessionManager sessionManager, MultiplayerCore.Objects.MpLevelDownloader levelDownloader, NetworkPlayerEntitlementChecker entitlementChecker, IMenuRpcManager rpcManager, SiraUtil.Logging.SiraLog logger, BeatmapLevelsModel beatmapLevelsModel, Zenject.DiContainer container) : base(sessionManager, levelDownloader, entitlementChecker, rpcManager, logger) {
-			loader = new LevelLoader(beatmapLevelsModel);
-			container.Inject(loader);
-			progressUpdated += (double progress) => loader.Progress(new PacketHandler.LoadProgress(PacketHandler.LoadProgress.LoadState.Downloading, (ushort)(progress * 65535)));
-		}
-		public override void LoadLevel(ILevelGameplaySetupData gameplaySetupData, float initialStartTime) {
-			bool pass = (_loaderState != MultiplayerBeatmapLoaderState.NotLoading);
-			base.LoadLevel(gameplaySetupData, initialStartTime);
-			Plugin.Log?.Debug($"LevelLoader.LoadLevel({gameplaySetupData.beatmapLevel.beatmapLevel.levelID})");
-			if(pass || Plugin.downloadInfo == null || gameplaySetupData.beatmapLevel.beatmapLevel.levelID != Plugin.downloadInfo.levelId)
-				return;
-			Plugin.Log?.Debug("DownloadWrapper()");
-			_getBeatmapLevelResultTask = loader.DownloadWrapper(_getBeatmapLevelResultTask, gameplaySetupData, _getBeatmapCancellationTokenSource.Token);
-		}
-	}
-
-	public static class SongCorePreviewProvider {
-		static string? HashForLevelID(string? levelId) {
-			string[] parts = (levelId ?? "").Split('_', ' ');
-			if(parts.Length < 3 || parts[2].Length != 40)
-				return null;
-			return parts[2];
-		}
-		public static void GetInfo(CustomPreviewBeatmapLevel previewBeatmapLevel, ref System.Collections.Generic.IEnumerable<string?> requirements, ref System.Collections.Generic.IEnumerable<string?> suggestions) {
-			string? levelHash = HashForLevelID(previewBeatmapLevel.levelID);
-			if(NullableStringHelper.IsNullOrEmpty(levelHash))
-				return;
-			SongCore.Data.ExtraSongData? extraSongData = SongCore.Collections.RetrieveExtraSongData(levelHash);
-			if(extraSongData == null)
-				return;
-			requirements = System.Linq.Enumerable.SelectMany(extraSongData._difficulties, diff => diff.additionalDifficultyData._requirements);
-			suggestions = System.Linq.Enumerable.SelectMany(extraSongData._difficulties, diff => diff.additionalDifficultyData._suggestions);
-		}
-	}
-
-	public static class PreviewProvider {
-		public static PacketHandler.RecommendPreview[] playerPreviews = new PacketHandler.RecommendPreview[0];
-		public static void Init(int playerCount) {
-			playerPreviews = new PacketHandler.RecommendPreview[playerCount];
-		}
-		public static PacketHandler.RecommendPreview? ResolvePreview(string levelId) =>
-			System.Linq.Enumerable.FirstOrDefault(playerPreviews, (PacketHandler.RecommendPreview preview) => preview.preview.levelID == levelId);
-		public static PacketHandler.RecommendPreview SetFromLocal(int index, CustomPreviewBeatmapLevel previewBeatmapLevel) {
-			System.Collections.Generic.IEnumerable<string?> requirements = new string[0], suggestions = new string[0];
-			string path = System.IO.Path.Combine(previewBeatmapLevel.customLevelPath, "Info.dat");
-			if(Plugin.haveSongCore) {
-				SongCorePreviewProvider.GetInfo(previewBeatmapLevel, ref requirements, ref suggestions);
-			} else if(System.IO.File.Exists(path)) {
-				Newtonsoft.Json.Linq.JObject info = Newtonsoft.Json.Linq.JObject.Parse(System.IO.File.ReadAllText(path));
-				Newtonsoft.Json.Linq.IJEnumerable<Newtonsoft.Json.Linq.JToken> customData = Newtonsoft.Json.Linq.Extensions.Children(info["_difficultyBeatmapSets"]?.Children()["_difficultyBeatmaps"] ?? new Newtonsoft.Json.Linq.JArray())["_customData"];
-				requirements = Newtonsoft.Json.Linq.Extensions.Values<string>(customData["_requirements"]);
-				suggestions = Newtonsoft.Json.Linq.Extensions.Values<string>(customData["_suggestions"]);
-			}
-			string?[] requirementArray = System.Linq.Enumerable.ToArray(System.Linq.Enumerable.ToHashSet(requirements));
-			string?[] suggestionArray = System.Linq.Enumerable.ToArray(System.Linq.Enumerable.ToHashSet(suggestions));
-			if(requirementArray.Length >= 1) {
-				Plugin.Log?.Debug($"{requirementArray.Length} requirements for `{previewBeatmapLevel.levelID}`:");
-				foreach(string? req in requirementArray)
-					Plugin.Log?.Debug($"    {req}");
-			} else {
-				Plugin.Log?.Debug($"No requirements for `{previewBeatmapLevel.levelID}`");
-			}
-			return (playerPreviews[index] = new PacketHandler.RecommendPreview(previewBeatmapLevel, requirementArray, suggestionArray));
-		}
-	}
-
-	public class PacketHandler : Zenject.IInitializable, System.IDisposable {
+	public class PacketHandler : System.IDisposable {
 		public enum MessageType : byte {
 			RecommendPreview, // client -> client
 			SetCanShareBeatmap, // client -> server
@@ -528,8 +195,8 @@ namespace BeatUpClient {
 			public readonly ByteArrayNetSerializable cover = new ByteArrayNetSerializable("cover", 0, 8192);
 			public System.Threading.Tasks.Task<byte[]> coverRenderTask = System.Threading.Tasks.Task.FromResult<byte[]>(new byte[0]);
 			public async System.Threading.Tasks.Task<UnityEngine.Sprite> GetCoverImageAsync(System.Threading.CancellationToken cancellationToken) {
-				Plugin.Log?.Debug("NetworkPreviewBeatmapLevel.GetCoverImageAsync()");
-				return await new MemorySpriteLoader(coverRenderTask).LoadSpriteAsync("", cancellationToken) ?? Plugin.defaultPackCover;
+				Log?.Debug("NetworkPreviewBeatmapLevel.GetCoverImageAsync()");
+				return await new MemorySpriteLoader(coverRenderTask).LoadSpriteAsync("", cancellationToken) ?? defaultPackCover;
 			}
 			public async System.Threading.Tasks.Task<byte[]> RenderCoverImageAsync(IPreviewBeatmapLevel beatmapLevel) {
 				UnityEngine.Sprite fullSprite = await beatmapLevel.GetCoverImageAsync(default(System.Threading.CancellationToken));
@@ -589,7 +256,7 @@ namespace BeatUpClient {
 				uint count = UpperBound(reader.GetByte(), 8);
 				PreviewDifficultyBeatmapSet[] sets = count >= 1 ? new PreviewDifficultyBeatmapSet[count] : null!;
 				for(uint i = 0; i < count; ++i) {
-					BeatmapCharacteristicSO? beatmapCharacteristic = beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(reader.GetString());
+					BeatmapCharacteristicSO? beatmapCharacteristic = handler.beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(reader.GetString());
 					BeatmapDifficulty[] beatmapDifficulties = new BeatmapDifficulty[UpperBound(reader.GetByte(), 5)];
 					for(uint j = 0; j < beatmapDifficulties.Length; ++j)
 						beatmapDifficulties[j] = (BeatmapDifficulty)reader.GetVarUInt();
@@ -617,7 +284,7 @@ namespace BeatUpClient {
 				coverRenderTask = RenderCoverImageAsync(beatmapLevel);
 				environmentInfo = beatmapLevel.environmentInfo;
 				allDirectionsEnvironmentInfo = beatmapLevel.allDirectionsEnvironmentInfo;
-				Plugin.Log?.Debug($"NetworkPreviewBeatmapLevel.Init(beatmapLevel={beatmapLevel}, previewDifficultyBeatmapSets={previewDifficultyBeatmapSets})");
+				Log?.Debug($"NetworkPreviewBeatmapLevel.Init(beatmapLevel={beatmapLevel}, previewDifficultyBeatmapSets={previewDifficultyBeatmapSets})");
 			}
 			public NetworkPreviewBeatmapLevel() {}
 			public NetworkPreviewBeatmapLevel(IPreviewBeatmapLevel beatmapLevel) =>
@@ -659,20 +326,20 @@ namespace BeatUpClient {
 			public byte[] levelHash = new byte[32];
 			public ulong fileSize;
 			public virtual void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
-				Plugin.Log?.Debug($"ShareInfo.Serialize()");
+				Log?.Debug($"ShareInfo.Serialize()");
 				writer.Put((string)levelId);
 				writer.Put((byte[])levelHash);
 				writer.PutVarULong(fileSize);
 			}
 			public virtual void Deserialize(LiteNetLib.Utils.NetDataReader reader) {
-				Plugin.Log?.Debug($"ShareInfo.Deserialize()");
+				Log?.Debug($"ShareInfo.Deserialize()");
 				levelId = reader.GetString();
 				reader.GetBytes(levelHash, levelHash.Length);
 				fileSize = reader.GetVarULong();
 			}
 			public ShareInfo() {}
 			public ShareInfo(string levelId, byte[] levelHash, ulong fileSize) {
-				Plugin.Log?.Debug($"ShareInfo()");
+				Log?.Debug($"ShareInfo()");
 				this.levelId = levelId;
 				System.Buffer.BlockCopy(levelHash, 0, this.levelHash, 0, this.levelHash.Length);
 				this.fileSize = fileSize;
@@ -682,7 +349,7 @@ namespace BeatUpClient {
 		public class SetCanShareBeatmap : ShareInfo {
 			public bool canShare;
 			public override void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
-				Plugin.Log?.Debug($"SetCanShareBeatmap.Serialize()");
+				Log?.Debug($"SetCanShareBeatmap.Serialize()");
 				base.Serialize(writer);
 				writer.Put((bool)canShare);
 			}
@@ -692,7 +359,7 @@ namespace BeatUpClient {
 			}
 			public SetCanShareBeatmap() {}
 			public SetCanShareBeatmap(string levelId, byte[] levelHash, ulong fileSize, bool canShare = true) : base(levelId, levelHash, fileSize) {
-				Plugin.Log?.Debug($"SetCanShareBeatmap()");
+				Log?.Debug($"SetCanShareBeatmap()");
 				this.canShare = canShare;
 			}
 		}
@@ -706,7 +373,7 @@ namespace BeatUpClient {
 					writer.Put(player);
 			}
 			public override void Deserialize(LiteNetLib.Utils.NetDataReader reader) {
-				Plugin.Log?.Debug("DirectDownloadInfo.Deserialize()");
+				Log?.Debug("DirectDownloadInfo.Deserialize()");
 				base.Deserialize(reader);
 				sourcePlayers = new string[UpperBound(reader.GetByte(), 128)];
 				for(byte i = 0; i < sourcePlayers.Length; ++i)
@@ -784,25 +451,22 @@ namespace BeatUpClient {
 			public LoadProgress(LoadState state, ushort progress) : this(state, progress, ++localSequence) {}
 		}
 
-		public static BeatmapCharacteristicCollectionSO beatmapCharacteristicCollection = null!;
-		public readonly MultiplayerSessionManager multiplayerSessionManager;
-		public readonly MultiplayerSessionManager.MessageType messageType = (MultiplayerSessionManager.MessageType)101;
-		public readonly NetworkPacketSerializer<MessageType, IConnectedPlayer> serializer = new NetworkPacketSerializer<MessageType, IConnectedPlayer>();
+		public Zenject.DiContainer container;
+		public IMenuRpcManager rpcManager;
+		public BeatmapCharacteristicCollectionSO beatmapCharacteristicCollection;
+		public MultiplayerSessionManager multiplayerSessionManager;
+		const MultiplayerSessionManager.MessageType messageType = (MultiplayerSessionManager.MessageType)101;
+		public NetworkPacketSerializer<MessageType, IConnectedPlayer> serializer;
+		public Downloader? downloader = null;
 
-		public PacketHandler(BeatmapCharacteristicCollectionSO beatmapCharacteristicCollection, IMultiplayerSessionManager multiplayerSessionManager) {
-			Plugin.Log?.Debug("PacketHandler()");
-			PacketHandler.beatmapCharacteristicCollection = beatmapCharacteristicCollection;
-			this.multiplayerSessionManager = (MultiplayerSessionManager)multiplayerSessionManager;
-		}
+		public PacketHandler(Zenject.DiContainer container) {
+			Log?.Debug("PacketHandler()");
+			this.container = container;
+			rpcManager = container.TryResolve<IMenuRpcManager>();
+			beatmapCharacteristicCollection = container.TryResolve<BeatmapCharacteristicCollectionSO>();
+			multiplayerSessionManager = (MultiplayerSessionManager)container.TryResolve<IMultiplayerSessionManager>();
+			serializer = new NetworkPacketSerializer<MessageType, IConnectedPlayer>();
 
-		public static uint UpperBound(uint value, uint limit) {
-			if(value > limit)
-				throw new System.ArgumentOutOfRangeException();
-			return value;
-		}
-
-		public void Initialize() {
-			Plugin.Log?.Debug("multiplayerSessionManager.RegisterSerializer()");
 			multiplayerSessionManager.SetLocalPlayerState("modded", true);
 			multiplayerSessionManager.RegisterSerializer(messageType, serializer);
 			serializer.RegisterCallback<RecommendPreview>(MessageType.RecommendPreview, HandleRecommendPreview);
@@ -811,74 +475,340 @@ namespace BeatUpClient {
 			serializer.RegisterCallback<LevelFragmentRequest>(MessageType.LevelFragmentRequest, HandleLevelFragmentRequest);
 			serializer.RegisterCallback<LevelFragment>(MessageType.LevelFragment, HandleLevelFragment);
 			serializer.RegisterCallback<LoadProgress>(MessageType.LoadProgress, HandleLoadProgress);
+			rpcManager.setSelectedBeatmapEvent += HandleSetSelectedBeatmapEvent;
+			rpcManager.clearSelectedBeatmapEvent += HandleClearSelectedBeatmapEvent;
+			rpcManager.setIsEntitledToLevelEvent += HandleSetIsEntitledToLevelRpc;
+
+			container.Bind(typeof(System.IDisposable)).To<PacketHandler>().FromInstance(this);
 		}
 
-		public void Dispose() {
+		void System.IDisposable.Dispose() {
+			Log?.Debug("PacketHandler.Dispose()");
+			rpcManager.setIsEntitledToLevelEvent -= HandleSetIsEntitledToLevelRpc;
+			rpcManager.clearSelectedBeatmapEvent -= HandleClearSelectedBeatmapEvent;
+			rpcManager.setSelectedBeatmapEvent -= HandleSetSelectedBeatmapEvent;
 			multiplayerSessionManager.UnregisterSerializer(messageType, serializer);
 		}
 
-		public IConnectedPlayer GetPlayerByUserId(string userId) {
-			return multiplayerSessionManager.GetPlayerByUserId(userId);
+		public static uint UpperBound(uint value, uint limit) {
+			if(value > limit)
+				throw new System.ArgumentOutOfRangeException();
+			return value;
+		}
+
+		public static bool MissingRequirements(RecommendPreview? preview, bool download) {
+			if(preview == null)
+				return false; // Entitlement[good]: no preview
+			if(preview.requirements.Length + preview.suggestions.Length >= 1 && download && !Config.Instance.AllowModchartDownloads)
+				return true; // Entitlement[fail]: blocked by `AllowModchartDownloads`
+			if(preview.requirements.Length < 1)
+				return false; // Entitlement[good]: no requirements
+			if(!haveSongCore)
+				return true; // Entitlement[fail]: need SongCore
+			if(!System.Linq.Enumerable.All(preview.requirements, x => NullableStringHelper.IsNullOrEmpty(x) || SongCore.Collections.capabilities.Contains(x)))
+				return true; // Entitlement[fail]: missing requirements
+			return false; // Entitlement[good]: have all requirements
+		}
+
+		static string? selectedLevelId = null;
+		static void HandleSetSelectedBeatmapEvent(string userId, BeatmapIdentifierNetSerializable? beatmapId) {
+			selectedLevelId = beatmapId?.levelID;
+			for(uint i = 0; i < playerCells.Length; ++i)
+				playerCells[i].UpdateData(new LoadProgress(LoadProgress.LoadState.None, 0, 0), true);
+		}
+
+		static void HandleClearSelectedBeatmapEvent(string userId) =>
+			HandleSetSelectedBeatmapEvent(userId, null);
+
+		void HandleSetIsEntitledToLevelRpc(string userId, string levelId, EntitlementsStatus entitlementStatus) =>
+			HandleSetIsEntitledToLevel(multiplayerSessionManager.GetPlayerByUserId(userId), levelId, entitlementStatus);
+
+		public static void HandleSetIsEntitledToLevel(IConnectedPlayer? player, string levelId, EntitlementsStatus entitlementStatus) {
+			if(player == null || levelId != selectedLevelId)
+				return;
+			LoadProgress.LoadState state = entitlementStatus switch {
+				EntitlementsStatus.NotOwned => LoadProgress.LoadState.Failed,
+				EntitlementsStatus.NotDownloaded => LoadProgress.LoadState.Downloading,
+				EntitlementsStatus.Ok => LoadProgress.LoadState.Done,
+				_ => LoadProgress.LoadState.None,
+			};
+			if(state != LoadProgress.LoadState.None)
+				playerCells[player.sortIndex].UpdateData(new LoadProgress(state, 0, 0), true);
 		}
 
 		public void SendUnreliableToPlayer<T>(T message, IConnectedPlayer player) where T : LiteNetLib.Utils.INetSerializable {
 			ConnectedPlayerManager? connectedPlayerManager = multiplayerSessionManager.connectedPlayerManager;
-			if(connectedPlayerManager == null)
-				return;
-			if(connectedPlayerManager.isConnected)
-				((ConnectedPlayerManager.ConnectedPlayer)player)._connection.Send(connectedPlayerManager.WriteOne(((ConnectedPlayerManager.ConnectedPlayer)connectedPlayerManager.localPlayer)._connectionId, ((ConnectedPlayerManager.ConnectedPlayer)player)._remoteConnectionId, message), LiteNetLib.DeliveryMethod.Unreliable);
+			if(connectedPlayerManager?.isConnected == true && player is ConnectedPlayerManager.ConnectedPlayer connectedPlayer)
+				connectedPlayer._connection.Send(connectedPlayerManager.WriteOne(((ConnectedPlayerManager.ConnectedPlayer)connectedPlayerManager.localPlayer)._connectionId, connectedPlayer._remoteConnectionId, message), LiteNetLib.DeliveryMethod.Unreliable);
 			else if(message is IPoolablePacket poolable)
 				poolable.Release();
 		}
 
-		public void HandleRecommendPreview(RecommendPreview packet, IConnectedPlayer player) {
-			Plugin.Log?.Debug($"PacketHandler.HandleRecommendPreview(\"{packet.preview.levelID}\", {player})");
-			PreviewProvider.playerPreviews[player.sortIndex] = packet;
+		public static void HandleRecommendPreview(RecommendPreview packet, IConnectedPlayer player) {
+			Log?.Debug($"HandleRecommendPreview(\"{packet.preview.levelID}\", {player})");
+			playerPreviews[player.sortIndex] = packet;
 		}
 
-		public void HandleSetCanShareBeatmap(SetCanShareBeatmap packet, IConnectedPlayer player) {}
+		static void HandleSetCanShareBeatmap(SetCanShareBeatmap packet, IConnectedPlayer player) {}
 
-		public byte[] buffer = new byte[0];
-		public readonly System.Collections.Generic.List<(ulong start, ulong end)> gaps = new System.Collections.Generic.List<(ulong, ulong)>();
-		public void HandleDirectDownloadInfo(DirectDownloadInfo packet, IConnectedPlayer player) {
-			Plugin.Log?.Debug($"DirectDownloadInfo:\n    levelId=\"{packet.levelId}\"\n    levelHash=\"{packet.levelHash}\"\n    fileSize={packet.fileSize}\n    source=\"{packet.sourcePlayers[0]}\"");
-			RecommendPreview? preview = PreviewProvider.ResolvePreview(packet.levelId);
-			if(!Plugin.directDownloads || preview == null || BeatUpMenuRpcManager.MissingRequirements(preview, true))
+		void HandleDirectDownloadInfo(DirectDownloadInfo packet, IConnectedPlayer player) {
+			Log?.Debug($"DirectDownloadInfo:\n    levelId=\"{packet.levelId}\"\n    levelHash=\"{packet.levelHash}\"\n    fileSize={packet.fileSize}\n    source=\"{packet.sourcePlayers[0]}\"");
+			RecommendPreview? preview = ResolvePreview(packet.levelId);
+			if(!directDownloads || preview == null || MissingRequirements(preview, true) || packet.fileSize > MaxDownloadSize)
 				return;
-			if(packet.fileSize > Plugin.MaxDownloadSize || packet.sourcePlayers.Length < 1)
-				return;
-			Plugin.downloadInfo = packet;
-			Plugin.downloadSources.Clear();
-			foreach(string userId in Plugin.downloadInfo.sourcePlayers)
-				Plugin.downloadSources.Add(GetPlayerByUserId(userId));
-			Plugin.downloadPreview = preview;
-			buffer = new byte[packet.fileSize];
-			gaps.Clear();
-			gaps.Add((0, packet.fileSize));
-			if(!Plugin.downloadPending)
-				return;
-			PacketHandler.LoadProgress progress = new PacketHandler.LoadProgress(PacketHandler.LoadProgress.LoadState.Downloading, 0);
-			HandleLoadProgress(progress, multiplayerSessionManager.localPlayer);
-			multiplayerSessionManager.Send(progress);
+			if(downloadPending) {
+				LoadProgress progress = new LoadProgress(LoadProgress.LoadState.Downloading, 0);
+				HandleLoadProgress(progress, multiplayerSessionManager.localPlayer);
+				multiplayerSessionManager.Send(progress);
+			}
+			downloader = new Downloader(packet, preview);
 		}
 
-		public void HandleLevelFragmentRequest(LevelFragmentRequest packet, IConnectedPlayer player) {
-			if(packet.offset >= (ulong)Plugin.uploadData.Count)
+		void HandleLevelFragmentRequest(LevelFragmentRequest packet, IConnectedPlayer player) {
+			if(packet.offset >= (ulong)uploadData.Count)
 				return;
-			byte[] data = new byte[System.Math.Min(packet.maxSize, (ulong)Plugin.uploadData.Count - packet.offset)];
-			System.Buffer.BlockCopy(Plugin.uploadData.Array, Plugin.uploadData.Offset + (int)packet.offset, data, 0, data.Length);
+			byte[] data = new byte[System.Math.Min(packet.maxSize, (ulong)uploadData.Count - packet.offset)];
+			System.Buffer.BlockCopy(uploadData.Array, uploadData.Offset + (int)packet.offset, data, 0, data.Length);
 			SendUnreliableToPlayer(new LevelFragment(packet.offset, data), player);
 		}
 
-		public void HandleLevelFragment(LevelFragment packet, IConnectedPlayer player) {
-			if(buffer == null || gaps.Count < 1 || !Plugin.downloadSources.Contains(player))
+		void HandleLevelFragment(LevelFragment packet, IConnectedPlayer player) =>
+			downloader?.HandleFragment(packet, player);
+
+		public static void HandleLoadProgress(LoadProgress packet, IConnectedPlayer player) =>
+			playerCells[player.sortIndex].UpdateData(packet);
+	}
+	static PacketHandler handler = null!;
+
+	public class Downloader {
+		readonly CustomLevelLoader customLevelLoader;
+		readonly BeatmapCharacteristicCollectionSO beatmapCharacteristicCollection;
+		readonly string dataPath = System.IO.Path.Combine(System.IO.Path.GetFullPath(CustomLevelPathHelper.baseProjectPath), "BeatUpClient_Data");
+		readonly byte[] buffer;
+		readonly System.Collections.Generic.List<(ulong start, ulong end)> gaps;
+		readonly byte[] levelHash;
+		readonly string[] sourcePlayers;
+		readonly PacketHandler.RecommendPreview preview;
+		System.Collections.Generic.List<IConnectedPlayer>? sources;
+		public string? levelId => preview.preview.levelID;
+		public Downloader(PacketHandler.DirectDownloadInfo info, PacketHandler.RecommendPreview preview) {
+			customLevelLoader = handler.container.Resolve<CustomLevelLoader>();
+			beatmapCharacteristicCollection = handler.container.Resolve<BeatmapCharacteristicCollectionSO>();
+			buffer = new byte[info.fileSize];
+			gaps = new System.Collections.Generic.List<(ulong, ulong)>(new[] {(0LU, info.fileSize)});
+			this.levelHash = info.levelHash;
+			this.sourcePlayers = info.sourcePlayers;
+			this.preview = preview;
+		}
+		bool ValidatedPath(string filename, out string path) {
+			path = System.IO.Path.Combine(dataPath, filename);
+			if(System.IO.Path.GetDirectoryName(path) != dataPath)
+				Log?.Error($"PATH MISMATCH: `{System.IO.Path.GetDirectoryName(path)}` != `{dataPath}`");
+			else if(System.IO.Path.GetFileName(path) != filename)
+				Log?.Error($"FILENAME MISMATCH: `{System.IO.Path.GetFileName(path)}` != `{filename}`");
+			else
+				return true;
+			path = System.String.Empty;
+			return false;
+		}
+		EnvironmentInfoSO LoadEnvironmentInfo(string environmentName, EnvironmentInfoSO defaultInfo) {
+			EnvironmentInfoSO environmentInfoSO = customLevelLoader._environmentSceneInfoCollection.GetEnvironmentInfoBySerializedName(environmentName);
+			if(environmentInfoSO == null)
+				environmentInfoSO = defaultInfo;
+			return environmentInfoSO;
+		}
+		CustomPreviewBeatmapLevel? LoadZippedPreviewBeatmapLevel(StandardLevelInfoSaveData standardLevelInfoSaveData, System.IO.Compression.ZipArchive archive) {
+			try {
+				EnvironmentInfoSO environmentInfo = LoadEnvironmentInfo(standardLevelInfoSaveData.environmentName, customLevelLoader._defaultEnvironmentInfo);
+				EnvironmentInfoSO allDirectionsEnvironmentInfo = LoadEnvironmentInfo(standardLevelInfoSaveData.allDirectionsEnvironmentName, customLevelLoader._defaultAllDirectionsEnvironmentInfo);
+				System.Collections.Generic.List<PreviewDifficultyBeatmapSet> sets = new System.Collections.Generic.List<PreviewDifficultyBeatmapSet>();
+				StandardLevelInfoSaveData.DifficultyBeatmapSet[] difficultyBeatmapSets = standardLevelInfoSaveData.difficultyBeatmapSets;
+				foreach(StandardLevelInfoSaveData.DifficultyBeatmapSet difficultyBeatmapSet in difficultyBeatmapSets) {
+					BeatmapCharacteristicSO? beatmapCharacteristicBySerializedName = beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(difficultyBeatmapSet.beatmapCharacteristicName);
+					if(beatmapCharacteristicBySerializedName != null) {
+						BeatmapDifficulty[] diffs = new BeatmapDifficulty[difficultyBeatmapSet.difficultyBeatmaps.Length];
+						for(int j = 0; j < difficultyBeatmapSet.difficultyBeatmaps.Length; j++) {
+							difficultyBeatmapSet.difficultyBeatmaps[j].difficulty.BeatmapDifficultyFromSerializedName(out BeatmapDifficulty difficulty);
+							diffs[j] = difficulty;
+						}
+						sets.Add(new PreviewDifficultyBeatmapSet(beatmapCharacteristicBySerializedName, diffs));
+					}
+				}
+				return new CustomPreviewBeatmapLevel(defaultPackCover, standardLevelInfoSaveData, dataPath, new MemorySpriteLoader(preview.preview.coverRenderTask), levelId, standardLevelInfoSaveData.songName, standardLevelInfoSaveData.songSubName, standardLevelInfoSaveData.songAuthorName, standardLevelInfoSaveData.levelAuthorName, standardLevelInfoSaveData.beatsPerMinute, standardLevelInfoSaveData.songTimeOffset, standardLevelInfoSaveData.shuffle, standardLevelInfoSaveData.shufflePeriod, standardLevelInfoSaveData.previewStartTime, standardLevelInfoSaveData.previewDuration, environmentInfo, allDirectionsEnvironmentInfo, sets.ToArray());
+			} catch {
+				return null;
+			}
+		}
+		static async System.Threading.Tasks.Task<UnityEngine.AudioClip?> DecodeAudio(System.IO.Compression.ZipArchiveEntry song, UnityEngine.AudioType type) {
+			byte[] songData = new byte[song.Length];
+			song.Open().Read(songData, 0, songData.Length);
+			System.Net.Sockets.TcpListener host = new System.Net.Sockets.TcpListener(new System.Net.IPEndPoint(System.Net.IPAddress.Any, 0));
+			host.Start(1);
+			using(UnityEngine.Networking.UnityWebRequest www = UnityEngine.Networking.UnityWebRequestMultimedia.GetAudioClip("http://127.0.0.1:" + ((System.Net.IPEndPoint)host.LocalEndpoint).Port, type)) {
+				((UnityEngine.Networking.DownloadHandlerAudioClip)www.downloadHandler).streamAudio = true;
+				UnityEngine.AsyncOperation request = www.SendWebRequest();
+				System.Net.Sockets.TcpClient client = host.AcceptTcpClient();
+				System.Net.Sockets.NetworkStream stream = client.GetStream();
+				byte[] resp = System.Text.Encoding.ASCII.GetBytes($"HTTP/1.1 200 \r\naccept-ranges: bytes\r\ncontent-length: {songData.Length}\r\ncontent-type: audio/ogg\r\n\r\n");
+				stream.Write(resp, 0, resp.Length);
+				stream.Write(songData, 0, songData.Length);
+				while(!request.isDone)
+					await System.Threading.Tasks.Task.Delay(100);
+				client.Close();
+				host.Stop();
+				if(www.isNetworkError || www.isHttpError) {
+					UnityEngine.Debug.Log($"Audio load error: {www.error}");
+					return null;
+				}
+				return UnityEngine.Networking.DownloadHandlerAudioClip.GetContent(www);
+			}
+		}
+		async System.Threading.Tasks.Task<CustomBeatmapLevel?> LoadZippedBeatmapLevelAsync(CustomPreviewBeatmapLevel customPreviewBeatmapLevel, System.IO.Compression.ZipArchive archive, bool modded, System.Threading.CancellationToken cancellationToken) {
+			StandardLevelInfoSaveData standardLevelInfoSaveData = customPreviewBeatmapLevel.standardLevelInfoSaveData;
+			CustomBeatmapLevel customBeatmapLevel = new CustomBeatmapLevel(customPreviewBeatmapLevel);
+			CustomDifficultyBeatmapSet[] difficultyBeatmapSets = new CustomDifficultyBeatmapSet[standardLevelInfoSaveData.difficultyBeatmapSets.Length];
+			for(int i = 0; i < difficultyBeatmapSets.Length; ++i) {
+				BeatmapCharacteristicSO? beatmapCharacteristicBySerializedName = beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(standardLevelInfoSaveData.difficultyBeatmapSets[i].beatmapCharacteristicName);
+				CustomDifficultyBeatmap[] difficultyBeatmaps = new CustomDifficultyBeatmap[standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps.Length];
+				difficultyBeatmapSets[i] = new CustomDifficultyBeatmapSet(beatmapCharacteristicBySerializedName);
+				for(int j = 0; j < standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps.Length; ++j) {
+					string filename = standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps[j].beatmapFilename;
+					System.IO.Compression.ZipArchiveEntry file = archive.GetEntry(filename);
+					if(file == null) {
+						Log?.Error("File not found in archive: " + filename);
+						return null;
+					}
+					byte[] rawData = new byte[file.Length];
+					file.Open().Read(rawData, 0, rawData.Length);
+					if(modded) {
+						if(ValidatedPath(filename, out string path))
+							System.IO.File.WriteAllBytes(path, rawData);
+						else
+							return null;
+					}
+					BeatmapSaveDataVersion3.BeatmapSaveData beatmapSaveData = BeatmapSaveDataVersion3.BeatmapSaveData.DeserializeFromJSONString(System.Text.Encoding.UTF8.GetString(rawData, 0, rawData.Length));
+					BeatmapDataBasicInfo beatmapDataBasicInfoFromSaveData = BeatmapDataLoader.GetBeatmapDataBasicInfoFromSaveData(beatmapSaveData);
+					standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps[j].difficulty.BeatmapDifficultyFromSerializedName(out BeatmapDifficulty difficulty);
+					difficultyBeatmaps[j] = new CustomDifficultyBeatmap(customBeatmapLevel, difficultyBeatmapSets[i], difficulty, standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps[j].difficultyRank, standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps[j].noteJumpMovementSpeed, standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps[j].noteJumpStartBeatOffset, standardLevelInfoSaveData.beatsPerMinute, beatmapSaveData, beatmapDataBasicInfoFromSaveData);
+				}
+				difficultyBeatmapSets[i].SetCustomDifficultyBeatmaps(difficultyBeatmaps);
+			}
+			System.IO.Compression.ZipArchiveEntry song = archive.GetEntry(standardLevelInfoSaveData.songFilename);
+			if(song == null) {
+				Log?.Error("File not found in archive: " + standardLevelInfoSaveData.songFilename);
+				return null;
+			}
+			UnityEngine.AudioClip? audioClip = await DecodeAudio(song, AudioTypeHelper.GetAudioTypeFromPath(standardLevelInfoSaveData.songFilename));
+			if(audioClip == null) {
+				Log?.Debug("NULL AUDIO CLIP");
+				return null;
+			}
+			Log?.Debug("customBeatmapLevel.SetBeatmapLevelData()");
+			customBeatmapLevel.SetBeatmapLevelData(new BeatmapLevelData(audioClip, difficultyBeatmapSets));
+			return customBeatmapLevel;
+		}
+		public async System.Threading.Tasks.Task<BeatmapLevelsModel.GetBeatmapLevelResult?> Resolve(System.Action<PacketHandler.LoadProgress> progress, System.Threading.CancellationToken cancellationToken) {
+			Log?.Debug("Starting direct download");
+			try {
+				cancellationToken.ThrowIfCancellationRequested();
+				sources ??= System.Linq.Enumerable.ToList(System.Linq.Enumerable.Where(System.Linq.Enumerable.Select(sourcePlayers, userId => handler.multiplayerSessionManager.GetPlayerByUserId(userId)), player => player is ConnectedPlayerManager.ConnectedPlayer));
+				int it = 0, p = 0;
+				uint cycle = 0;
+				ulong off = gaps[0].start;
+				while(gaps.Count >= 1) {
+					if(++cycle == 4) {
+						ulong dl = (ulong)buffer.LongLength;
+						foreach((ulong start, ulong end) in gaps)
+							dl -= (end - start);
+						progress(new PacketHandler.LoadProgress(PacketHandler.LoadProgress.LoadState.Downloading, (ushort)(dl * 65535 / (ulong)buffer.Length)));
+						cycle = 0;
+					}
+					if(it >= gaps.Count)
+						it = 0;
+					for(uint i = 64; i >= 1; --i) {
+						if(off >= gaps[it].end) {
+							if(++it >= gaps.Count)
+								it = 0;
+							off = gaps[it].start;
+						}
+						ushort len = (ushort)System.Math.Min(380, gaps[it].end - off);
+						if(sources.Count < 1) {
+							Log?.Error($"No available download sources!");
+							return null;
+						}
+						p = (p + 1) % sources.Count;
+						handler.SendUnreliableToPlayer(new PacketHandler.LevelFragmentRequest(off, len), sources[p]);
+						off += 380;
+					}
+					await System.Threading.Tasks.Task.Delay(7, cancellationToken);
+					cancellationToken.ThrowIfCancellationRequested();
+				}
+				Log?.Debug($"Finished downloading {buffer.Length} bytes");
+				byte[] hash = await System.Threading.Tasks.Task.Run(() => {
+					using System.Security.Cryptography.SHA256 sha256 = System.Security.Cryptography.SHA256.Create();
+					return sha256.ComputeHash(buffer);
+				});
+				if(!System.Linq.Enumerable.SequenceEqual(levelHash, hash)) {
+					Log?.Error("Hash mismatch!");
+					return null;
+				}
+				using(System.IO.MemoryStream stream = new System.IO.MemoryStream(buffer)) {
+					using(System.IO.Compression.ZipArchive archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Read)) {
+						if(archive == null)
+							return null;
+						ulong totalLength = 0;
+						foreach(System.IO.Compression.ZipArchiveEntry entry in archive.Entries) {
+							totalLength += (ulong)entry.Length;
+							if((ulong)entry.Length > MaxUnzippedSize || totalLength > MaxUnzippedSize)
+								return null;
+						}
+						System.IO.Compression.ZipArchiveEntry infoFile = archive.GetEntry("Info.dat");
+						if(infoFile == null) {
+							Log?.Error("File not found in archive: Info.dat");
+							return null;
+						}
+						if(System.IO.Directory.Exists(dataPath)) {
+							foreach(System.IO.FileInfo file in new System.IO.DirectoryInfo(dataPath).GetFiles())
+								file.Delete();
+						} else {
+							System.IO.Directory.CreateDirectory(dataPath);
+						}
+						bool modded = preview.requirements.Length >= 1 || preview.suggestions.Length >= 1;
+						byte[] rawInfo = new byte[infoFile.Length];
+						infoFile.Open().Read(rawInfo, 0, rawInfo.Length);
+						if(modded) {
+							if(ValidatedPath("Info.dat", out string path))
+								System.IO.File.WriteAllBytes(path, rawInfo);
+							else
+								return null;
+						}
+						StandardLevelInfoSaveData info = StandardLevelInfoSaveData.DeserializeFromJSONString(System.Text.Encoding.UTF8.GetString(rawInfo, 0, rawInfo.Length));
+						CustomPreviewBeatmapLevel? previewBeatmapLevel = LoadZippedPreviewBeatmapLevel(info, archive);
+						if(previewBeatmapLevel == null)
+							return null;
+						preview.preview.Init(previewBeatmapLevel);
+						CustomBeatmapLevel? level = await LoadZippedBeatmapLevelAsync(previewBeatmapLevel, archive, modded, cancellationToken);
+						if(level == null)
+							return null;
+						Log?.Debug($"level: {level}");
+						return new BeatmapLevelsModel.GetBeatmapLevelResult(isError: false, level);
+					}
+				}
+			} catch(System.Exception ex) {
+				Log?.Error("Direct download error: " + ex);
+				Log?.Error(ex.StackTrace);
+				return null;
+			}
+		}
+		public void HandleFragment(PacketHandler.LevelFragment fragment, IConnectedPlayer player) {
+			if(gaps.Count < 1 || sources?.Contains(player) != true)
 				return;
-			if(packet.offset >= (ulong)buffer.LongLength || packet.offset + (uint)packet.data.LongLength > (ulong)buffer.LongLength || packet.data.LongLength < 1) {
-				Plugin.downloadSources.Remove(player);
+			if(fragment.offset >= (ulong)buffer.LongLength || fragment.offset + (uint)fragment.data.LongLength > (ulong)buffer.LongLength || fragment.data.LongLength < 1) {
+				sources.Remove(player);
 				return;
 			}
-			System.Buffer.BlockCopy(packet.data, 0, buffer, (int)packet.offset, packet.data.Length);
-			ulong start = packet.offset, end = packet.offset + (ulong)packet.data.LongLength;
+			System.Buffer.BlockCopy(fragment.data, 0, buffer, (int)fragment.offset, fragment.data.Length);
+			ulong start = fragment.offset, end = fragment.offset + (ulong)fragment.data.LongLength;
 			int i = gaps.Count - 1;
 			while(i >= 1 && gaps[i].start > start)
 				--i;
@@ -899,168 +829,21 @@ namespace BeatUpClient {
 			if(gaps[i].end <= gaps[i].start)
 				gaps.RemoveAt(i);
 		}
-
-		public void HandleLoadProgress(LoadProgress packet, IConnectedPlayer player) =>
-			Plugin.playerCells[player.sortIndex].UpdateData(packet);
 	}
 
-	public class PlayersDataModel : LobbyPlayersDataModel, ILobbyPlayersDataModel, System.IDisposable {
-		[Zenject.Inject]
-		readonly ILobbyStateDataModel lobbyStateDataModel = null!;
-		public readonly MultiplayerSessionManager multiplayerSessionManager;
-
-		public PlayersDataModel(IMultiplayerSessionManager multiplayerSessionManager) {
-			this.multiplayerSessionManager = (MultiplayerSessionManager)multiplayerSessionManager;
+	public static MultiplayerStatusModel? multiplayerStatusModel = null;
+	public static QuickPlaySetupModel? quickPlaySetupModel = null;
+	public static void InvalidateModels() {
+		if(multiplayerStatusModel != null)
+			multiplayerStatusModel._request = null;
+		if(quickPlaySetupModel != null)
+			quickPlaySetupModel._request = null;
+		if(mainFlowCoordinator.childFlowCoordinator is MultiplayerModeSelectionFlowCoordinator multiplayerModeSelectionFlowCoordinator) {
+			editServerViewController.Dismiss(true);
+			mainFlowCoordinator.DismissFlowCoordinator(multiplayerModeSelectionFlowCoordinator, HMUI.ViewController.AnimationDirection.Horizontal, (System.Action)delegate() {
+				mainFlowCoordinator.PresentMultiplayerModeSelectionFlowCoordinatorWithDisclaimerAndAvatarCreator();
+			}, true);
 		}
-
-		public override void Activate() {
-			Plugin.Log?.Debug("PlayersDataModel.Activate()");
-			base.Activate();
-			_menuRpcManager.getRecommendedBeatmapEvent -= base.HandleMenuRpcManagerGetRecommendedBeatmap;
-			_menuRpcManager.getRecommendedBeatmapEvent += this.HandleMenuRpcManagerGetRecommendedBeatmap;
-			_menuRpcManager.setIsEntitledToLevelEvent += HandleSetIsEntitledToLevel;
-		}
-
-		public override void Deactivate() {
-			Plugin.Log?.Debug("PlayersDataModel.Deactivate()");
-			_menuRpcManager.setIsEntitledToLevelEvent -= HandleSetIsEntitledToLevel;
-			_menuRpcManager.getRecommendedBeatmapEvent -= this.HandleMenuRpcManagerGetRecommendedBeatmap;
-			_menuRpcManager.getRecommendedBeatmapEvent += base.HandleMenuRpcManagerGetRecommendedBeatmap;
-			base.Deactivate();
-		}
-
-		public override void Dispose() =>
-			Deactivate();
-
-		void HandleSetIsEntitledToLevel(string userId, string levelId, EntitlementsStatus entitlementStatus) =>
-			((BeatUpMenuRpcManager)_menuRpcManager).HandleSetIsEntitledToLevel(lobbyStateDataModel.GetPlayerById(userId), levelId, entitlementStatus);
-
-		public override void HandleMenuRpcManagerGetRecommendedBeatmap(string userId) {
-			multiplayerSessionManager.Send(PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex]);
-			base.HandleMenuRpcManagerGetRecommendedBeatmap(userId);
-		}
-
-		public override void SetLocalPlayerBeatmapLevel(PreviewDifficultyBeatmap? beatmapLevel) {
-			if(beatmapLevel != null) {
-				PacketHandler.RecommendPreview? preview = PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex];
-				if(preview.preview.levelID != beatmapLevel.beatmapLevel.levelID) {
-					preview = PreviewProvider.ResolvePreview(beatmapLevel.beatmapLevel.levelID);
-					if(preview != null)
-						PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex] = preview;
-					else if(beatmapLevel.beatmapLevel is CustomPreviewBeatmapLevel previewBeatmapLevel)
-						preview = PreviewProvider.SetFromLocal(multiplayerSessionManager.localPlayer.sortIndex, previewBeatmapLevel);
-				}
-				if(preview != null)
-					multiplayerSessionManager.Send(preview);
-			}
-			Plugin.lobbyDifficultyPanel.Update(beatmapLevel, SetLocalPlayerBeatmapLevel);
-			base.SetLocalPlayerBeatmapLevel(beatmapLevel);
-		}
-
-		public override void ClearLocalPlayerBeatmapLevel() {
-			Plugin.lobbyDifficultyPanel.Clear();
-			base.ClearLocalPlayerBeatmapLevel();
-		}
-	}
-
-	// Template inheritance considered harmful; prefer copy+paste
-	public class MpPlayersDataModel : MultiplayerCore.Objects.MpPlayersDataModel, ILobbyPlayersDataModel, System.IDisposable {
-		[Zenject.Inject]
-		readonly ILobbyStateDataModel lobbyStateDataModel = null!;
-		public readonly MultiplayerSessionManager multiplayerSessionManager;
-
-		public MpPlayersDataModel(MultiplayerCore.Networking.MpPacketSerializer packetSerializer, MultiplayerCore.Beatmaps.Providers.MpBeatmapLevelProvider beatmapLevelProvider, SiraUtil.Logging.SiraLog logger, IMultiplayerSessionManager multiplayerSessionManager) : base(packetSerializer, beatmapLevelProvider, logger) {
-			this.multiplayerSessionManager = (MultiplayerSessionManager)multiplayerSessionManager;
-		}
-
-		public override void Activate() {
-			Plugin.Log?.Debug("PlayersDataModel.Activate()");
-			base.Activate();
-			_packetSerializer.UnregisterCallback<MultiplayerCore.Beatmaps.Packets.MpBeatmapPacket>();
-			_packetSerializer.RegisterCallback<MultiplayerCore.Beatmaps.Packets.MpBeatmapPacket>(HandleMpexBeatmapPacket);
-			_menuRpcManager.getRecommendedBeatmapEvent -= base.HandleMenuRpcManagerGetRecommendedBeatmap;
-			_menuRpcManager.getRecommendedBeatmapEvent += this.HandleMenuRpcManagerGetRecommendedBeatmap;
-			_menuRpcManager.recommendBeatmapEvent -= base.HandleMenuRpcManagerRecommendBeatmap;
-			_menuRpcManager.recommendBeatmapEvent += this.HandleMenuRpcManagerRecommendBeatmap;
-			_menuRpcManager.setIsEntitledToLevelEvent += HandleSetIsEntitledToLevel;
-		}
-
-		public override void Deactivate() {
-			Plugin.Log?.Debug("PlayersDataModel.Deactivate()");
-			_menuRpcManager.setIsEntitledToLevelEvent -= HandleSetIsEntitledToLevel;
-			_menuRpcManager.recommendBeatmapEvent -= this.HandleMenuRpcManagerRecommendBeatmap;
-			_menuRpcManager.recommendBeatmapEvent += base.HandleMenuRpcManagerRecommendBeatmap;
-			_menuRpcManager.getRecommendedBeatmapEvent -= this.HandleMenuRpcManagerGetRecommendedBeatmap;
-			_menuRpcManager.getRecommendedBeatmapEvent += base.HandleMenuRpcManagerGetRecommendedBeatmap;
-			base.Deactivate();
-		}
-
-		private void HandleMpexBeatmapPacket(MultiplayerCore.Beatmaps.Packets.MpBeatmapPacket packet, IConnectedPlayer player) {
-			BeatmapCharacteristicSO? characteristic = _beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(packet.characteristic);
-			IPreviewBeatmapLevel preview = _beatmapLevelProvider.GetBeatmapFromPacket(packet);
-			PacketHandler.NetworkPreviewBeatmapLevel current = PreviewProvider.playerPreviews[player.sortIndex].preview;
-			if(preview.levelID != current.levelID || current.previewDifficultyBeatmapSets == null) // Ignore if we already have a BeatUpClient preview for this level
-				current.Init(preview);
-		}
-
-		void HandleSetIsEntitledToLevel(string userId, string levelId, EntitlementsStatus entitlementStatus) =>
-			((BeatUpMenuRpcManager)_menuRpcManager).HandleSetIsEntitledToLevel(lobbyStateDataModel.GetPlayerById(userId), levelId, entitlementStatus);
-
-		public override void HandleMenuRpcManagerGetRecommendedBeatmap(string userId) {
-			multiplayerSessionManager.Send(PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex]);
-			base.HandleMenuRpcManagerGetRecommendedBeatmap(userId);
-		}
-
-		public override void HandleMenuRpcManagerRecommendBeatmap(string userId, BeatmapIdentifierNetSerializable beatmapId) =>
-			Reflection.BaseBaseMethod<string, BeatmapIdentifierNetSerializable>(this, "HandleMenuRpcManagerRecommendBeatmap")(userId, beatmapId);
-
-		public override void SetLocalPlayerBeatmapLevel(PreviewDifficultyBeatmap? beatmapLevel) {
-			if(beatmapLevel != null) {
-				PacketHandler.RecommendPreview? preview = PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex];
-				if(preview.preview.levelID != beatmapLevel.beatmapLevel.levelID) {
-					preview = PreviewProvider.ResolvePreview(beatmapLevel.beatmapLevel.levelID);
-					if(preview != null)
-						PreviewProvider.playerPreviews[multiplayerSessionManager.localPlayer.sortIndex] = preview;
-					else if(beatmapLevel.beatmapLevel is CustomPreviewBeatmapLevel previewBeatmapLevel)
-						preview = PreviewProvider.SetFromLocal(multiplayerSessionManager.localPlayer.sortIndex, previewBeatmapLevel);
-				}
-				if(preview != null)
-					multiplayerSessionManager.Send(preview);
-			}
-			Plugin.lobbyDifficultyPanel.Update(beatmapLevel, SetLocalPlayerBeatmapLevel);
-			if(beatmapLevel == null)
-				Reflection.BaseBaseMethod<PreviewDifficultyBeatmap?>(this, "SetLocalPlayerBeatmapLevel")(beatmapLevel);
-			else
-				base.SetLocalPlayerBeatmapLevel(beatmapLevel);
-		}
-
-		public override void ClearLocalPlayerBeatmapLevel() {
-			Plugin.lobbyDifficultyPanel.Clear();
-			base.ClearLocalPlayerBeatmapLevel();
-		}
-	}
-
-	public interface ModelInvalidator {
-		static event System.Action? onInvalidate;
-		public static void Invalidate() {
-			onInvalidate?.Invoke();
-			if(Plugin.mainFlowCoordinator.childFlowCoordinator is MultiplayerModeSelectionFlowCoordinator multiplayerModeSelectionFlowCoordinator) {
-				Plugin.editServerViewController.Dismiss(true);
-				Plugin.mainFlowCoordinator.DismissFlowCoordinator(multiplayerModeSelectionFlowCoordinator, HMUI.ViewController.AnimationDirection.Horizontal, (System.Action)delegate() {
-					Plugin.mainFlowCoordinator.PresentMultiplayerModeSelectionFlowCoordinatorWithDisclaimerAndAvatarCreator();
-				}, true);
-			}
-		}
-	}
-
-	public class MultiplayerStatusModelPatch : MultiplayerStatusModel, ModelInvalidator {
-		MultiplayerStatusModelPatch() =>
-			ModelInvalidator.onInvalidate += () => _request = null;
-	}
-
-	public class QuickPlaySetupModelPatch : QuickPlaySetupModel, ModelInvalidator {
-		QuickPlaySetupModelPatch() =>
-			ModelInvalidator.onInvalidate += () => _request = null;
 	}
 
 	public static class UI {
@@ -1102,13 +885,6 @@ namespace BeatUpClient {
 			public StringSO value = null!;
 			public DropdownSetting() =>
 				_dropdown = GetComponent<HMUI.SimpleTextDropdown>();
-			public void SetOptions(System.Collections.Generic.Dictionary<string, string?>.KeyCollection options) {
-				this.options = System.Linq.Enumerable.ToArray(options);
-				if(gameObject.activeSelf) {
-					gameObject.SetActive(false);
-					gameObject.SetActive(true);
-				}
-			}
 			protected override bool GetInitValues(out int idx, out int numberOfElements) {
 				idx = System.Array.IndexOf(options, value.value) + 1;
 				numberOfElements = options.Length + 1;
@@ -1121,6 +897,13 @@ namespace BeatUpClient {
 			}
 			protected override string TextForValue(int idx) =>
 				idx >= 1 ? options[idx - 1] : "Official Server";
+			public void SetOptions(System.Collections.Generic.IEnumerable<string> options) {
+				this.options = System.Linq.Enumerable.ToArray(options);
+				if(gameObject.activeSelf) {
+					gameObject.SetActive(false);
+					gameObject.SetActive(true);
+				}
+			}
 		}
 		public delegate ref T ValueCB<T>();
 		static UnityEngine.GameObject CreateElement(UnityEngine.GameObject template, UnityEngine.Transform parent, string name) {
@@ -1160,7 +943,7 @@ namespace BeatUpClient {
 			return (UnityEngine.RectTransform)gameObject.transform;
 		}
 		static UnityEngine.GameObject? simpleDropdownTemplate = null;
-		public static UnityEngine.RectTransform CreateSimpleDropdown(UnityEngine.Transform parent, string name, StringSO value, System.Collections.Generic.Dictionary<string, string?>.KeyCollection options) {
+		public static UnityEngine.RectTransform CreateSimpleDropdown(UnityEngine.Transform parent, string name, StringSO value, System.Collections.Generic.IEnumerable<string> options) {
 			if(simpleDropdownTemplate == null)
 				simpleDropdownTemplate = System.Linq.Enumerable.First(UnityEngine.Resources.FindObjectsOfTypeAll<HMUI.SimpleTextDropdown>(), dropdown => dropdown.GetComponents(typeof(UnityEngine.Component)).Length == 2).gameObject;
 			UnityEngine.GameObject gameObject = CreateElement(simpleDropdownTemplate, parent, name);
@@ -1306,922 +1089,1046 @@ namespace BeatUpClient {
 		}
 	}
 
-	public abstract class PatchGroup {
-		protected enum PatchType : byte {
-			Prefix,
-			Postfix,
-			Transpiler,
-		}
-		[System.AttributeUsage(System.AttributeTargets.Method, AllowMultiple = true)]
-		protected class PatchAttribute : System.Attribute {
-			System.Reflection.MethodBase? method;
-			PatchType patchType;
-			protected PatchAttribute(PatchType patchType, System.Reflection.MethodBase? method, System.Type? genericType) {
-				this.method = (method == null || genericType == null) ? method : ((System.Reflection.MethodInfo)method).MakeGenericMethod(genericType);
-				this.patchType = patchType;
-			}
-			public PatchAttribute(PatchType patchType, System.Type type, string fn, System.Type? genericType = null) : this(patchType, fn == ".ctor" ? (System.Reflection.MethodBase)type.GetConstructors()[0] : HarmonyLib.AccessTools.Method(type, fn), genericType) {}
-			public PatchAttribute(PatchType patchType, System.Type refType, string type, string fn) : this(patchType, refType.Assembly.GetType(type), fn) {}
-			public void Apply(System.Reflection.MethodInfo self) {
-				if(method == null)
-					throw new System.ArgumentException($"Missing original method for `{self}`");
-				// Plugin.Log?.Debug($"Patching {method.DeclaringType.FullName} : {method}");
-				HarmonyLib.HarmonyMethod hm = new HarmonyLib.HarmonyMethod(self);
-				Plugin.harmony.Patch(method, prefix: patchType == PatchType.Prefix ? hm : null, postfix: patchType == PatchType.Postfix ? hm : null, transpiler: patchType == PatchType.Transpiler ? hm : null);
-			}
-		}
+	[Patch(PatchType.Prefix, typeof(ClientCertificateValidator), "ValidateCertificateChainInternal")]
+	public static bool ClientCertificateValidator_ValidateCertificateChainInternal() =>
+		customNetworkConfig == null;
 
-		[System.AttributeUsage(System.AttributeTargets.Method)]
-		protected class PatchOverloadAttribute : PatchAttribute {
-			public PatchOverloadAttribute(PatchType patchType, System.Type type, string fn, params System.Type[] args) : base(patchType, HarmonyLib.AccessTools.Method(type, fn, args), null) {}
-		}
+	[Patch(PatchType.Postfix, typeof(MainSettingsModelSO), nameof(MainSettingsModelSO.Load))]
+	public static void MainSettingsModelSO_Load(ref MainSettingsModelSO __instance) {
+		customServerHostName = __instance.customServerHostName;
+		if(!string.IsNullOrEmpty(__instance.customServerHostName))
+			Config.Instance.Servers.TryAdd(__instance.customServerHostName, null);
+	}
 
-		public void PatchAll() {
-			foreach(System.Reflection.MethodInfo method in this.GetType().GetMethods())
-				foreach(System.Attribute attrib in method.GetCustomAttributes(false))
-					if(attrib is PatchAttribute patch)
-						patch.Apply(method);
+	public static async System.Threading.Tasks.Task<AuthenticationToken> AuthWrapper(System.Threading.Tasks.Task<AuthenticationToken> task, AuthenticationToken.Platform platform, string userId, string userName) {
+		try {
+			return await task;
+		} catch(System.Security.Authentication.AuthenticationException) {
+			return new AuthenticationToken(platform, userId, userName, ""); // fix for offline mode
 		}
 	}
 
-	public class Patches : PatchGroup {
-		[Patch(PatchType.Prefix, typeof(ClientCertificateValidator), "ValidateCertificateChainInternal")]
-		public static bool ClientCertificateValidator_ValidateCertificateChainInternal() =>
-			!(Plugin.networkConfig is CustomNetworkConfig);
+	[Patch(PatchType.Postfix, typeof(PlatformAuthenticationTokenProvider), nameof(PlatformAuthenticationTokenProvider.GetAuthenticationToken))]
+	public static void PlatformAuthenticationTokenProvider_GetAuthenticationToken(ref System.Threading.Tasks.Task<AuthenticationToken> __result, AuthenticationToken.Platform ____platform, string ____userId, string ____userName) {
+		if(customNetworkConfig != null)
+			__result = AuthWrapper(__result, ____platform, ____userId, ____userName);
+	}
 
-		[Patch(PatchType.Postfix, typeof(MainSettingsModelSO), nameof(MainSettingsModelSO.Load))]
-		public static void MainSettingsModelSO_Load(ref MainSettingsModelSO __instance) {
-			Plugin.mainSettingsModel = __instance;
-			if(!string.IsNullOrEmpty(__instance.customServerHostName))
-				Config.Instance.Servers.TryAdd(__instance.customServerHostName, null);
-			__instance.useCustomServerEnvironment.value = false;
+	[Patch(PatchType.Prefix, typeof(MultiplayerModeSelectionFlowCoordinator), nameof(MultiplayerModeSelectionFlowCoordinator.PresentMasterServerUnavailableErrorDialog))]
+	public static bool MultiplayerModeSelectionFlowCoordinator_PresentMasterServerUnavailableErrorDialog(MultiplayerModeSelectionFlowCoordinator __instance, MultiplayerModeSelectionViewController ____multiplayerModeSelectionViewController, MultiplayerUnavailableReason reason, long? maintenanceWindowEndTime, string? remoteLocalizedMessage) {
+		if(mainFlowCoordinator.childFlowCoordinator != __instance)
+			return false;
+		____multiplayerModeSelectionViewController.transform.Find("Buttons")?.gameObject.SetActive(false);
+		____multiplayerModeSelectionViewController._maintenanceMessageText.text = remoteLocalizedMessage ?? ((reason == MultiplayerUnavailableReason.MaintenanceMode) ? Polyglot.Localization.GetFormat(MultiplayerUnavailableReasonMethods.LocalizedKey(reason), (TimeExtensions.AsUnixTime(maintenanceWindowEndTime.GetValueOrDefault()) - System.DateTime.UtcNow).ToString("h':'mm")) : (Polyglot.Localization.Get(MultiplayerUnavailableReasonMethods.LocalizedKey(reason)) + " (" + MultiplayerUnavailableReasonMethods.ErrorCode(reason) + ")"));
+		____multiplayerModeSelectionViewController._maintenanceMessageText.richText = true;
+		____multiplayerModeSelectionViewController._maintenanceMessageText.transform.localPosition = new UnityEngine.Vector3(0, 15, 0);
+		____multiplayerModeSelectionViewController._maintenanceMessageText.gameObject.SetActive(true);
+		__instance.ReplaceTopViewController(____multiplayerModeSelectionViewController, __instance.ProcessDeeplinkingToLobby, HMUI.ViewController.AnimationType.In, HMUI.ViewController.AnimationDirection.Horizontal);
+		__instance.SetTitle(Polyglot.Localization.Get("LABEL_CONNECTION_ERROR"), HMUI.ViewController.AnimationType.In);
+		return false;
+	}
+
+	[Patch(PatchType.Prefix, typeof(MultiplayerModeSelectionViewController), nameof(MultiplayerModeSelectionViewController.SetData))]
+	public static void MultiplayerModeSelectionViewController_SetData(MultiplayerModeSelectionViewController __instance, TMPro.TextMeshProUGUI ____maintenanceMessageText) {
+		____maintenanceMessageText.richText = false;
+		____maintenanceMessageText.transform.localPosition = new UnityEngine.Vector3(0, -5, 0);
+		__instance.transform.Find("Buttons")?.gameObject.SetActive(true);
+	}
+
+	[Patch(PatchType.Prefix, typeof(LobbySetupViewController), nameof(LobbySetupViewController.SetPlayersMissingLevelText))]
+	public static void LobbySetupViewController_SetPlayersMissingLevelText(LobbySetupViewController __instance, string playersMissingLevelText, ref UnityEngine.UI.Button ____startGameReadyButton) {
+		if(!string.IsNullOrEmpty(playersMissingLevelText) && ____startGameReadyButton.interactable)
+			__instance.SetStartGameEnabled(CannotStartGameReason.DoNotOwnSong);
+	}
+
+	static bool enableCustomLevels = false;
+	[Patch(PatchType.Prefix, typeof(MasterServerConnectionManager), "HandleConnectToServerSuccess")]
+	[Patch(PatchType.Prefix, typeof(GameLiftConnectionManager), "HandleConnectToServerSuccess")]
+	public static void MasterServerConnectionManager_HandleConnectToServerSuccess(object __1, BeatmapLevelSelectionMask selectionMask, GameplayServerConfiguration configuration) {
+		enableCustomLevels = selectionMask.songPacks.Contains("custom_levelpack_CustomLevels") && __1 is string;
+		InitPreviews(configuration.maxPlayerCount);
+		playerCells = new PlayerCell[configuration.maxPlayerCount];
+		lobbyDifficultyPanel.Clear();
+	}
+
+	[Patch(PatchType.Postfix, typeof(MultiplayerLevelSelectionFlowCoordinator), "get_enableCustomLevels")]
+	public static void MultiplayerLevelSelectionFlowCoordinator_enableCustomLevels(ref bool __result) =>
+		__result |= enableCustomLevels;
+
+	[Patch(PatchType.Prefix, typeof(MultiplayerSessionManager), "HandlePlayerOrderChanged")]
+	public static void MultiplayerSessionManager_HandlePlayerOrderChanged(IConnectedPlayer player) =>
+		playerCells[player.sortIndex].SetData(new PacketHandler.LoadProgress(PacketHandler.LoadProgress.LoadState.None, 0, 0));
+
+	[Patch(PatchType.Postfix, typeof(BasicConnectionRequestHandler), nameof(BasicConnectionRequestHandler.GetConnectionMessage))]
+	public static void BasicConnectionRequestHandler_GetConnectionMessage(LiteNetLib.Utils.NetDataWriter writer) {
+		Log?.Debug("BasicConnectionRequestHandler_GetConnectionMessage()");
+		LiteNetLib.Utils.NetDataWriter sub = new LiteNetLib.Utils.NetDataWriter(false, 16);
+		new BeatUpConnectHeader {
+			windowSize = Config.Instance.WindowSize,
+			countdownDuration = (byte)(Config.Instance.CountdownDuration * 4),
+			directDownloads = Config.Instance.DirectDownloads,
+			skipResults = Config.Instance.SkipResults,
+			perPlayerDifficulty = Config.Instance.PerPlayerDifficulty,
+			perPlayerModifiers = Config.Instance.PerPlayerModifiers,
+		}.Serialize(sub);
+		writer.PutVarUInt((uint)sub.Length);
+		writer.Put("BeatUpClient beta0");
+		writer.Put(sub.CopyData());
+		windowSize = 64;
+		directDownloads = false;
+		expectMetadata = false;
+		playerTiers.Clear();
+		skipResults = false;
+		perPlayerDifficulty = false;
+	}
+
+	public class BeatUpConnectInfo : LiteNetLib.Utils.INetSerializable {
+		public const uint Size = 6;
+		public uint windowSize;
+		public byte countdownDuration;
+		public bool directDownloads;
+		public bool skipResults;
+		public bool perPlayerDifficulty;
+		public bool perPlayerModifiers;
+		public virtual void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
+			writer.Put((uint)windowSize);
+			writer.Put((byte)countdownDuration);
+			byte bits = 0;
+			bits |= directDownloads ? (byte)1 : (byte)0;
+			bits |= skipResults ? (byte)2 : (byte)0;
+			bits |= perPlayerDifficulty ? (byte)4 : (byte)0;
+			bits |= perPlayerModifiers ? (byte)8 : (byte)0;
+			writer.Put((byte)bits);
 		}
+		public virtual void Deserialize(LiteNetLib.Utils.NetDataReader reader) {
+			windowSize = reader.GetUInt();
+			countdownDuration = reader.GetByte();
+			byte bits = reader.GetByte();
+			directDownloads = (bits & 1) == 1;
+			skipResults = (bits & 2) == 2;
+			perPlayerDifficulty = (bits & 4) == 4;
+			perPlayerModifiers = (bits & 8) == 8;
+		}
+	}
 
-		public static async System.Threading.Tasks.Task<AuthenticationToken> AuthWrapper(System.Threading.Tasks.Task<AuthenticationToken> task, AuthenticationToken.Platform platform, string userId, string userName) {
-			try {
-				return await task;
-			} catch(System.Security.Authentication.AuthenticationException) {
-				return new AuthenticationToken(platform, userId, userName, ""); // fix for offline mode
+	public class BeatUpConnectHeader : BeatUpConnectInfo {
+		public uint protocolId = 1;
+		public override void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
+			writer.Put((uint)protocolId);
+			base.Serialize(writer);
+		}
+		public override void Deserialize(LiteNetLib.Utils.NetDataReader reader) {
+			protocolId = reader.GetUInt();
+			base.Deserialize(reader);
+		}
+	}
+
+	[Patch(PatchType.Prefix, typeof(LiteNetLib.NetConnectAcceptPacket), "FromData")]
+	public static void NetConnectAcceptPacket_FromData(ref LiteNetLib.NetPacket packet) {
+		if(packet.Size == LiteNetLib.NetConnectAcceptPacket.Size + BeatUpConnectInfo.Size) {
+			packet.Size = LiteNetLib.NetConnectAcceptPacket.Size;
+			BeatUpConnectInfo info = new BeatUpConnectInfo();
+			info.Deserialize(new LiteNetLib.Utils.NetDataReader(packet.RawData, packet.Size));
+			if(info.windowSize < 32 || info.windowSize > 512)
+				return;
+			windowSize = info.windowSize;
+			directDownloads = Config.Instance.DirectDownloads && info.directDownloads;
+			expectMetadata = true;
+			skipResults = info.skipResults;
+			perPlayerDifficulty = info.perPlayerDifficulty;
+			Log?.Info($"Overriding window size - {info.windowSize}");
+		}
+	}
+
+	[Patch(PatchType.Prefix, typeof(LobbyPlayersDataModel), nameof(LobbyPlayersDataModel.HandleMenuRpcManagerGetRecommendedBeatmap))]
+	public static void LobbyPlayersDataModel_HandleMenuRpcManagerGetRecommendedBeatmap(string userId) =>
+		handler.multiplayerSessionManager.Send(playerPreviews[handler.multiplayerSessionManager.localPlayer.sortIndex]);
+
+	[Patch(PatchType.Prefix, typeof(LobbyPlayersDataModel), nameof(LobbyPlayersDataModel.SetLocalPlayerBeatmapLevel))]
+	public static void LobbyPlayersDataModel_SetLocalPlayerBeatmapLevel(LobbyPlayersDataModel __instance, PreviewDifficultyBeatmap? beatmapLevel) {
+		if(beatmapLevel != null) {
+			PacketHandler.RecommendPreview? preview = playerPreviews[handler.multiplayerSessionManager.localPlayer.sortIndex];
+			if(preview.preview.levelID != beatmapLevel.beatmapLevel.levelID) {
+				preview = ResolvePreview(beatmapLevel.beatmapLevel.levelID);
+				if(preview != null)
+					playerPreviews[handler.multiplayerSessionManager.localPlayer.sortIndex] = preview;
+				else if(beatmapLevel.beatmapLevel is CustomPreviewBeatmapLevel previewBeatmapLevel)
+					preview = SetPreviewFromLocal(handler.multiplayerSessionManager.localPlayer.sortIndex, previewBeatmapLevel);
+			}
+			if(preview != null)
+				handler.multiplayerSessionManager.Send(preview);
+		}
+		lobbyDifficultyPanel.Update(beatmapLevel, __instance.SetLocalPlayerBeatmapLevel);
+	}
+
+	[Patch(PatchType.Prefix, typeof(LobbyPlayersDataModel), nameof(LobbyPlayersDataModel.ClearLocalPlayerBeatmapLevel))]
+	public static void LobbyPlayersDataModel_ClearLocalPlayerBeatmapLevel() =>
+		lobbyDifficultyPanel.Clear();
+
+	public class ErrorBeatmapLevel : EmptyBeatmapLevel, IPreviewBeatmapLevel {
+		string levelId;
+		string? IPreviewBeatmapLevel.levelID => levelId;
+		string? IPreviewBeatmapLevel.songName => "[ERROR]";
+		string? IPreviewBeatmapLevel.songAuthorName => "[ERROR]";
+		System.Threading.Tasks.Task<UnityEngine.Sprite> IPreviewBeatmapLevel.GetCoverImageAsync(System.Threading.CancellationToken cancellationToken) =>
+			System.Threading.Tasks.Task.FromResult<UnityEngine.Sprite>(defaultPackCover);
+		public ErrorBeatmapLevel(string levelId) =>
+			this.levelId = levelId;
+	}
+
+	[Patch(PatchType.Postfix, typeof(BeatmapLevelsModel), nameof(BeatmapLevelsModel.GetLevelPreviewForLevelId))]
+	public static void BeatmapLevelsModel_GetLevelPreviewForLevelId(ref IPreviewBeatmapLevel? __result, string levelId) =>
+		__result ??= (IPreviewBeatmapLevel?)ResolvePreview(levelId)?.preview ?? new ErrorBeatmapLevel(levelId);
+
+	class CallbackStream : System.IO.Stream {
+		public readonly System.IO.Stream stream;
+		public readonly System.Action<int> onProgress;
+		public override bool CanRead {get => stream.CanRead;}
+		public override bool CanSeek {get => stream.CanSeek;}
+		public override bool CanWrite {get => stream.CanWrite;}
+		public override long Length {get => stream.Length;}
+		public override long Position {
+			get => stream.Position;
+			set => stream.Position = value;
+		}
+		public CallbackStream(System.IO.Stream stream, System.Action<int> onProgress) {
+			this.stream = stream;
+			this.onProgress = onProgress;
+		}
+		public override void Flush() => stream.Flush();
+		public override long Seek(long offset, System.IO.SeekOrigin origin) => stream.Seek(offset, origin);
+		public override void SetLength(long value) => stream.SetLength(value);
+		public override int Read(byte[] buffer, int offset, int count) {
+			count = stream.Read(buffer, offset, count);
+			onProgress(count);
+			return count;
+		}
+		public override void Write(byte[] buffer, int offset, int count) => stream.Write(buffer, offset, count);
+		public override async System.Threading.Tasks.Task WriteAsync(byte[] buffer, int offset, int count, System.Threading.CancellationToken cancellationToken) {
+			await stream.WriteAsync(buffer, offset, count, cancellationToken);
+			onProgress(count);
+		}
+	}
+
+	public static async System.Threading.Tasks.Task<(System.ArraySegment<byte> data, byte[] hash)> ZipLevel(CustomBeatmapLevel level) {
+		System.ArraySegment<byte> buffer = new System.ArraySegment<byte>(new byte[0]);
+		byte[] hash = new byte[32];
+		using(System.IO.MemoryStream memoryStream = new System.IO.MemoryStream()) {
+			ulong progress = 0, total = 0, progressWidth = 53738, progressStart = 0;
+			System.Diagnostics.Stopwatch lastUpdate = new System.Diagnostics.Stopwatch();
+			lastUpdate.Start();
+			void UpdateProgress(ulong p, bool reliable = false) {
+				PacketHandler.LoadProgress packet = new PacketHandler.LoadProgress(PacketHandler.LoadProgress.LoadState.Exporting, (ushort)p);
+				PacketHandler.HandleLoadProgress(packet, handler.multiplayerSessionManager.localPlayer);
+				if(reliable)
+					handler.multiplayerSessionManager.Send(packet);
+				else
+					handler.multiplayerSessionManager.SendUnreliable(packet);
+			}
+			void HandleProgress(int count) {
+				progress += (ulong)count;
+				if(lastUpdate.ElapsedMilliseconds > 10) {
+					lastUpdate.Restart();
+					UpdateProgress(progress * progressWidth / total + progressStart);
+				}
+			}
+			using(System.IO.Compression.ZipArchive archive = new System.IO.Compression.ZipArchive(memoryStream, System.IO.Compression.ZipArchiveMode.Create, true)) {
+				System.Collections.Generic.List<(string path, string name)> files = new System.Collections.Generic.List<(string, string)>(new[] {
+					(level.songAudioClipPath, level.standardLevelInfoSaveData.songFilename),
+					(System.IO.Path.Combine(level.customLevelPath, "Info.dat"), "Info.dat"),
+				});
+				for(int i = 0; i < level.beatmapLevelData.difficultyBeatmapSets.Count; ++i) {
+					for(int j = 0; j < level.beatmapLevelData.difficultyBeatmapSets[i].difficultyBeatmaps.Count; ++j) {
+						if(level.beatmapLevelData.difficultyBeatmapSets[i].difficultyBeatmaps[j] is CustomDifficultyBeatmap beatmap) {
+							string filename = level.standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps[j].beatmapFilename;
+							files.Add((System.IO.Path.Combine(level.customLevelPath, filename), filename));
+						}
+					}
+				}
+				total = (ulong)System.Linq.Enumerable.Aggregate(files, 0L, (total, file) => total + new System.IO.FileInfo(file.path).Length);
+				if(total > MaxUnzippedSize) {
+					Log?.Debug("Level too large!");
+					return (buffer, hash);
+				}
+				UpdateProgress(0);
+				foreach((string path, string name) info in files) {
+					Log?.Debug($"Zipping `{info.path}`");
+					using(System.IO.Stream file = System.IO.File.Open(info.path, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read)) {
+						using(System.IO.Stream entry = archive.CreateEntry(info.name).Open()) {
+							await file.CopyToAsync(new CallbackStream(entry, HandleProgress));
+						}
+					}
+				}
+			}
+			if(memoryStream.TryGetBuffer(out buffer)) {
+				progress = 0;
+				total = (ulong)buffer.Count;
+				progressStart = progressWidth;
+				progressWidth = 65535 - progressStart;
+				memoryStream.Seek(0, System.IO.SeekOrigin.Begin);
+				hash = await System.Threading.Tasks.Task.Run(() => {
+					using System.Security.Cryptography.SHA256 sha256 = System.Security.Cryptography.SHA256.Create();
+					return sha256.ComputeHash(new CallbackStream(memoryStream, HandleProgress));
+				});
+			}
+			UpdateProgress(65535, true);
+			return (buffer, hash);
+		}
+	}
+
+	public static async System.Threading.Tasks.Task<EntitlementsStatus> ShareWrapper(System.Threading.Tasks.Task<EntitlementsStatus> task, string levelId) {
+		string? lastLevel = uploadLevel;
+		uploadLevel = null;
+		downloadPending = false;
+		EntitlementsStatus status = await task;
+		Log?.Debug($"EntitlementsStatus: {status}");
+		if(status != EntitlementsStatus.Ok)
+			return status;
+		BeatmapLevelsModel.GetBeatmapLevelResult result = await beatmapLevelsModel.GetBeatmapLevelAsync(levelId, default(System.Threading.CancellationToken));
+		Log?.Debug($"GetBeatmapLevelResult.isError: {result.isError}");
+		if(result.isError) {
+			if(directDownloads && ResolvePreview(levelId) != null) {
+				downloadPending = true;
+				return EntitlementsStatus.Unknown;
+			} else {
+				return EntitlementsStatus.NotOwned;
 			}
 		}
-
-		[Patch(PatchType.Postfix, typeof(PlatformAuthenticationTokenProvider), nameof(PlatformAuthenticationTokenProvider.GetAuthenticationToken))]
-		public static void PlatformAuthenticationTokenProvider_GetAuthenticationToken(ref System.Threading.Tasks.Task<AuthenticationToken> __result, AuthenticationToken.Platform ____platform, string ____userId, string ____userName) {
-			if(Plugin.networkConfig is CustomNetworkConfig)
-				__result = AuthWrapper(__result, ____platform, ____userId, ____userName);
+		if(directDownloads && result.beatmapLevel is CustomBeatmapLevel level) {
+			if(lastLevel == levelId) {
+				Log?.Debug("Custom level already zipped");
+				uploadLevel = lastLevel;
+			} else {
+				Log?.Debug("Zipping custom level");
+				(uploadData, uploadHash) = await ZipLevel(level);
+				if(uploadData.Count >= 1) {
+					uploadLevel = levelId;
+					Log?.Debug($"Packed {uploadData.Count} bytes");
+				} else {
+					Log?.Debug("Zip failed");
+				}
+			}
 		}
+		return EntitlementsStatus.Ok;
+	}
 
-		[Patch(PatchType.Prefix, typeof(MultiplayerModeSelectionFlowCoordinator), nameof(MultiplayerModeSelectionFlowCoordinator.PresentMasterServerUnavailableErrorDialog))]
-		public static bool MultiplayerModeSelectionFlowCoordinator_PresentMasterServerUnavailableErrorDialog(MultiplayerModeSelectionFlowCoordinator __instance, MultiplayerModeSelectionViewController ____multiplayerModeSelectionViewController, MultiplayerUnavailableReason reason, long? maintenanceWindowEndTime, string? remoteLocalizedMessage) {
-			if(Plugin.mainFlowCoordinator.childFlowCoordinator != __instance)
-				return false;
-			____multiplayerModeSelectionViewController.transform.Find("Buttons")?.gameObject.SetActive(false);
-			____multiplayerModeSelectionViewController._maintenanceMessageText.text = remoteLocalizedMessage ?? ((reason == MultiplayerUnavailableReason.MaintenanceMode) ? Polyglot.Localization.GetFormat(MultiplayerUnavailableReasonMethods.LocalizedKey(reason), (TimeExtensions.AsUnixTime(maintenanceWindowEndTime.GetValueOrDefault()) - System.DateTime.UtcNow).ToString("h':'mm")) : (Polyglot.Localization.Get(MultiplayerUnavailableReasonMethods.LocalizedKey(reason)) + " (" + MultiplayerUnavailableReasonMethods.ErrorCode(reason) + ")"));
-			____multiplayerModeSelectionViewController._maintenanceMessageText.richText = true;
-			____multiplayerModeSelectionViewController._maintenanceMessageText.transform.localPosition = new UnityEngine.Vector3(0, 15, 0);
-			____multiplayerModeSelectionViewController._maintenanceMessageText.gameObject.SetActive(true);
-			__instance.ReplaceTopViewController(____multiplayerModeSelectionViewController, __instance.ProcessDeeplinkingToLobby, HMUI.ViewController.AnimationType.In, HMUI.ViewController.AnimationDirection.Horizontal);
-			__instance.SetTitle(Polyglot.Localization.Get("LABEL_CONNECTION_ERROR"), HMUI.ViewController.AnimationType.In);
+	[Patch(PatchType.Postfix, typeof(NetworkPlayerEntitlementChecker), "GetEntitlementStatus")]
+	public static void NetworkPlayerEntitlementChecker_GetEntitlementStatus(NetworkPlayerEntitlementChecker __instance, ref System.Threading.Tasks.Task<EntitlementsStatus> __result, string levelId) {
+		Log?.Debug($"NetworkPlayerEntitlementChecker_GetEntitlementStatus");
+		if(!haveMpCore)
+			__result = ShareWrapper(__result, levelId);
+	}
+
+	[Patch(PatchType.Prefix, typeof(MenuRpcManager), nameof(MenuRpcManager.SetIsEntitledToLevel))]
+	public static void MenuRpcManager_SetIsEntitledToLevel(string levelId, EntitlementsStatus entitlementStatus) {
+		Log?.Debug($"MenuRpcManager_SetIsEntitledToLevel(levelId=\"{levelId}\", entitlementStatus={entitlementStatus})");
+		PacketHandler.RecommendPreview? preview = ResolvePreview(levelId);
+		if(PacketHandler.MissingRequirements(preview, entitlementStatus == EntitlementsStatus.Unknown)) {
+			entitlementStatus = EntitlementsStatus.NotOwned;
+		} else if(entitlementStatus == EntitlementsStatus.Ok && uploadLevel == levelId) {
+			Log?.Debug($"    Announcing share for `{levelId}`");
+			handler.multiplayerSessionManager.Send(new PacketHandler.SetCanShareBeatmap(levelId, uploadHash, (ulong)uploadData.Count));
+		}
+		Log?.Debug($"    entitlementStatus={entitlementStatus}");
+		PacketHandler.HandleSetIsEntitledToLevel(handler.multiplayerSessionManager.localPlayer, levelId, entitlementStatus);
+	}
+
+	public static void Progress(PacketHandler.LoadProgress packet) {
+		PacketHandler.HandleLoadProgress(packet, handler.multiplayerSessionManager.localPlayer);
+		handler.multiplayerSessionManager.SendUnreliable(packet);
+	}
+
+	static async System.Threading.Tasks.Task<BeatmapLevelsModel.GetBeatmapLevelResult> DownloadWrapper(System.Threading.Tasks.Task<BeatmapLevelsModel.GetBeatmapLevelResult> task, ILevelGameplaySetupData gameplaySetupData, System.Threading.CancellationToken cancellationToken) {
+		Log?.Debug("DownloadWrapper()");
+		BeatmapLevelsModel.GetBeatmapLevelResult result = await task;
+		if(result.isError && handler.downloader != null)
+			return (await handler.downloader.Resolve(Progress, cancellationToken)) ?? result;
+		return result;
+	}
+
+	[Patch(PatchType.Prefix, typeof(MultiplayerLevelLoader), nameof(MultiplayerLevelLoader.LoadLevel))]
+	public static void MultiplayerLevelLoader_LoadLevel_pre(int ____loaderState, out bool __state) =>
+		__state = (____loaderState == (int)MultiplayerLevelLoader.MultiplayerBeatmapLoaderState.NotLoading && !haveMpCore);
+
+	[Patch(PatchType.Postfix, typeof(MultiplayerLevelLoader), nameof(MultiplayerLevelLoader.LoadLevel))]
+	public static void MultiplayerLevelLoader_LoadLevel_post(MultiplayerLevelLoader __instance, bool __state, ILevelGameplaySetupData gameplaySetupData, float initialStartTime, System.Threading.CancellationTokenSource ____getBeatmapCancellationTokenSource, ref System.Threading.Tasks.Task<BeatmapLevelsModel.GetBeatmapLevelResult> ____getBeatmapLevelResultTask) {
+		if(__state && handler.downloader?.levelId == gameplaySetupData.beatmapLevel.beatmapLevel.levelID)
+			____getBeatmapLevelResultTask = DownloadWrapper(____getBeatmapLevelResultTask, gameplaySetupData, ____getBeatmapCancellationTokenSource.Token);
+	}
+
+	[Patch(PatchType.Prefix, typeof(MultiplayerLevelLoader), nameof(MultiplayerLevelLoader.Tick))]
+	public static void MultiplayerLevelLoader_Tick_pre(int ____loaderState, out bool __state) =>
+		__state = (____loaderState == (int)MultiplayerLevelLoader.MultiplayerBeatmapLoaderState.LoadingBeatmap);
+
+	[Patch(PatchType.Postfix, typeof(MultiplayerLevelLoader), nameof(MultiplayerLevelLoader.Tick))]
+	public static void MultiplayerLevelLoader_Tick_post(int ____loaderState, bool __state, ILevelGameplaySetupData ____gameplaySetupData) {
+		if(__state && ____loaderState == (int)MultiplayerLevelLoader.MultiplayerBeatmapLoaderState.WaitingForCountdown)
+			handler.rpcManager.SetIsEntitledToLevel(____gameplaySetupData.beatmapLevel.beatmapLevel.levelID, EntitlementsStatus.Ok);
+	}
+
+	[Patch(PatchType.Prefix, typeof(ConnectedPlayerManager), "Send", typeof(LiteNetLib.Utils.INetSerializable))]
+	public static bool ConnectedPlayerManager_Send(ConnectedPlayerManager __instance, LiteNetLib.Utils.INetSerializable message) {
+		if(Config.Instance.UnreliableState && (message is NodePoseSyncStateNetSerializable || message is StandardScoreSyncStateNetSerializable)) {
+			__instance.SendUnreliable(message);
 			return false;
 		}
+		return true;
+	}
 
-		[Patch(PatchType.Prefix, typeof(MultiplayerModeSelectionViewController), nameof(MultiplayerModeSelectionViewController.SetData))]
-		public static void MultiplayerModeSelectionViewController_SetData(MultiplayerModeSelectionViewController __instance, TMPro.TextMeshProUGUI ____maintenanceMessageText) {
-			____maintenanceMessageText.richText = false;
-			____maintenanceMessageText.transform.localPosition = new UnityEngine.Vector3(0, -5, 0);
-			__instance.transform.Find("Buttons")?.gameObject.SetActive(true);
-		}
+	[Patch(PatchType.Prefix, typeof(MultiplayerOutroAnimationController), nameof(MultiplayerOutroAnimationController.AnimateOutro))]
+	public static bool MultiplayerOutroAnimationController_AnimateOutro(System.Action onCompleted) {
+		if(skipResults)
+			onCompleted.Invoke();
+		return !skipResults;
+	}
 
-		[Patch(PatchType.Prefix, typeof(LobbySetupViewController), nameof(LobbySetupViewController.SetPlayersMissingLevelText))]
-		public static void LobbySetupViewController_SetPlayersMissingLevelText(LobbySetupViewController __instance, string playersMissingLevelText, ref UnityEngine.UI.Button ____startGameReadyButton) {
-			if(!string.IsNullOrEmpty(playersMissingLevelText) && ____startGameReadyButton.interactable)
-				__instance.SetStartGameEnabled(CannotStartGameReason.DoNotOwnSong);
-		}
-
-		static bool enableCustomLevels = false;
-		[Patch(PatchType.Prefix, typeof(MasterServerConnectionManager), "HandleConnectToServerSuccess")]
-		[Patch(PatchType.Prefix, typeof(GameLiftConnectionManager), "HandleConnectToServerSuccess")]
-		public static void MasterServerConnectionManager_HandleConnectToServerSuccess(object __1, BeatmapLevelSelectionMask selectionMask, GameplayServerConfiguration configuration) {
-			enableCustomLevels = selectionMask.songPacks.Contains(new SongPackMask("custom_levelpack_CustomLevels")) && __1 is string;
-			PreviewProvider.Init(configuration.maxPlayerCount);
-			System.Array.Fill(PreviewProvider.playerPreviews, new PacketHandler.RecommendPreview());
-			Plugin.playerCells = new Plugin.PlayerCell[configuration.maxPlayerCount];
-			Plugin.lobbyDifficultyPanel.Clear();
-		}
-
-		[Patch(PatchType.Postfix, typeof(MultiplayerLevelSelectionFlowCoordinator), "get_enableCustomLevels")]
-		public static void MultiplayerLevelSelectionFlowCoordinator_enableCustomLevels(ref bool __result) =>
-			__result |= enableCustomLevels;
-
-		[Patch(PatchType.Prefix, typeof(MultiplayerSessionManager), "HandlePlayerOrderChanged")]
-		public static void MultiplayerSessionManager_HandlePlayerOrderChanged(IConnectedPlayer player) =>
-			Plugin.playerCells[player.sortIndex].SetData(new PacketHandler.LoadProgress(PacketHandler.LoadProgress.LoadState.None, 0, 0));
-
-		[Patch(PatchType.Postfix, typeof(BasicConnectionRequestHandler), nameof(BasicConnectionRequestHandler.GetConnectionMessage))]
-		public static void BasicConnectionRequestHandler_GetConnectionMessage(LiteNetLib.Utils.NetDataWriter writer) {
-			Plugin.Log?.Debug("BasicConnectionRequestHandler_GetConnectionMessage()");
-			LiteNetLib.Utils.NetDataWriter sub = new LiteNetLib.Utils.NetDataWriter(false, 16);
-			new BeatUpConnectHeader {
-				windowSize = Config.Instance.WindowSize,
-				countdownDuration = (byte)(Config.Instance.CountdownDuration * 4),
-				directDownloads = Config.Instance.DirectDownloads,
-				skipResults = Config.Instance.SkipResults,
-				perPlayerDifficulty = Config.Instance.PerPlayerDifficulty,
-				perPlayerModifiers = Config.Instance.PerPlayerModifiers,
-			}.Serialize(sub);
-			writer.PutVarUInt((uint)sub.Length);
-			writer.Put("BeatUpClient beta0");
-			writer.Put(sub.CopyData());
-			Plugin.windowSize = 64;
-			Plugin.directDownloads = false;
-			Plugin.expectMetadata = false;
-			Plugin.playerTiers.Clear();
-			Plugin.skipResults = false;
-			Plugin.perPlayerDifficulty = false;
-		}
-
-		public class BeatUpConnectInfo : LiteNetLib.Utils.INetSerializable {
-			public const uint Size = 6;
-			public uint windowSize;
-			public byte countdownDuration;
-			public bool directDownloads;
-			public bool skipResults;
-			public bool perPlayerDifficulty;
-			public bool perPlayerModifiers;
-			public virtual void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
-				writer.Put((uint)windowSize);
-				writer.Put((byte)countdownDuration);
-				byte bits = 0;
-				bits |= directDownloads ? (byte)1 : (byte)0;
-				bits |= skipResults ? (byte)2 : (byte)0;
-				bits |= perPlayerDifficulty ? (byte)4 : (byte)0;
-				bits |= perPlayerModifiers ? (byte)8 : (byte)0;
-				writer.Put((byte)bits);
-			}
-			public virtual void Deserialize(LiteNetLib.Utils.NetDataReader reader) {
-				windowSize = reader.GetUInt();
-				countdownDuration = reader.GetByte();
-				byte bits = reader.GetByte();
-				directDownloads = (bits & 1) == 1;
-				skipResults = (bits & 2) == 2;
-				perPlayerDifficulty = (bits & 4) == 4;
-				perPlayerModifiers = (bits & 8) == 8;
-			}
-		}
-
-		public class BeatUpConnectHeader : BeatUpConnectInfo {
-			public uint protocolId = 1;
-			public override void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
-				writer.Put((uint)protocolId);
-				base.Serialize(writer);
-			}
-			public override void Deserialize(LiteNetLib.Utils.NetDataReader reader) {
-				protocolId = reader.GetUInt();
-				base.Deserialize(reader);
-			}
-		}
-
-		[Patch(PatchType.Prefix, typeof(LiteNetLib.NetConnectAcceptPacket), "FromData")]
-		public static void NetConnectAcceptPacket_FromData(ref LiteNetLib.NetPacket packet) {
-			if(packet.Size == LiteNetLib.NetConnectAcceptPacket.Size + BeatUpConnectInfo.Size) {
-				packet.Size = LiteNetLib.NetConnectAcceptPacket.Size;
-				BeatUpConnectInfo info = new BeatUpConnectInfo();
-				info.Deserialize(new LiteNetLib.Utils.NetDataReader(packet.RawData, packet.Size));
-				if(info.windowSize < 32 || info.windowSize > 512)
-					return;
-				Plugin.windowSize = info.windowSize;
-				Plugin.directDownloads = Config.Instance.DirectDownloads && info.directDownloads;
-				Plugin.expectMetadata = true;
-				Plugin.skipResults = info.skipResults;
-				Plugin.perPlayerDifficulty = info.perPlayerDifficulty;
-				Plugin.Log?.Info($"Overriding window size - {info.windowSize}");
-			}
-		}
-
-		public class ErrorBeatmapLevel : EmptyBeatmapLevel, IPreviewBeatmapLevel {
-			string levelId;
-			string? IPreviewBeatmapLevel.levelID => levelId;
-			string? IPreviewBeatmapLevel.songName => "[ERROR]";
-			string? IPreviewBeatmapLevel.songAuthorName => "[ERROR]";
-			public override System.Threading.Tasks.Task<UnityEngine.Sprite> GetCoverImageAsync(System.Threading.CancellationToken cancellationToken) =>
-				System.Threading.Tasks.Task.FromResult<UnityEngine.Sprite>(Plugin.defaultPackCover);
-			public ErrorBeatmapLevel(string levelId) =>
-				this.levelId = levelId;
-		}
-
-		[Patch(PatchType.Postfix, typeof(BeatmapLevelsModel), nameof(BeatmapLevelsModel.GetLevelPreviewForLevelId))]
-		public static void BeatmapLevelsModel_GetLevelPreviewForLevelId(ref IPreviewBeatmapLevel? __result, string levelId) =>
-			__result ??= (IPreviewBeatmapLevel?)PreviewProvider.ResolvePreview(levelId)?.preview ?? new ErrorBeatmapLevel(levelId);
-
-		class CallbackStream : System.IO.Stream {
-			public readonly System.IO.Stream stream;
-			public readonly System.Action<int> onProgress;
-			public override bool CanRead {get => stream.CanRead;}
-			public override bool CanSeek {get => stream.CanSeek;}
-			public override bool CanWrite {get => stream.CanWrite;}
-			public override long Length {get => stream.Length;}
-			public override long Position {
-				get => stream.Position;
-				set => stream.Position = value;
-			}
-			public CallbackStream(System.IO.Stream stream, System.Action<int> onProgress) {
-				this.stream = stream;
-				this.onProgress = onProgress;
-			}
-			public override void Flush() => stream.Flush();
-			public override long Seek(long offset, System.IO.SeekOrigin origin) => stream.Seek(offset, origin);
-			public override void SetLength(long value) => stream.SetLength(value);
-			public override int Read(byte[] buffer, int offset, int count) {
-				count = stream.Read(buffer, offset, count);
-				onProgress(count);
-				return count;
-			}
-			public override void Write(byte[] buffer, int offset, int count) => stream.Write(buffer, offset, count);
-			public override async System.Threading.Tasks.Task WriteAsync(byte[] buffer, int offset, int count, System.Threading.CancellationToken cancellationToken) {
-				await stream.WriteAsync(buffer, offset, count, cancellationToken);
-				onProgress(count);
-			}
-		}
-
-		public static async System.Threading.Tasks.Task<(System.ArraySegment<byte> data, byte[] hash)> ZipLevel(CustomBeatmapLevel level, PacketHandler handler) {
-			System.ArraySegment<byte> buffer = new System.ArraySegment<byte>(new byte[0]);
-			byte[] hash = new byte[32];
-			using(System.IO.MemoryStream memoryStream = new System.IO.MemoryStream()) {
-				ulong progress = 0, total = 0, progressWidth = 53738, progressStart = 0;
-				System.Diagnostics.Stopwatch lastUpdate = new System.Diagnostics.Stopwatch();
-				lastUpdate.Start();
-				void UpdateProgress(ulong p, bool reliable = false) {
-					PacketHandler.LoadProgress packet = new PacketHandler.LoadProgress(PacketHandler.LoadProgress.LoadState.Exporting, (ushort)p);
-					handler.HandleLoadProgress(packet, handler.multiplayerSessionManager.localPlayer);
-					if(reliable)
-						handler.multiplayerSessionManager.Send(packet);
-					else
-						handler.multiplayerSessionManager.SendUnreliable(packet);
-				}
-				void HandleProgress(int count) {
-					progress += (ulong)count;
-					if(lastUpdate.ElapsedMilliseconds > 10) {
-						lastUpdate.Restart();
-						UpdateProgress(progress * progressWidth / total + progressStart);
-					}
-				}
-				using(System.IO.Compression.ZipArchive archive = new System.IO.Compression.ZipArchive(memoryStream, System.IO.Compression.ZipArchiveMode.Create, true)) {
-					System.Collections.Generic.List<(string path, string name)> files = new System.Collections.Generic.List<(string, string)>(new[] {
-						(level.songAudioClipPath, level.standardLevelInfoSaveData.songFilename),
-						(System.IO.Path.Combine(level.customLevelPath, "Info.dat"), "Info.dat"),
-					});
-					for(int i = 0; i < level.beatmapLevelData.difficultyBeatmapSets.Count; ++i) {
-						for(int j = 0; j < level.beatmapLevelData.difficultyBeatmapSets[i].difficultyBeatmaps.Count; ++j) {
-							if(level.beatmapLevelData.difficultyBeatmapSets[i].difficultyBeatmaps[j] is CustomDifficultyBeatmap beatmap) {
-								string filename = level.standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps[j].beatmapFilename;
-								files.Add((System.IO.Path.Combine(level.customLevelPath, filename), filename));
-							}
-						}
-					}
-					total = (ulong)System.Linq.Enumerable.Aggregate(files, 0L, (total, file) => total + new System.IO.FileInfo(file.path).Length);
-					if(total > Plugin.MaxUnzippedSize) {
-						Plugin.Log?.Debug("Level too large!");
-						return (buffer, hash);
-					}
-					UpdateProgress(0);
-					foreach((string path, string name) info in files) {
-						Plugin.Log?.Debug($"Zipping `{info.path}`");
-						using(System.IO.Stream file = System.IO.File.Open(info.path, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read)) {
-							using(System.IO.Stream entry = archive.CreateEntry(info.name).Open()) {
-								await file.CopyToAsync(new CallbackStream(entry, HandleProgress));
-							}
-						}
-					}
-				}
-				if(memoryStream.TryGetBuffer(out buffer)) {
-					progress = 0;
-					total = (ulong)buffer.Count;
-					progressStart = progressWidth;
-					progressWidth = 65535 - progressStart;
-					memoryStream.Seek(0, System.IO.SeekOrigin.Begin);
-					using(System.Security.Cryptography.SHA256 sha256 = System.Security.Cryptography.SHA256.Create()) {
-						hash = await System.Threading.Tasks.Task.Run(() =>
-							sha256.ComputeHash(new CallbackStream(memoryStream, HandleProgress)));
-					}
-				}
-				UpdateProgress(65535, true);
-				return (buffer, hash);
-			}
-		}
-
-		public static async System.Threading.Tasks.Task<EntitlementsStatus> ShareWrapper(System.Threading.Tasks.Task<EntitlementsStatus> task, string levelId, PacketHandler handler) {
-			string? lastLevel = Plugin.uploadLevel;
-			Plugin.uploadLevel = null;
-			Plugin.downloadPending = false;
-			EntitlementsStatus status = await task;
-			Plugin.Log?.Debug($"EntitlementsStatus: {status}");
-			if(status != EntitlementsStatus.Ok)
-				return status;
-			BeatmapLevelsModel.GetBeatmapLevelResult result = await LevelLoader.beatmapLevelsModel.GetBeatmapLevelAsync(levelId, default(System.Threading.CancellationToken));
-			Plugin.Log?.Debug($"GetBeatmapLevelResult.isError: {result.isError}");
-			if(result.isError) {
-				if(Plugin.directDownloads && PreviewProvider.ResolvePreview(levelId) != null) {
-					Plugin.downloadPending = true;
-					return EntitlementsStatus.Unknown;
-				} else {
-					return EntitlementsStatus.NotOwned;
-				}
-			}
-			if(Plugin.directDownloads && result.beatmapLevel is CustomBeatmapLevel level) {
-				if(lastLevel == levelId) {
-					Plugin.Log?.Debug("Custom level already zipped");
-					Plugin.uploadLevel = lastLevel;
-				} else {
-					Plugin.Log?.Debug("Zipping custom level");
-					(Plugin.uploadData, Plugin.uploadHash) = await ZipLevel(level, handler);
-					if(Plugin.uploadData.Count >= 1) {
-						Plugin.uploadLevel = levelId;
-						Plugin.Log?.Debug($"Packed {Plugin.uploadData.Count} bytes");
-					} else {
-						Plugin.Log?.Debug("Zip failed");
-					}
-				}
-			}
-			return EntitlementsStatus.Ok;
-		}
-
-		[Patch(PatchType.Postfix, typeof(NetworkPlayerEntitlementChecker), "GetEntitlementStatus")]
-		public static void NetworkPlayerEntitlementChecker_GetEntitlementStatus(NetworkPlayerEntitlementChecker __instance, ref System.Threading.Tasks.Task<EntitlementsStatus> __result, string levelId) {
-			Plugin.Log?.Debug($"NetworkPlayerEntitlementChecker_GetEntitlementStatus");
-			if(!Plugin.haveMpCore)
-				__result = ShareWrapper(__result, levelId, ((BeatUpMenuRpcManager)__instance._rpcManager).handler);
-		}
-
-		[Patch(PatchType.Prefix, typeof(ConnectedPlayerManager), "Send", typeof(LiteNetLib.Utils.INetSerializable))]
-		public static bool ConnectedPlayerManager_Send(ConnectedPlayerManager __instance, LiteNetLib.Utils.INetSerializable message) {
-			if(Config.Instance.UnreliableState && (message is NodePoseSyncStateNetSerializable || message is StandardScoreSyncStateNetSerializable)) {
-				__instance.SendUnreliable(message);
-				return false;
-			}
-			return true;
-		}
-
-		[Patch(PatchType.Prefix, typeof(MultiplayerOutroAnimationController), nameof(MultiplayerOutroAnimationController.AnimateOutro))]
-		public static bool MultiplayerOutroAnimationController_AnimateOutro(System.Action onCompleted) {
-			if(Plugin.skipResults)
-				onCompleted.Invoke();
-			return !Plugin.skipResults;
-		}
-
-		[Patch(PatchType.Postfix, typeof(GameServerPlayersTableView), nameof(GameServerPlayersTableView.SetData))]
-		public static void GameServerPlayersTableView_SetData(System.Collections.Generic.List<IConnectedPlayer> sortedPlayers, HMUI.TableView ____tableView) {
-			for(uint i = 0; i < Plugin.playerCells.Length; ++i)
-				Plugin.playerCells[i].transform = null;
-			Plugin.Log?.Debug("GameServerPlayersTableView_SetData()");
-			foreach(GameServerPlayerTableCell cell in ____tableView.visibleCells) {
-				UnityEngine.UI.Image background = cell._localPlayerBackgroundImage;
-				foreach(UnityEngine.Transform child in background.transform) {
-					if(child.gameObject.name == "BeatUpClient_Progress") {
-						IConnectedPlayer player = sortedPlayers[cell.idx];
-						Plugin.playerCells[player.sortIndex].SetBar((UnityEngine.RectTransform)child, background, player.isMe ? new UnityEngine.Color(0.1254902f, 0.7529412f, 1, 0.2509804f) : new UnityEngine.Color(0, 0, 0, 0));
-						break;
-					}
+	[Patch(PatchType.Postfix, typeof(GameServerPlayersTableView), nameof(GameServerPlayersTableView.SetData))]
+	public static void GameServerPlayersTableView_SetData(System.Collections.Generic.List<IConnectedPlayer> sortedPlayers, HMUI.TableView ____tableView) {
+		for(uint i = 0; i < playerCells.Length; ++i)
+			playerCells[i].transform = null;
+		foreach(GameServerPlayerTableCell cell in ____tableView.visibleCells) {
+			UnityEngine.UI.Image background = cell._localPlayerBackgroundImage;
+			foreach(UnityEngine.Transform child in background.transform) {
+				if(child.gameObject.name == "BeatUpClient_Progress") {
+					IConnectedPlayer player = sortedPlayers[cell.idx];
+					playerCells[player.sortIndex].SetBar((UnityEngine.RectTransform)child, background, player.isMe ? new UnityEngine.Color(0.1254902f, 0.7529412f, 1, 0.2509804f) : new UnityEngine.Color(0, 0, 0, 0));
+					break;
 				}
 			}
 		}
+	}
 
-		[Patch(PatchType.Prefix, typeof(GameServerPlayerTableCell), nameof(GameServerPlayerTableCell.Awake))]
-		public static void GameServerPlayerTableCell_Awake(GameServerPlayerTableCell __instance, UnityEngine.UI.Image ____localPlayerBackgroundImage) {
-			UnityEngine.GameObject bar = UnityEngine.Object.Instantiate(____localPlayerBackgroundImage.gameObject, ____localPlayerBackgroundImage.transform);
-			bar.name = "BeatUpClient_Progress";
-		}
+	[Patch(PatchType.Prefix, typeof(GameServerPlayerTableCell), nameof(GameServerPlayerTableCell.Awake))]
+	public static void GameServerPlayerTableCell_Awake(GameServerPlayerTableCell __instance, UnityEngine.UI.Image ____localPlayerBackgroundImage) =>
+		UnityEngine.Object.Instantiate(____localPlayerBackgroundImage.gameObject, ____localPlayerBackgroundImage.transform).name = "BeatUpClient_Progress";
 
-		[Patch(PatchType.Prefix, typeof(ConnectedPlayerManager), "HandleServerPlayerConnected")]
-		public static void ConnectedPlayerManager_HandleServerPlayerConnected(ConnectedPlayerManager.PlayerConnectedPacket packet) {
-			if(!Plugin.expectMetadata)
-				return;
-			int tier = (int)packet.userName[packet.userName.Length-1] - 17;
-			if(tier < -1 || tier >= Plugin.badges.Length)
-				return;
-			if(tier >= 0)
-				Plugin.playerTiers[packet.userId] = (byte)tier;
-			packet.userName = packet.userName.Substring(0, packet.userName.Length - 1);
-		}
+	[Patch(PatchType.Prefix, typeof(ConnectedPlayerManager), "HandleServerPlayerConnected")]
+	public static void ConnectedPlayerManager_HandleServerPlayerConnected(ConnectedPlayerManager.PlayerConnectedPacket packet) {
+		if(!expectMetadata)
+			return;
+		int tier = (int)packet.userName[packet.userName.Length-1] - 17;
+		if(tier < -1 || tier >= badges.Length)
+			return;
+		if(tier >= 0)
+			playerTiers[packet.userId] = (byte)tier;
+		packet.userName = packet.userName.Substring(0, packet.userName.Length - 1);
+	}
 
-		[Patch(PatchType.Postfix, typeof(MultiplayerLobbyAvatarManager), nameof(MultiplayerLobbyAvatarManager.AddPlayer))]
-		public static void MultiplayerLobbyAvatarManager_AddPlayer(IConnectedPlayer connectedPlayer, System.Collections.Generic.Dictionary<string, MultiplayerLobbyAvatarController> ____playerIdToAvatarMap) {
-			if(connectedPlayer.isMe || !Plugin.expectMetadata)
-				return;
-			if(Plugin.playerTiers.TryGetValue(connectedPlayer.userId, out byte tier))
-				UnityEngine.Object.Instantiate(Plugin.badges[tier], ____playerIdToAvatarMap[connectedPlayer.userId].transform.GetChild(2));
-		}
+	[Patch(PatchType.Postfix, typeof(MultiplayerLobbyAvatarManager), nameof(MultiplayerLobbyAvatarManager.AddPlayer))]
+	public static void MultiplayerLobbyAvatarManager_AddPlayer(IConnectedPlayer connectedPlayer, System.Collections.Generic.Dictionary<string, MultiplayerLobbyAvatarController> ____playerIdToAvatarMap) {
+		if(!connectedPlayer.isMe && expectMetadata && playerTiers.TryGetValue(connectedPlayer.userId, out byte tier))
+			UnityEngine.Object.Instantiate(badges[tier], ____playerIdToAvatarMap[connectedPlayer.userId].transform.GetChild(2));
+	}
 
-		[Patch(PatchType.Postfix, typeof(MultiplayerLocalActivePlayerInGameMenuViewController), nameof(MultiplayerLocalActivePlayerInGameMenuViewController.Start))]
-		public static void MultiplayerLocalActivePlayerInGameMenuViewController_Start(MultiplayerLocalActivePlayerInGameMenuViewController __instance) {
-			MultiplayerPlayersManager multiplayerPlayersManager = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerPlayersManager>()[0];
-			if(Plugin.perPlayerDifficulty && multiplayerPlayersManager.localPlayerStartSeekSongController is MultiplayerLocalActivePlayerFacade player) {
-				MenuTransitionsHelper menuTransitionsHelper = UnityEngine.Resources.FindObjectsOfTypeAll<MenuTransitionsHelper>()[0];
-				MultiplayerConnectedPlayerSongTimeSyncController audioTimeSyncController = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerConnectedPlayerSongTimeSyncController>()[0];
-				PreviewDifficultyBeatmap original = new PreviewDifficultyBeatmap(__instance._localPlayerInGameMenuInitData.previewBeatmapLevel, __instance._localPlayerInGameMenuInitData.beatmapCharacteristic, __instance._localPlayerInGameMenuInitData.beatmapDifficulty);
-				PreviewDifficultyBeatmap selectedPreview = original;
-				IDifficultyBeatmap? selectedBeatmap = null;
-				UnityEngine.RectTransform switchButton = UI.CreateButtonFrom(__instance._resumeButton.gameObject, __instance._resumeButton.transform.parent, "SwitchDifficulty", () => {
-					PracticeSettings practiceSettings = new PracticeSettings(0, menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameplayCoreSceneSetupData.gameplayModifiers.songSpeedMul);
-					menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.Init(menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameMode, selectedPreview.beatmapLevel, selectedPreview.beatmapDifficulty, selectedPreview.beatmapCharacteristic, selectedBeatmap, menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.colorScheme, menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameplayCoreSceneSetupData.gameplayModifiers, menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameplayCoreSceneSetupData.playerSpecificSettings, practiceSettings, menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameplayCoreSceneSetupData.useTestNoteCutSoundEffects);
-					menuTransitionsHelper._gameScenesManager.ReplaceScenes(menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData, null, .35f, null, container => {
-						MultiplayerController multiplayerController = container.Resolve<MultiplayerController>();
+	[Patch(PatchType.Postfix, typeof(MultiplayerLocalActivePlayerInGameMenuViewController), nameof(MultiplayerLocalActivePlayerInGameMenuViewController.Start))]
+	public static void MultiplayerLocalActivePlayerInGameMenuViewController_Start(MultiplayerLocalActivePlayerInGameMenuViewController __instance) {
+		MultiplayerPlayersManager multiplayerPlayersManager = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerPlayersManager>()[0];
+		if(perPlayerDifficulty && multiplayerPlayersManager.localPlayerStartSeekSongController is MultiplayerLocalActivePlayerFacade) {
+			MenuTransitionsHelper menuTransitionsHelper = UnityEngine.Resources.FindObjectsOfTypeAll<MenuTransitionsHelper>()[0];
+			MultiplayerConnectedPlayerSongTimeSyncController audioTimeSyncController = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerConnectedPlayerSongTimeSyncController>()[0];
+			PreviewDifficultyBeatmap original = new PreviewDifficultyBeatmap(__instance._localPlayerInGameMenuInitData.previewBeatmapLevel, __instance._localPlayerInGameMenuInitData.beatmapCharacteristic, __instance._localPlayerInGameMenuInitData.beatmapDifficulty);
+			PreviewDifficultyBeatmap selectedPreview = original;
+			IDifficultyBeatmap? selectedBeatmap = null;
+			UnityEngine.RectTransform switchButton = UI.CreateButtonFrom(__instance._resumeButton.gameObject, __instance._resumeButton.transform.parent, "SwitchDifficulty", () => {
+				menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.Init(menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameMode, selectedPreview.beatmapLevel, selectedPreview.beatmapDifficulty, selectedPreview.beatmapCharacteristic, selectedBeatmap, menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.colorScheme, menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameplayCoreSceneSetupData.gameplayModifiers, menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameplayCoreSceneSetupData.playerSpecificSettings, menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameplayCoreSceneSetupData.practiceSettings, menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameplayCoreSceneSetupData.useTestNoteCutSoundEffects);
+				menuTransitionsHelper._gameScenesManager.ReplaceScenes(menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData, null, .35f, null, container => {
+					MultiplayerController multiplayerController = container.Resolve<MultiplayerController>();
+					multiplayerController._songStartSyncController.syncStartSuccessEvent -= OnSongStart;
+					multiplayerController._songStartSyncController.syncStartSuccessEvent += OnSongStart;
+					void OnSongStart(float introAnimationStartSyncTime) {
 						multiplayerController._songStartSyncController.syncStartSuccessEvent -= OnSongStart;
-						multiplayerController._songStartSyncController.syncStartSuccessEvent += OnSongStart;
-						void OnSongStart(float introAnimationStartSyncTime) {
-							multiplayerController._songStartSyncController.syncStartSuccessEvent -= OnSongStart;
-							multiplayerController._playersManager.activeLocalPlayerFacade._gameSongController._beatmapCallbacksController._startFilterTime = multiplayerController.GetCurrentSongTime(multiplayerController.GetSongStartSyncTime(introAnimationStartSyncTime)) * menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameplayCoreSceneSetupData.gameplayModifiers.songSpeedMul + 1;
-						}
-					});
+						multiplayerController._playersManager.activeLocalPlayerFacade._gameSongController._beatmapCallbacksController._startFilterTime = multiplayerController.GetCurrentSongTime(multiplayerController.GetSongStartSyncTime(introAnimationStartSyncTime)) * menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameplayCoreSceneSetupData.gameplayModifiers.songSpeedMul + 1;
+					}
 				});
-				switchButton.GetComponentInChildren<Polyglot.LocalizedTextMeshProUGUI>().Key = "BEATUPCLIENT_SWITCH";
-				switchButton.gameObject.SetActive(false);
-				DifficultyPanel panel = new DifficultyPanel(__instance._mainBar.transform, 1, -2, __instance._levelBar.transform.Find("BG").GetComponent<HMUI.ImageView>());
-				__instance._levelBar.transform.localPosition = new UnityEngine.Vector3(0, 13.25f, 0);
-				panel.beatmapCharacteristic.localPosition = new UnityEngine.Vector3(-1, -1.5f, 0);
-				panel.beatmapDifficulty.localPosition = new UnityEngine.Vector3(-1, -8.25f, 0);
-				void OnSelect(PreviewDifficultyBeatmap preview) {
-					selectedPreview = preview;
-					selectedBeatmap = (preview == original) ? null : BeatmapLevelDataExtensions.GetDifficultyBeatmap(menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.difficultyBeatmap.level.beatmapLevelData, preview);
-					__instance._resumeButton.gameObject.SetActive(selectedBeatmap == null);
-					switchButton.gameObject.SetActive(selectedBeatmap != null);
-					panel.Update(preview, OnSelect);
-				}
-				panel.Update(original, OnSelect);
+			});
+			switchButton.GetComponentInChildren<Polyglot.LocalizedTextMeshProUGUI>().Key = "BEATUPCLIENT_SWITCH";
+			switchButton.gameObject.SetActive(false);
+			DifficultyPanel panel = new DifficultyPanel(__instance._mainBar.transform, 1, -2, __instance._levelBar.transform.Find("BG").GetComponent<HMUI.ImageView>());
+			__instance._levelBar.transform.localPosition = new UnityEngine.Vector3(0, 13.25f, 0);
+			panel.beatmapCharacteristic.localPosition = new UnityEngine.Vector3(-1, -1.5f, 0);
+			panel.beatmapDifficulty.localPosition = new UnityEngine.Vector3(-1, -8.25f, 0);
+			void OnSelect(PreviewDifficultyBeatmap preview) {
+				selectedPreview = preview;
+				selectedBeatmap = (preview == original) ? null : BeatmapLevelDataExtensions.GetDifficultyBeatmap(menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.difficultyBeatmap.level.beatmapLevelData, preview);
+				__instance._resumeButton.gameObject.SetActive(selectedBeatmap == null);
+				switchButton.gameObject.SetActive(selectedBeatmap != null);
+				panel.Update(preview, OnSelect);
 			}
-		}
-
-		class InitInstaller : Zenject.Installer {
-			public override void InstallBindings() {
-				Plugin.Log?.Debug("InitInstaller.InstallBindings()");
-				Container.BindInterfacesAndSelfTo<PacketHandler>().AsSingle();
-			}
-		}
-
-		[PatchOverload(PatchType.Prefix, typeof(Zenject.Context), "InstallInstallers", new[] {typeof(System.Collections.Generic.List<Zenject.InstallerBase>), typeof(System.Collections.Generic.List<System.Type>), typeof(System.Collections.Generic.List<Zenject.ScriptableObjectInstaller>), typeof(System.Collections.Generic.List<Zenject.MonoInstaller>), typeof(System.Collections.Generic.List<Zenject.MonoInstaller>)})]
-		public static void Context_InstallInstallers(ref Zenject.Context __instance, ref System.Collections.Generic.List<Zenject.InstallerBase> normalInstallers, ref System.Collections.Generic.List<System.Type> normalInstallerTypes, ref System.Collections.Generic.List<Zenject.ScriptableObjectInstaller> scriptableObjectInstallers, ref System.Collections.Generic.List<Zenject.MonoInstaller> installers, ref System.Collections.Generic.List<Zenject.MonoInstaller> installerPrefabs) {
-			foreach(Zenject.MonoInstaller installer in installers) {
-				if(installer.GetType() == typeof(PCAppInit)) {
-					Plugin.Log?.Debug($"Adding {typeof(PCAppInit)}");
-					normalInstallerTypes.Add(typeof(InitInstaller));
-				}
-			}
-		}
-
-		static readonly BoolSO customServerEnvironmentOverride = UnityEngine.ScriptableObject.CreateInstance<BoolSO>();
-
-		[Patch(PatchType.Transpiler, typeof(MainSystemInit), nameof(MainSystemInit.InstallBindings))]
-		public static System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> MainSystemInit_InstallBindings(System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> instructions) {
-			customServerEnvironmentOverride.value = true;
-			System.Reflection.FieldInfo original = HarmonyLib.AccessTools.Field(typeof(MainSettingsModelSO), "useCustomServerEnvironment");
-			System.Reflection.FieldInfo replace = HarmonyLib.AccessTools.Field(typeof(Patches), "customServerEnvironmentOverride");
-			foreach(HarmonyLib.CodeInstruction instruction in instructions) {
-				if(HarmonyLib.CodeInstructionExtensions.LoadsField(instruction, original)) {
-					yield return new HarmonyLib.CodeInstruction(System.Reflection.Emit.OpCodes.Pop);
-					yield return new HarmonyLib.CodeInstruction(System.Reflection.Emit.OpCodes.Ldsfld, replace);
-				} else {
-					yield return instruction;
-				}
-			}
-		}
-
-		[Patch(PatchType.Transpiler, typeof(LiteNetLib.ReliableChannel), ".ctor")]
-		public static System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> ReliableChannel_ctor(System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> instructions) {
-			System.Reflection.FieldInfo replace = HarmonyLib.AccessTools.Field(typeof(Plugin), "windowSize");
-			bool notFound = true;
-			foreach(HarmonyLib.CodeInstruction instruction in instructions) {
-				if(notFound && HarmonyLib.CodeInstructionExtensions.LoadsConstant(instruction, 64)) {
-					yield return new HarmonyLib.CodeInstruction(System.Reflection.Emit.OpCodes.Ldsfld, replace);
-					notFound = false;
-				} else {
-					yield return instruction;
-				}
-			}
-			if(notFound)
-				Plugin.Log?.Error("Failed to patch reliable window size");
+			panel.Update(original, OnSelect);
 		}
 	}
 
-	public class MpPatches : PatchGroup {
-		public static async System.Threading.Tasks.Task<EntitlementsStatus> MpShareWrapper(System.Threading.Tasks.Task<EntitlementsStatus> task, string levelId, NetworkPlayerEntitlementChecker checker) {
-			EntitlementsStatus status = await task;
-			if(status != EntitlementsStatus.NotOwned)
-				return status;
-			return await checker._additionalContentModel.GetLevelEntitlementStatusAsync(levelId, default(System.Threading.CancellationToken)) switch {
-				AdditionalContentModel.EntitlementStatus.Owned => EntitlementsStatus.Ok, 
-				AdditionalContentModel.EntitlementStatus.NotOwned => EntitlementsStatus.NotOwned, 
-				_ => EntitlementsStatus.Unknown, 
-			};
-		}
+	static readonly BoolSO customServerEnvironmentOverride = UnityEngine.ScriptableObject.CreateInstance<BoolSO>();
 
-		[Patch(PatchType.Postfix, typeof(LobbyPlayersDataModel), nameof(LobbyPlayersDataModel.Deactivate))]
-		public static void LobbyPlayersDataModel_Deactivate() =>
-			Plugin.Log?.Debug("LobbyPlayersDataModel_Deactivate()");
-
-		[Patch(PatchType.Postfix, typeof(LobbyPlayersDataModel), nameof(LobbyPlayersDataModel.ClearData))]
-		public static void LobbyPlayersDataModel_ClearData() =>
-			Plugin.Log?.Debug("LobbyPlayersDataModel_ClearData()");
-
-		[Patch(PatchType.Postfix, typeof(MultiplayerCore.Objects.MpEntitlementChecker), "GetEntitlementStatus")] // Temporary fix since DiJack doesn't currently support `FromComponentInNewPrefab` and `FromNewComponentOnRoot` binds
-		public static void MpEntitlementChecker_GetEntitlementStatus(MultiplayerCore.Objects.MpEntitlementChecker __instance, ref System.Threading.Tasks.Task<EntitlementsStatus> __result, string levelId) {
-			Plugin.Log?.Debug($"NetworkPlayerEntitlementChecker_GetEntitlementStatus");
-			__result = MpShareWrapper(__result, levelId, __instance);
-			__result = Patches.ShareWrapper(__result, levelId, ((BeatUpMenuRpcManager)__instance._rpcManager).handler);
+	[Patch(PatchType.Transpiler, typeof(MainSystemInit), nameof(MainSystemInit.InstallBindings))]
+	public static System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> MainSystemInit_InstallBindings(System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> instructions) {
+		customServerEnvironmentOverride.value = true;
+		System.Reflection.FieldInfo original = HarmonyLib.AccessTools.Field(typeof(MainSettingsModelSO), "useCustomServerEnvironment");
+		System.Reflection.FieldInfo replace = HarmonyLib.AccessTools.Field(typeof(BeatUpClient), "customServerEnvironmentOverride");
+		foreach(HarmonyLib.CodeInstruction instruction in instructions) {
+			if(HarmonyLib.CodeInstructionExtensions.LoadsField(instruction, original)) {
+				yield return new HarmonyLib.CodeInstruction(System.Reflection.Emit.OpCodes.Pop);
+				yield return new HarmonyLib.CodeInstruction(System.Reflection.Emit.OpCodes.Ldsfld, replace);
+			} else {
+				yield return instruction;
+			}
 		}
 	}
 
-	public class Config {
-		public static Config Instance = new Config();
-		public float CountdownDuration = 5;
-		public bool SkipResults = false;
-		public bool PerPlayerDifficulty = false;
-		public bool PerPlayerModifiers = false;
-		public ushort WindowSize = 64;
-		public bool UnreliableState = false;
-		public bool DirectDownloads = true;
-		public bool AllowModchartDownloads = false;
-		[IPA.Config.Stores.Attributes.NonNullable]
-		[IPA.Config.Stores.Attributes.UseConverter(typeof(IPA.Config.Stores.Converters.DictionaryConverter<string>))]
-		public virtual System.Collections.Generic.Dictionary<string, string?> Servers { get; set; } = new System.Collections.Generic.Dictionary<string, string?>(new[] {new System.Collections.Generic.KeyValuePair<string, string?>("master.battletrains.org", null)});
-		public virtual void Changed() {}
+	[Patch(PatchType.Postfix, typeof(MainSystemInit), nameof(MainSystemInit.InstallBindings))]
+	public static void MainSystemInit_InstallBindings_post(MainSystemInit __instance, Zenject.DiContainer container) {
+		mainSystemInit = __instance;
+		handler = new PacketHandler(container);
+		multiplayerStatusModel = container.TryResolve<IMultiplayerStatusModel>() as MultiplayerStatusModel;
+		quickPlaySetupModel = container.TryResolve<IQuickPlaySetupModel>() as QuickPlaySetupModel;
+		customNetworkConfig = container.TryResolve<INetworkConfig>() as CustomNetworkConfig;
+		beatmapLevelsModel = container.TryResolve<BeatmapLevelsModel>();
 	}
 
-	static class MpPlugin { // References to optional dependencies not allowed in `Plugin` class
-		public static void OnEnable() {
-			DiJack.Suppress(typeof(MultiplayerCore.Patchers.CustomLevelsPatcher));
-			DiJack.Suppress(typeof(MultiplayerCore.Patchers.ModeSelectionPatcher));
-			DiJack.Register(typeof(MpLevelLoader));
-			DiJack.Register(typeof(MpPlayersDataModel));
+	[Patch(PatchType.Transpiler, typeof(LiteNetLib.ReliableChannel), ".ctor")]
+	public static System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> ReliableChannel_ctor(System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> instructions) {
+		System.Reflection.FieldInfo replace = HarmonyLib.AccessTools.Field(typeof(BeatUpClient), "windowSize");
+		bool notFound = true;
+		foreach(HarmonyLib.CodeInstruction instruction in instructions) {
+			if(notFound && HarmonyLib.CodeInstructionExtensions.LoadsConstant(instruction, 64)) {
+				yield return new HarmonyLib.CodeInstruction(System.Reflection.Emit.OpCodes.Ldsfld, replace);
+				notFound = false;
+			} else {
+				yield return instruction;
+			}
+		}
+		if(notFound)
+			Log?.Error("Failed to patch reliable window size");
+	}
+
+	class BeatUpScenesTransitionSetupDataSO : ScenesTransitionSetupDataSO {
+		protected override void OnEnable() {
+			SceneInfo si = CreateInstance<SceneInfo>();
+			si._sceneName = "PCInit";
+			Init(new SceneInfo[] {si}, System.Array.Empty<SceneSetupData>());
+			base.OnEnable();
 		}
 	}
 
-	[IPA.Plugin(IPA.RuntimeOptions.SingleStartInit)]
-	public class Plugin {
-		public struct PlayerCell {
-			public UnityEngine.RectTransform? transform;
-			UnityEngine.UI.Image background;
-			UnityEngine.UI.Image foreground;
-			UnityEngine.Color backgroundColor;
-			PacketHandler.LoadProgress data;
-			public void SetBar(UnityEngine.RectTransform transform, UnityEngine.UI.Image background, UnityEngine.Color backgroundColor) {
-				this.transform = transform;
-				this.background = background;
-				this.backgroundColor = backgroundColor;
-				foreground = transform.gameObject.GetComponent<HMUI.ImageView>();
+	static bool initialSceneRegistered = false;
+	[PatchOverload(PatchType.Prefix, typeof(Zenject.Context), "InstallInstallers", new[] {typeof(System.Collections.Generic.List<Zenject.InstallerBase>), typeof(System.Collections.Generic.List<System.Type>), typeof(System.Collections.Generic.List<Zenject.ScriptableObjectInstaller>), typeof(System.Collections.Generic.List<Zenject.MonoInstaller>), typeof(System.Collections.Generic.List<Zenject.MonoInstaller>)})]
+	public static void Context_InstallInstallers(Zenject.Context __instance) =>
+		initialSceneRegistered |= (__instance.name == "AppCoreSceneContext");
+
+	static BeatUpScenesTransitionSetupDataSO? restartTransitionData = null;
+	[Patch(PatchType.Prefix, typeof(GameScenesManager), nameof(GameScenesManager.ReplaceScenes))] // Fallback if SiraUtil isn't installed
+	public static bool GameScenesManager_ReplaceScenes(GameScenesManager __instance, ScenesTransitionSetupDataSO scenesTransitionSetupData) {
+		if(haveSiraUtil || initialSceneRegistered)
+			return true;
+		if(restartTransitionData == null)
+			restartTransitionData = UnityEngine.ScriptableObject.CreateInstance<BeatUpScenesTransitionSetupDataSO>();
+		__instance.ClearAndOpenScenes(restartTransitionData, finishCallback: container =>
+			UnityEngine.SceneManagement.SceneManager.GetSceneByName(__instance.GetCurrentlyLoadedSceneNames()[0]).GetRootGameObjects()[0].GetComponent<PCAppInit>().TransitionToNextScene());
+		return false;
+	}
+
+	public struct PlayerCell {
+		public UnityEngine.RectTransform? transform;
+		UnityEngine.UI.Image background;
+		UnityEngine.UI.Image foreground;
+		UnityEngine.Color backgroundColor;
+		PacketHandler.LoadProgress data;
+		public void SetBar(UnityEngine.RectTransform transform, UnityEngine.UI.Image background, UnityEngine.Color backgroundColor) {
+			this.transform = transform;
+			this.background = background;
+			this.backgroundColor = backgroundColor;
+			foreground = transform.gameObject.GetComponent<HMUI.ImageView>();
+			Refresh(transform);
+		}
+		public void UpdateData(PacketHandler.LoadProgress data, bool replace = false) {
+			if(replace)
+				data.sequence = this.data.sequence;
+			else if(data.sequence < this.data.sequence)
+				return;
+			SetData(data);
+		}
+		public void SetData(PacketHandler.LoadProgress data) {
+			this.data = data;
+			if(transform != null)
 				Refresh(transform);
+		}
+		void Refresh(UnityEngine.RectTransform transform) {
+			float delta = (65535u - data.progress) * -104 / 65534f;
+			transform.sizeDelta = new UnityEngine.Vector2(delta, transform.sizeDelta.y);
+			transform.localPosition = new UnityEngine.Vector3(delta * (data.state == PacketHandler.LoadProgress.LoadState.Exporting ? .5f : -.5f), 0, 0);
+			foreground.color = data.state switch {
+				PacketHandler.LoadProgress.LoadState.Exporting => new UnityEngine.Color(0.9130435f, 1, 0.1521739f, 0.5434783f),
+				PacketHandler.LoadProgress.LoadState.Downloading => new UnityEngine.Color(0.4782609f, 0.6956522f, 0.02173913f, 0.5434783f),
+				_ => new UnityEngine.Color(0, 0, 0, 0),
+			};
+			background.color = data.state switch {
+				PacketHandler.LoadProgress.LoadState.Failed => new UnityEngine.Color(0.7173913f, 0.2608696f, 0.02173913f, 0.7490196f),
+				PacketHandler.LoadProgress.LoadState.Exporting => new UnityEngine.Color(0.2608696f, 0.7173913f, 0.02173913f, 0.2509804f),
+				PacketHandler.LoadProgress.LoadState.Downloading => new UnityEngine.Color(0.2608696f, 0.7173913f, 0.02173913f, 0.2509804f),
+				PacketHandler.LoadProgress.LoadState.Done => new UnityEngine.Color(0.2608696f, 0.7173913f, 0.02173913f, 0.7490196f),
+				_ => backgroundColor,
+			};
+			foreground.enabled = (data.progress >= 1);
+			background.enabled = true;
+		}
+	}
+
+	public const ulong MaxDownloadSize = 268435456;
+	public const ulong MaxUnzippedSize = 268435456;
+	public static readonly HarmonyLib.Harmony harmony = new HarmonyLib.Harmony("BeatUpClient");
+	public static BeatUpClient? Instance;
+	public static IPA.Logging.Logger? Log;
+	public static UnityEngine.Sprite defaultPackCover = null!;
+	public static UnityEngine.GameObject[] badges = null!;
+	public static System.Collections.Generic.Dictionary<string, byte> playerTiers = new System.Collections.Generic.Dictionary<string, byte>();
+	public static bool downloadPending = false;
+	public static string? uploadLevel = null;
+	public static System.ArraySegment<byte> uploadData = new System.ArraySegment<byte>(new byte[0]);
+	public static byte[] uploadHash = new byte[32];
+	public static StringSO customServerHostName = null!;
+	public static CustomNetworkConfig? customNetworkConfig = null;
+	public static MainSystemInit mainSystemInit = null!;
+	public static MainFlowCoordinator mainFlowCoordinator = null!;
+	public static BeatmapLevelsModel beatmapLevelsModel = null!;
+	public static PlayerCell[] playerCells = null!;
+	public static bool haveSiraUtil = false;
+	public static bool haveSongCore = false;
+	public static bool haveMpCore = false;
+	public static uint windowSize = 64;
+	public static bool directDownloads = false;
+	public static bool expectMetadata = false;
+	public static bool skipResults = false;
+	public static bool perPlayerDifficulty = false;
+
+	public static DifficultyPanel lobbyDifficultyPanel = null!;
+
+	static UnityEngine.UI.Button editServerButton = null!;
+	static void RefreshNetworkConfig() {
+		editServerButton.interactable = false;
+		if(customNetworkConfig != null) {
+			NetworkConfigSO networkConfigPrefab = mainSystemInit._networkConfig;
+			string[] hostname = new[] {networkConfigPrefab.masterServerEndPoint.hostName};
+			int port = networkConfigPrefab.masterServerEndPoint.port;
+			bool forceGameLift = networkConfigPrefab.forceGameLift;
+			string? multiplayerStatusUrl = networkConfigPrefab.multiplayerStatusUrl;
+			if(!string.IsNullOrEmpty(customServerHostName)) {
+				editServerButton.interactable = true;
+				hostname = customServerHostName.value.ToLower().Split(new[] {':'});
+				if(hostname.Length >= 2)
+					int.TryParse(hostname[1], out port);
+				forceGameLift = false;
+				if(!Config.Instance.Servers.TryGetValue(customServerHostName.value, out multiplayerStatusUrl))
+					multiplayerStatusUrl = null;
 			}
-			public void UpdateData(PacketHandler.LoadProgress data, bool replace = false) {
-				if(replace)
-					data.sequence = this.data.sequence;
-				else if(data.sequence < this.data.sequence)
-					return;
-				SetData(data);
-			}
-			public void SetData(PacketHandler.LoadProgress data) {
-				this.data = data;
-				if(transform != null)
-					Refresh(transform);
-			}
-			void Refresh(UnityEngine.RectTransform transform) {
-				float delta = (65535u - data.progress) * -104 / 65534f;
-				transform.sizeDelta = new UnityEngine.Vector2(delta, transform.sizeDelta.y);
-				transform.localPosition = new UnityEngine.Vector3(delta * (data.state == PacketHandler.LoadProgress.LoadState.Exporting ? .5f : -.5f), 0, 0);
-				foreground.color = data.state switch {
-					PacketHandler.LoadProgress.LoadState.Exporting => new UnityEngine.Color(0.9130435f, 1, 0.1521739f, 0.5434783f),
-					PacketHandler.LoadProgress.LoadState.Downloading => new UnityEngine.Color(0.4782609f, 0.6956522f, 0.02173913f, 0.5434783f),
-					_ => new UnityEngine.Color(0, 0, 0, 0),
-				};
-				background.color = data.state switch {
-					PacketHandler.LoadProgress.LoadState.Failed => new UnityEngine.Color(0.7173913f, 0.2608696f, 0.02173913f, 0.7490196f),
-					PacketHandler.LoadProgress.LoadState.Exporting => new UnityEngine.Color(0.2608696f, 0.7173913f, 0.02173913f, 0.2509804f),
-					PacketHandler.LoadProgress.LoadState.Downloading => new UnityEngine.Color(0.2608696f, 0.7173913f, 0.02173913f, 0.2509804f),
-					PacketHandler.LoadProgress.LoadState.Done => new UnityEngine.Color(0.2608696f, 0.7173913f, 0.02173913f, 0.7490196f),
-					_ => backgroundColor,
-				};
-				foreground.enabled = (data.progress >= 1);
-				background.enabled = true;
-			}
+			string oldMultiplayerStatusUrl = customNetworkConfig.multiplayerStatusUrl;
+			Log?.Debug($"CustomNetworkConfig(customServerHostName=\"{hostname[0]}\", port={port}, forceGameLift={forceGameLift})");
+			typeof(CustomNetworkConfig).GetConstructors()[0].Invoke(customNetworkConfig, new object[] {networkConfigPrefab, hostname[0], port, forceGameLift});
+			if(!NullableStringHelper.IsNullOrEmpty(multiplayerStatusUrl))
+				Reflection.Field<string>(customNetworkConfig, "<multiplayerStatusUrl>k__BackingField").Set(multiplayerStatusUrl);
+			if(!forceGameLift)
+				Reflection.Field<ServiceEnvironment>(customNetworkConfig, "<serviceEnvironment>k__BackingField").Set(networkConfigPrefab.serviceEnvironment);
+			if(customNetworkConfig.multiplayerStatusUrl != oldMultiplayerStatusUrl)
+				InvalidateModels();
+		}
+	}
+
+	public class EditServerViewController : HMUI.ViewController {
+		HMUI.FlowCoordinator? flowCoordinator = null;
+		bool edit = false;
+		VRUIControls.VRInputModule vrInputModule = null!;
+		HMUI.InputFieldView editHostnameTextbox = null!;
+		HMUI.InputFieldView editStatusTextbox = null!;
+		HMUI.CurvedTextMeshPro editStatusPlaceholder = null!;
+		HMUI.UIKeyboard keyboard = null!;
+		UnityEngine.UI.Button cancelButton = null!;
+		string? activeKey = null;
+
+		public static EditServerViewController Create(string name, UnityEngine.Transform parent) {
+			UnityEngine.GameObject gameObject = UnityEngine.Object.Instantiate(UnityEngine.Resources.FindObjectsOfTypeAll<ServerCodeEntryViewController>()[0].gameObject, parent);
+			gameObject.name = name;
+			UnityEngine.Object.Destroy(gameObject.GetComponent<ServerCodeEntryViewController>());
+			UnityEngine.Object.Destroy(gameObject.GetComponentInChildren<HMUI.InputFieldView>().gameObject);
+			EditServerViewController viewController = gameObject.AddComponent<EditServerViewController>();
+			viewController.rectTransform.anchorMin = new UnityEngine.Vector2(0f, 0f);
+			viewController.rectTransform.anchorMax = new UnityEngine.Vector2(1f, 1f);
+			viewController.rectTransform.sizeDelta = new UnityEngine.Vector2(0f, 0f);
+			viewController.rectTransform.anchoredPosition = new UnityEngine.Vector2(0f, 0f);
+			viewController.vrInputModule = UnityEngine.Resources.FindObjectsOfTypeAll<VRUIControls.VRInputModule>()[0];
+
+			UnityEngine.Transform Wrapper = gameObject.transform.GetChild(0);
+			UnityEngine.RectTransform editHostname = UI.CreateTextbox(Wrapper, "EditHostname", 1, viewController.RefreshStatusPlaceholder, "BEATUPCLIENT_ENTER_HOSTNAME");
+			UnityEngine.RectTransform editStatus = UI.CreateTextbox(Wrapper, "EditStatus", 2, viewController.RefreshStatusPlaceholder);
+			editHostname.sizeDelta = new UnityEngine.Vector2(80, editHostname.sizeDelta.y);
+			editHostname.localPosition = new UnityEngine.Vector3(0, -1.5f, 0);
+			editStatus.sizeDelta = new UnityEngine.Vector2(80, editStatus.sizeDelta.y);
+			editStatus.localPosition = new UnityEngine.Vector3(0, -8.5f, 0);
+			viewController.editHostnameTextbox = editHostname.GetComponent<HMUI.InputFieldView>();
+			viewController.editStatusTextbox = editStatus.GetComponent<HMUI.InputFieldView>();
+			viewController.editHostnameTextbox._textLengthLimit = 41;
+			viewController.editStatusTextbox._textLengthLimit = 41;
+			viewController.editStatusPlaceholder = viewController.editStatusTextbox._placeholderText.GetComponent<HMUI.CurvedTextMeshPro>();
+			viewController.cancelButton = Wrapper.Find("Buttons/CancelButton").GetComponent<HMUI.NoTransitionsButton>();
+
+			viewController.keyboard = gameObject.GetComponentInChildren<HMUI.UIKeyboard>();
+			foreach(UnityEngine.RectTransform tr in new[] {viewController.keyboard.transform.parent, viewController.keyboard.transform})
+				tr.sizeDelta = new UnityEngine.Vector2(tr.sizeDelta.x + 7, tr.sizeDelta.y);
+			UnityEngine.Transform Letters = viewController.keyboard.transform.GetChild(0);
+			UI.CreateKey(viewController.keyboard, Letters.GetChild(0).Find("P"), UnityEngine.KeyCode.Slash, '/');
+			UI.CreateKey(viewController.keyboard, Letters.GetChild(1).Find("L"), UnityEngine.KeyCode.Colon, ':');
+			UI.CreateKey(viewController.keyboard, Letters.GetChild(2).Find("Del"), UnityEngine.KeyCode.Period, '.');
+
+			gameObject.SetActive(false);
+			return viewController;
 		}
 
-		public const ulong MaxDownloadSize = 268435456;
-		public const ulong MaxUnzippedSize = 268435456;
-		public static readonly HarmonyLib.Harmony harmony = new HarmonyLib.Harmony("BeatUpClient");
-		public static Plugin? Instance;
-		public static IPA.Logging.Logger? Log;
-		public static UnityEngine.Sprite defaultPackCover = null!;
-		public static UnityEngine.GameObject[] badges = null!;
-		public static System.Collections.Generic.Dictionary<string, byte> playerTiers = new System.Collections.Generic.Dictionary<string, byte>();
-		public static PacketHandler.DirectDownloadInfo? downloadInfo = null;
-		public static System.Collections.Generic.List<IConnectedPlayer> downloadSources = new System.Collections.Generic.List<IConnectedPlayer>();
-		public static PacketHandler.RecommendPreview? downloadPreview = null;
-		public static bool downloadPending = false;
-		public static string? uploadLevel = null;
-		public static System.ArraySegment<byte> uploadData = new System.ArraySegment<byte>(new byte[0]);
-		public static byte[] uploadHash = new byte[32];
-		public static MainSettingsModelSO mainSettingsModel = null!;
-		public static INetworkConfig? networkConfig = null;
-		public static MainFlowCoordinator mainFlowCoordinator = null!;
-		public static PlayerCell[] playerCells = null!;
-		public static bool haveSongCore = false;
-		public static bool haveMpCore = false;
-		public static uint windowSize = 64;
-		public static bool directDownloads = false;
-		public static bool expectMetadata = false;
-		public static bool skipResults = false;
-		public static bool perPlayerDifficulty = false;
-
-		public static DifficultyPanel lobbyDifficultyPanel = null!;
-
-		static UnityEngine.UI.Button editServerButton = null!;
-		static void RefreshNetworkConfig() {
-			editServerButton.interactable = false;
-			if(networkConfig is CustomNetworkConfig customNetworkConfig) {
-				MainSystemInit mainSystemInit = UnityEngine.Resources.FindObjectsOfTypeAll<MainSystemInit>()[0];
-				NetworkConfigSO networkConfigPrefab = mainSystemInit._networkConfig;
-				string[] hostname = new[] {networkConfigPrefab.masterServerEndPoint.hostName};
-				int port = networkConfigPrefab.masterServerEndPoint.port;
-				bool forceGameLift = networkConfigPrefab.forceGameLift;
-				string? multiplayerStatusUrl = networkConfigPrefab.multiplayerStatusUrl;
-				if(!string.IsNullOrEmpty(mainSettingsModel.customServerHostName)) {
-					editServerButton.interactable = true;
-					hostname = mainSettingsModel.customServerHostName.value.ToLower().Split(new[] {':'});
-					if(hostname.Length >= 2)
-						int.TryParse(hostname[1], out port);
-					forceGameLift = false;
-					if(!Config.Instance.Servers.TryGetValue(mainSettingsModel.customServerHostName.value, out multiplayerStatusUrl))
-						multiplayerStatusUrl = null;
-				}
-				string oldMultiplayerStatusUrl = customNetworkConfig.multiplayerStatusUrl;
-				Plugin.Log?.Debug($"CustomNetworkConfig(customServerHostName=\"{hostname[0]}\", port={port}, forceGameLift={forceGameLift})");
-				typeof(CustomNetworkConfig).GetConstructors()[0].Invoke(customNetworkConfig, new object[] {networkConfigPrefab, hostname[0], port, forceGameLift});
-				if(!NullableStringHelper.IsNullOrEmpty(multiplayerStatusUrl))
-					Reflection.Field<string>(customNetworkConfig, "<multiplayerStatusUrl>k__BackingField").Set(multiplayerStatusUrl);
-				if(!forceGameLift)
-					Reflection.Field<ServiceEnvironment>(customNetworkConfig, "<serviceEnvironment>k__BackingField").Set(networkConfigPrefab.serviceEnvironment);
-				if(customNetworkConfig.multiplayerStatusUrl != oldMultiplayerStatusUrl)
-					ModelInvalidator.Invalidate();
-			}
+		protected override void DidActivate(bool firstActivation, bool addedToHierarchy, bool screenSystemEnabling) {
+			if(firstActivation)
+				base.buttonBinder.AddBinding(cancelButton, () => Dismiss());
+			string? status = null;
+			if(edit && Config.Instance.Servers.TryGetValue(customServerHostName, out status))
+				activeKey = customServerHostName;
+			else
+				activeKey = null;
+			editHostnameTextbox.SetText(activeKey ?? "");
+			editHostnameTextbox.onValueChanged.Invoke(editHostnameTextbox);
+			editStatusTextbox.SetText(status ?? "");
+			editHostnameTextbox.ActivateKeyboard(keyboard);
+			editHostnameTextbox.UpdateClearButton();
+			keyboard.okButtonWasPressedEvent += HandleOkButtonWasPressed;
+			vrInputModule.onProcessMousePressEvent += ProcessMousePress;
 		}
 
-		public class EditServerViewController : HMUI.ViewController {
-			HMUI.FlowCoordinator? flowCoordinator = null;
-			bool edit = false;
-			VRUIControls.VRInputModule vrInputModule = null!;
-			HMUI.InputFieldView editHostnameTextbox = null!;
-			HMUI.InputFieldView editStatusTextbox = null!;
-			HMUI.CurvedTextMeshPro editStatusPlaceholder = null!;
-			HMUI.UIKeyboard keyboard = null!;
-			UnityEngine.UI.Button cancelButton = null!;
-			string? activeKey = null;
+		protected override void DidDeactivate(bool removedFromHierarchy, bool screenSystemDisabling) {
+			vrInputModule.onProcessMousePressEvent -= ProcessMousePress;
+			keyboard.okButtonWasPressedEvent -= HandleOkButtonWasPressed;
+			editStatusTextbox.DeactivateKeyboard(keyboard);
+			editHostnameTextbox.DeactivateKeyboard(keyboard);
+			flowCoordinator = null;
+		}
 
-			public static EditServerViewController Create(string name, UnityEngine.Transform parent) {
-				UnityEngine.GameObject gameObject = UnityEngine.Object.Instantiate(UnityEngine.Resources.FindObjectsOfTypeAll<ServerCodeEntryViewController>()[0].gameObject, parent);
-				gameObject.name = name;
-				UnityEngine.Object.Destroy(gameObject.GetComponent<ServerCodeEntryViewController>());
-				UnityEngine.Object.Destroy(gameObject.GetComponentInChildren<HMUI.InputFieldView>().gameObject);
-				EditServerViewController viewController = gameObject.AddComponent<EditServerViewController>();
-				viewController.rectTransform.anchorMin = new UnityEngine.Vector2(0f, 0f);
-				viewController.rectTransform.anchorMax = new UnityEngine.Vector2(1f, 1f);
-				viewController.rectTransform.sizeDelta = new UnityEngine.Vector2(0f, 0f);
-				viewController.rectTransform.anchoredPosition = new UnityEngine.Vector2(0f, 0f);
-				viewController.vrInputModule = UnityEngine.Resources.FindObjectsOfTypeAll<VRUIControls.VRInputModule>()[0];
-
-				UnityEngine.Transform Wrapper = gameObject.transform.GetChild(0);
-				UnityEngine.RectTransform editHostname = UI.CreateTextbox(Wrapper, "EditHostname", 1, viewController.RefreshStatusPlaceholder, "BEATUPCLIENT_ENTER_HOSTNAME");
-				UnityEngine.RectTransform editStatus = UI.CreateTextbox(Wrapper, "EditStatus", 2, viewController.RefreshStatusPlaceholder);
-				editHostname.sizeDelta = new UnityEngine.Vector2(80, editHostname.sizeDelta.y);
-				editHostname.localPosition = new UnityEngine.Vector3(0, -1.5f, 0);
-				editStatus.sizeDelta = new UnityEngine.Vector2(80, editStatus.sizeDelta.y);
-				editStatus.localPosition = new UnityEngine.Vector3(0, -8.5f, 0);
-				viewController.editHostnameTextbox = editHostname.GetComponent<HMUI.InputFieldView>();
-				viewController.editStatusTextbox = editStatus.GetComponent<HMUI.InputFieldView>();
-				viewController.editHostnameTextbox._textLengthLimit = 41;
-				viewController.editStatusTextbox._textLengthLimit = 41;
-				viewController.editStatusPlaceholder = viewController.editStatusTextbox._placeholderText.GetComponent<HMUI.CurvedTextMeshPro>();
-				viewController.cancelButton = Wrapper.Find("Buttons/CancelButton").GetComponent<HMUI.NoTransitionsButton>();
-
-				viewController.keyboard = gameObject.GetComponentInChildren<HMUI.UIKeyboard>();
-				foreach(UnityEngine.RectTransform tr in new[] {viewController.keyboard.transform.parent, viewController.keyboard.transform})
-					tr.sizeDelta = new UnityEngine.Vector2(tr.sizeDelta.x + 7, tr.sizeDelta.y);
-				UnityEngine.Transform Letters = viewController.keyboard.transform.GetChild(0);
-				UI.CreateKey(viewController.keyboard, Letters.GetChild(0).Find("P"), UnityEngine.KeyCode.Slash, '/');
-				UI.CreateKey(viewController.keyboard, Letters.GetChild(1).Find("L"), UnityEngine.KeyCode.Colon, ':');
-				UI.CreateKey(viewController.keyboard, Letters.GetChild(2).Find("Del"), UnityEngine.KeyCode.Period, '.');
-
-				gameObject.SetActive(false);
-				return viewController;
-			}
-
-			void ProcessMousePress(UnityEngine.GameObject gameObject) {
-				HMUI.InputFieldView inputField = gameObject.GetComponent<HMUI.InputFieldView>();
-				if(inputField == editHostnameTextbox) {
-					editStatusTextbox.DeactivateKeyboard(keyboard);
-					editHostnameTextbox.ActivateKeyboard(keyboard);
-					editHostnameTextbox.UpdateClearButton();
-				} else if(inputField == editStatusTextbox) {
-					editHostnameTextbox.DeactivateKeyboard(keyboard);
-					editStatusTextbox.ActivateKeyboard(keyboard);
-					editStatusTextbox.UpdateClearButton();
-				}
-			}
-
-			protected override void DidActivate(bool firstActivation, bool addedToHierarchy, bool screenSystemEnabling) {
-				if(firstActivation)
-					base.buttonBinder.AddBinding(cancelButton, () => Dismiss());
-				string? status = null;
-				if(edit && Config.Instance.Servers.TryGetValue(mainSettingsModel.customServerHostName, out status))
-					activeKey = mainSettingsModel.customServerHostName;
-				else
-					activeKey = null;
-				editHostnameTextbox.SetText(activeKey ?? "");
-				editHostnameTextbox.onValueChanged.Invoke(editHostnameTextbox);
-				editStatusTextbox.SetText(status ?? "");
+		void ProcessMousePress(UnityEngine.GameObject gameObject) {
+			HMUI.InputFieldView inputField = gameObject.GetComponent<HMUI.InputFieldView>();
+			if(inputField == editHostnameTextbox) {
+				editStatusTextbox.DeactivateKeyboard(keyboard);
 				editHostnameTextbox.ActivateKeyboard(keyboard);
 				editHostnameTextbox.UpdateClearButton();
-				keyboard.okButtonWasPressedEvent += HandleOkButtonWasPressed;
-				vrInputModule.onProcessMousePressEvent += ProcessMousePress;
-			}
-
-			protected override void DidDeactivate(bool removedFromHierarchy, bool screenSystemDisabling) {
-				vrInputModule.onProcessMousePressEvent -= ProcessMousePress;
-				keyboard.okButtonWasPressedEvent -= HandleOkButtonWasPressed;
-				editStatusTextbox.DeactivateKeyboard(keyboard);
+			} else if(inputField == editStatusTextbox) {
 				editHostnameTextbox.DeactivateKeyboard(keyboard);
-				flowCoordinator = null;
-			}
-
-			void RefreshStatusPlaceholder(HMUI.InputFieldView textbox) {
-				string text = editHostnameTextbox.text.Split(new[] {':'})[0];
-				bool enable = !string.IsNullOrEmpty(text);
-				if(enable != editStatusTextbox.gameObject.activeSelf) {
-					editStatusTextbox.gameObject.SetActive(enable);
-					if(!enable)
-						editStatusTextbox.DeactivateKeyboard(keyboard);
-				}
-				if(enable)
-					editStatusPlaceholder.text = "https://status." + text;
-			}
-
-			public void TryPresent(HMUI.FlowCoordinator flowCoordinator, bool edit) {
-				if(this.flowCoordinator == null && flowCoordinator is MultiplayerModeSelectionFlowCoordinator multiplayerModeSelectionFlowCoordinator) {
-					this.flowCoordinator = multiplayerModeSelectionFlowCoordinator;
-					this.edit = edit;
-					multiplayerModeSelectionFlowCoordinator.PresentViewController(editServerViewController, null, HMUI.ViewController.AnimationDirection.Vertical, false);
-					multiplayerModeSelectionFlowCoordinator.SetTitle(Polyglot.Localization.Get(edit ? "BEATUPCLIENT_EDIT_SERVER" : "BEATUPCLIENT_ADD_SERVER"), HMUI.ViewController.AnimationType.In);
-					multiplayerModeSelectionFlowCoordinator._screenSystem.SetBackButton(false, true);
-				}
-			}
-
-			public void Dismiss(bool immediately = false) {
-				if(flowCoordinator != null)
-					flowCoordinator.DismissViewController(this, HMUI.ViewController.AnimationDirection.Vertical, null, immediately);
-			}
-
-			void HandleOkButtonWasPressed() {
-				if(activeKey != null)
-					Config.Instance.Servers.Remove(activeKey);
-				bool hostnameIsValid = !string.IsNullOrEmpty(editHostnameTextbox.text.Split(new[] {':'})[0]);
-				string hostname = editHostnameTextbox.text;
-				if(hostnameIsValid)
-					Config.Instance.Servers[editHostnameTextbox.text] = editStatusTextbox.text.Length < 1 ? null : editStatusTextbox.text;
-				else
-					hostname = "";
-				if(mainSettingsModel.customServerHostName.value.Equals(hostname))
-					RefreshNetworkConfig();
-				mainSettingsModel.customServerHostName.value = hostname;
-				RefreshDropdown();
-				Dismiss();
+				editStatusTextbox.ActivateKeyboard(keyboard);
+				editStatusTextbox.UpdateClearButton();
 			}
 		}
 
-		public static EditServerViewController editServerViewController = null!;
+		void RefreshStatusPlaceholder(HMUI.InputFieldView textbox) {
+			string text = editHostnameTextbox.text.Split(new[] {':'})[0];
+			bool enable = !string.IsNullOrEmpty(text);
+			if(enable != editStatusTextbox.gameObject.activeSelf) {
+				editStatusTextbox.gameObject.SetActive(enable);
+				if(!enable)
+					editStatusTextbox.DeactivateKeyboard(keyboard);
+			}
+			if(enable)
+				editStatusPlaceholder.text = "https://status." + text;
+		}
 
-		static UI.DropdownSetting serverDropdown = null!;
-		static void RefreshDropdown() =>
-			serverDropdown.SetOptions(Config.Instance.Servers.Keys);
+		public void TryPresent(HMUI.FlowCoordinator flowCoordinator, bool edit) {
+			if(this.flowCoordinator == null && flowCoordinator is MultiplayerModeSelectionFlowCoordinator) {
+				this.flowCoordinator = flowCoordinator;
+				this.edit = edit;
+				flowCoordinator.PresentViewController(this, null, HMUI.ViewController.AnimationDirection.Vertical, false);
+				flowCoordinator.SetTitle(Polyglot.Localization.Get(edit ? "BEATUPCLIENT_EDIT_SERVER" : "BEATUPCLIENT_ADD_SERVER"), HMUI.ViewController.AnimationType.In);
+				flowCoordinator._screenSystem.SetBackButton(false, true);
+			}
+		}
 
-		public static void OnSceneLoaded(UnityEngine.SceneManagement.Scene scene, UnityEngine.SceneManagement.LoadSceneMode mode) {
-			if(scene.name != "MainMenu")
-				return;
-			Log?.Debug("load MainMenu");
-			if(networkConfig is CustomNetworkConfig) {
-				UnityEngine.Transform CreateServerFormView = UnityEngine.Resources.FindObjectsOfTypeAll<CreateServerFormController>()[0].transform;
-				UI.CreateValuePicker(CreateServerFormView, "CountdownDuration", "BEATUPCLIENT_COUNTDOWN_DURATION", () => ref Config.Instance.CountdownDuration, new byte[] {(byte)(Config.Instance.CountdownDuration * 4), 0, 12, 20, 32, 40, 60});
-				UI.CreateToggle(CreateServerFormView, "SkipResults", "BEATUPCLIENT_SKIP_RESULTS_PYRAMID", () => ref Config.Instance.SkipResults);
-				UI.CreateToggle(CreateServerFormView, "PerPlayerDifficulty", "BEATUPCLIENT_PER_PLAYER_DIFFICULTY", () => ref Config.Instance.PerPlayerDifficulty);
-				UI.CreateToggle(CreateServerFormView, "PerPlayerModifiers", "BEATUPCLIENT_PER_PLAYER_MODIFIERS", () => ref Config.Instance.PerPlayerModifiers);
-				CreateServerFormView.parent.gameObject.GetComponent<UnityEngine.UI.VerticalLayoutGroup>().enabled = true;
-				CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.VerticalLayoutGroup>().enabled = true;
-				CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.ContentSizeFitter>().enabled = true;
-				CreateServerFormView.parent.parent.gameObject.SetActive(true);
+		public void Dismiss(bool immediately = false) {
+			if(flowCoordinator != null)
+				flowCoordinator.DismissViewController(this, HMUI.ViewController.AnimationDirection.Vertical, null, immediately);
+		}
 
-				mainFlowCoordinator = UnityEngine.Resources.FindObjectsOfTypeAll<MainFlowCoordinator>()[0];
-				MultiplayerModeSelectionViewController multiplayerModeSelectionViewController = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerModeSelectionViewController>()[0];
-				TMPro.TextMeshProUGUI customServerEndPointText = multiplayerModeSelectionViewController._customServerEndPointText;
-				UnityEngine.UI.Button editColorSchemeButton = UnityEngine.Resources.FindObjectsOfTypeAll<ColorsOverrideSettingsPanelController>()[0]._editColorSchemeButton;
-				customServerEndPointText.enabled = false;
-				UnityEngine.RectTransform server = UI.CreateSimpleDropdown(customServerEndPointText.transform, "Server", mainSettingsModel.customServerHostName, Config.Instance.Servers.Keys);
-				server.sizeDelta = new UnityEngine.Vector2(80, server.sizeDelta.y);
-				server.localPosition = new UnityEngine.Vector3(0, 39.5f, 0);
-				foreach(UnityEngine.Transform tr in server)
-					tr.localPosition = new UnityEngine.Vector3(0, 0, 0);
-				serverDropdown = server.GetComponent<UI.DropdownSetting>();
-				UnityEngine.RectTransform addButton = UI.CreateButtonFrom(editColorSchemeButton.gameObject, customServerEndPointText.transform, "AddServer", () =>
-					editServerViewController.TryPresent(mainFlowCoordinator.childFlowCoordinator, false));
-				addButton.localPosition = new UnityEngine.Vector3(-40, 39.5f, 0);
-				addButton.Find("Icon").GetComponent<HMUI.ImageView>().sprite = System.Linq.Enumerable.First(UnityEngine.Resources.FindObjectsOfTypeAll<UnityEngine.Sprite>(), sprite => sprite.name == "AddIcon");
-				UnityEngine.RectTransform editButton = UI.CreateButtonFrom(editColorSchemeButton.gameObject, customServerEndPointText.transform, "EditServer", () =>
-					editServerViewController.TryPresent(mainFlowCoordinator.childFlowCoordinator, true));
-				editButton.localPosition = new UnityEngine.Vector3(52, 39.5f, 0);
-				editServerButton = editButton.GetComponent<UnityEngine.UI.Button>();
-				if(editServerViewController == null)
-					editServerViewController = EditServerViewController.Create("BeatUpClient_EditServerView", multiplayerModeSelectionViewController.transform.parent);
-
-				mainSettingsModel.customServerHostName.didChangeEvent -= RefreshNetworkConfig;
-				mainSettingsModel.customServerHostName.didChangeEvent += RefreshNetworkConfig;
+		void HandleOkButtonWasPressed() {
+			if(activeKey != null)
+				Config.Instance.Servers.Remove(activeKey);
+			string hostname = editHostnameTextbox.text;
+			if(hostname.Length >= 1 && hostname.IndexOf(':') != 0)
+				Config.Instance.Servers[editHostnameTextbox.text] = editStatusTextbox.text.Length < 1 ? null : editStatusTextbox.text;
+			else
+				hostname = "";
+			if(customServerHostName.value.Equals(hostname))
 				RefreshNetworkConfig();
-			}
-
-			DifficultyPanel.Init();
-			lobbyDifficultyPanel = new DifficultyPanel(UnityEngine.Resources.FindObjectsOfTypeAll<LobbySetupViewController>()[0].transform.GetChild(0), 2, 90);
-		}
-
-		static void WarmMethods(System.Type type) {
-			// Plugin.Log?.Debug($"WarmMethods({type})");
-			foreach(System.Type nested in type.GetNestedTypes())
-				WarmMethods(nested);
-			foreach(System.Reflection.MethodInfo method in type.GetMethods(System.Reflection.BindingFlags.DeclaredOnly | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static))
-				method.MethodHandle.GetFunctionPointer(); // This forces compilation, catching `TypeLoadException`s at load time
-		}
-
-		[IPA.Init]
-		public void Init(IPA.Logging.Logger pluginLogger, IPA.Config.Config conf) {
-			Instance = this;
-			Log = pluginLogger;
-			Config.Instance = IPA.Config.Stores.GeneratedStore.Generated<Config>(conf);
-			Log?.Debug("Logger initialized.");
-		}
-		[IPA.OnEnable]
-		public void OnEnable() {
-			string localization = "Polyglot\t100\n" +
-				"BEATUPCLIENT_COUNTDOWN_DURATION\t\tCountdown Duration\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
-				"BEATUPCLIENT_SKIP_RESULTS_PYRAMID\t\tSkip Results Pyramid\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
-				"BEATUPCLIENT_PER_PLAYER_DIFFICULTY\t\tPer-Player Difficulty\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
-				"BEATUPCLIENT_PER_PLAYER_MODIFIERS\t\tPer-Player Modifiers\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
-				"BEATUPCLIENT_ADD_SERVER\t\tAdd Server\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
-				"BEATUPCLIENT_EDIT_SERVER\t\tEdit Server\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
-				"BEATUPCLIENT_ENTER_HOSTNAME\t\tEnter Hostname\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" + 
-				"BEATUPCLIENT_SWITCH\t\tSwitch\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n";
-			Polyglot.LocalizationImporter.Import(localization, Polyglot.GoogleDriveDownloadFormat.TSV);
-
-			haveSongCore = (IPA.Loader.PluginManager.GetPluginFromId("SongCore") != null);
-			haveMpCore = (IPA.Loader.PluginManager.GetPluginFromId("MultiplayerCore") != null);
-			Log?.Debug($"haveSongCore={haveSongCore}");
-			Log?.Debug($"haveMpCore={haveMpCore}");
-			try {
-				Log?.Debug("Enumerating injections");
-				DiJack.Register(typeof(BeatUpMenuRpcManager));
-				DiJack.Register(typeof(LevelLoader));
-				DiJack.Register(typeof(PlayersDataModel));
-				DiJack.Register(typeof(MultiplayerStatusModelPatch));
-				DiJack.Register(typeof(QuickPlaySetupModelPatch));
-				if(haveMpCore)
-					MpPlugin.OnEnable();
-				Log?.Debug("Warming methods");
-				WarmMethods(typeof(Plugin));
-				WarmMethods(typeof(PreviewProvider));
-				if(haveSongCore)
-					WarmMethods(typeof(SongCorePreviewProvider));
-				WarmMethods(typeof(Patches));
-				if(haveMpCore)
-					WarmMethods(typeof(MpPatches));
-				foreach(System.Type type in DiJack.RegisteredTypes())
-					WarmMethods(type);
-				Log?.Debug("Loading assets");
-				UnityEngine.AssetBundle data = UnityEngine.AssetBundle.LoadFromStream(System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("BeatUpClient.data"));
-				defaultPackCover = data.LoadAllAssets<UnityEngine.Sprite>()[0];
-				badges = data.LoadAllAssets<UnityEngine.GameObject>();
-				Log?.Debug("Applying patches");
-				DiJack.Patch();
-				new Patches().PatchAll(); // harmony.PatchAll() fails with `ReflectionTypeLoadException`
-				if(haveMpCore)
-					new MpPatches().PatchAll();
-				UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnSceneLoaded;
-			} catch(System.Exception ex) {
-				Log?.Error("Error applying patches: " + ex.Message);
-				Log?.Debug(ex);
-				OnDisable();
-			}
-		}
-		[IPA.OnDisable]
-		public void OnDisable() {
-			try {
-				UnityEngine.SceneManagement.SceneManager.sceneLoaded -= OnSceneLoaded;
-				harmony.UnpatchSelf();
-				DiJack.UnregisterAll();
-			} catch(System.Exception ex) {
-				Log?.Error("Error removing patches: " + ex.Message);
-				Log?.Debug(ex);
-			}
+			customServerHostName.value = hostname;
+			RefreshDropdown();
+			Dismiss();
 		}
 	}
+
+	public static EditServerViewController editServerViewController = null!;
+
+	static UI.DropdownSetting serverDropdown = null!;
+	static void RefreshDropdown() =>
+		serverDropdown.SetOptions(Config.Instance.Servers.Keys);
+
+	public static void OnSceneLoaded(UnityEngine.SceneManagement.Scene scene, UnityEngine.SceneManagement.LoadSceneMode mode) {
+		if(scene.name != "MainMenu")
+			return;
+		Log?.Debug("load MainMenu");
+		if(customNetworkConfig != null) {
+			UnityEngine.Transform CreateServerFormView = UnityEngine.Resources.FindObjectsOfTypeAll<CreateServerFormController>()[0].transform;
+			UI.CreateValuePicker(CreateServerFormView, "CountdownDuration", "BEATUPCLIENT_COUNTDOWN_DURATION", () => ref Config.Instance.CountdownDuration, new byte[] {(byte)(Config.Instance.CountdownDuration * 4), 0, 12, 20, 32, 40, 60});
+			UI.CreateToggle(CreateServerFormView, "SkipResults", "BEATUPCLIENT_SKIP_RESULTS_PYRAMID", () => ref Config.Instance.SkipResults);
+			UI.CreateToggle(CreateServerFormView, "PerPlayerDifficulty", "BEATUPCLIENT_PER_PLAYER_DIFFICULTY", () => ref Config.Instance.PerPlayerDifficulty);
+			UI.CreateToggle(CreateServerFormView, "PerPlayerModifiers", "BEATUPCLIENT_PER_PLAYER_MODIFIERS", () => ref Config.Instance.PerPlayerModifiers);
+			CreateServerFormView.parent.gameObject.GetComponent<UnityEngine.UI.VerticalLayoutGroup>().enabled = true;
+			CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.VerticalLayoutGroup>().enabled = true;
+			CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.ContentSizeFitter>().enabled = true;
+			CreateServerFormView.parent.parent.gameObject.SetActive(true);
+
+			mainFlowCoordinator = UnityEngine.Resources.FindObjectsOfTypeAll<MainFlowCoordinator>()[0];
+			MultiplayerModeSelectionViewController multiplayerModeSelectionViewController = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerModeSelectionViewController>()[0];
+			TMPro.TextMeshProUGUI customServerEndPointText = multiplayerModeSelectionViewController._customServerEndPointText;
+			UnityEngine.UI.Button editColorSchemeButton = UnityEngine.Resources.FindObjectsOfTypeAll<ColorsOverrideSettingsPanelController>()[0]._editColorSchemeButton;
+			customServerEndPointText.enabled = false;
+			if(editServerViewController == null)
+				editServerViewController = EditServerViewController.Create("BeatUpClient_EditServerView", multiplayerModeSelectionViewController.transform.parent);
+			UnityEngine.RectTransform server = UI.CreateSimpleDropdown(customServerEndPointText.transform, "Server", customServerHostName, Config.Instance.Servers.Keys);
+			server.sizeDelta = new UnityEngine.Vector2(80, server.sizeDelta.y);
+			server.localPosition = new UnityEngine.Vector3(0, 39.5f, 0);
+			foreach(UnityEngine.Transform tr in server)
+				tr.localPosition = new UnityEngine.Vector3(0, 0, 0);
+			serverDropdown = server.GetComponent<UI.DropdownSetting>();
+			UnityEngine.RectTransform addButton = UI.CreateButtonFrom(editColorSchemeButton.gameObject, customServerEndPointText.transform, "AddServer", () =>
+				editServerViewController.TryPresent(mainFlowCoordinator.childFlowCoordinator, false));
+			addButton.localPosition = new UnityEngine.Vector3(-40, 39.5f, 0);
+			addButton.Find("Icon").GetComponent<HMUI.ImageView>().sprite = System.Linq.Enumerable.First(UnityEngine.Resources.FindObjectsOfTypeAll<UnityEngine.Sprite>(), sprite => sprite.name == "AddIcon");
+			UnityEngine.RectTransform editButton = UI.CreateButtonFrom(editColorSchemeButton.gameObject, customServerEndPointText.transform, "EditServer", () =>
+				editServerViewController.TryPresent(mainFlowCoordinator.childFlowCoordinator, true));
+			editButton.localPosition = new UnityEngine.Vector3(52, 39.5f, 0);
+			editServerButton = editButton.GetComponent<UnityEngine.UI.Button>();
+
+			customServerHostName.didChangeEvent -= RefreshNetworkConfig;
+			customServerHostName.didChangeEvent += RefreshNetworkConfig;
+			RefreshNetworkConfig();
+		}
+
+		DifficultyPanel.Init();
+		lobbyDifficultyPanel = new DifficultyPanel(UnityEngine.Resources.FindObjectsOfTypeAll<LobbySetupViewController>()[0].transform.GetChild(0), 2, 90);
+	}
+
+	static void WarmMethods(System.Type type) {
+		// Log?.Debug($"WarmMethods({type})");
+		foreach(System.Type nested in type.GetNestedTypes())
+			WarmMethods(nested);
+		foreach(System.Reflection.MethodInfo method in type.GetMethods(System.Reflection.BindingFlags.DeclaredOnly | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static))
+			if(!method.ContainsGenericParameters)
+				method.MethodHandle.GetFunctionPointer(); // This forces compilation, catching `TypeLoadException`s at load time
+	}
+
+	[IPA.Init]
+	public void Init(IPA.Logging.Logger pluginLogger, IPA.Config.Config conf) {
+		Instance = this;
+		Log = pluginLogger;
+		Config.Instance = IPA.Config.Stores.GeneratedStore.Generated<Config>(conf);
+		Log?.Debug("Logger initialized.");
+	}
+	[IPA.OnEnable]
+	public void OnEnable() {
+		string localization = "Polyglot\t100\n" +
+			"BEATUPCLIENT_COUNTDOWN_DURATION\t\tCountdown Duration\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
+			"BEATUPCLIENT_SKIP_RESULTS_PYRAMID\t\tSkip Results Pyramid\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
+			"BEATUPCLIENT_PER_PLAYER_DIFFICULTY\t\tPer-Player Difficulty\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
+			"BEATUPCLIENT_PER_PLAYER_MODIFIERS\t\tPer-Player Modifiers\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
+			"BEATUPCLIENT_ADD_SERVER\t\tAdd Server\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
+			"BEATUPCLIENT_EDIT_SERVER\t\tEdit Server\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
+			"BEATUPCLIENT_ENTER_HOSTNAME\t\tEnter Hostname\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" + 
+			"BEATUPCLIENT_SWITCH\t\tSwitch\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n";
+		Polyglot.LocalizationImporter.Import(localization, Polyglot.GoogleDriveDownloadFormat.TSV);
+
+		haveSiraUtil = (IPA.Loader.PluginManager.GetPluginFromId("SiraUtil") != null);
+		haveSongCore = (IPA.Loader.PluginManager.GetPluginFromId("SongCore") != null);
+		haveMpCore = (IPA.Loader.PluginManager.GetPluginFromId("MultiplayerCore") != null);
+		Log?.Debug($"haveSiraUtil={haveSiraUtil}");
+		Log?.Debug($"haveSongCore={haveSongCore}");
+		Log?.Debug($"haveMpCore={haveMpCore}");
+
+		try {
+			System.Collections.Generic.List<System.Type> sections = new System.Collections.Generic.List<System.Type>();
+			sections.Add(typeof(BeatUpClient));
+			if(haveSongCore)
+				sections.Add(typeof(BeatUpClient_SongCore));
+			if(haveMpCore) {
+				sections.Add(typeof(BeatUpClient_MpCore));
+			}
+			Log?.Debug("Warming methods");
+			foreach(System.Type type in sections)
+				WarmMethods(type);
+			Log?.Debug("Loading assets");
+			UnityEngine.AssetBundle data = UnityEngine.AssetBundle.LoadFromStream(System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("BeatUpClient.data"));
+			defaultPackCover = data.LoadAllAssets<UnityEngine.Sprite>()[0];
+			badges = data.LoadAllAssets<UnityEngine.GameObject>();
+			Log?.Debug("Applying patches");
+			BeatUpClient_MpCore.Patch();
+			foreach(System.Type type in sections)
+				PatchAll(type);
+			UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnSceneLoaded;
+		} catch(System.Exception ex) {
+			Log?.Error("Error applying patches: " + ex.Message);
+			Log?.Debug(ex);
+			OnDisable();
+		}
+	}
+	[IPA.OnDisable]
+	public void OnDisable() {
+		try {
+			UnityEngine.SceneManagement.SceneManager.sceneLoaded -= OnSceneLoaded;
+			harmony.UnpatchSelf();
+			BeatUpClient_MpCore.Unpatch();
+		} catch(System.Exception ex) {
+			Log?.Error("Error removing patches: " + ex.Message);
+			Log?.Debug(ex);
+		}
+	}
+}
+
+static class BeatUpClient_SongCore {
+	static string? HashForLevelID(string? levelId) {
+		string[] parts = (levelId ?? "").Split('_', ' ');
+		if(parts.Length < 3 || parts[2].Length != 40)
+			return null;
+		return parts[2];
+	}
+	public static void GetPreviewInfo(CustomPreviewBeatmapLevel previewBeatmapLevel, ref System.Collections.Generic.IEnumerable<string?> requirements, ref System.Collections.Generic.IEnumerable<string?> suggestions) {
+		string? levelHash = HashForLevelID(previewBeatmapLevel.levelID);
+		if(NullableStringHelper.IsNullOrEmpty(levelHash))
+			return;
+		SongCore.Data.ExtraSongData? extraSongData = SongCore.Collections.RetrieveExtraSongData(levelHash);
+		if(extraSongData == null)
+			return;
+		requirements = System.Linq.Enumerable.SelectMany(extraSongData._difficulties, diff => diff.additionalDifficultyData._requirements);
+		suggestions = System.Linq.Enumerable.SelectMany(extraSongData._difficulties, diff => diff.additionalDifficultyData._suggestions);
+	}
+}
+
+static class BeatUpClient_MpCore {
+	#if MPCORE_SUPPORT
+	static class DiJack {
+		static System.Collections.Generic.Dictionary<System.Type, System.Type?> InjectMap = new System.Collections.Generic.Dictionary<System.Type, System.Type?>();
+		static void ConcreteBinderNonGeneric_To(Zenject.ConcreteBinderNonGeneric __instance, ref System.Collections.Generic.IEnumerable<System.Type> concreteTypes) {
+			System.Type[] newTypes = System.Linq.Enumerable.ToArray(concreteTypes);
+			uint i = 0;
+			foreach(System.Type type in concreteTypes) {
+				if(InjectMap.TryGetValue(type, out System.Type? inject)) {
+					if(inject == null) {
+						Log?.Debug($"Suppressing {type}");
+						concreteTypes = new System.Type[0];
+						return;
+					}
+					Log?.Debug($"Replacing {type} with {inject}");
+					newTypes[i] = inject;
+					__instance.BindInfo.ContractTypes.Add(inject);
+				}
+				++i;
+			}
+			concreteTypes = newTypes;
+		}
+
+		public static System.Collections.Generic.IEnumerable<System.Type> RegisteredTypes() =>
+			InjectMap.Keys;
+
+		public static void Suppress(System.Type original) =>
+			InjectMap.Add(original, null);
+
+		public static void Register(System.Type type) =>
+			InjectMap.Add(type.BaseType, type);
+
+		public static void UnregisterAll() =>
+			InjectMap.Clear();
+
+		public static void Patch() {
+			System.Reflection.MethodInfo original = typeof(Zenject.ConcreteBinderNonGeneric).GetMethod(nameof(Zenject.ConcreteBinderNonGeneric.To), new[] {typeof(System.Collections.Generic.IEnumerable<System.Type>)});
+			System.Reflection.MethodInfo prefix = typeof(DiJack).GetMethod(nameof(ConcreteBinderNonGeneric_To), System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+			harmony.Patch(original, prefix: new HarmonyLib.HarmonyMethod(prefix));
+		}
+	}
+
+	public static async System.Threading.Tasks.Task<EntitlementsStatus> MpShareWrapper(System.Threading.Tasks.Task<EntitlementsStatus> task, string levelId, NetworkPlayerEntitlementChecker checker) {
+		EntitlementsStatus status = await task;
+		if(status != EntitlementsStatus.NotOwned)
+			return status;
+		return await checker._additionalContentModel.GetLevelEntitlementStatusAsync(levelId, default(System.Threading.CancellationToken)) switch {
+			AdditionalContentModel.EntitlementStatus.Owned => EntitlementsStatus.Ok, 
+			AdditionalContentModel.EntitlementStatus.NotOwned => EntitlementsStatus.NotOwned, 
+			_ => EntitlementsStatus.Unknown, 
+		};
+	}
+
+	[Patch(PatchType.Postfix, typeof(MultiplayerCore.Objects.MpEntitlementChecker), "GetEntitlementStatus")]
+	public static void MpEntitlementChecker_GetEntitlementStatus(MultiplayerCore.Objects.MpEntitlementChecker __instance, ref System.Threading.Tasks.Task<EntitlementsStatus> __result, string levelId) {
+		Log?.Debug($"NetworkPlayerEntitlementChecker_GetEntitlementStatus");
+		__result = MpShareWrapper(__result, levelId, __instance);
+		__result = ShareWrapper(__result, levelId);
+	}
+
+	[Patch(PatchType.Prefix, typeof(MultiplayerCore.Objects.MpLevelLoader), nameof(MultiplayerCore.Objects.MpLevelLoader.LoadLevel))]
+	public static void MpLevelLoader_LoadLevel_pre(int ____loaderState, out bool __state) =>
+		__state = (____loaderState == (int)MultiplayerLevelLoader.MultiplayerBeatmapLoaderState.NotLoading);
+
+	[Patch(PatchType.Postfix, typeof(MultiplayerCore.Objects.MpLevelLoader), nameof(MultiplayerCore.Objects.MpLevelLoader.LoadLevel))]
+	public static void MpLevelLoader_LoadLevel_post(MultiplayerCore.Objects.MpLevelLoader __instance, bool __state, ILevelGameplaySetupData gameplaySetupData, float initialStartTime, System.Threading.CancellationTokenSource ____getBeatmapCancellationTokenSource, ref System.Threading.Tasks.Task<BeatmapLevelsModel.GetBeatmapLevelResult> ____getBeatmapLevelResultTask) =>
+		MultiplayerLevelLoader_LoadLevel_post(__instance, __state, gameplaySetupData, initialStartTime, ____getBeatmapCancellationTokenSource, ref ____getBeatmapLevelResultTask);
+
+	[Patch(PatchType.Postfix, typeof(MultiplayerCore.Objects.MpLevelLoader), nameof(MultiplayerCore.Objects.MpLevelLoader.Report))]
+	public static void MpLevelLoader_Report(double value) =>
+		Progress(new PacketHandler.LoadProgress(PacketHandler.LoadProgress.LoadState.Downloading, (ushort)(value * 65535)));
+
+	class PlayersDataModel : MultiplayerCore.Objects.MpPlayersDataModel, ILobbyPlayersDataModel, System.IDisposable {
+		public PlayersDataModel(MultiplayerCore.Networking.MpPacketSerializer packetSerializer, MultiplayerCore.Beatmaps.Providers.MpBeatmapLevelProvider beatmapLevelProvider, SiraUtil.Logging.SiraLog logger) : base(packetSerializer, beatmapLevelProvider, logger) {}
+
+		public override void Activate() {
+			Log?.Debug("MpPlayersDataModel.Activate()");
+			base.Activate();
+			_packetSerializer.UnregisterCallback<MultiplayerCore.Beatmaps.Packets.MpBeatmapPacket>();
+			_packetSerializer.RegisterCallback<MultiplayerCore.Beatmaps.Packets.MpBeatmapPacket>(HandleMpexBeatmapPacket);
+			_menuRpcManager.recommendBeatmapEvent -= base.HandleMenuRpcManagerRecommendBeatmap;
+			_menuRpcManager.recommendBeatmapEvent += this.HandleRecommendBeatmap;
+		}
+
+		public override void Deactivate() {
+			Log?.Debug("MpPlayersDataModel.Deactivate()");
+			_menuRpcManager.recommendBeatmapEvent -= this.HandleRecommendBeatmap;
+			_menuRpcManager.recommendBeatmapEvent += base.HandleMenuRpcManagerRecommendBeatmap;
+			base.Deactivate();
+		}
+
+		private void HandleMpexBeatmapPacket(MultiplayerCore.Beatmaps.Packets.MpBeatmapPacket packet, IConnectedPlayer player) {
+			BeatmapCharacteristicSO? characteristic = _beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(packet.characteristic);
+			IPreviewBeatmapLevel preview = _beatmapLevelProvider.GetBeatmapFromPacket(packet);
+			PacketHandler.NetworkPreviewBeatmapLevel current = playerPreviews[player.sortIndex].preview;
+			if(preview.levelID != current.levelID || current.previewDifficultyBeatmapSets == null) // Ignore if we already have a BeatUpClient preview for this level
+				current.Init(preview);
+		}
+
+		void HandleRecommendBeatmap(string userId, BeatmapIdentifierNetSerializable beatmapId) =>
+			Reflection.BaseBaseMethod<string, BeatmapIdentifierNetSerializable>(this, "HandleMenuRpcManagerRecommendBeatmap")(userId, beatmapId);
+
+		public override void SetLocalPlayerBeatmapLevel(PreviewDifficultyBeatmap? beatmapLevel) {
+			if(beatmapLevel == null)
+				Reflection.BaseBaseMethod<PreviewDifficultyBeatmap?>(this, "SetLocalPlayerBeatmapLevel")(beatmapLevel);
+			else
+				base.SetLocalPlayerBeatmapLevel(beatmapLevel);
+		}
+	}
+
+	public static void Patch() {
+		DiJack.Suppress(typeof(MultiplayerCore.Patchers.CustomLevelsPatcher));
+		DiJack.Suppress(typeof(MultiplayerCore.Patchers.ModeSelectionPatcher));
+		DiJack.Register(typeof(PlayersDataModel));
+		DiJack.Patch();
+	}
+	public static void Unpatch() =>
+		DiJack.UnregisterAll();
+	#else
+	public static void Patch() =>
+		throw new System.Exception("Not built with MultiplayerCore support");
+	public static void Unpatch() {}
+	#endif
 }

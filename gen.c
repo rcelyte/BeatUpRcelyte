@@ -536,7 +536,7 @@ int main(int argc, char const *argv[]) {
 	source_buf = source;
 	write_warning(&source_end);
 	write_fmt(&source_end, "#include \"enum_reflection.h\"\n");
-	write_fmt(&source_end, "#include \"packets.h\"\n");
+	write_fmt(&source_end, "#include \"packets.OLD.h\"\n");
 	write_fmt(&source_end, "const uint8_t _trap[128] = {~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,};\n");
 
 	while(*in_end)

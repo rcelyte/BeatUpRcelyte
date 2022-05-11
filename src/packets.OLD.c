@@ -5,7 +5,7 @@
  */
 
 #include "enum_reflection.h"
-#include "packets.h"
+#include "packets.OLD.h"
 const uint8_t _trap[128] = {~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,};
 #include "scramble.h"
 #include <stdio.h>
@@ -1169,28 +1169,6 @@ void pkt_writeDirectDownloadInfo(struct PacketContext ctx, uint8_t **pkt, struct
 	for(uint32_t i = 0; i < in.count; ++i)
 		pkt_writeString(ctx, pkt, in.sourcePlayers[i]);
 }
-struct LevelFragmentRequest pkt_readLevelFragmentRequest(struct PacketContext ctx, const uint8_t **pkt) {
-	struct LevelFragmentRequest out;
-	out.offset = pkt_readVarUint64(ctx, pkt);
-	out.maxSize = pkt_readUint16(ctx, pkt);
-	return out;
-}
-struct LevelFragment pkt_readLevelFragment(struct PacketContext ctx, const uint8_t **pkt) {
-	struct LevelFragment out;
-	out.offset = pkt_readVarUint64(ctx, pkt);
-	out.size = pkt_readUint16(ctx, pkt);
-	if(out.size > 1500) {
-		uprintf("Buffer overflow in read of LevelFragment.data: %u > 1500\n", (uint32_t)out.size), out.size = 0, *pkt = _trap;
-	} else {
-		pkt_readUint8Array(pkt, out.data, out.size);
-	}
-	return out;
-}
-void pkt_writeLevelFragment(struct PacketContext ctx, uint8_t **pkt, struct LevelFragment in) {
-	pkt_writeVarUint64(ctx, pkt, in.offset);
-	pkt_writeUint16(ctx, pkt, in.size);
-	pkt_writeUint8Array(ctx, pkt, in.data, in.size);
-}
 struct LoadProgress pkt_readLoadProgress(struct PacketContext ctx, const uint8_t **pkt) {
 	struct LoadProgress out;
 	out.sequence = pkt_readUint32(ctx, pkt);
@@ -1667,7 +1645,7 @@ void pkt_writeAuthenticateUserResponse(struct PacketContext ctx, uint8_t **pkt, 
 void pkt_writeConnectToServerResponse(struct PacketContext ctx, uint8_t **pkt, struct ConnectToServerResponse in) {
 	pkt_writeBaseMasterServerReliableResponse(ctx, pkt, in.base);
 	pkt_writeUint8(ctx, pkt, in.result);
-	if(in.result == GetPublicServersResponse_Result_Success) {
+	if(in.result == ConnectToServerResponse_Result_Success) {
 		pkt_writeString(ctx, pkt, in.userId);
 		pkt_writeString(ctx, pkt, in.userName);
 		pkt_writeString(ctx, pkt, in.secret);
