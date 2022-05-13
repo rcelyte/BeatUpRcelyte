@@ -1,4 +1,15 @@
 using static BeatUpClient;
+#if CSPROJ_BUILD
+#nullable enable
+namespace System.Diagnostics.CodeAnalysis {
+	[AttributeUsage(AttributeTargets.Parameter, Inherited = false)]
+	internal sealed class NotNullWhenAttribute : Attribute {
+		public bool ReturnValue {get;}
+		public NotNullWhenAttribute(bool returnValue) =>
+			ReturnValue = returnValue;
+	}
+}
+#endif
 
 [IPA.Plugin(IPA.RuntimeOptions.SingleStartInit)]
 public class BeatUpClient {

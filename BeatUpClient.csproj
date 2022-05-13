@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net472</TargetFramework>
+		<AssemblyName>MakeThingsPublic</AssemblyName>
+		<OutputType>Exe</OutputType>
+		<LangVersion>8</LangVersion>
+		<Nullable>enable</Nullable>
+		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+		<LocalRefsDir Condition="Exists('..\Refs')">..\Refs</LocalRefsDir>
+		<BeatSaberDir>$(LocalRefsDir)</BeatSaberDir>
+		<DebugType>full</DebugType>
+		<ModVersion>0.2.2</ModVersion>
+	</PropertyGroup>
+	<ItemGroup>
+		<Reference Include="Mono.Cecil">
+			<HintPath>$(BeatSaberDir)/Libs/Mono.Cecil.dll</HintPath>
+			<Private>true</Private>
+		</Reference>
+		<Reference Include="System"/>
+	</ItemGroup>
+	<ItemGroup>
+		<Compile Remove="*.cs"/>
+		<Compile Include="MakeThingsPublic.cs"/>
+	</ItemGroup>
+	<ItemGroup>
+		<None Include="BeatUpClient.csproj.user" Condition="Exists('BeatUpClient.csproj.user')"/>
+	</ItemGroup>
+	<Target Name="ActualBuild" AfterTargets="Build">
+		<PropertyGroup Condition="'$(OS)' == 'Windows_NT'">
+			<MakeThingsPublic_exe>$(TargetPath)</MakeThingsPublic_exe>
+		</PropertyGroup>
+		<PropertyGroup Condition="'$(OS)' != 'Windows_NT'">
+			<MakeThingsPublic_exe>mono $(TargetPath)</MakeThingsPublic_exe>
+		</PropertyGroup>
+		<ItemGroup>
+			<SourceDLL Include="$(BeatSaberDir)/Beat Saber_Data/Managed/*.dll"/>
+			<SourceDLL Include="$(BeatSaberDir)/Libs/0Harmony.dll"/>
+			<SourceDLL Include="$(BeatSaberDir)/Plugins/SongCore.dll"/>
+			<SourceDLL Include="$(BeatSaberDir)/Plugins/SiraUtil.dll"/>
+			<SourceDLL Include="$(BeatSaberDir)/Plugins/MultiplayerCore.dll"/>
+		</ItemGroup>
+		<MakeDir Directories=".tmp"/>
+		<Copy DestinationFolder=".folderNameWithoutSpaces" SourceFiles="@(SourceDLL)"/>
+		<Move DestinationFiles=".folderNameWithoutSpaces/GameplayCore.dll" SourceFiles=".folderNameWithoutSpaces/GamePlayCore.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/BeatmapCore.dll .tmp/BeatmapCore.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/BGNet.dll .tmp/BGNet.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/Colors.dll .tmp/Colors.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/GameplayCore.dll .tmp/GameplayCore.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/HMLib.dll .tmp/HMLib.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/HMUI.dll .tmp/HMUI.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/IPA.Loader.dll .tmp/IPA.Loader.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/LiteNetLib.dll .tmp/LiteNetLib.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/Main.dll .tmp/Main.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/Newtonsoft.Json.dll .tmp/Newtonsoft.Json.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/Polyglot.dll .tmp/Polyglot.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/System.IO.Compression.dll .tmp/System.IO.Compression.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/Unity.TextMeshPro.dll .tmp/Unity.TextMeshPro.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/UnityEngine.AssetBundleModule.dll .tmp/UnityEngine.AssetBundleModule.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/UnityEngine.AudioModule.dll .tmp/UnityEngine.AudioModule.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/UnityEngine.CoreModule.dll .tmp/UnityEngine.CoreModule.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/UnityEngine.ImageConversionModule.dll .tmp/UnityEngine.ImageConversionModule.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/UnityEngine.UI.dll .tmp/UnityEngine.UI.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/UnityEngine.UIModule.dll .tmp/UnityEngine.UIModule.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/UnityEngine.UnityWebRequestAudioModule.dll .tmp/UnityEngine.UnityWebRequestAudioModule.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/UnityEngine.UnityWebRequestModule.dll .tmp/UnityEngine.UnityWebRequestModule.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/VRUI.dll .tmp/VRUI.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/Zenject-usage.dll .tmp/Zenject-usage.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/Zenject.dll .tmp/Zenject.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/0Harmony.dll .tmp/0Harmony.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/SongCore.dll .tmp/SongCore.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/SiraUtil.dll .tmp/SiraUtil.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/MultiplayerCore.dll .tmp/MultiplayerCore.dll"/>
+		<WriteLinesToFile File=".tmp/manifest.json" Lines="{&quot;%24schema&quot;:&quot;https://raw.githubusercontent.com/bsmg/BSIPA-MetadataFileSchema/master/Schema.json&quot;,&quot;author&quot;:&quot;rcelyte&quot;,&quot;description&quot;:&quot;Tweaks and enhancements for enabling modded multiplayer&quot;,&quot;gameVersion&quot;:&quot;1.20.0&quot;,&quot;dependsOn&quot;:{&quot;BSIPA&quot;:&quot;*&quot;},&quot;conflictsWith&quot;:{&quot;BeatTogether&quot;:&quot;*&quot;},&quot;loadBefore&quot;:[&quot;MultiplayerCore&quot;],&quot;id&quot;:&quot;BeatUpClient&quot;,&quot;name&quot;:&quot;BeatUpClient&quot;,&quot;version&quot;:&quot;$(ModVersion)&quot;,&quot;links&quot;:{&quot;project-source&quot;:&quot;https://github.com/rcelyte/BeatUpRcelyte&quot;}}" Overwrite="true" Encoding="Unicode"/>
+		<ItemGroup>
+			<ClientRef Include="$(BeatSaberDir)/Beat Saber_Data/Managed/mscorlib.dll"/>
+			<ClientRef Include="$(BeatSaberDir)/Beat Saber_Data/Managed/System.dll"/>
+			<ClientRef Include="$(BeatSaberDir)/Beat Saber_Data/Managed/System.Core.dll"/>
+			<ClientRef Include=".tmp/*.dll"/>
+			<ClientResource Include="data.bundle" LogicalName="BeatUpClient.data"/>
+			<ClientResource Include=".tmp/manifest.json" LogicalName=".manifest.json"/>
+		</ItemGroup>
+		<Csc TargetType="library" Optimize="true" EmitDebugInformation="false" AllowUnsafeBlocks="true" LangVersion="8" DefineConstants="CSPROJ_BUILD;MPCORE_SUPPORT" Sources="BeatUpClient.cs" OutputAssembly="BeatUpClient.dll" Resources="@(ClientResource)" References="@(ClientRef)"/>
+	</Target>
+	<ItemGroup>
+		<PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.0">
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+			<PrivateAssets>all</PrivateAssets>
+		</PackageReference>
+	</ItemGroup>
+</Project>
