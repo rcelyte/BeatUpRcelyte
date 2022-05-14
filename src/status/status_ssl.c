@@ -123,7 +123,7 @@ static HANDLE status_thread = NULL;
 static pthread_t status_thread = 0;
 #endif
 static struct Context ctx = {-1};
-_Bool status_ssl_init(mbedtls_x509_crt certs[2], mbedtls_pk_context keys[2], const char *domain, const char *path, uint16_t port) {
+bool status_ssl_init(mbedtls_x509_crt certs[2], mbedtls_pk_context keys[2], const char *domain, const char *path, uint16_t port) {
 	ctx.listenfd = socket(AF_INET6, SOCK_STREAM, 0);
 	{
 		int32_t iSetOption = 1;

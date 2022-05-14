@@ -2,7 +2,7 @@
 #include "wire.h"
 #include "instance/instance.h"
 
-_Bool wire_request_block(struct WireBlockHandle *block_out, uint16_t notify) {
+bool wire_request_block(struct WireBlockHandle *block_out, uint16_t notify) {
 	uprintf("TODO: multiple threads; multiple hosts\n");
 	block_out->host = 0;
 	block_out->thread = 0;
@@ -13,7 +13,7 @@ void wire_block_release(struct WireBlockHandle block) {
 	instance_block_release(block.thread, block.group);
 }
 
-_Bool wire_room_open(struct WireRoomHandle handle, struct String managerId, struct GameplayServerConfiguration configuration) {
+bool wire_room_open(struct WireRoomHandle handle, struct String managerId, struct GameplayServerConfiguration configuration) {
 	if(handle.block.host != 0 || handle.block.thread != 0)
 		return 1;
 	return instance_room_open(handle.block.thread, handle.block.group, handle.sub, managerId, configuration);
@@ -35,7 +35,7 @@ struct PacketContext wire_room_get_protocol(struct WireRoomHandle handle) {
 	return instance_room_get_protocol(handle.block.thread, handle.block.group, handle.sub);
 }
 
-struct IPEndPoint wire_block_get_endpoint(struct WireBlockHandle block, _Bool ipv4) {
+struct IPEndPoint wire_block_get_endpoint(struct WireBlockHandle block, bool ipv4) {
 	return instance_get_endpoint(ipv4);
 }
 

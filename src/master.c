@@ -1,40 +1,28 @@
 #include "log.h"
-#include "enum_reflection.h"
 #include "instance/instance.h"
 #ifdef WINDOWS
 #include <processthreadsapi.h>
 #else
 #include <pthread.h>
 #endif
-#include "debug.h"
 #include "pool.h"
+#include "scramble.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#define lengthof(x) (sizeof(x)/sizeof(*(x)))
-
 #define MASTER_WINDOW_SIZE 64
-#define MASTER_SERIALIZE(pkt, session, mtype, stype, dtype, data) { \
-	pkt_writeNetPacketHeader(PV_LEGACY_DEFAULT, &resp_end, (struct NetPacketHeader){ \
-		.property = PacketProperty_UnconnectedMessage, \
-		.connectionNumber = 0, \
-		.isFragmented = 0, \
-	}); \
-	pkt_writeMessageHeader(PV_LEGACY_DEFAULT, pkt, (struct MessageHeader){ \
-		.type = MessageType_##mtype, \
-		.protocolVersion = session->net.version.protocolVersion, \
-	}); \
-	SERIALIZE_CUSTOM(PV_LEGACY_DEFAULT, pkt, mtype##Type_##stype) \
-		pkt_write##dtype(PV_LEGACY_DEFAULT, pkt, data); \
-}
+#define MASTER_SERIALIZE(data, pkt, end) pkt_serialize(data, pkt, end, PV_LEGACY_DEFAULT)
 
 struct MasterPacket {
 	uint32_t len;
+	MessageType messageType;
+	uint8_t serialType;
 	uint8_t data[512];
 };
 struct MasterResendSparsePtr {
-	_Bool shouldSend;
-	_Bool encrypt;
+	bool shouldSend;
+	bool encrypt;
 	uint32_t timeStamp;
 	uint32_t requestId;
 	uint32_t data;
@@ -138,23 +126,23 @@ static uint32_t master_getNextRequestId(struct MasterSession *session) {
 	return (session->lastSentRequestId & 63) | session->epoch;
 }
 
-static _Bool master_handle_ack(struct MasterSession *session, struct MessageHeader *message_out, struct SerializeHeader *serial_out, uint32_t requestId) {
+static bool master_handle_ack(struct MasterSession *session, MessageType *messageType_out, uint8_t *serialType_out, const struct MessageReceivedAcknowledge *ack) {
+	uint32_t requestId = ack->base.responseId;
 	for(uint32_t i = 0; i < session->resend.count; ++i) {
 		if(requestId == session->resend.index[i].requestId) {
 			--session->resend.count;
 			uint32_t data = session->resend.index[i].data;
 			session->resend.index[i] = session->resend.index[session->resend.count];
 			session->resend.index[session->resend.count].data = data;
-			const uint8_t *msg = session->resend.data[data].data;
-			*message_out = pkt_readMessageHeader(PV_LEGACY_DEFAULT, &msg);
-			*serial_out = pkt_readSerializeHeader(PV_LEGACY_DEFAULT, &msg);
+			*messageType_out = session->resend.data[data].messageType;
+			*serialType_out = session->resend.data[data].serialType;
 			return 1;
 		}
 	}
 	return 0;
 }
 
-static void master_net_send_reliable(struct NetContext *ctx, struct MasterSession *session, const uint8_t *buf, uint32_t len, uint32_t requestId, _Bool shouldSend, _Bool encrypt) {
+static void master_net_send_reliable(struct NetContext *ctx, struct MasterSession *session, const uint8_t *buf, uint32_t len, uint32_t requestId, MessageType messageType, uint8_t serialType, bool shouldSend, bool encrypt) {
 	if(session->resend.count < MASTER_WINDOW_SIZE) {
 		struct MasterResendSparsePtr *p = &session->resend.index[session->resend.count++];
 		p->shouldSend = shouldSend;
@@ -162,6 +150,8 @@ static void master_net_send_reliable(struct NetContext *ctx, struct MasterSessio
 		p->timeStamp = net_time();
 		p->requestId = requestId;
 		session->resend.data[p->data].len = len;
+		session->resend.data[p->data].messageType = messageType;
+		session->resend.data[p->data].serialType = serialType;
 		memcpy(session->resend.data[p->data].data, buf, len);
 	} else {
 		uprintf("RESEND BUFFER FULL\n");
@@ -170,71 +160,94 @@ static void master_net_send_reliable(struct NetContext *ctx, struct MasterSessio
 		net_send_internal(ctx, &session->net, buf, len, encrypt);
 }
 
-static void master_send(struct NetContext *ctx, struct MasterSession *session, const uint8_t *buf, uint32_t len, _Bool reliable) {
-	const uint8_t *data = buf, *end = &buf[len];
-	pkt_readNetPacketHeader(PV_LEGACY_DEFAULT, &data);
-	struct MessageHeader message = pkt_readMessageHeader(PV_LEGACY_DEFAULT, &data);
-	struct SerializeHeader serial = pkt_readSerializeHeader(PV_LEGACY_DEFAULT, &data);
-	if(len <= 414) {
-		if(reliable)
-			master_net_send_reliable(ctx, session, buf, len, pkt_readBaseMasterServerReliableRequest(PV_LEGACY_DEFAULT, &data).requestId, 1, message.type != MessageType_HandshakeMessage);
-		else
-			net_send_internal(ctx, &session->net, buf, len, message.type != MessageType_HandshakeMessage);
-		return;
-	}
-	if(message.type == MessageType_UserMessage)
-		serial.type = UserMessageType_UserMultipartMessage;
-	else if(message.type == MessageType_HandshakeMessage)
-		serial.type = HandshakeMessageType_HandshakeMultipartMessage;
-	else
-		return;
-	pkt_readNetPacketHeader(PV_LEGACY_DEFAULT, &buf);
-	len = end - buf;
+static struct MasterServerReliableRequestProxy get_request_info(const uint8_t *data, const uint8_t *data_end, struct PacketContext version) {
+	struct MasterServerReliableRequestProxy out = {~0};
+	pkt_read(&(struct SerializeHeader){0}, &data, data_end, version);
+	pkt_read(&out, &data, data_end, version);
+	return out;
+}
 
-	struct BaseMasterServerMultipartMessage mp;
-	mp.multipartMessageId = pkt_readBaseMasterServerReliableRequest(PV_LEGACY_DEFAULT, (const uint8_t*[]){data}).requestId;
-	mp.offset = 0;
-	mp.length = 384;
-	mp.totalLength = len;
-	do {
-		mp.base.requestId = master_getNextRequestId(session);
-		if(len - mp.offset < mp.length)
-			mp.length = len - mp.offset;
-		uint8_t mpbuf[512], *mpbuf_end = mpbuf;
-		memcpy(mp.data, &buf[mp.offset], mp.length);
-		pkt_writeNetPacketHeader(PV_LEGACY_DEFAULT, &mpbuf_end, (struct NetPacketHeader){
+static void master_send(struct NetContext *ctx, struct MasterSession *session, MessageType type, const uint8_t *data, const uint8_t *data_end, bool reliable) {
+	uint8_t buf[data_end + 64 - data], *buf_end = buf;
+	struct UnconnectedMessage header = {
+		.type = type,
+		.protocolVersion = session->net.version.protocolVersion,
+	};
+	if(data_end - data <= 414) {
+		bool res = pkt_write_c(&buf_end, endof(buf), PV_LEGACY_DEFAULT, NetPacketHeader, {
 			.property = PacketProperty_UnconnectedMessage,
 			.connectionNumber = 0,
-			.isFragmented = 0,
-		});
-		pkt_writeMessageHeader(PV_LEGACY_DEFAULT, &mpbuf_end, message);
-		uint8_t *msg_end = mpbuf_end;
-		pkt_writeBaseMasterServerMultipartMessage(PV_LEGACY_DEFAULT, &msg_end, mp);
-		serial.length = msg_end + 1 - mpbuf_end;
-		pkt_writeSerializeHeader(PV_LEGACY_DEFAULT, &mpbuf_end, serial);
-		pkt_writeBaseMasterServerMultipartMessage(PV_LEGACY_DEFAULT, &mpbuf_end, mp);
-		master_net_send_reliable(ctx, session, mpbuf, mpbuf_end - mpbuf, mp.base.requestId, 1, message.type != MessageType_HandshakeMessage);
-		mp.offset += 384;
-	} while(mp.offset < len);
-	master_net_send_reliable(ctx, session, buf, data - buf, mp.multipartMessageId, 0, message.type != MessageType_HandshakeMessage);
+			.isFragmented = false,
+			.unconnectedMessage = header,
+		}) && pkt_write_bytes(data, &buf_end, endof(buf), PV_LEGACY_DEFAULT, data_end - data);
+		if(!res)
+			return;
+		if(reliable) {
+			struct MasterServerReliableRequestProxy request = get_request_info(data, data_end, PV_LEGACY_DEFAULT);
+			master_net_send_reliable(ctx, session, buf, buf_end - buf, request.value.requestId, type, request.type, true, type != MessageType_HandshakeMessage);
+		} else {
+			net_send_internal(ctx, &session->net, buf, buf_end - buf, type != MessageType_HandshakeMessage);
+		}
+		return;
+	}
+	struct MasterServerReliableRequestProxy request = get_request_info(data, data_end, PV_LEGACY_DEFAULT);
+	if(!(pkt_write(&header, &buf_end, endof(buf), PV_LEGACY_DEFAULT) &&
+	     pkt_write_bytes(data, &buf_end, endof(buf), PV_LEGACY_DEFAULT, data_end - data)))
+		return;
+	struct MultipartMessageProxy mpp = {
+		.value = {
+			.multipartMessageId = request.value.requestId,
+			.offset = 0,
+			.length = 384,
+			.totalLength = buf_end - buf,
+		},
+	};
+	switch(type) {
+		case MessageType_UserMessage: mpp.type = UserMessageType_MultipartMessage; break;
+		case MessageType_HandshakeMessage: mpp.type = HandshakeMessageType_MultipartMessage; break;
+		default: uprintf("Bad MessageType in master_send()\b"); return;
+	}
+	const uint8_t *buf_it = buf;
+	do {
+		mpp.value.base.requestId = master_getNextRequestId(session);
+		mpp.value.offset = buf_it - buf;
+		if(buf_end - buf_it < mpp.value.length)
+			mpp.value.length = buf_end - buf_it;
+		uint8_t mpbuf[512], *mpbuf_end = mpbuf;
+		memcpy(mpp.value.data, buf_it, mpp.value.length);
+		bool res = pkt_write_c(&mpbuf_end, endof(mpbuf), PV_LEGACY_DEFAULT, NetPacketHeader, {
+			.property = PacketProperty_UnconnectedMessage,
+			.connectionNumber = 0,
+			.isFragmented = false,
+			.unconnectedMessage = {
+				.type = type,
+				.protocolVersion = session->net.version.protocolVersion,
+			},
+		}) && MASTER_SERIALIZE(&mpp, &mpbuf_end, endof(mpbuf));
+		(void)res;
+		master_net_send_reliable(ctx, session, mpbuf, mpbuf_end - mpbuf, mpp.value.base.requestId, type, request.type, true, type != MessageType_HandshakeMessage);
+		buf_it += mpp.value.length;
+	} while(buf_it < buf_end);
+	master_net_send_reliable(ctx, session, NULL, 0, mpp.value.multipartMessageId, type, request.type, false, false);
 }
 
 static void master_send_ack(struct Context *ctx, struct MasterSession *session, MessageType type, uint32_t requestId) {
-	struct BaseMasterServerAcknowledgeMessage r_ack;
-	r_ack.base.responseId = requestId;
-	r_ack.messageHandled = 1;
+	struct MessageReceivedAcknowledgeProxy r_ack = {
+		.type = (type == MessageType_UserMessage) ? UserMessageType_MessageReceivedAcknowledge : HandshakeMessageType_MessageReceivedAcknowledge,
+		.value = {
+			.base = {
+				.responseId = requestId,
+			},
+			.messageHandled = 1,
+		},
+	};
 	uint8_t resp[65536], *resp_end = resp;
-	if(type == MessageType_UserMessage)
-		MASTER_SERIALIZE(&resp_end, session, UserMessage, UserMessageReceivedAcknowledge, BaseMasterServerAcknowledgeMessage, r_ack)
-	else if(type == MessageType_DedicatedServerMessage)
-		MASTER_SERIALIZE(&resp_end, session, DedicatedServerMessage, DedicatedServerMessageReceivedAcknowledge, BaseMasterServerAcknowledgeMessage, r_ack)
-	else if(type == MessageType_HandshakeMessage)
-		MASTER_SERIALIZE(&resp_end, session, HandshakeMessage, HandshakeMessageReceivedAcknowledge, BaseMasterServerAcknowledgeMessage, r_ack)
-	master_send(&ctx->net, session, resp, resp_end - resp, 0);
+	if(!MASTER_SERIALIZE(&r_ack, &resp_end, endof(resp)))
+		return;
+	master_send(&ctx->net, session, type, resp, resp_end, false);
 }
 
-static void handle_ClientHelloRequest(struct Context *ctx, struct MasterSession *session, const uint8_t **data, uint32_t protocolVersion) {
-	struct ClientHelloRequest req = pkt_readClientHelloRequest(PV_LEGACY_DEFAULT, data);
+static void handle_ClientHelloRequest(struct Context *ctx, struct MasterSession *session, const struct ClientHelloRequest *req, uint32_t protocolVersion) {
 	if(session->handshakeStep == 255) {
 		session->net.version.protocolVersion = protocolVersion;
 	} else {
@@ -243,94 +256,128 @@ static void handle_ClientHelloRequest(struct Context *ctx, struct MasterSession 
 		net_session_reset(&ctx->net, &session->net); // security or something idk
 		session->resend.count = 0;
 	}
-	session->epoch = req.base.requestId & 0xff000000;
-	memcpy(session->net.clientRandom, req.random, 32);
-	struct HelloVerifyRequest r_hello;
-	r_hello.base.requestId = 0;
-	r_hello.base.responseId = req.base.requestId;
-	memcpy(r_hello.cookie, NetSession_get_cookie(&session->net), sizeof(r_hello.cookie));
+	session->epoch = req->base.requestId & 0xff000000;
+	memcpy(session->net.clientRandom, req->random, 32);
+	struct HandshakeMessage r_hello = {
+		.type = HandshakeMessageType_HelloVerifyRequest,
+		.helloVerifyRequest = {
+			.base = {
+				.requestId = 0,
+				.responseId = req->base.requestId,
+			},
+		},
+	};
+	memcpy(r_hello.helloVerifyRequest.cookie, NetSession_get_cookie(&session->net), sizeof(r_hello.helloVerifyRequest.cookie));
 	uint8_t resp[65536], *resp_end = resp;
-	MASTER_SERIALIZE(&resp_end, session, HandshakeMessage, HelloVerifyRequest, HelloVerifyRequest, r_hello);
-	master_send(&ctx->net, session, resp, resp_end - resp, 0);
+	if(!MASTER_SERIALIZE(&r_hello, &resp_end, endof(resp)))
+		return;
+	master_send(&ctx->net, session, MessageType_HandshakeMessage, resp, resp_end, true);
 	session->handshakeStep = HandshakeMessageType_ClientHelloRequest;
 }
 
-static void handle_ClientHelloWithCookieRequest(struct Context *ctx, struct MasterSession *session, const uint8_t **data) {
-	struct ClientHelloWithCookieRequest req = pkt_readClientHelloWithCookieRequest(PV_LEGACY_DEFAULT, data);
-	master_send_ack(ctx, session, MessageType_HandshakeMessage, req.base.requestId);
+static void handle_ClientHelloWithCookieRequest(struct Context *ctx, struct MasterSession *session, const struct ClientHelloWithCookieRequest *req) {
+	master_send_ack(ctx, session, MessageType_HandshakeMessage, req->base.requestId);
 	if(session->handshakeStep != HandshakeMessageType_ClientHelloRequest)
 		return;
-	if(memcmp(req.cookie, NetSession_get_cookie(&session->net), 32) != 0)
+	if(memcmp(req->cookie, NetSession_get_cookie(&session->net), 32) != 0)
 		return;
-	if(memcmp(req.random, session->net.clientRandom, 32) != 0)
+	if(memcmp(req->random, session->net.clientRandom, 32) != 0)
 		return;
-	session->ClientHelloWithCookieRequest_requestId = req.base.requestId; // don't @ me   -rc
+	session->ClientHelloWithCookieRequest_requestId = req->base.requestId; // don't @ me   -rc
 
-	struct ServerCertificateRequest r_cert;
-	r_cert.base.requestId = master_getNextRequestId(session);
-	r_cert.base.responseId = req.certificateResponseId;
-	r_cert.certificateCount = 0;
+	struct HandshakeMessage r_cert = {
+		.type = HandshakeMessageType_ServerCertificateRequest,
+		.serverCertificateRequest = {
+			.base = {
+				.requestId = master_getNextRequestId(session),
+				.responseId = req->certificateResponseId,
+			},
+			.certificateCount = 0,
+		},
+	};
 	for(const mbedtls_x509_crt *it = ctx->cert; it; it = it->MBEDTLS_PRIVATE(next)) {
-		r_cert.certificateList[r_cert.certificateCount].length = it->MBEDTLS_PRIVATE(raw).MBEDTLS_PRIVATE(len);
-		memcpy(r_cert.certificateList[r_cert.certificateCount].data, it->MBEDTLS_PRIVATE(raw).MBEDTLS_PRIVATE(p), r_cert.certificateList[r_cert.certificateCount].length);
-		++r_cert.certificateCount;
+		r_cert.serverCertificateRequest.certificateList[r_cert.serverCertificateRequest.certificateCount].length = it->MBEDTLS_PRIVATE(raw).MBEDTLS_PRIVATE(len);
+		memcpy(r_cert.serverCertificateRequest.certificateList[r_cert.serverCertificateRequest.certificateCount].data, it->MBEDTLS_PRIVATE(raw).MBEDTLS_PRIVATE(p), r_cert.serverCertificateRequest.certificateList[r_cert.serverCertificateRequest.certificateCount].length);
+		++r_cert.serverCertificateRequest.certificateCount;
 	}
 	uint8_t resp[65536], *resp_end = resp;
-	MASTER_SERIALIZE(&resp_end, session, HandshakeMessage, ServerCertificateRequest, ServerCertificateRequest, r_cert);
-	master_send(&ctx->net, session, resp, resp_end - resp, 1);
+	if(!MASTER_SERIALIZE(&r_cert, &resp_end, endof(resp)))
+		return;
+	master_send(&ctx->net, session, MessageType_HandshakeMessage, resp, resp_end, true);
 	session->handshakeStep = HandshakeMessageType_ClientHelloWithCookieRequest;
 }
 
 static void handle_ServerCertificateRequest_ack(struct Context *ctx, struct MasterSession *session) {
 	if(session->handshakeStep != HandshakeMessageType_ClientHelloWithCookieRequest)
 		return;
-	struct ServerHelloRequest r_hello;
-	r_hello.base.requestId = master_getNextRequestId(session);
-	r_hello.base.responseId = session->ClientHelloWithCookieRequest_requestId;
-	memcpy(r_hello.random, NetKeypair_get_random(&session->net.keys), sizeof(r_hello.random));
-	r_hello.publicKey.length = sizeof(r_hello.publicKey.data);
-	if(NetKeypair_write_key(&session->net.keys, &ctx->net, r_hello.publicKey.data, &r_hello.publicKey.length))
+	struct HandshakeMessage r_hello = {
+		.type = HandshakeMessageType_ServerHelloRequest,
+		.serverHelloRequest = {
+			.base = {
+				.requestId = master_getNextRequestId(session),
+				.responseId = session->ClientHelloWithCookieRequest_requestId,
+			},
+			.publicKey = {
+				.length = sizeof(r_hello.serverHelloRequest.publicKey.data),
+			},
+		},
+	};
+	memcpy(r_hello.serverHelloRequest.random, NetKeypair_get_random(&session->net.keys), sizeof(r_hello.serverHelloRequest.random));
+	if(NetKeypair_write_key(&session->net.keys, &ctx->net, r_hello.serverHelloRequest.publicKey.data, &r_hello.serverHelloRequest.publicKey.length))
 		return;
 	{
-		uint8_t sig[r_hello.publicKey.length + 64];
+		uint8_t sig[r_hello.serverHelloRequest.publicKey.length + 64];
 		memcpy(sig, session->net.clientRandom, 32);
 		memcpy(&sig[32], NetKeypair_get_random(&session->net.keys), 32);
-		memcpy(&sig[64], r_hello.publicKey.data, r_hello.publicKey.length);
-		NetSession_signature(&session->net, &ctx->net, ctx->key, sig, sizeof(sig), &r_hello.signature);
+		memcpy(&sig[64], r_hello.serverHelloRequest.publicKey.data, r_hello.serverHelloRequest.publicKey.length);
+		NetSession_signature(&session->net, &ctx->net, ctx->key, sig, sizeof(sig), &r_hello.serverHelloRequest.signature);
 	}
 
 	uint8_t resp[65536], *resp_end = resp;
-	MASTER_SERIALIZE(&resp_end, session, HandshakeMessage, ServerHelloRequest, ServerHelloRequest, r_hello);
-	master_send(&ctx->net, session, resp, resp_end - resp, 1);
+	if(!MASTER_SERIALIZE(&r_hello, &resp_end, endof(resp)))
+		return;
+	master_send(&ctx->net, session, MessageType_HandshakeMessage, resp, resp_end, true);
 	session->handshakeStep = HandshakeMessageType_ServerCertificateRequest;
 }
 
-static void handle_ClientKeyExchangeRequest(struct Context *ctx, struct MasterSession *session, const uint8_t **data) {
-	struct ClientKeyExchangeRequest req = pkt_readClientKeyExchangeRequest(PV_LEGACY_DEFAULT, data);
-	master_send_ack(ctx, session, MessageType_HandshakeMessage, req.base.requestId);
+static void handle_ClientKeyExchangeRequest(struct Context *ctx, struct MasterSession *session, const struct ClientKeyExchangeRequest *req) {
+	master_send_ack(ctx, session, MessageType_HandshakeMessage, req->base.requestId);
 	if(session->handshakeStep != HandshakeMessageType_ServerCertificateRequest)
 		return;
-	if(NetSession_set_clientPublicKey(&session->net, &ctx->net, &req.clientPublicKey))
+	if(NetSession_set_clientPublicKey(&session->net, &ctx->net, &req->clientPublicKey))
 		return;
-	struct ChangeCipherSpecRequest r_spec;
-	r_spec.base.requestId = master_getNextRequestId(session);
-	r_spec.base.responseId = req.base.requestId;
+	struct HandshakeMessage r_spec = {
+		.type = HandshakeMessageType_ChangeCipherSpecRequest,
+		.changeCipherSpecRequest = {
+			.base = {
+				.requestId = master_getNextRequestId(session),
+				.responseId = req->base.requestId,
+			},
+		},
+	};
 	uint8_t resp[65536], *resp_end = resp;
-	MASTER_SERIALIZE(&resp_end, session, HandshakeMessage, ChangeCipherSpecRequest, ChangeCipherSpecRequest, r_spec);
-	master_send(&ctx->net, session, resp, resp_end - resp, 1);
+	if(!MASTER_SERIALIZE(&r_spec, &resp_end, endof(resp)))
+		return;
+	master_send(&ctx->net, session, MessageType_HandshakeMessage, resp, resp_end, true);
 	session->handshakeStep = HandshakeMessageType_ClientKeyExchangeRequest;
 }
 
-static void handle_AuthenticateUserRequest(struct Context *ctx, struct MasterSession *session, const uint8_t **data) {
-	struct AuthenticateUserRequest req = pkt_readAuthenticateUserRequest(PV_LEGACY_DEFAULT, data);
-	master_send_ack(ctx, session, MessageType_UserMessage, req.base.requestId);
-	struct AuthenticateUserResponse r_auth;
-	r_auth.base.requestId = master_getNextRequestId(session);
-	r_auth.base.responseId = req.base.requestId;
-	r_auth.result = AuthenticateUserResponse_Result_Success;
+static void handle_AuthenticateUserRequest(struct Context *ctx, struct MasterSession *session, const struct AuthenticateUserRequest *req) {
+	master_send_ack(ctx, session, MessageType_UserMessage, req->base.requestId);
+	struct UserMessage r_auth = {
+		.type = UserMessageType_AuthenticateUserResponse,
+		.authenticateUserResponse = {
+			.base = {
+				.requestId = master_getNextRequestId(session),
+				.responseId = req->base.requestId,
+			},
+			.result = AuthenticateUserResponse_Result_Success,
+		},
+	};
 	uint8_t resp[65536], *resp_end = resp;
-	MASTER_SERIALIZE(&resp_end, session, UserMessage, AuthenticateUserResponse, AuthenticateUserResponse, r_auth);
-	master_send(&ctx->net, session, resp, resp_end - resp, 1);
+	if(!MASTER_SERIALIZE(&r_auth, &resp_end, endof(resp)))
+		return;
+	master_send(&ctx->net, session, MessageType_UserMessage, resp, resp_end, true);
 }
 
 /*static struct BitMask128 get_mask(const char *key) {
@@ -374,106 +421,112 @@ static void handle_AuthenticateUserRequest(struct Context *ctx, struct MasterSes
 	return out;
 }*/
 
-static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSession *session, const uint8_t **data) {
-	struct ConnectToServerRequest req = pkt_readConnectToServerRequest(PV_LEGACY_DEFAULT, data);
-	master_send_ack(ctx, session, MessageType_UserMessage, req.base.base.requestId);
+static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSession *session, const struct ConnectToServerRequest *req) {
+	master_send_ack(ctx, session, MessageType_UserMessage, req->base.base.requestId);
 	// TODO: deduplicate this request
-	struct ConnectToServerResponse r_conn;
-	r_conn.base.requestId = master_getNextRequestId(session);
-	r_conn.base.responseId = req.base.base.requestId;
-	if(req.configuration.maxPlayerCount >= 127) { // connection IDs are 7 bits, with ID `127` reserved for broadcast packets and `0` for local
-		r_conn.result = ConnectToServerResponse_Result_ConfigMismatch; // TODO: is this the correct error to use?
+	struct UserMessage r_conn = {
+		.type = UserMessageType_ConnectToServerResponse,
+		.connectToServerResponse = {
+			.base = {
+				.requestId = master_getNextRequestId(session),
+				.responseId = req->base.base.requestId,
+			},
+			.result = ConnectToServerResponse_Result_UnknownError,
+		},
+	};
+	if(req->configuration.maxPlayerCount >= 127) { // connection IDs are 7 bits, with ID `127` reserved for broadcast packets and `0` for local
+		r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_ConfigMismatch; // TODO: is this the correct error to use?
 		goto send;
 	}
-	struct String managerId = req.base.userId;
+	struct String managerId = req->base.userId;
 	struct SS addr = *NetSession_get_addr(&session->net);
 	struct NetSession *isession;
 
 	struct RoomHandle room;
 	struct WireRoomHandle handle;
-	if(req.code == StringToServerCode(NULL, 0)) {
-		if(req.selectionMask.difficulties != BeatmapDifficultyMask_All && req.selectionMask.modifiers == GameplayModifierMask_NoFail && req.configuration.maxPlayerCount == 5 && req.configuration.discoveryPolicy == DiscoveryPolicy_Public && req.configuration.invitePolicy == InvitePolicy_AnyoneCanInvite && req.configuration.gameplayServerMode == GameplayServerMode_Countdown && req.configuration.songSelectionMode == SongSelectionMode_Vote && req.configuration.gameplayServerControlSettings == GameplayServerControlSettings_None) {
-			r_conn.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers; // Quick Play not yet available
+	if(req->code == StringToServerCode(NULL, 0)) {
+		if(req->selectionMask.difficulties != BeatmapDifficultyMask_All && req->selectionMask.modifiers == GameplayModifierMask_NoFail && req->configuration.maxPlayerCount == 5 && req->configuration.discoveryPolicy == DiscoveryPolicy_Public && req->configuration.invitePolicy == InvitePolicy_AnyoneCanInvite && req->configuration.gameplayServerMode == GameplayServerMode_Countdown && req->configuration.songSelectionMode == SongSelectionMode_Vote && req->configuration.gameplayServerControlSettings == GameplayServerControlSettings_None) {
+			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers; // Quick Play not yet available
 			goto send;
 		}
+		r_conn.connectToServerResponse.configuration = req->configuration;
 		#ifdef FORCE_MASSIVE_LOBBIES
-		req.configuration.maxPlayerCount = 126;
-		req.configuration.songSelectionMode = SongSelectionMode_Vote;
+		r_conn.connectToServerResponse.configuration.maxPlayerCount = 126;
+		r_conn.connectToServerResponse.configuration.songSelectionMode = SongSelectionMode_Vote;
 		#endif
-		if(pool_request_room(&room, &handle, managerId, req.configuration)) {
-			r_conn.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers;
+		if(pool_request_room(&room, &handle, managerId, r_conn.connectToServerResponse.configuration)) {
+			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers;
 			goto send;
 		}
-		req.code = pool_room_code(room);
+		r_conn.connectToServerResponse.code = pool_room_code(room);
 	} else {
-		if(pool_find_room(req.code, &room, &handle)) {
-			r_conn.result = ConnectToServerResponse_Result_InvalidCode;
+		if(pool_find_room(req->code, &room, &handle)) {
+			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_InvalidCode;
 			goto send;
 		}
 		managerId = wire_room_get_managerId(handle);
-		req.configuration = wire_room_get_configuration(handle);
+		r_conn.connectToServerResponse.configuration = wire_room_get_configuration(handle);
 
 		if(wire_room_get_protocol(handle).protocolVersion != session->net.version.protocolVersion) {
-			r_conn.result = ConnectToServerResponse_Result_VersionMismatch;
+			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_VersionMismatch;
 			goto send;
 		}
+		r_conn.connectToServerResponse.code = req->code;
 	}
 	/*struct BitMask128 customs = get_mask("custom_levelpack_CustomLevels");
-	req.selectionMask.songPacks.bloomFilter.d0 |= customs.d0;
-	req.selectionMask.songPacks.bloomFilter.d1 |= customs.d1;*/
+	req->selectionMask.songPacks.bloomFilter.d0 |= customs.d0;
+	req->selectionMask.songPacks.bloomFilter.d1 |= customs.d1;*/
 	{
-		isession = TEMPwire_room_resolve_session(handle, addr, req.secret, req.base.userId, (struct ExString){req.base.userName, 0}, session->net.version);
+		isession = TEMPwire_room_resolve_session(handle, addr, req->secret, req->base.userId, (struct ExString){req->base.userName, 0}, session->net.version);
 		if(!isession) { // TODO: the room should close implicitly if the first user to connect fails
-			r_conn.result = ConnectToServerResponse_Result_UnknownError;
+			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_UnknownError;
 			goto send;
 		}
 		struct NetContext *net = TEMPwire_block_get_net(handle.block);
 		net_lock(net);
-		memcpy(isession->clientRandom, req.base.random, 32);
-		memcpy(r_conn.random, NetKeypair_get_random(&isession->keys), 32);
-		r_conn.publicKey.length = sizeof(r_conn.publicKey.data);
-		if(NetKeypair_write_key(&isession->keys, net, r_conn.publicKey.data, &r_conn.publicKey.length)) {
+		memcpy(isession->clientRandom, req->base.random, 32);
+		memcpy(r_conn.connectToServerResponse.random, NetKeypair_get_random(&isession->keys), 32);
+		r_conn.connectToServerResponse.publicKey.length = sizeof(r_conn.connectToServerResponse.publicKey.data);
+		if(NetKeypair_write_key(&isession->keys, net, r_conn.connectToServerResponse.publicKey.data, &r_conn.connectToServerResponse.publicKey.length)) {
 			net_unlock(net);
-			r_conn.result = ConnectToServerResponse_Result_UnknownError;
+			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_UnknownError;
 			goto send;
 		}
-		if(NetSession_set_clientPublicKey(isession, net, &req.base.publicKey)) {
+		if(NetSession_set_clientPublicKey(isession, net, &req->base.publicKey)) {
 			net_unlock(net);
-			r_conn.result = ConnectToServerResponse_Result_UnknownError;
+			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_UnknownError;
 			goto send;
 		}
 		net_unlock(net);
-		r_conn.userId.isNull = 0;
-		r_conn.userId.length = sprintf(r_conn.userId.data, "dtxJlHm56k6ZXcnxhbyfiA");
-		r_conn.userName.length = 0;
-		r_conn.secret = req.secret;
-		r_conn.selectionMask = req.selectionMask;
-		r_conn.flags = 3;
-		r_conn.remoteEndPoint = wire_block_get_endpoint(handle.block, addr.ss.ss_family != AF_INET6 || memcmp(addr.in6.sin6_addr.s6_addr, (const uint8_t[]){0,0,0,0,0,0,0,0,0,0,255,255}, 12) == 0);
-		r_conn.code = req.code;
-		r_conn.configuration = req.configuration;
-		r_conn.managerId = managerId;
-		r_conn.result = ConnectToServerResponse_Result_Success;
+		r_conn.connectToServerResponse.userId.isNull = 0;
+		r_conn.connectToServerResponse.userId.length = sprintf(r_conn.connectToServerResponse.userId.data, "dtxJlHm56k6ZXcnxhbyfiA");
+		r_conn.connectToServerResponse.userName.length = 0;
+		r_conn.connectToServerResponse.secret = req->secret;
+		r_conn.connectToServerResponse.selectionMask = req->selectionMask;
+		r_conn.connectToServerResponse.flags = 3;
+		r_conn.connectToServerResponse.remoteEndPoint = wire_block_get_endpoint(handle.block, addr.ss.ss_family != AF_INET6 || memcmp(addr.in6.sin6_addr.s6_addr, (const uint8_t[]){0,0,0,0,0,0,0,0,0,0,255,255}, 12) == 0);
+		r_conn.connectToServerResponse.managerId = managerId;
+		r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_Success;
 		char scode[8];
-		uprintf("Sending player to room `%s`\n", ServerCodeToString(scode, req.code));
+		uprintf("Sending player to room `%s`\n", ServerCodeToString(scode, r_conn.connectToServerResponse.code));
 	}
 	send:;
 	uint8_t resp[65536], *resp_end = resp;
-	MASTER_SERIALIZE(&resp_end, session, UserMessage, ConnectToServerResponse, ConnectToServerResponse, r_conn);
-	master_send(&ctx->net, session, resp, resp_end - resp, 1);
+	if(!MASTER_SERIALIZE(&r_conn, &resp_end, endof(resp)))
+		return;
+	master_send(&ctx->net, session, MessageType_UserMessage, resp, resp_end, true);
 }
 
-static void handle_packet(struct Context *ctx, struct MasterSession *session, const uint8_t *data, const uint8_t *end);
-static void handle_BaseMasterServerMultipartMessage(struct Context *ctx, struct MasterSession *session, const uint8_t **data) {
-	struct BaseMasterServerMultipartMessage msg = pkt_readBaseMasterServerMultipartMessage(PV_LEGACY_DEFAULT, data);
-	if(!msg.totalLength) {
+static void handle_packet(struct Context *ctx, struct MasterSession *session, struct UnconnectedMessage message, const uint8_t *data, const uint8_t *end);
+static void handle_MultipartMessage(struct Context *ctx, struct MasterSession *session, const struct MultipartMessage *msg) {
+	if(!msg->totalLength) {
 		uprintf("INVALID MULTIPART LENGTH\n");
 		return;
 	}
 	struct MasterMultipartList **multipart = &session->multipartList;
 	for(; *multipart; multipart = &(*multipart)->next) {
-		if((*multipart)->id == msg.multipartMessageId) {
-			if((*multipart)->totalLength != msg.totalLength) {
+		if((*multipart)->id == msg->multipartMessageId) {
+			if((*multipart)->totalLength != msg->totalLength) {
 				uprintf("BAD MULTIPART LENGTH\n");
 				return;
 			}
@@ -481,78 +534,96 @@ static void handle_BaseMasterServerMultipartMessage(struct Context *ctx, struct 
 		}
 	}
 	if(!*multipart) {
-		*multipart = malloc(sizeof(struct MasterMultipartList) + msg.totalLength);
+		*multipart = malloc(sizeof(struct MasterMultipartList) + msg->totalLength);
 		if(!*multipart) {
 			uprintf("alloc error\n");
 			abort();
 		}
 		(*multipart)->next = NULL;
-		(*multipart)->id = msg.multipartMessageId;
-		(*multipart)->totalLength = msg.totalLength;
+		(*multipart)->id = msg->multipartMessageId;
+		(*multipart)->totalLength = msg->totalLength;
 		(*multipart)->count = 0;
-		memset((*multipart)->data, 0, msg.totalLength);
+		memset((*multipart)->data, 0, msg->totalLength);
 	}
-	if(msg.offset + msg.length > msg.totalLength) {
+	if(msg->offset + msg->length > msg->totalLength) {
 		uprintf("INVALID MULTIPART LENGTH\n");
 		return;
 	}
-	memcpy(&(*multipart)->data[msg.offset], msg.data, msg.length);
-	if(++(*multipart)->count >= (msg.totalLength + sizeof(msg.data) - 1) / sizeof(msg.data)) {
-		handle_packet(ctx, session, (*multipart)->data, &(*multipart)->data[msg.totalLength]);
+	memcpy(&(*multipart)->data[msg->offset], msg->data, msg->length);
+	if(++(*multipart)->count >= (msg->totalLength + sizeof(msg->data) - 1) / sizeof(msg->data)) {
+		const uint8_t *data = (*multipart)->data, *end = &(*multipart)->data[msg->totalLength];
+		struct UnconnectedMessage header;
+		if(pkt_read(&header, &data, end, session->net.version))
+			handle_packet(ctx, session, header, data, end);
 		struct MasterMultipartList *e = *multipart;
 		*multipart = (*multipart)->next;
 		free(e);
 	}
 }
 
-static void handle_packet(struct Context *ctx, struct MasterSession *session, const uint8_t *data, const uint8_t *end) {
-	size_t len = end - data;
-	struct MessageHeader message = pkt_readMessageHeader(PV_LEGACY_DEFAULT, &data);
-	struct SerializeHeader serial = pkt_readSerializeHeader(PV_LEGACY_DEFAULT, &data);
-	if(message.type == MessageType_UserMessage) {
-		switch(serial.type) {
-			case UserMessageType_AuthenticateUserRequest: handle_AuthenticateUserRequest(ctx, session, &data); break;
-			case UserMessageType_AuthenticateUserResponse: uprintf("BAD TYPE: UserMessageType_AuthenticateUserResponse\n"); break;
-			case UserMessageType_ConnectToServerResponse: uprintf("BAD TYPE: UserMessageType_ConnectToServerResponse\n"); break;
-			case UserMessageType_ConnectToServerRequest: handle_ConnectToServerRequest(ctx, session, &data); break;
-			case UserMessageType_UserMessageReceivedAcknowledge: {
-				master_handle_ack(session, &message, &serial, pkt_readBaseMasterServerAcknowledgeMessage(PV_LEGACY_DEFAULT, &data).base.responseId);
-				break;
-			}
-			case UserMessageType_UserMultipartMessage: handle_BaseMasterServerMultipartMessage(ctx, session, &data); break;
-			case UserMessageType_SessionKeepaliveMessage: break;
-			case UserMessageType_GetPublicServersRequest: uprintf("UserMessageType_GetPublicServersRequest not implemented\n"); abort();
-			case UserMessageType_GetPublicServersResponse: uprintf("UserMessageType_GetPublicServersResponse not implemented\n"); abort();
-			default: uprintf("BAD USER MESSAGE TYPE\n");
+static void handle_packet(struct Context *ctx, struct MasterSession *session, struct UnconnectedMessage header, const uint8_t *data, const uint8_t *end) {
+	while(data < end) {
+		struct SerializeHeader serial;
+		if(!pkt_read(&serial, &data, end, session->net.version))
+			return;
+		const uint8_t *sub = data;
+		data += serial.length;
+		if(data > end) {
+			uprintf("Invalid serial length: %u\n", serial.length);
+			return;
 		}
-	} else if(message.type == MessageType_HandshakeMessage) {
-		switch(serial.type) {
-			case HandshakeMessageType_ClientHelloRequest: handle_ClientHelloRequest(ctx, session, &data, message.protocolVersion); break;
-			case HandshakeMessageType_HelloVerifyRequest: uprintf("BAD TYPE: HandshakeMessageType_HelloVerifyRequest\n"); break;
-			case HandshakeMessageType_ClientHelloWithCookieRequest: handle_ClientHelloWithCookieRequest(ctx, session, &data); break;
-			case HandshakeMessageType_ServerHelloRequest: uprintf("BAD TYPE: HandshakeMessageType_ServerHelloRequest\n"); break;
-			case HandshakeMessageType_ServerCertificateRequest: uprintf("BAD TYPE: HandshakeMessageType_ServerCertificateRequest\n"); break;
-			case HandshakeMessageType_ClientKeyExchangeRequest: handle_ClientKeyExchangeRequest(ctx, session, &data); break;
-			case HandshakeMessageType_ChangeCipherSpecRequest: uprintf("BAD TYPE: HandshakeMessageType_ChangeCipherSpecRequest\n"); break;
-			case HandshakeMessageType_HandshakeMessageReceivedAcknowledge: {
-				if(master_handle_ack(session, &message, &serial, pkt_readBaseMasterServerAcknowledgeMessage(PV_LEGACY_DEFAULT, &data).base.responseId)) {
-					if(message.type == MessageType_HandshakeMessage && serial.type == HandshakeMessageType_ServerCertificateRequest)
-						handle_ServerCertificateRequest_ack(ctx, session);
+		if(header.type == MessageType_UserMessage) {
+			struct UserMessage message = {~0};
+			size_t len = pkt_read(&message, &sub, &sub[serial.length], session->net.version);
+			if(len != serial.length) {
+				if(len)
+					uprintf("BAD USER MESSAGE LENGTH (expected %u, read %zu)\n", serial.length, len);
+				continue;
+			}
+			switch(message.type) {
+				case UserMessageType_AuthenticateUserRequest: handle_AuthenticateUserRequest(ctx, session, &message.authenticateUserRequest); break;
+				case UserMessageType_AuthenticateUserResponse: uprintf("BAD TYPE: UserMessageType_AuthenticateUserResponse\n"); break;
+				case UserMessageType_ConnectToServerResponse: uprintf("BAD TYPE: UserMessageType_ConnectToServerResponse\n"); break;
+				case UserMessageType_ConnectToServerRequest: handle_ConnectToServerRequest(ctx, session, &message.connectToServerRequest); break;
+				case UserMessageType_MessageReceivedAcknowledge: master_handle_ack(session, &(MessageType){0}, &(uint8_t){0}, &message.messageReceivedAcknowledge); break;
+				case UserMessageType_MultipartMessage: handle_MultipartMessage(ctx, session, &message.multipartMessage); break;
+				case UserMessageType_SessionKeepaliveMessage: break;
+				case UserMessageType_GetPublicServersRequest: uprintf("UserMessageType_GetPublicServersRequest not implemented\n"); abort();
+				case UserMessageType_GetPublicServersResponse: uprintf("UserMessageType_GetPublicServersResponse not implemented\n"); abort();
+				default: uprintf("BAD USER MESSAGE TYPE\n");
+			}
+		} else if(header.type == MessageType_HandshakeMessage) {
+			struct HandshakeMessage message = {~0};
+			size_t len = pkt_read(&message, &sub, &sub[serial.length], session->net.version);
+			if(len != serial.length) {
+				if(len)
+					uprintf("BAD USER MESSAGE LENGTH (expected %u, read %zu)\n", serial.length, len);
+				continue;
+			}
+			switch(message.type) {
+				case HandshakeMessageType_ClientHelloRequest: handle_ClientHelloRequest(ctx, session, &message.clientHelloRequest, header.protocolVersion); break;
+				case HandshakeMessageType_HelloVerifyRequest: uprintf("BAD TYPE: HandshakeMessageType_HelloVerifyRequest\n"); break;
+				case HandshakeMessageType_ClientHelloWithCookieRequest: handle_ClientHelloWithCookieRequest(ctx, session, &message.clientHelloWithCookieRequest); break;
+				case HandshakeMessageType_ServerHelloRequest: uprintf("BAD TYPE: HandshakeMessageType_ServerHelloRequest\n"); break;
+				case HandshakeMessageType_ServerCertificateRequest: uprintf("BAD TYPE: HandshakeMessageType_ServerCertificateRequest\n"); break;
+				case HandshakeMessageType_ClientKeyExchangeRequest: handle_ClientKeyExchangeRequest(ctx, session, &message.clientKeyExchangeRequest); break;
+				case HandshakeMessageType_ChangeCipherSpecRequest: uprintf("BAD TYPE: HandshakeMessageType_ChangeCipherSpecRequest\n"); break;
+				case HandshakeMessageType_MessageReceivedAcknowledge: {
+					MessageType messageType;
+					uint8_t serialType;
+					if(master_handle_ack(session, &messageType, &serialType, &message.messageReceivedAcknowledge)) {
+						if(messageType == MessageType_HandshakeMessage && serialType == HandshakeMessageType_ServerCertificateRequest)
+							handle_ServerCertificateRequest_ack(ctx, session);
+					}
+					break;
 				}
-				break;
+				case HandshakeMessageType_MultipartMessage: uprintf("BAD TYPE: HandshakeMessageType_HandshakeMultipartMessage\n"); break;
+				default: uprintf("BAD HANDSHAKE MESSAGE TYPE\n");
 			}
-			case HandshakeMessageType_HandshakeMultipartMessage: uprintf("BAD TYPE: HandshakeMessageType_HandshakeMultipartMessage\n"); break;
-			default: uprintf("BAD HANDSHAKE MESSAGE TYPE\n");
+		} else {
+			uprintf("BAD MESSAGE TYPE\n");
 		}
-	} else if(message.type == MessageType_DedicatedServerMessage) {
-		uprintf("DedicatedServerMessageType not implemented\n");
-	} else if(message.type == MessageType_GameLiftMessage) {
-		uprintf("GameLiftMessage not implemented\n");
-	} else {
-		uprintf("BAD MESSAGE TYPE\n");
 	}
-	if(data != end)
-		uprintf("BAD PACKET LENGTH (expected %zu, read %zu)\n", len, len + data - end);
 }
 
 #ifdef WINDOWS
@@ -570,12 +641,13 @@ master_handler(struct Context *ctx) {
 	const uint8_t *pkt;
 	while((len = net_recv(&ctx->net, buf, sizeof(buf), (struct NetSession**)&session, &pkt, NULL))) {
 		const uint8_t *data = pkt, *end = &pkt[len];
-		struct NetPacketHeader header = pkt_readNetPacketHeader(PV_LEGACY_DEFAULT, &data);
-		if(header.property != PacketProperty_UnconnectedMessage) {
-			uprintf("Unsupported packet type: %s\n", reflect(PacketProperty, header.property));
+		struct NetPacketHeader header;
+		if(!pkt_read(&header, &data, end, PV_LEGACY_DEFAULT))
 			continue;
-		}
-		handle_packet(ctx, session, data, end);
+		if(header.property == PacketProperty_UnconnectedMessage)
+			handle_packet(ctx, session, header.unconnectedMessage, data, end);
+		else
+			uprintf("Unsupported packet type: %s\n", reflect(PacketProperty, header.property));
 	}
 	net_unlock(&ctx->net);
 	return 0;
@@ -587,7 +659,7 @@ static HANDLE master_thread = NULL;
 static pthread_t master_thread = 0;
 #endif
 static struct Context ctx = {{-1}, NULL, NULL, NULL};
-_Bool master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_context *key, uint16_t port) {
+bool master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_context *key, uint16_t port) {
 	{
 		uint_fast8_t count = 0;
 		for(const mbedtls_x509_crt *it = cert; it; it = it->MBEDTLS_PRIVATE(next), ++count) {

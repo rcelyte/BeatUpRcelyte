@@ -14,7 +14,7 @@ LIBS := libmbedtls.a libmbedx509.a libmbedcrypto.a
 OBJS := $(FILES:%=$(OBJDIR)/%.o) $(HTMLS:%=$(OBJDIR)/%.s) $(LIBS:%=$(OBJDIR)/%)
 DEPS := $(FILES:%=$(OBJDIR)/%.d)
 
-CFLAGS := -g -std=gnu2x -Imbedtls/include -Wall -Wno-unused-function -Werror -pedantic-errors -DFORCE_MASSIVE_LOBBIES
+CFLAGS := -g -std=gnu2x -Imbedtls/include -Wall -Werror -pedantic-errors -DFORCE_MASSIVE_LOBBIES
 LDFLAGS := -O2 -Wl,--gc-sections,--fatal-warnings
 
 CSREFS := ../Libs/0Harmony.dll ../Plugins/SongCore.dll ../Plugins/SiraUtil.dll ../Plugins/MultiplayerCore.dll Managed/IPA.Loader.dll Managed/BGNet.dll Managed/BeatmapCore.dll Managed/Colors.dll Managed/GameplayCore.dll Managed/HMLib.dll Managed/HMUI.dll Managed/Main.dll Managed/UnityEngine.CoreModule.dll Managed/UnityEngine.AssetBundleModule.dll Managed/UnityEngine.AudioModule.dll Managed/UnityEngine.ImageConversionModule.dll Managed/UnityEngine.UnityWebRequestModule.dll Managed/UnityEngine.UnityWebRequestAudioModule.dll Managed/UnityEngine.UIModule.dll Managed/UnityEngine.UI.dll Managed/Unity.TextMeshPro.dll Managed/Polyglot.dll Managed/System.IO.Compression.dll Managed/Newtonsoft.Json.dll Managed/LiteNetLib.dll Managed/VRUI.dll Managed/Zenject.dll Managed/Zenject-usage.dll
@@ -36,7 +36,7 @@ beatupserver.%: $(OBJS)
 	@echo "[cc $@]"
 	$(CC) $(OBJS) $(LDFLAGS) -o "$@"
 
-$(OBJDIR)/%.c.o: %.c src/packets.OLD.h $(OBJDIR)/libs.mk mbedtls/.git makefile
+$(OBJDIR)/%.c.o: %.c src/packets.h $(OBJDIR)/libs.mk mbedtls/.git makefile
 	@echo "[cc $(notdir $@)]"
 	@mkdir -p "$(@D)"
 	$(CC) $(CFLAGS) -c "$<" -o "$@" -MMD -MP
@@ -74,15 +74,14 @@ $(OBJDIR)/libs.mk: makefile
 	#endif
 	EOF
 
-src/packets.OLD.h: src/packets.OLD.txt gen.c makefile
-	$(MAKE) .obj/gen.$(HOST)
+src/packets.h: src/packets.txt .obj/gen.$(HOST) makefile
 	@echo "[gen $(notdir $@)]"
-	./.obj/gen.$(HOST) "$<" "$@" src/packets.OLD.c
+	./.obj/gen.$(HOST) "$<" "$@" src/packets.c
 
 .obj/gen.$(HOST): gen.c
 	@echo "[cc $(notdir $@)]"
 	@mkdir -p "$(@D)"
-	cc -std=c99 -no-pie "$<" -o "$@"
+	cc -std=c2x -no-pie "$<" -o "$@"
 
 .obj/MakeThingsPublic.exe: MakeThingsPublic.cs makefile
 	@echo "[csc $(notdir $@)]"

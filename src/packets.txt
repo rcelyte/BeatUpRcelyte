@@ -1,0 +1,1173 @@
+u32 ServerCode
+n ByteArrayNetSerializable
+	vu32 length
+	u8 data[8192, .length]
+vi32 EntitlementsStatus
+	Unknown
+	NotOwned
+	NotDownloaded
+	Ok
+u8 BeatmapDifficultyMask
+	Easy 1
+	Normal 2
+	Hard 4
+	Expert 8
+	ExpertPlus 16
+	All 31
+u32 GameplayModifierMask
+	None 0
+	BatteryEnergy 1
+	NoFail 2
+	InstaFail 4
+	NoObstacles 8
+	NoBombs 16
+	FastNotes 32
+	StrictAngles 64
+	DisappearingArrows 128
+	FasterSong 256
+	SlowerSong 512
+	NoArrows 1024
+	GhostNotes 2048
+	SuperFastSong 4096
+	ProMode 8192
+	ZenMode 16384
+	SmallCubes 32768
+	All 65535
+n BitMask128
+	u64 d0
+	u64 d1
+n SongPackMask
+	BitMask128 bloomFilter
+n BeatmapLevelSelectionMask
+	BeatmapDifficultyMask difficulties
+	GameplayModifierMask modifiers
+	SongPackMask songPacks
+vu32 BeatmapDifficulty
+	Easy
+	Normal
+	Hard
+	Expert
+	ExpertPlus
+n RemoteProcedureCall
+	f32 syncTime
+n PlayersMissingEntitlementsNetSerializable
+	i32 count
+	String playersWithoutEntitlements[128,.count]
+n SetPlayersMissingEntitlementsToLevel
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		PlayersMissingEntitlementsNetSerializable playersMissingEntitlements
+n GetIsEntitledToLevel
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		LongString levelId
+n SetIsEntitledToLevel
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		LongString levelId
+	if(.flags.hasValue1)
+		EntitlementsStatus entitlementStatus
+n InvalidateLevelEntitlementStatuses
+	RemoteProcedureCall base
+n SelectLevelPack
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		String levelPackId
+n BeatmapIdentifierNetSerializable
+	LongString levelID
+	String beatmapCharacteristicSerializedName
+	BeatmapDifficulty difficulty
+n SetSelectedBeatmap
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		BeatmapIdentifierNetSerializable identifier
+n GetSelectedBeatmap
+	RemoteProcedureCall base
+n RecommendBeatmap
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		BeatmapIdentifierNetSerializable identifier
+n ClearRecommendedBeatmap
+	RemoteProcedureCall base
+n GetRecommendedBeatmap
+	RemoteProcedureCall base
+u8 EnergyType
+	Bar
+	Battery
+u8 EnabledObstacleType
+	All
+	FullHeightOnly
+	NoObstacles
+u8 SongSpeed
+	Normal
+	Faster
+	Slower
+	SuperFast
+n GameplayModifiers
+	EnergyType energyType:4
+	b _pad0:1
+	b demoNoFail:1
+	b instaFail:1
+	b failOnSaberClash:1
+	EnabledObstacleType enabledObstacleType:4
+	b demoNoObstacles:1
+	b noBombs:1
+	b fastNotes:1
+	b strictAngles:1
+	b disappearingArrows:1
+	b ghostNotes:1
+	SongSpeed songSpeed:4
+	b noArrows:1
+	b noFailOn0Energy:1
+	b proMode:1
+	b zenMode:1
+	b smallCubes:1
+n SetSelectedGameplayModifiers
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		GameplayModifiers gameplayModifiers
+n GetSelectedGameplayModifiers
+	RemoteProcedureCall base
+n RecommendGameplayModifiers
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		GameplayModifiers gameplayModifiers
+n ClearRecommendedGameplayModifiers
+	RemoteProcedureCall base
+n GetRecommendedGameplayModifiers
+	RemoteProcedureCall base
+n LevelLoadError
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		LongString levelId
+n LevelLoadSuccess
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		LongString levelId
+n StartLevel
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		BeatmapIdentifierNetSerializable beatmapId
+	if(.flags.hasValue1)
+		GameplayModifiers gameplayModifiers
+	if(.flags.hasValue2)
+		f32 startTime
+n GetStartedLevel
+	RemoteProcedureCall base
+n CancelLevelStart
+	RemoteProcedureCall base
+n GetMultiplayerGameState
+	RemoteProcedureCall base
+vi32 MultiplayerGameState
+	None
+	Lobby
+	Game
+n SetMultiplayerGameState
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		MultiplayerGameState lobbyState
+n GetIsReady
+	RemoteProcedureCall base
+n SetIsReady
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		b isReady
+n SetStartGameTime
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		f32 newTime
+n CancelStartGameTime
+	RemoteProcedureCall base
+n GetIsInLobby
+	RemoteProcedureCall base
+n SetIsInLobby
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		b isBack
+n GetCountdownEndTime
+	RemoteProcedureCall base
+n SetCountdownEndTime
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		f32 newTime
+n CancelCountdown
+	RemoteProcedureCall base
+n GetOwnedSongPacks
+	RemoteProcedureCall base
+n SetOwnedSongPacks
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		SongPackMask songPackMask
+n RequestKickPlayer
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		String kickedPlayerId
+n GetPermissionConfiguration
+	RemoteProcedureCall base
+n PlayerLobbyPermissionConfigurationNetSerializable
+	String userId
+	b isServerOwner:1
+	b hasRecommendBeatmapsPermission:1
+	b hasRecommendGameplayModifiersPermission:1
+	b hasKickVotePermission:1
+	b hasInvitePermission:1
+n PlayersLobbyPermissionConfigurationNetSerializable
+	i32 count
+	PlayerLobbyPermissionConfigurationNetSerializable playersPermission[128,.count]
+n SetPermissionConfiguration
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		PlayersLobbyPermissionConfigurationNetSerializable playersPermissionConfiguration
+n GetIsStartButtonEnabled
+	RemoteProcedureCall base
+vi32 CannotStartGameReason
+	None 1
+	AllPlayersSpectating
+	NoSongSelected
+	AllPlayersNotInLobby
+	DoNotOwnSong
+n SetIsStartButtonEnabled
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		CannotStartGameReason reason
+n ClearSelectedBeatmap
+	RemoteProcedureCall base
+n ClearSelectedGameplayModifiers
+	RemoteProcedureCall base
+n MenuRpc
+	MenuRpcType type
+	u8 MenuRpcType(.type)
+		SetPlayersMissingEntitlementsToLevel setPlayersMissingEntitlementsToLevel
+		GetIsEntitledToLevel getIsEntitledToLevel
+		SetIsEntitledToLevel setIsEntitledToLevel
+		InvalidateLevelEntitlementStatuses invalidateLevelEntitlementStatuses
+		SelectLevelPack selectLevelPack
+		SetSelectedBeatmap setSelectedBeatmap
+		GetSelectedBeatmap getSelectedBeatmap
+		RecommendBeatmap recommendBeatmap
+		ClearRecommendedBeatmap clearRecommendedBeatmap
+		GetRecommendedBeatmap getRecommendedBeatmap
+		SetSelectedGameplayModifiers setSelectedGameplayModifiers
+		GetSelectedGameplayModifiers getSelectedGameplayModifiers
+		RecommendGameplayModifiers recommendGameplayModifiers
+		ClearRecommendedGameplayModifiers clearRecommendedGameplayModifiers
+		GetRecommendedGameplayModifiers getRecommendedGameplayModifiers
+		LevelLoadError levelLoadError
+		LevelLoadSuccess levelLoadSuccess
+		StartLevel startLevel
+		GetStartedLevel getStartedLevel
+		CancelLevelStart cancelLevelStart
+		GetMultiplayerGameState getMultiplayerGameState
+		SetMultiplayerGameState setMultiplayerGameState
+		GetIsReady getIsReady
+		SetIsReady setIsReady
+		SetStartGameTime setStartGameTime
+		CancelStartGameTime cancelStartGameTime
+		GetIsInLobby getIsInLobby
+		SetIsInLobby setIsInLobby
+		GetCountdownEndTime getCountdownEndTime
+		SetCountdownEndTime setCountdownEndTime
+		CancelCountdown cancelCountdown
+		GetOwnedSongPacks getOwnedSongPacks
+		SetOwnedSongPacks setOwnedSongPacks
+		RequestKickPlayer requestKickPlayer
+		GetPermissionConfiguration getPermissionConfiguration
+		SetPermissionConfiguration setPermissionConfiguration
+		GetIsStartButtonEnabled getIsStartButtonEnabled
+		SetIsStartButtonEnabled setIsStartButtonEnabled
+		ClearSelectedBeatmap clearSelectedBeatmap
+		ClearSelectedGameplayModifiers clearSelectedGameplayModifiers
+n ColorNoAlphaSerializable
+	f32 r
+	f32 g
+	f32 b
+n ColorSchemeNetSerializable
+	ColorNoAlphaSerializable saberAColor
+	ColorNoAlphaSerializable saberBColor
+	ColorNoAlphaSerializable obstaclesColor
+	ColorNoAlphaSerializable environmentColor0
+	ColorNoAlphaSerializable environmentColor1
+	ColorNoAlphaSerializable environmentColor0Boost
+	ColorNoAlphaSerializable environmentColor1Boost
+n PlayerSpecificSettingsNetSerializable
+	String userId
+	String userName
+	b leftHanded
+	b automaticPlayerHeight
+	f32 playerHeight
+	f32 headPosToPlayerHeightOffset
+	ColorSchemeNetSerializable colorScheme
+n PlayerSpecificSettingsAtStartNetSerializable
+	i32 count
+	PlayerSpecificSettingsNetSerializable activePlayerSpecificSettingsAtGameStart[128,.count]
+n SetGameplaySceneSyncFinish
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		PlayerSpecificSettingsAtStartNetSerializable playersAtGameStart
+	if(.flags.hasValue1)
+		String sessionGameId
+n SetGameplaySceneReady
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		PlayerSpecificSettingsNetSerializable playerSpecificSettingsNetSerializable
+n GetGameplaySceneReady
+	RemoteProcedureCall base
+n SetActivePlayerFailedToConnect
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		String failedUserId
+	if(.flags.hasValue1)
+		PlayerSpecificSettingsAtStartNetSerializable playersAtGameStartNetSerializable
+	if(.flags.hasValue2)
+		String sessionGameId
+n SetGameplaySongReady
+	RemoteProcedureCall base
+n GetGameplaySongReady
+	RemoteProcedureCall base
+n SetSongStartTime
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		f32 startTime
+n Vector3Serializable
+	vi32 x
+	vi32 y
+	vi32 z
+n QuaternionSerializable
+	vi32 a
+	vi32 b
+	vi32 c
+vi32 GameplayType
+	Normal
+	Bomb
+	BurstSliderHead
+	BurstSliderElement
+	BurstSliderElementFill
+vi32 ColorType
+	ColorA 0
+	ColorB 1
+	None -1
+vi32 NoteLineLayer
+	Base
+	Upper
+	Top
+n NoteCutInfoNetSerializable
+	b cutWasOk:1
+	f32 saberSpeed
+	Vector3Serializable saberDir
+	Vector3Serializable cutPoint
+	Vector3Serializable cutNormal
+	Vector3Serializable notePosition
+	Vector3Serializable noteScale
+	QuaternionSerializable noteRotation
+	if(ctx.protocolVersion >= 8)
+		GameplayType gameplayType
+	ColorType colorType
+	NoteLineLayer lineLayer
+	vi32 noteLineIndex
+	f32 noteTime
+	f32 timeToNextColorNote
+	Vector3Serializable moveVec
+n NoteCut
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		f32 songTime
+	if(.flags.hasValue1)
+		NoteCutInfoNetSerializable noteCutInfo
+n NoteMissInfoNetSerializable
+	ColorType colorType
+	NoteLineLayer lineLayer
+	vi32 noteLineIndex
+	f32 noteTime
+n NoteMissed
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		f32 songTime
+	if(.flags.hasValue1)
+		NoteMissInfoNetSerializable noteMissInfo
+vi32 MultiplayerLevelEndState
+	Cleared
+	Failed
+	GivenUp
+	WasInactive
+	StartupFailed
+	HostEndedLevel
+	ConnectedAfterLevelEnded
+	Quit
+vi32 MultiplayerPlayerLevelEndState
+	SongFinished
+	NotFinished
+	NotStarted
+vi32 MultiplayerPlayerLevelEndReason
+	Cleared
+	Failed
+	GivenUp
+	Quit
+	HostEndedLevel
+	WasInactive
+	StartupFailed
+	ConnectedAfterLevelEnded
+vi32 Rank
+	E
+	D
+	C
+	B
+	A
+	S
+	SS
+	SSS
+vi32 LevelEndStateType
+	None
+	Cleared
+	Failed
+vi32 LevelEndAction
+	None
+	Quit
+	Restart
+n LevelCompletionResults
+	GameplayModifiers gameplayModifiers
+	vi32 modifiedScore
+	vi32 multipliedScore
+	Rank rank
+	b fullCombo
+	f32 leftSaberMovementDistance
+	f32 rightSaberMovementDistance
+	f32 leftHandMovementDistance
+	f32 rightHandMovementDistance
+	if(ctx.protocolVersion < 8)
+		f32 songDuration
+	LevelEndStateType levelEndStateType
+	LevelEndAction levelEndAction
+	f32 energy
+	vi32 goodCutsCount
+	vi32 badCutsCount
+	vi32 missedCount
+	vi32 notGoodCount
+	vi32 okCount
+	if(ctx.protocolVersion < 8)
+		vi32 averageCutScore
+	vi32 maxCutScore
+	if(ctx.protocolVersion >= 8)
+		vi32 totalCutScore
+		vi32 goodCutsCountForNotesWithFullScoreScoringType
+		i32 averageCenterDistanceCutScoreForNotesWithFullScoreScoringType
+		i32 averageCutScoreForNotesWithFullScoreScoringType
+	if(ctx.protocolVersion < 8)
+		f32 averageCutDistanceRawScore
+	vi32 maxCombo
+	if(ctx.protocolVersion < 8)
+		f32 minDirDeviation
+		f32 maxDirDeviation
+		f32 averageDirDeviation
+		f32 minTimeDeviation
+		f32 maxTimeDeviation
+		f32 averageTimeDeviation
+	f32 endSongTime
+n MultiplayerLevelCompletionResults
+	if(ctx.protocolVersion < 7)
+		MultiplayerLevelEndState levelEndState
+	if(ctx.protocolVersion >= 7)
+		MultiplayerPlayerLevelEndState playerLevelEndState
+		MultiplayerPlayerLevelEndReason playerLevelEndReason
+	if((ctx.protocolVersion < 7 && .levelEndState < MultiplayerLevelEndState_GivenUp) || (ctx.protocolVersion >= 7 && .playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted))
+		LevelCompletionResults levelCompletionResults
+n LevelFinished
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		MultiplayerLevelCompletionResults results
+n ReturnToMenu
+	RemoteProcedureCall base
+n RequestReturnToMenu
+	RemoteProcedureCall base
+vi32 ScoringType
+	Ignore -1
+	NoScore
+	Normal
+	SliderHead
+	SliderTail
+	BurstSliderHead
+	BurstSliderElement
+vi32 NoteCutDirection
+	Up
+	Down
+	Left
+	Right
+	UpLeft
+	UpRight
+	DownLeft
+	DownRight
+	Any
+	None
+n NoteSpawnInfoNetSerializable
+	f32 time
+	vi32 lineIndex
+	NoteLineLayer noteLineLayer
+	NoteLineLayer beforeJumpNoteLineLayer
+	if(ctx.protocolVersion >= 8)
+		GameplayType gameplayType
+		ScoringType scoringType
+	ColorType colorType
+	NoteCutDirection cutDirection
+	f32 timeToNextColorNote
+	f32 timeToPrevColorNote
+	vi32 flipLineIndex
+	vi32 flipYSide
+	Vector3Serializable moveStartPos
+	Vector3Serializable moveEndPos
+	Vector3Serializable jumpEndPos
+	f32 jumpGravity
+	f32 moveDuration
+	f32 jumpDuration
+	f32 rotation
+	f32 cutDirectionAngleOffset
+	if(ctx.protocolVersion >= 8)
+		f32 cutSfxVolumeMultiplier
+n NoteSpawned
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		f32 songTime
+	if(.flags.hasValue1)
+		NoteSpawnInfoNetSerializable noteSpawnInfo
+vi32 ObstacleType
+	FullHeight
+	Top
+n ObstacleSpawnInfoNetSerializable
+	f32 time
+	vi32 lineIndex
+	if(ctx.protocolVersion >= 8)
+		NoteLineLayer lineLayer
+	if(ctx.protocolVersion < 8)
+		ObstacleType obstacleType
+	f32 duration
+	vi32 width
+	if(ctx.protocolVersion >= 8)
+		vi32 height
+	Vector3Serializable moveStartPos
+	Vector3Serializable moveEndPos
+	Vector3Serializable jumpEndPos
+	f32 obstacleHeight
+	f32 moveDuration
+	f32 jumpDuration
+	f32 noteLinesDistance
+	f32 rotation
+n ObstacleSpawned
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		f32 songTime
+	if(.flags.hasValue1)
+		ObstacleSpawnInfoNetSerializable obstacleSpawnInfo
+vi32 SliderType
+	Normal
+	Burst
+vi32 SliderMidAnchorMode
+	Straight
+	Clockwise
+	CounterClockwise
+n SliderSpawnInfoNetSerializable
+	ColorType colorType
+	SliderType sliderType
+	b hasHeadNote
+	f32 headTime
+	vi32 headLineIndex
+	NoteLineLayer headLineLayer
+	NoteLineLayer headBeforeJumpLineLayer
+	f32 headControlPointLengthMultiplier
+	NoteCutDirection headCutDirection
+	f32 headCutDirectionAngleOffset
+	b hasTailNote
+	f32 tailTime
+	vi32 tailLineIndex
+	NoteLineLayer tailLineLayer
+	NoteLineLayer tailBeforeJumpLineLayer
+	f32 tailControlPointLengthMultiplier
+	NoteCutDirection tailCutDirection
+	f32 tailCutDirectionAngleOffset
+	SliderMidAnchorMode midAnchorMode
+	vi32 sliceCount
+	f32 squishAmount
+	Vector3Serializable headMoveStartPos
+	Vector3Serializable headJumpStartPos
+	Vector3Serializable headJumpEndPos
+	f32 headJumpGravity
+	Vector3Serializable tailMoveStartPos
+	Vector3Serializable tailJumpStartPos
+	Vector3Serializable tailJumpEndPos
+	f32 tailJumpGravity
+	f32 moveDuration
+	f32 jumpDuration
+	f32 rotation
+n SliderSpawned
+	RemoteProcedureCall base
+	RemoteProcedureCallFlags flags
+	if(.flags.hasValue0)
+		f32 songTime
+	if(.flags.hasValue1)
+		SliderSpawnInfoNetSerializable sliderSpawnInfo
+n GameplayRpc
+	GameplayRpcType type
+	u8 GameplayRpcType(.type)
+		SetGameplaySceneSyncFinish setGameplaySceneSyncFinish
+		SetGameplaySceneReady setGameplaySceneReady
+		GetGameplaySceneReady getGameplaySceneReady
+		SetActivePlayerFailedToConnect setActivePlayerFailedToConnect
+		SetGameplaySongReady setGameplaySongReady
+		GetGameplaySongReady getGameplaySongReady
+		SetSongStartTime setSongStartTime
+		NoteCut noteCut
+		NoteMissed noteMissed
+		LevelFinished levelFinished
+		ReturnToMenu returnToMenu
+		RequestReturnToMenu requestReturnToMenu
+		NoteSpawned noteSpawned
+		ObstacleSpawned obstacleSpawned
+		SliderSpawned sliderSpawned
+n PoseSerializable
+	Vector3Serializable position
+	QuaternionSerializable rotation
+n NodePoseSyncState1
+	PoseSerializable head
+	PoseSerializable leftController
+	PoseSerializable rightController
+n SyncStateId
+	u8 id:7
+	b same:1
+n NodePoseSyncState
+	SyncStateId id
+	f32 time
+	NodePoseSyncState1 state
+n StandardScoreSyncState
+	vi32 modifiedScore
+	vi32 rawScore
+	vi32 immediateMaxPossibleRawScore
+	vi32 combo
+	vi32 multiplier
+n ScoreSyncState
+	SyncStateId id
+	f32 time
+	StandardScoreSyncState state
+n NodePoseSyncStateDelta
+	SyncStateId baseId
+	vi32 timeOffsetMs
+	if(.baseId.same == 0)
+		NodePoseSyncState1 delta
+n ScoreSyncStateDelta
+	SyncStateId baseId
+	vi32 timeOffsetMs
+	if(.baseId.same == 0)
+		StandardScoreSyncState delta
+u32 MpBeatmapDifficulty
+	Easy
+	Normal
+	Hard
+	Expert
+	ExpertPlus
+n MpBeatmapPacket
+	String levelHash
+	LongString songName
+	LongString songSubName
+	LongString songAuthorName
+	LongString levelAuthorName
+	f32 beatsPerMinute
+	f32 songDuration
+	String characteristic
+	MpBeatmapDifficulty difficulty
+i32 MpPlatform
+	Unknown
+	Steam
+	OculusPC
+	OculusQuest
+	PS4
+n MpPlayerData
+	String platformId
+	MpPlatform platform
+n CustomAvatarPacket
+	String hash
+	f32 scale
+	f32 floor
+n MpCore
+	String type
+	u8 MpCoreType(MpCoreType_From(&.type))
+		MpBeatmapPacket mpBeatmapPacket
+		MpPlayerData mpPlayerData
+		CustomAvatarPacket customAvatarPacket
+n PreviewDifficultyBeatmapSet
+	String beatmapCharacteristicSerializedName
+	u8 count
+	BeatmapDifficulty difficulties[5,.count]
+n NetworkPreviewBeatmapLevel
+	LongString levelId
+	LongString songName
+	LongString songSubName
+	LongString songAuthorName
+	LongString levelAuthorName
+	f32 beatsPerMinute
+	f32 songTimeOffset
+	f32 shuffle
+	f32 shufflePeriod
+	f32 previewStartTime
+	f32 previewDuration
+	f32 songDuration
+	u8 count
+	PreviewDifficultyBeatmapSet previewDifficultyBeatmapSets[8,.count]
+	ByteArrayNetSerializable cover
+n RecommendPreview
+	NetworkPreviewBeatmapLevel base
+	vu32 requirements_len
+	String requirements[16,.requirements_len]
+	vu32 suggestions_len
+	String suggestions[16,.suggestions_len]
+n ShareInfo
+	LongString levelId
+	u8 levelHash[32]
+	vu64 fileSize
+n SetCanShareBeatmap
+	ShareInfo base
+	b canShare
+n DirectDownloadInfo
+	ShareInfo base
+	u8 count
+	String sourcePlayers[128,.count]
+n LevelFragmentRequest
+	vu64 offset
+	u16 maxSize
+n LevelFragment
+	vu64 offset
+	u16 size
+	u8 data[1500,.size]
+u8 LoadState
+	None
+	Failed
+	Exporting
+	Downloading
+	Loading
+	Done
+n LoadProgress
+	u32 sequence
+	LoadState state
+	u16 progress
+n BeatUpMessage
+	BeatUpMessageType type
+	u8 BeatUpMessageType(.type)
+		RecommendPreview recommendPreview
+		SetCanShareBeatmap setCanShareBeatmap
+		DirectDownloadInfo directDownloadInfo
+		LevelFragmentRequest levelFragmentRequest
+		LevelFragment levelFragment
+		LoadProgress loadProgress
+n SyncTime
+	f32 syncTime
+n PlayerConnected
+	u8 remoteConnectionId
+	String userId
+	ExString userName
+	b isConnectionOwner
+n PlayerStateHash
+	BitMask128 bloomFilter
+n Color32
+	u8 r
+	u8 g
+	u8 b
+	u8 a
+n MultiplayerAvatarData
+	String headTopId
+	Color32 headTopPrimaryColor
+	Color32 handsColor
+	String clothesId
+	Color32 clothesPrimaryColor
+	Color32 clothesSecondaryColor
+	Color32 clothesDetailColor
+	Color32 _unused[2]
+	String eyesId
+	String mouthId
+	Color32 glassesColor
+	Color32 facialHairColor
+	Color32 headTopSecondaryColor
+	String glassesId
+	String facialHairId
+	String handsId
+n PlayerIdentity
+	PlayerStateHash playerState
+	MultiplayerAvatarData playerAvatar
+	ByteArrayNetSerializable random
+	ByteArrayNetSerializable publicEncryptionKey
+n PlayerLatencyUpdate
+	f32 latency
+vi32 DisconnectedReason
+	Unknown
+	UserInitiated
+	Timeout
+	Kicked
+	ServerAtCapacity
+	ServerConnectionClosed
+	MasterServerUnreachable
+	ClientConnectionClosed
+	NetworkDisconnected
+	ServerTerminated
+n PlayerDisconnected
+	DisconnectedReason disconnectedReason
+n PlayerSortOrderUpdate
+	String userId
+	vi32 sortIndex
+n Party
+n MultiplayerSession
+	MultiplayerSessionMessageType type
+	u8 MultiplayerSessionMessageType(.type)
+		MenuRpc menuRpc
+		GameplayRpc gameplayRpc
+		NodePoseSyncState nodePoseSyncState
+		ScoreSyncState scoreSyncState
+		NodePoseSyncStateDelta nodePoseSyncStateDelta
+		ScoreSyncStateDelta scoreSyncStateDelta
+		MpCore mpCore 100
+		BeatUpMessage beatUpMessage 101
+n KickPlayer
+	DisconnectedReason disconnectedReason
+n PlayerStateUpdate
+	PlayerStateHash playerState
+n PlayerAvatarUpdate
+	MultiplayerAvatarData playerAvatar
+n PingMessage
+	f32 pingTime
+n PongMessage
+	f32 pingTime
+d InternalMessage
+	InternalMessageType type
+	u8 InternalMessageType(.type)
+		SyncTime syncTime
+		PlayerConnected playerConnected
+		PlayerIdentity playerIdentity
+		PlayerLatencyUpdate playerLatencyUpdate
+		PlayerDisconnected playerDisconnected
+		PlayerSortOrderUpdate playerSortOrderUpdate
+		Party party
+		MultiplayerSession multiplayerSession
+		KickPlayer kickPlayer
+		PlayerStateUpdate playerStateUpdate
+		PlayerAvatarUpdate playerAvatarUpdate
+		PingMessage pingMessage
+		PongMessage pongMessage
+d RoutingHeader
+	u8 remoteConnectionId
+	u8 connectionId:7
+	b encrypted:1
+n BaseMasterServerReliableRequest
+	u32 requestId
+r MasterServerReliableRequestProxy
+	u8 type
+	BaseMasterServerReliableRequest value
+n BaseMasterServerResponse
+	u32 responseId
+n BaseMasterServerReliableResponse
+	u32 requestId
+	u32 responseId
+n MessageReceivedAcknowledge
+	BaseMasterServerResponse base
+	b messageHandled
+s MessageReceivedAcknowledgeProxy
+	u8 type
+	MessageReceivedAcknowledge value
+u8 Platform
+	Test
+	OculusRift
+	OculusQuest
+	Steam
+	PS4
+	PS4Dev
+	PS4Cert
+	Oculus 1
+n AuthenticationToken
+	Platform platform
+	String userId
+	String userName
+	ByteArrayNetSerializable sessionToken
+n AuthenticateUserRequest
+	BaseMasterServerReliableResponse base
+	AuthenticationToken authenticationToken
+u8 AuthenticateUserResponse_Result
+	Success
+	Failed
+	UnknownError
+n AuthenticateUserResponse
+	BaseMasterServerReliableResponse base
+	AuthenticateUserResponse_Result result
+u8 ConnectToServerResponse_Result
+	Success
+	InvalidSecret
+	InvalidCode
+	InvalidPassword
+	ServerAtCapacity
+	NoAvailableDedicatedServers
+	VersionMismatch
+	ConfigMismatch
+	UnknownError
+n IPEndPoint
+	String address
+	u32 port
+vi32 DiscoveryPolicy
+	Hidden
+	WithCode
+	Public
+vi32 InvitePolicy
+	OnlyConnectionOwnerCanInvite
+	AnyoneCanInvite
+	NobodyCanInvite
+vi32 GameplayServerMode
+	Countdown
+	Managed
+	QuickStartOneSong
+vi32 SongSelectionMode
+	Vote
+	Random
+	OwnerPicks
+	RandomPlayerPicks
+vi32 GameplayServerControlSettings
+	None 0
+	AllowModifierSelection 1
+	AllowSpectate 2
+	All 3
+n GameplayServerConfiguration
+	vi32 maxPlayerCount
+	DiscoveryPolicy discoveryPolicy
+	InvitePolicy invitePolicy
+	GameplayServerMode gameplayServerMode
+	SongSelectionMode songSelectionMode
+	GameplayServerControlSettings gameplayServerControlSettings
+n ConnectToServerResponse
+	BaseMasterServerReliableResponse base
+	ConnectToServerResponse_Result result
+	if(.result == ConnectToServerResponse_Result_Success)
+		String userId
+		String userName
+		String secret
+		BeatmapLevelSelectionMask selectionMask
+		u8 flags
+		IPEndPoint remoteEndPoint
+		u8 random[32]
+		ByteArrayNetSerializable publicKey
+		ServerCode code
+		GameplayServerConfiguration configuration
+		String managerId
+n BaseConnectToServerRequest
+	BaseMasterServerReliableRequest base
+	String userId
+	String userName
+	u8 random[32]
+	ByteArrayNetSerializable publicKey
+n ConnectToServerRequest
+	BaseConnectToServerRequest base
+	BeatmapLevelSelectionMask selectionMask
+	String secret
+	ServerCode code
+	GameplayServerConfiguration configuration
+n MultipartMessage
+	BaseMasterServerReliableRequest base
+	u32 multipartMessageId
+	vu32 offset
+	vu32 length
+	vu32 totalLength
+	u8 data[384, .length]
+s MultipartMessageProxy
+	u8 type
+	MultipartMessage value
+n SessionKeepaliveMessage
+n GetPublicServersRequest
+	BaseMasterServerReliableRequest base
+	String userId
+	String userName
+	vi32 offset
+	vi32 count
+	BeatmapLevelSelectionMask selectionMask
+	GameplayServerConfiguration configuration
+u8 GetPublicServersResponse_Result
+	Success
+	UnknownError
+n PublicServerInfo
+	ServerCode code
+	vi32 currentPlayerCount
+n GetPublicServersResponse
+	BaseMasterServerReliableResponse base
+	GetPublicServersResponse_Result result
+	if(.result == GetPublicServersResponse_Result_Success)
+		vu32 publicServerCount
+		PublicServerInfo publicServers[8192, .publicServerCount]
+d UserMessage
+	UserMessageType type
+	u8 UserMessageType(.type)
+		AuthenticateUserRequest authenticateUserRequest
+		AuthenticateUserResponse authenticateUserResponse
+		ConnectToServerResponse connectToServerResponse 8
+		ConnectToServerRequest connectToServerRequest
+		MessageReceivedAcknowledge messageReceivedAcknowledge 13
+		MultipartMessage multipartMessage
+		SessionKeepaliveMessage sessionKeepaliveMessage
+		GetPublicServersRequest getPublicServersRequest
+		GetPublicServersResponse getPublicServersResponse
+n ClientHelloRequest
+	BaseMasterServerReliableRequest base
+	u8 random[32]
+n HelloVerifyRequest
+	BaseMasterServerReliableResponse base
+	u8 cookie[32]
+n ClientHelloWithCookieRequest
+	BaseMasterServerReliableRequest base
+	u32 certificateResponseId
+	u8 random[32]
+	u8 cookie[32]
+n ServerHelloRequest
+	BaseMasterServerReliableResponse base
+	u8 random[32]
+	ByteArrayNetSerializable publicKey
+	ByteArrayNetSerializable signature
+n ServerCertificateRequest
+	BaseMasterServerReliableResponse base
+	vu32 certificateCount
+	ByteArrayNetSerializable certificateList[10, .certificateCount]
+n ClientKeyExchangeRequest
+	BaseMasterServerReliableResponse base
+	ByteArrayNetSerializable clientPublicKey
+n ChangeCipherSpecRequest
+	BaseMasterServerReliableResponse base
+d HandshakeMessage
+	HandshakeMessageType type
+	u8 HandshakeMessageType(.type)
+		ClientHelloRequest clientHelloRequest
+		HelloVerifyRequest helloVerifyRequest
+		ClientHelloWithCookieRequest clientHelloWithCookieRequest
+		ServerHelloRequest serverHelloRequest
+		ServerCertificateRequest serverCertificateRequest
+		ClientKeyExchangeRequest clientKeyExchangeRequest 6
+		ChangeCipherSpecRequest changeCipherSpecRequest
+		MessageReceivedAcknowledge messageReceivedAcknowledge
+		MultipartMessage multipartMessage
+d SerializeHeader
+	vu32 length
+u32 MessageType
+	UserMessage 1
+	DedicatedServerMessage
+	GameLiftMessage
+	HandshakeMessage 3192347326
+d FragmentedHeader
+	u16 fragmentId
+	u16 fragmentPart
+	u16 fragmentsTotal
+u8 DeliveryMethod
+	ReliableUnordered
+	Sequenced
+	ReliableOrdered
+	ReliableSequenced
+n Unreliable
+n Channeled
+	u16 sequence
+	DeliveryMethod channelId
+n Ack
+	u16 sequence
+	DeliveryMethod channelId
+	if(.channelId % 2 == 0)
+		u8 data[16, $windowSize / 8]
+		u8 _pad0
+n Ping
+	u16 sequence
+n Pong
+	u16 sequence
+	u64 time
+r BeatUpConnectInfo
+	u32 protocolId
+	u32 windowSize
+	u8 countdownDuration
+	b directDownloads:1
+	b skipResults:1
+	b perPlayerDifficulty:1
+	b perPlayerModifiers:1
+r ModConnectHeader
+	vu32 length
+	String name
+n ConnectRequest
+	u32 protocolId
+	u64 connectTime
+	if(($netVersion = .protocolId) >= 12)
+		i32 peerId
+	u8 addrlen
+	u8 address[38, .addrlen]
+	String secret
+	String userId
+	String userName
+	b isConnectionOwner
+n ConnectAccept
+	u64 connectTime
+	u8 connectNum
+	b reusedPeer
+	if($netVersion >= 12)
+		i32 peerId
+	if($beatUpVersion)
+		u32 windowSize
+		u8 countdownDuration
+		b directDownloads:1
+		b skipResults:1
+		b perPlayerDifficulty:1
+		b perPlayerModifiers:1
+n Disconnect
+	u8 _pad0[8]
+d UnconnectedMessage
+	MessageType type
+	vu32 protocolVersion
+n Mtu
+	u32 newMtu0
+	u8 pad[1423, .newMtu0 - 9]
+	u32 newMtu1
+n MtuCheck
+	Mtu base
+n MtuOk
+	Mtu base
+d MergedHeader
+	u16 length
+n Merged
+d NetPacketHeader
+	PacketProperty property:5
+	u8 connectionNumber:2
+	b isFragmented:1
+	u8 PacketProperty(.property)
+		Unreliable unreliable
+		Channeled channeled
+		Ack ack
+		Ping ping
+		Pong pong
+		ConnectRequest connectRequest
+		ConnectAccept connectAccept
+		Disconnect disconnect
+		UnconnectedMessage unconnectedMessage
+		MtuCheck mtuCheck
+		MtuOk mtuOk
+		Merged merged 12
+d PacketEncryptionLayer
+	b encrypted
+	if(.encrypted == 1)
+		u32 sequenceId
+		u8 iv[16]

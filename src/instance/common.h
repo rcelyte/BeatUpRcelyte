@@ -3,27 +3,24 @@
 
 #define LOAD_TIMEOUT 15
 
-#define lengthof(x) (sizeof(x)/sizeof(*(x)))
 #define bitsize(e) (sizeof(e) * 8)
 #define indexof(a, e) ((e) - (a))
-#define String_eq(a, b) ((a).length == (b).length && memcmp((a).data, (b).data, (b).length) == 0)
-#define String_is(a, str) ((a).length == (lengthof(str) - 1) && memcmp((a).data, str, (lengthof(str) - 1)) == 0)
 
-#define SERIALIZE_SESSION(ctx, pkt, mtype, dtype, ...) { \
-	SERIALIZE_CUSTOM(ctx, pkt, InternalMessageType_MultiplayerSession) { \
-		pkt_writeMultiplayerSessionMessageHeader(ctx, pkt, (struct MultiplayerSessionMessageHeader){ \
+#define SERIALIZE_SESSION(mtype, mfield, pkt, end, ctx, ...) { \
+	struct InternalMessage _msg = { \
+		.type = InternalMessageType_MultiplayerSession, \
+		.multiplayerSession = { \
 			.type = MultiplayerSessionMessageType_##mtype, \
-		}); \
-		pkt_write##mtype##Header(ctx, pkt, (struct mtype##Header){ \
-			.type = mtype##Type_##dtype, \
-		}); \
-		pkt_write##dtype(ctx, pkt, __VA_ARGS__); \
-	} \
+			.mfield = __VA_ARGS__, \
+		}, \
+	}; \
+	bool res = pkt_serialize(&_msg, pkt, end, ctx); \
+	(void)res; \
 }
 
-#define SERIALIZE_MENURPC(ctx, pkt, dtype, ...) SERIALIZE_SESSION(ctx, pkt, MenuRpc, dtype, __VA_ARGS__)
-#define SERIALIZE_GAMEPLAYRPC(ctx, pkt, dtype, ...) SERIALIZE_SESSION(ctx, pkt, GameplayRpc, dtype, __VA_ARGS__)
-#define SERIALIZE_BEATUP(ctx, pkt, dtype, ...) SERIALIZE_SESSION(ctx, pkt, BeatUpMessage, dtype, __VA_ARGS__)
+#define SERIALIZE_MENURPC(pkt, end, ctx, ...) SERIALIZE_SESSION(MenuRpc, menuRpc, pkt, end, ctx, __VA_ARGS__)
+#define SERIALIZE_GAMEPLAYRPC(pkt, end, ctx, ...) SERIALIZE_SESSION(GameplayRpc, gameplayRpc, pkt, end, ctx, __VA_ARGS__)
+#define SERIALIZE_BEATUP(pkt, end, ctx, ...) SERIALIZE_SESSION(BeatUpMessage, beatUpMessage, pkt, end, ctx, __VA_ARGS__)
 
 #define CLEAR_BEATMAP (struct BeatmapIdentifierNetSerializable){{0}, {0}, 0}
 #define CLEAR_MODIFIERS (struct GameplayModifiers){EnergyType_Bar, 0, 0, 0, EnabledObstacleType_All, 0, 0, 0, 0, 0, 0, SongSpeed_Normal, 0, 0, 0, 0, 0}
@@ -54,7 +51,7 @@ enum ServerState {
 
 struct InstancePacket {
 	uint16_t len;
-	_Bool isFragmented;
+	bool isFragmented;
 	struct FragmentedHeader fragmentHeader;
 	uint8_t data[NET_MAX_PKT_SIZE];
 };
@@ -65,7 +62,7 @@ struct InstanceResendPacket {
 };
 struct ReliableChannel {
 	struct Ack ack;
-	_Bool sendAck;
+	bool sendAck;
 	uint16_t outboundSequence, inboundSequence;
 	uint16_t outboundWindowStart;
 	struct InstanceResendPacket resend[NET_MAX_WINDOW_SIZE];
@@ -74,7 +71,7 @@ struct ReliableChannel {
 };
 struct ReliableUnorderedChannel {
 	struct ReliableChannel base;
-	_Bool earlyReceived[NET_MAX_WINDOW_SIZE];
+	bool earlyReceived[NET_MAX_WINDOW_SIZE];
 };
 struct ReliableOrderedChannel {
 	struct ReliableChannel base;
@@ -105,7 +102,7 @@ struct Channels {
 };
 struct PingPong {
 	uint64_t lastPing;
-	_Bool waiting;
+	bool waiting;
 	struct Ping ping;
 	struct Pong pong;
 };
@@ -116,10 +113,10 @@ void instance_pingpong_init(struct PingPong *pingpong);
 void instance_channels_init(struct Channels *channels);
 void instance_channels_free(struct Channels *channels);
 void instance_send_channeled(struct NetSession *session, struct Channels *channels, const uint8_t *buf, uint32_t len, DeliveryMethod method);
-void handle_Ack(struct NetSession *session, struct Channels *channels, const uint8_t **data);
-void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct NetSession *session, struct Channels *channels, void *p_ctx, void *p_room, void *p_session, const uint8_t **data, const uint8_t *end, _Bool isFragmented);
-void handle_Ping(struct NetContext *net, struct NetSession *session, struct PingPong *pingpong, const uint8_t **data);
-float handle_Pong(struct NetContext *net, struct NetSession *session, struct PingPong *pingpong, const uint8_t **data);
-void handle_MtuCheck(struct NetContext *net, struct NetSession *session, const uint8_t **data);
+void handle_Ack(struct NetSession *session, struct Channels *channels, const struct Ack *ack);
+void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct NetSession *session, struct Channels *channels, void *p_ctx, void *p_room, void *p_session, const struct NetPacketHeader *header, const uint8_t **data, const uint8_t *end);
+void handle_Ping(struct NetContext *net, struct NetSession *session, struct PingPong *pingpong, struct Ping ping);
+float handle_Pong(struct NetContext *net, struct NetSession *session, struct PingPong *pingpong, struct Pong pong);
+void handle_MtuCheck(struct NetContext *net, struct NetSession *session, const struct MtuCheck *req);
 void try_resend(struct NetContext *net, struct NetSession *session, struct InstanceResendPacket *p, uint32_t currentTime);
 void flush_ack(struct NetContext *net, struct NetSession *session, struct Ack *ack);

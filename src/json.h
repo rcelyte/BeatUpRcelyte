@@ -11,7 +11,7 @@ static inline char *json_whitespace(char *s) {
 		++s;
 	return s;
 }
-static char *json_get_bool(char *s, _Bool *out) {
+[[maybe_unused]] static char *json_get_bool(char *s, bool *out) {
 	if(strncmp(s, "true", 4) == 0) {
 		*out = 1;
 		return s+4;
@@ -75,7 +75,7 @@ static char *json_skip_value(char *s) {
 	}
 	return json_whitespace(s);
 }
-static _Bool json_iter_object(char **s, char **key, uint32_t *key_len) {
+static bool json_iter_object(char **s, char **key, uint32_t *key_len) {
 	*s = json_whitespace(*s);
 	if(**s)
 		if(*(*s)++ == '}')

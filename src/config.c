@@ -7,9 +7,7 @@
 #include <stdlib.h>
 #include <errno.h>
 
-#define lengthof(x) (sizeof(x)/sizeof(*(x)))
-
-static _Bool load_cert(const char *cert, uint32_t cert_len, mbedtls_ctr_drbg_context *ctr_drbg, mbedtls_pk_context *key, mbedtls_x509_crt *out) {
+static bool load_cert(const char *cert, uint32_t cert_len, mbedtls_ctr_drbg_context *ctr_drbg, mbedtls_pk_context *key, mbedtls_x509_crt *out) {
 	int32_t err = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
 	char buf[4096];
 	if(cert_len == 0) {
@@ -51,8 +49,8 @@ static _Bool load_cert(const char *cert, uint32_t cert_len, mbedtls_ctr_drbg_con
 	return 0;
 }
 
-static _Bool load_key(const char *key, uint32_t key_len, mbedtls_ctr_drbg_context *ctr_drbg, mbedtls_pk_context *out) {
-	_Bool res = 0;
+static bool load_key(const char *key, uint32_t key_len, mbedtls_ctr_drbg_context *ctr_drbg, mbedtls_pk_context *out) {
+	bool res = 0;
 	int32_t err = 0;
 	char name[4096];
 	if(key_len == 0) {
@@ -74,8 +72,8 @@ static _Bool load_key(const char *key, uint32_t key_len, mbedtls_ctr_drbg_contex
 	return res || err != 0;
 }
 
-_Bool config_load(struct Config *out, const char *path) {
-	_Bool res = 1;
+bool config_load(struct Config *out, const char *path) {
+	bool res = 1;
 	char *master_cert = NULL, *master_key = NULL, *status_cert = NULL, *status_key = NULL;
 	uint32_t master_cert_len = 0, master_key_len = 0, status_cert_len = 0, status_key_len = 0;
 

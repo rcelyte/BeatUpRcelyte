@@ -11,7 +11,7 @@
 #include <signal.h>
 
 static const char *config_path = "./config.json";
-static _Bool headless = 0;
+static bool headless = 0;
 
 int main(int argc, const char *argv[]) {
 	// fprintf(stderr, "MAX CODE: %u\n", StringToServerCode("99999", 5));

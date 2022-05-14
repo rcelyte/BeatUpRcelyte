@@ -1,5 +1,5 @@
 #include "log.h"
-#include "packets.OLD.h"
+#include "packets.h"
 #include "encryption.h"
 #include <mbedtls/ssl.h>
 #include <mbedtls/error.h>
@@ -37,7 +37,7 @@ static uint8_t MakeSeed(uint8_t *out, const char *baseSeed, const uint8_t server
 	return len + 32 + 32;
 }
 
-_Bool EncryptionState_init(struct EncryptionState *state, const mbedtls_mpi *preMasterSecret, const uint8_t serverRandom[32], const uint8_t clientRandom[32], _Bool isClient) {
+bool EncryptionState_init(struct EncryptionState *state, const mbedtls_mpi *preMasterSecret, const uint8_t serverRandom[32], const uint8_t clientRandom[32], bool isClient) {
 	uint8_t preMasterSecretBytes[mbedtls_mpi_size(preMasterSecret)];
 	int32_t err = mbedtls_mpi_write_binary(preMasterSecret, preMasterSecretBytes, sizeof(preMasterSecretBytes));
 	if(err) {
@@ -66,7 +66,7 @@ void EncryptionState_free(struct EncryptionState *state) {
 	}
 }
 
-static _Bool IsInvalidSequenceNum(struct EncryptionState *state, uint32_t sequenceNum) {
+static bool IsInvalidSequenceNum(struct EncryptionState *state, uint32_t sequenceNum) {
 	if(!state->hasReceivedSequenceNum)
 		return 0;
 	if(sequenceNum > state->lastReceivedSequenceNum)
@@ -76,7 +76,7 @@ static _Bool IsInvalidSequenceNum(struct EncryptionState *state, uint32_t sequen
 	return state->receivedSequenceNumBuffer[sequenceNum % 64];
 }
 
-static _Bool PutSequenceNum(struct EncryptionState *state, uint32_t sequenceNum) {
+static bool PutSequenceNum(struct EncryptionState *state, uint32_t sequenceNum) {
 	if(!state->hasReceivedSequenceNum) {
 		state->hasReceivedSequenceNum = 1;
 		state->lastReceivedSequenceNum = sequenceNum;
@@ -98,7 +98,7 @@ static _Bool PutSequenceNum(struct EncryptionState *state, uint32_t sequenceNum)
 	return 0;
 }
 
-static _Bool ValidateReceivedMac(struct EncryptionState *state, uint8_t *data, uint32_t length, uint8_t mac[10]) {
+static bool ValidateReceivedMac(struct EncryptionState *state, uint8_t *data, uint32_t length, uint8_t mac[10]) {
 	uint8_t hash[MBEDTLS_MD_MAX_SIZE];
 	const mbedtls_md_info_t *md_info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
 	mbedtls_md_hmac(md_info, state->receiveMacKey, sizeof(state->receiveMacKey), data, length, hash);
@@ -109,7 +109,7 @@ static _Bool ValidateReceivedMac(struct EncryptionState *state, uint8_t *data, u
 	return 0;
 }
 
-_Bool EncryptionState_decrypt(struct EncryptionState *state, struct PacketEncryptionLayer header, uint8_t *data, uint32_t *length) {
+bool EncryptionState_decrypt(struct EncryptionState *state, struct PacketEncryptionLayer header, uint8_t *data, uint32_t *length) {
 	if(!state->initialized)
 		return 1;
 	if(*length == 0 || *length % 16)
@@ -149,7 +149,7 @@ static void ComputeSendMac(struct EncryptionState *state, const uint8_t *data, u
 	memcpy(out, hash, 10);
 }
 
-_Bool EncryptionState_encrypt(struct EncryptionState *state, struct PacketEncryptionLayer *header, mbedtls_ctr_drbg_context *ctr_drbg, const uint8_t *buf, uint32_t buf_len, uint8_t *out, uint32_t *out_len) {
+bool EncryptionState_encrypt(struct EncryptionState *state, struct PacketEncryptionLayer *header, mbedtls_ctr_drbg_context *ctr_drbg, const uint8_t *buf, uint32_t buf_len, uint8_t *out, uint32_t *out_len) {
 	uint32_t length = buf_len + 10;
 	uint8_t pad = 16 - (length & 15);
 	header->encrypted = 1;

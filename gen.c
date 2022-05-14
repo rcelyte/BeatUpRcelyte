@@ -1,565 +1,688 @@
 #include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdnoreturn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
+#include <assert.h>
+#include <errno.h>
+#define DISABLE_LOG_PREFIX
+#include "src/log.h"
 
-_Bool enableLog = 0;
+static bool enableLog = false;
 
-_Bool alpha(char c) {
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
-}
+enum TType {
+	TType_Enum_start,
+	TType_Enum_end,
+	TType_Struct_start,
+	TType_Struct_end,
+	TType_If_start,
+	TType_If_end,
+	TType_Field,
+};
 
-_Bool numeric(char c) {
-	return c >= '0' && c <= '9';
-}
+struct EnumToken {
+	char type[64];
+	char name[64];
+	char switchField[64];
+};
 
-const char *desc = NULL, *descName = NULL, *source_buf = NULL;
-void fail(const char *pos, const char *format, ...) {
-	va_list args0, args1;
-	va_start(args0, format);
-	va_copy(args1, args0);
-	char buf[vsnprintf(NULL, 0, format, args0) + 1];
-	vsnprintf(buf, sizeof(buf), format, args1);
-	va_end(args0);
-	va_end(args1);
+struct StructToken {
+	char name[64];
+	bool send, sendIntern;
+	bool recv, recvIntern;
+};
 
-	uint32_t line = 1, column = 1;
-	for(const char *it = desc; it < pos; ++it) {
-		if(*it == '\n')
-			++line, column = 1;
-		else
-			++column;
-	}
-	fprintf(stderr, "%s:%u:%u: %s\n", descName, line, column, buf);
+struct IfToken {
+	char condition[204];
+};
+
+typedef uint8_t EnumFlags;
+enum {
+	EnumFlags_HasValue = 1,
+	EnumFlags_IsDuplicate = 2,
+};
+
+struct FieldToken {
+	char type[64];
+	char name[64];
+	char count[64];
+	uint16_t maxCount;
+	uint8_t bitWidth;
+	EnumFlags enumFlags;
+	int64_t enumValue;
+};
+
+struct Token {
+	enum TType type;
+	union {
+		struct EnumToken enum_;
+		struct StructToken struct_;
+		struct IfToken if_;
+		struct FieldToken field;
+	};
+} static tokens[81920], *tokens_end = tokens;
+
+static const char *filename = NULL;
+static noreturn void fail(const char *format, ...) {
+	char msg[8192];
+	snprintf(msg, sizeof(msg), "%s: %s\n", filename, format);
+	va_list args;
+	va_start(args, format);
+	vuprintf(msg, args);
+	va_end(args);
 	exit(-1);
 }
 
-void skip_line(const char **s) {
-	while(**s && **s != '\n')
-		++(*s);
-	if(**s != '\n')
-		fail(*s, "expected newline");
-	++(*s);
+static const char *fileStart = NULL;
+static noreturn void fail_at(const char *pos, const char *format, ...) {
+	char msg[8192];
+	uint32_t line = 1, column = 1;
+	for(const char *it = fileStart; it < pos; ++it, ++column)
+		if(*it == '\n')
+			++line, column = 0;
+	snprintf(msg, sizeof(msg), "%s:%u:%u: %s\n", filename, line, column, format);
+	va_list args;
+	va_start(args, format);
+	vuprintf(msg, args);
+	va_end(args);
+	exit(-1);
 }
 
-void skip_char(const char **s, char c) {
-	if(**s != c) {
-		if(c == '\n')
-			fail(*s, "expected newline");
-		else if(c == '\t')
-			fail(*s, "expected indent");
+static void skip_line(const char **it) {
+	for(char prev = 0; **it && prev != '\n'; ++*it)
+		prev = **it;
+}
+
+static void skip_char(const char **it, char ch) {
+	if(*(*it)++ != ch) {
+		if(ch == '\n')
+			fail_at(*it, "expected newline");
 		else
-			fail(*s, "expected '%c'", c);
+			fail_at(*it, "expected '%c'", ch);
 	}
-	++(*s);
 }
 
-_Bool skip_char_maybe(const char **s, char c) {
-	if(**s != c)
-		return 0;
-	++(*s);
-	return 1;
+static bool skip_char_maybe(const char **it, char ch) {
+	if(**it != ch)
+		return false;
+	++*it;
+	return true;
 }
 
-const char *skip_number(const char **s) {
-	const char *start = *s;
-	if(**s == '-')
-		++(*s);
-	if(!numeric(**s))
-		fail(*s, "expected number");
-	while(numeric(**s))
-		++(*s);
-	return start;
+static bool skip_indent_maybe(const char **it, uint32_t level) {
+	const char *i = *it;
+	while(level--)
+		if(*i++ != '\t')
+			return false;
+	*it = i;
+	return true;
 }
 
-_Bool skip_tabs_maybe(const char **s, uint32_t count) {
-	for(uint32_t i = 0; i < count; ++i)
-		if((*s)[i] != '\t')
-			return 0;
-	*s += count;
-	return 1;
+static bool alpha(char ch) {
+	char cap = ch & 223;
+	return (cap >= 'A' && cap <= 'Z') || ch == '_';
 }
 
-_Bool skip_string_maybe(const char **s, const char *str) {
-	size_t len = strlen(str);
-	if(strncmp(*s, str, len))
-		return 0;
-	*s += len;
-	return 1;
+static bool numeric(char ch) {
+	return (ch >= '0' && ch <= '9') || ch == '+' || ch == '-';
 }
 
-_Bool read_word(const char **in, char *out) {
-	*out = 0;
-	if(!alpha(**in))
-		return 1;
-	while(alpha(**in) || numeric(**in) || **in == '.')
-		*out++ = *(*in)++;
-	*out = 0;
-	return 0;
+static char read_char(const char **it) {
+	char ch = *(*it)++;
+	if(!ch)
+		fail_at(*it - 1, "unexpected EOF");
+	return ch;
 }
 
-void read_expr(const char **s, char *out) {
-	while(alpha(**s) || numeric(**s) || **s == '.' || **s == '+' || **s == '-' || **s == '*' || **s == '/')
-		*out++ = *(*s)++;
-	*out = 0;
-}
-
-enum TypeType {
-	TYPE_SERIAL,
-	TYPE_DATA_ENUM,
-	TYPE_DATA,
-};
-typedef uint8_t fieldwidth_t;
-#define EPHEMERAL_BIT 128
-fieldwidth_t read_type(const char **in, char *out, enum TypeType mode) {
-	const char *start = *in;
-	_Bool var = (**in == 'v');
-	if(var)
-		++(*in);
-	char type = *(*in)++;
-	const char *size = *in;
-	if(type) {
-		for(uint8_t i = 0; i < 2; ++i)
-			if(numeric(**in))
-				++(*in);
-		if(numeric(**in) || alpha(**in) || (type & ~127))
-			type = 0;
+static void read_name(const char **it, char *out, size_t out_len) {
+	if(!alpha(**it))
+		fail_at(*it, "expected name");
+	while((**it >= '0' && **it <= '9') || alpha(**it)) {
+		*out++ = *(*it)++;
+		if(!(--out_len))
+			fail_at(*it, "string too long");
 	}
-	switch(type | ((mode == TYPE_SERIAL) ? 128 : 0)) { // double switch!
-		case 'b': sprintf(out, "_Bool"); return 0;
-		case 'c': sprintf(out, "char"); return 0;
-		case 'i': sprintf(out, "int%u_t", atoi(size)); return 0;
-		case 'u': sprintf(out, "uint%u_t", atoi(size)); return 0;
-		case 'f': sprintf(out, (atoi(size) == 32) ? "float" : "double"); return 0;
-		case 'z': sprintf(out, "void"); return 0;
-		case 'b' | 128: sprintf(out, "Uint8"); return 8;
-		case 'c' | 128: sprintf(out, "Int8"); return 8;
-		case 'i' | 128: sprintf(out, var ? "VarInt%u" : "Int%u", atoi(size)); return atoi(size);
-		case 'u' | 128: sprintf(out, var ? "VarUint%u" : "Uint%u", atoi(size)); return atoi(size);
-		case 'f' | 128: sprintf(out, "Float%u", atoi(size)); return atoi(size);
-		case 'z' | 128: *out = 0; return 0;
-		default:;
-	}
-	*in = start;
-	if(mode == TYPE_DATA)
-		out += sprintf(out, "struct ");
-	while(numeric(**in) || alpha(**in))
-		*out++ = *(*in)++;
 	*out = 0;
-	return 0;
 }
 
-uint8_t read_type_double(const char **in, char *serial, char *data, char *log) {
-	const char *start = *in;
-	fieldwidth_t width = read_type(in, serial, TYPE_SERIAL);
-	if(skip_char_maybe(in, '.')) {
-		const char *start2 = *in;
-		read_type(in, data, TYPE_DATA_ENUM);
-		if(strcmp(data, "e")) {
-			read_type(&start2, log, TYPE_SERIAL);
-			return width;
+static void read_scope(const char **it, char *out, size_t out_len, char open, char close) {
+	for(uint32_t level = 1; (level = level + (**it == open) - (**it == close));) {
+		if((*out++ = read_char(it)) == '\n')
+			fail_at(*it, "unexpected newline");
+		if(!(--out_len))
+			fail_at(*it, "string too long");
+	}
+	*out = 0, ++*it;
+}
+
+static int64_t read_number(const char **it) {
+	char *end;
+	int64_t num = strtoll(*it, &end, 0);
+	if(end == *it)
+		fail_at(*it, "expected number");
+	if(errno == ERANGE)
+		fail_at(*it, "failed to parse number");
+	*it = end;
+	return num;
+}
+
+static_assert(offsetof(struct Token, enum_.type) == offsetof(struct Token, field.type));
+static_assert(offsetof(struct Token, enum_.name) == offsetof(struct Token, field.name));
+[[nodiscard]] static const char *parse_struct_fields(const char *it, uint32_t indent, bool insideSwitch) {
+	while(skip_indent_maybe(&it, indent)) {
+		struct Token token = {
+			.type = TType_Field,
+			.field = {
+				.count = {0},
+				.maxCount = 1,
+				.bitWidth = 0,
+				.enumFlags = 0,
+				.enumValue = 0,
+			},
+		};
+		read_name(&it, token.field.type, sizeof(token.field.type));
+		if(!insideSwitch && strcmp(token.field.type, "if") == 0) {
+			token.type = TType_If_start;
+			skip_char(&it, '(');
+			read_scope(&it, token.if_.condition, sizeof(token.if_.condition), '(', ')');
+			skip_char(&it, '\n');
+			*tokens_end++ = token;
+			it = parse_struct_fields(it, indent + 1, false);
+			token.type = TType_If_end;
+			*tokens_end++ = token;
+			continue;
 		}
-		width |= 128;
+		skip_char(&it, ' ');
+		read_name(&it, token.field.name, sizeof(token.field.name));
+		if(insideSwitch) {
+			if(skip_char_maybe(&it, ' ')) {
+				token.field.enumFlags = EnumFlags_HasValue;
+				token.field.enumValue = read_number(&it);
+			}
+		} else if(skip_char_maybe(&it, '(')) {
+			token.type = TType_Enum_start;
+			read_scope(&it, token.enum_.switchField, sizeof(token.enum_.switchField), '(', ')');
+			skip_char(&it, '\n');
+			*tokens_end++ = token;
+			it = parse_struct_fields(it, indent + 1, true);
+			token.type = TType_Enum_end;
+			*tokens_end++ = token;
+			continue;
+		} else if(skip_char_maybe(&it, '[')) {
+			token.field.maxCount = read_number(&it);
+			if(skip_char_maybe(&it, ','))
+				read_scope(&it, token.field.count, sizeof(token.field.count), '[', ']');
+			else
+				skip_char(&it, ']');
+		} else if(skip_char_maybe(&it, ':')) {
+			token.field.bitWidth = read_number(&it);
+		}
+		skip_char(&it, '\n');
+		*tokens_end++ = token;
 	}
-	const char *start2 = start;
-	read_type(&start, data, TYPE_DATA);
-	read_type(&start2, log, TYPE_SERIAL);
-	return width;
+	return it;
 }
 
-void write_fmt(char **out, const char *format, ...) {
+[[nodiscard]] static const char *parse_struct(const char *it) {
+	struct Token token;
+	token.type = TType_Struct_start;
+	token.struct_.sendIntern = token.struct_.send = (*it == 's' || *it == 'd');
+	token.struct_.recvIntern = token.struct_.recv = (*it == 'r' || *it == 'd');
+	++it, skip_char(&it, ' ');
+	read_name(&it, token.struct_.name, sizeof(token.struct_.name));
+	skip_char(&it, '\n');
+	*tokens_end++ = token;
+	it = parse_struct_fields(it, 1, false);
+	token.type = TType_Struct_end;
+	*tokens_end++ = token;
+	return it;
+}
+
+[[nodiscard]] static const char *parse_enum(const char *it) {
+	struct Token token = {
+		.type = TType_Enum_start,
+		.enum_ = {
+			.switchField = {0},
+		},
+	};
+	read_name(&it, token.enum_.type, sizeof(token.enum_.type));
+	skip_char(&it, ' ');
+	read_name(&it, token.enum_.name, sizeof(token.enum_.name));
+	skip_char(&it, '\n');
+	*tokens_end++ = token;
+	while(skip_indent_maybe(&it, 1)) {
+		struct Token fieldToken = {
+			.type = TType_Field,
+			.field = {
+				.name = {0},
+				.count = {0},
+				.maxCount = 1,
+				.bitWidth = 0,
+				.enumValue = 0,
+			},
+		};
+		read_name(&it, fieldToken.field.type, sizeof(fieldToken.field.type));
+		fieldToken.field.enumFlags = skip_char_maybe(&it, ' ') ? EnumFlags_HasValue : 0;
+		if(fieldToken.field.enumFlags & EnumFlags_HasValue)
+			fieldToken.field.enumValue = read_number(&it);
+		skip_char(&it, '\n');
+		*tokens_end++ = fieldToken;
+	}
+	token.type = TType_Enum_end;
+	*tokens_end++ = token;
+	return it;
+}
+
+static void parse(const char *it) {
+	while(*it) {
+		if((it[0] == 's' || it[0] == 'r' || it[0] == 'd' || it[0] == 'n') && it[1] == ' ')
+			it = parse_struct(it);
+		else if(alpha(*it))
+			it = parse_enum(it);
+		else
+			skip_line(&it);
+	}
+}
+
+static void parse_file(const char *name) {
+	filename = name;
+	FILE *infile = fopen(name, "rb");
+	fseek(infile, 0, SEEK_END);
+	size_t infile_len = ftell(infile);
+	char desc[infile_len+8];
+	fileStart = desc;
+	fseek(infile, 0, SEEK_SET);
+	if(fread(desc, 1, infile_len, infile) != infile_len) {
+		fclose(infile);
+		fprintf(stderr, "Failed to read %s\n", name);
+		exit(-1);
+	}
+	fclose(infile);
+	for(uint8_t i = 0; i < 8; ++i)
+		desc[infile_len + i] = 0;
+	parse(desc);
+}
+
+static void write_str(char **out, const char *str) {
+	uint32_t len = strlen(str);
+	memcpy(*out, str, len);
+	*out += len;
+}
+
+static void write_fmt(char **out, const char *format, ...) {
 	va_list args;
 	va_start(args, format);
 	*out += vsprintf(*out, format, args);
 	va_end(args);
 }
+#define write_fmt_indent(out, level, format, ...) write_fmt(out, "%.*s" format, level, "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t", __VA_ARGS__)
+#define write_indent(out, level, str) write_fmt(out, "%.*s" str, level, "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t")
 
-void write_warning(char **out) {
-	write_fmt(out,
-		"/* \n"
-		" * AUTO GENERATED; DO NOT TOUCH\n"
-		" * AUTO GENERATED; DO NOT TOUCH\n"
-		" * AUTO GENERATED; DO NOT TOUCH\n"
-		" */\n\n");
+#define TOKEN_LOOP(token) \
+	for(struct Token *(token) = tokens; (token) < tokens_end; ++(token)) \
+			switch((token)->type)
+#define TOKEN_ITER(token) \
+	for(; (token) < tokens_end; ++(token)) \
+			switch((token)->type)
+
+static void scan_duplicates(struct Token *token, const int64_t refValue) {
+	int64_t enumValue = refValue;
+	while((++token)->type == TType_Field) {
+		enumValue = (token->field.enumFlags & EnumFlags_HasValue) ? token->field.enumValue : enumValue + 1;
+		if(enumValue == refValue)
+			token->field.enumFlags |= EnumFlags_IsDuplicate;
+	}
 }
 
-char **tabs(char **s, uint32_t count) {
-	for(uint32_t i = 0; i < count; ++i)
-		*(*s)++ = '\t';
-	return s;
-}
-
-struct HeaderData {
-	char *enums;
-	char *structs;
-	char *funcs;
+struct {
+	uint32_t count;
+	char names[16384][64];
+	char types[16384][64];
+} static typedefs = {
+	.count = 0,
 };
-
-struct EnumEntry {
-	char name[128];
-	const char *value;
-} parse_value(struct HeaderData *header, char **source, const char **in, uint32_t indent);
-
-const void *memmem(const char *ptr, const char *sub, size_t count, size_t subcount) {
-	for(; count >= subcount; ++ptr, --count) {
-		const char *a = ptr, *b = sub;
-		while(b < &sub[subcount])
-			if(*a++ != *b++)
+static void resolve() {
+	int64_t enumValue = 0;
+	TOKEN_LOOP(token) {
+		case TType_Enum_start: {
+			enumValue = 0;
+			memcpy(typedefs.types[typedefs.count], (token[1].type == TType_Enum_end) ? token->enum_.name : token->enum_.type, sizeof(*typedefs.types));
+			memcpy(typedefs.names[typedefs.count], token->enum_.name, sizeof(*typedefs.names));
+			++typedefs.count;
+			break;
+		}
+		case TType_Field: {
+			enumValue = (token->field.enumFlags & EnumFlags_HasValue) ? token->field.enumValue : enumValue + 1;
+			scan_duplicates(token, enumValue);
+			break;
+		}
+		default:;
+	}
+	const struct StructToken *st = NULL;
+	for(struct Token *token = tokens_end - 1; token >= tokens; --token) {
+		switch(token->type) {
+			case TType_Struct_start: st = NULL; break;
+			case TType_Struct_end: st = &token->struct_; break;
+			case TType_Field: {
+				if(!st)
+					break;
+				for(struct Token *t = token - 1; t >= tokens; --t) {
+					if(t->type != TType_Struct_start && t->type != TType_Struct_end)
+						continue;
+					if(strcmp(t->struct_.name, token->field.type))
+						continue;
+					t->struct_.sendIntern |= st->sendIntern;
+					t->struct_.recvIntern |= st->recvIntern;
+					if(t->type == TType_Struct_start)
+						break;
+				}
 				break;
-		if(b >= &sub[subcount])
-			return ptr;
-	}
-	return NULL;
-}
-
-void write_ifsub(char **out, const char *str, uint32_t len, const char *sub) {
-	write_fmt(out, "if(");
-	for(--str; len; --len) {
-		if(str[1] == '.' && (str[0] == '(' || str[0] == ' '))
-			write_fmt(out, "%s", sub);
-		*(*out)++ = *++str;
-	}
-	write_fmt(out, ") {\n");
-}
-
-void parse_struct_entries(const char **in, const char *structName, uint32_t indent, uint32_t outdent, const char *parent, char *def_start, char **def, char **des, char **ser, char **log) {
-	uint32_t offset = 0;
-	while(skip_tabs_maybe(in, indent)) {
-		if(skip_string_maybe(in, "if(")) {
-			if(parent)
-				fail(*in, "bitfields cannot contain conditionals");
-			const char *start = *in;
-			for(uint32_t pc = 1; **in && pc && **in != '\n'; ++(*in)) {
-				pc += (**in == '(');
-				pc -= (**in == ')');
 			}
-			uint32_t len = *in - start - 1;
-			skip_char(in, '\n');
-
-			if(*des)
-				write_ifsub(tabs(des, outdent), start, len, "out");
-			if(*ser)
-				write_ifsub(tabs(ser, outdent), start, len, "in");
-			if(*log)
-				write_ifsub(tabs(log, outdent), start, len, "in");
-			parse_struct_entries(in, structName, indent + 1, outdent + 1, parent, def_start, def, des, ser, log);
-			if(*des)
-				*des += sprintf(*tabs(des, outdent), "}\n");
-			if(*ser)
-				*ser += sprintf(*tabs(ser, outdent), "}\n");
-			if(*log)
-				*log += sprintf(*tabs(log, outdent), "}\n");
-		} else {
-			char serialType[128], dataType[128], logType[128], name[128], length[128] = "out.";
-			uint32_t count = 0;
-			_Bool rangecheck = 0, lengthField = 0;
-			fieldwidth_t width = read_type_double(in, serialType, dataType, logType);
-			if(!skip_char_maybe(in, '\n')) {
-				if(skip_char_maybe(in, '[')) {
-					count = atoll(skip_number(in));
-					if(skip_char_maybe(in, ',')) {
-						lengthField = skip_char_maybe(in, '.');
-						read_expr(in, &length[lengthField ? 4 : 0]), rangecheck = 1;
-					} else {
-						sprintf(length, "%u", count);
-					}
-					skip_char(in, ']');
-				}
-				skip_char(in, ' ');
-				if(read_word(in, name))
-					fail(*in, "expected member name");
-				skip_char(in, '\n');
-
-				if((width & EPHEMERAL_BIT) == 0) {
-					char *tempDef = *def, *cmp = &(*def)[strlen(dataType)+1];
-					if(count)
-						tempDef += sprintf(tempDef, "\t%s %s[%u];\n", dataType, name, count);
-					else
-						tempDef += sprintf(tempDef, "\t%s %s;\n", dataType, name);
-					if(memmem(def_start, cmp, *def - def_start, tempDef - cmp) == NULL)
-						*def = tempDef;
-				}
-
-				if(*des) {
-					if(rangecheck) {
-						char length_name[1024];
-						read_word((const char*[]){length}, length_name);
-						*des += sprintf(*tabs(des, outdent), "if(%s > %u) {\n", length, count);
-						*des += sprintf(*tabs(des, outdent + 1), "uprintf(\"Buffer overflow in read of %s.%s: %%u > %u\\n\", (uint32_t)%s)", structName, name, count, length);
-						if(lengthField)
-							*des += sprintf(*des, ", %s = 0", length_name);
-						*des += sprintf(*des, ", *pkt = _trap;\n");
-						*des += sprintf(*tabs(des, outdent++), "} else {\n");
-					}
-					if(count && width == 8) {
-						*des += sprintf(*tabs(des, outdent), "pkt_read%sArray(pkt, out.%s, %s);\n", serialType, name, length);
-					} else {
-						if(width & EPHEMERAL_BIT) {
-							*des += sprintf(*tabs(des, outdent), "%s %s", dataType, name);
-						} else {
-							if(count) {
-								*des += sprintf(*tabs(des, outdent), "for(uint32_t i = 0; i < %s; ++i)\n", length);
-								*des += sprintf(*tabs(des, outdent + 1), "out.%s[i]", name);
-							} else {
-								*des += sprintf(*tabs(des, outdent), "out.%s", name);
-							}
-						}
-						if(parent)
-							*des += sprintf(*des, " = (%s >> %u) & %u;\n", parent, offset, (1 << width) - 1);
-						else
-							*des += sprintf(*des, " = pkt_read%s(ctx, pkt);\n", serialType);
-					}
-					if(rangecheck)
-						*des += sprintf(*tabs(des, --outdent), "}\n");
-				}
-
-				char *length_in = length;
-				if(rangecheck && lengthField) {
-					length_in = &length[1];
-					memcpy(length_in, "in.", 3);
-				}
-				if(*log && (width & EPHEMERAL_BIT) == 0) {
-					if(count && width == 8) {
-						*log += sprintf(*tabs(log, outdent), "pkt_log%sArray(ctx, \"%s\", buf, it, in.%s, %s);\n", logType, name, name, length_in);
-					} else {
-						if(count)
-							*log += sprintf(*tabs(log, outdent), "for(uint32_t i = 0; i < %s; ++i)\n\t", length_in);
-						*log += sprintf(*tabs(log, outdent), "pkt_log%s(ctx, \"%s%s\", buf, it, in.%s%s);\n", logType, name, count ? "[]" : "", name, count ? "[i]" : "");
-					}
-				}
-
-				if(*ser && (width & EPHEMERAL_BIT))
-					*ser += sprintf(*tabs(ser, outdent), "%s %s = 0;\n", dataType, name);
-
-				parse_struct_entries(in, structName, indent + 1, outdent, name, def_start, def, des, ser, log);
-
-				if(*ser) {
-					if(parent) {
-						*ser += sprintf(*tabs(ser, outdent), "%s |= (in.%s << %u);\n", parent, name, offset);
-					} else {
-						if(count && width == 8) {
-							*ser += sprintf(*tabs(ser, outdent), "pkt_write%sArray(ctx, pkt, %s%s, %s);\n", serialType, (width & EPHEMERAL_BIT) ? "" : "in.", name, length_in);
-						} else {
-							if(count)
-								*ser += sprintf(*tabs(ser, outdent), "for(uint32_t i = 0; i < %s; ++i)\n\t", length_in);
-							*ser += sprintf(*tabs(ser, outdent), "pkt_write%s(ctx, pkt, %s%s%s);\n", serialType, (width & EPHEMERAL_BIT) ? "" : "in.", name, count ? "[i]" : "");
-						}
-					}
-				}
-			}
-			offset += width & ~EPHEMERAL_BIT;
 		}
 	}
-	(void)offset;
 }
 
-struct EnumEntry parse_struct(struct HeaderData *header, char **source, const char **in, uint32_t indent) {
-	struct EnumEntry self = {"", NULL};
-	char des[131072] = {0}, *des_end = (**in == 'r' || **in == 'd' || enableLog) ? des : NULL;
-	char ser[131072] = {0}, *ser_end = (**in == 's' || **in == 'd') ? ser : NULL;
-	char log[131072] = {0}, *log_end = NULL;
-	*in += 2;
-	if(read_word(in, self.name))
-		fail(*in, "expected struct name");
-	if(skip_char_maybe(in, ' '))
-		self.value = skip_number(in);
-	skip_char(in, '\n');
+static const char *StructType(const char *type) {
+	static char buf[256] = "struct ";
+	if(strcmp(type, "b") == 0) return "bool";
+	if(strcmp(type, "i8") == 0) return "int8_t";
+	if(strcmp(type, "u8") == 0) return "uint8_t";
+	if(strcmp(type, "i16") == 0) return "int16_t";
+	if(strcmp(type, "u16") == 0) return "uint16_t";
+	if(strcmp(type, "i32") == 0 || strcmp(type, "vi32") == 0) return "int32_t";
+	if(strcmp(type, "u32") == 0 || strcmp(type, "vu32") == 0) return "uint32_t";
+	if(strcmp(type, "i64") == 0 || strcmp(type, "vi64") == 0) return "int64_t";
+	if(strcmp(type, "u64") == 0 || strcmp(type, "vu64") == 0) return "uint64_t";
+	if(strcmp(type, "f32") == 0) return "float";
+	if(strcmp(type, "f64") == 0) return "double";
+	for(uint32_t i = 0; i < typedefs.count; ++i)
+		if(strcmp(type, typedefs.names[i]) == 0)
+			return type;
+	strncpy(&buf[7], type, sizeof(buf) - 7);
+	return buf;
+}
 
-	if(des_end) {
-		char fn[1024];
-		sprintf(fn, "%s pkt_read%s(", self.name, self.name);
-		if(strstr(source_buf, fn))
-			des_end = NULL;
+static const char *SerialType(const char *type) {
+	for(uint32_t i = 0; i < typedefs.count; ++i)
+		if(strcmp(type, typedefs.names[i]) == 0)
+			return typedefs.types[i];
+	return type;
+}
+
+static const char *sig_rdwr(const char *name, bool wr) {
+	static char out[8192];
+	snprintf(out, sizeof(out), "void _pkt_%s_%s(%sstruct %s *restrict data, %suint8_t **pkt, const uint8_t *end, struct PacketContext ctx)", name, wr ? "write" : "read", wr ? "const " : "", name, wr ? "" : "const ");
+	return out;
+}
+
+static void gen_header_enum(char **out, struct Token *token) {
+	uint32_t scope = 0;
+	const char *enumName = token->enum_.name;
+	write_fmt(out, "typedef %s %s;\n", StructType(token->enum_.type), enumName);
+	if(token[1].type == TType_Enum_end)
+		return;
+	write_str(out, "enum {\n");
+	TOKEN_ITER(token) {
+		case TType_Enum_start: ++scope; break;
+		case TType_Enum_end: {
+			if(--scope)
+				break;
+			write_str(out, "};\n");
+			return;
+		}
+		case TType_Field: {
+			if(scope != 1)
+				break;
+			if(token->field.enumFlags & EnumFlags_HasValue) {
+				if(token->field.enumValue > (~0u >> 1))
+					write_fmt_indent(out, 1, "#define %s_%s %lldu\n", enumName, token->field.type, token->field.enumValue); // TODO: check subsequent values as well
+				else
+					write_fmt_indent(out, 1, "%s_%s = %lld,\n", enumName, token->field.type, token->field.enumValue);
+			} else {
+				write_fmt_indent(out, 1, "%s_%s,\n", enumName, token->field.type);
+			}
+			break;
+		}
+		default:;
 	}
-	if(enableLog) {
-		char fn[1024];
-		sprintf(fn, "void pkt_log%s(", self.name);
-		if(strstr(source_buf, fn) == 0)
-			log_end = log;
+	fail("invalid token sequence");
+}
+
+static void gen_header_reflect(char **out, struct Token *token) {
+	uint32_t scope = 0;
+	const char *enumName = token->enum_.name;
+	write_fmt(out, "[[maybe_unused]] static const char *_reflect_%s(%s value) {\n\tswitch(value) {\n", enumName, enumName);
+	TOKEN_ITER(token) {
+		case TType_Enum_start: ++scope; break;
+		case TType_Enum_end: {
+			if(--scope)
+				break;
+			write_indent(out, 2, "default: return \"???\";\n\t}\n}\n");
+			return;
+		}
+		case TType_Field: {
+			if(scope == 1 && (token->field.enumFlags & EnumFlags_IsDuplicate) == 0)
+				write_fmt_indent(out, 2, "case %s_%s: return \"%s\";\n", enumName, token->field.type, token->field.type);
+			break;
+		}
+		default:;
 	}
+	fail("invalid token sequence");
+}
 
-	if(!(des_end || ser_end || log_end))
-		return self;
-
-	char def[131072], *def_end = def;
-	def_end += sprintf(def_end, "struct %s {\n", self.name);
-	parse_struct_entries(in, self.name, indent + 1, 1, NULL, def, &def_end, &des_end, &ser_end, &log_end);
-	header->structs += sprintf(header->structs, "%s};\n", def);
-
-	if(des_end) {
-		header->funcs += sprintf(header->funcs, "struct %s pkt_read%s(struct PacketContext ctx, const uint8_t **pkt);\n", self.name, self.name);
-		if(des_end == des)
-			*source += sprintf(*source, "struct %s pkt_read%s(struct PacketContext ctx, const uint8_t **pkt) {\n\treturn (struct %s){};\n}\n", self.name, self.name, self.name);
+static void gen_header(char **out, const char *headerName) {
+	write_fmt(out, "#pragma once\n#include \"log.h\"\n#include <stdint.h>\n#include <stdbool.h>\n#include \"%s.h\"\n", headerName);
+	TOKEN_LOOP(token) {
+		case TType_Enum_start: {
+			gen_header_enum(out, token);
+			gen_header_reflect(out, token);
+			break;
+		}
+		default:;
+	}
+	uint32_t indent = 0;
+	TOKEN_LOOP(token) {
+		case TType_Enum_start: if(*token->enum_.switchField) write_indent(out, indent++, "union {\n"); break;
+		case TType_Enum_end: if(*token->enum_.switchField) write_indent(out, --indent, "};\n"); break;
+		case TType_Struct_start: ++indent; write_fmt(out, "struct %s {\n%s", token->struct_.name, (token[1].type == TType_Struct_end) ? "\tuint8_t _empty;\n" : ""); break;
+		case TType_Struct_end: --indent; write_fmt(out, "};\n"); break;
+		case TType_Field:
+		if(!indent)
+			break;
+		if(token->field.maxCount != 1)
+			write_fmt_indent(out, indent, "%s %s[%hu];\n", StructType(token->field.type), token->field.name, token->field.maxCount);
 		else
-			*source += sprintf(*source, "struct %s pkt_read%s(struct PacketContext ctx, const uint8_t **pkt) {\n\tstruct %s out;\n%s\treturn out;\n}\n", self.name, self.name, self.name, des);
+			write_fmt_indent(out, indent, "%s %s;\n", StructType(token->field.type), token->field.name);
+		default:;
 	}
-	if(ser_end) {
-		header->funcs += sprintf(header->funcs, "void pkt_write%s(struct PacketContext ctx, uint8_t **pkt, struct %s in);\n", self.name, self.name);
-		*source += sprintf(*source, "void pkt_write%s(struct PacketContext ctx, uint8_t **pkt, struct %s in) {\n%s}\n", self.name, self.name, ser);
+	write_fmt(out,
+		"static const struct PacketContext PV_LEGACY_DEFAULT = {\n"
+		"\t.netVersion = 11,\n"
+		"\t.protocolVersion = 6,\n"
+		"\t.windowSize = 64,\n"
+		"\t.beatUpVersion = 0,\n"
+		"};\n");
+	for(struct Token *token = tokens; token < tokens_end; ++token) {
+		if(token->type != TType_Struct_start)
+			continue;
+		if(token->struct_.recv)
+			write_fmt(out, "%s;\n", sig_rdwr(token->struct_.name, false));
+		if(token->struct_.send)
+			write_fmt(out, "%s;\n", sig_rdwr(token->struct_.name, true));
 	}
-	if(log_end) {
-		header->funcs += sprintf(header->funcs, "void pkt_log%s(struct PacketContext ctx, const char *name, char *buf, char *it, struct %s in);\n", self.name, self.name);
-		*source += sprintf(*source, "void pkt_log%s(struct PacketContext ctx, const char *name, char *buf, char *it, struct %s in) {\n\tit += sprintf(it, \"%%s.\", name);\n%s}\n", self.name, self.name, log);
-	}
-	return self;
+	write_str(out,
+		"#define reflect(type, value) _reflect_##type(value)\n"
+		"size_t _pkt_try_read(void (*inner)(void *restrict, const uint8_t**, const uint8_t*, struct PacketContext), void *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);\n"
+		"size_t _pkt_try_write(void (*inner)(const void *restrict, uint8_t**, const uint8_t*, struct PacketContext), const void *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);\n"
+		"#define pkt_write_c(pkt, end, ctx, type, ...) _pkt_try_write((void (*)(const void *restrict, uint8_t**, const uint8_t*, struct PacketContext))_pkt_##type##_write, &(struct type)__VA_ARGS__, pkt, end, ctx)\n"
+		"#define pkt_read(data, ...) _pkt_try_read((void (*)(void *restrict, const uint8_t**, const uint8_t*, struct PacketContext))_Generic(*(data)");
+	for(struct Token *token = tokens; token < tokens_end; ++token)
+		if(token->type == TType_Struct_start && token->struct_.recv)
+			write_fmt(out, ", struct %s: _pkt_%s_read", token->struct_.name, token->struct_.name);
+	write_str(out,
+		"), data, __VA_ARGS__)\n"
+		"#define pkt_write(data, ...) _pkt_try_write((void (*)(const void *restrict, uint8_t**, const uint8_t*, struct PacketContext))_Generic(*(data)");
+	for(struct Token *token = tokens; token < tokens_end; ++token)
+		if(token->type == TType_Struct_start && token->struct_.send)
+			write_fmt(out, ", struct %s: _pkt_%s_write", token->struct_.name, token->struct_.name);
+	write_str(out,
+		"), data, __VA_ARGS__)\n"
+		"size_t pkt_write_bytes(const uint8_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx, size_t count);\n");
 }
 
-struct EnumEntry parse_enum(struct HeaderData *header, char **source, const char **in, uint32_t indent) {
-	struct EnumEntry self = {"", NULL};
-	char type[128], suffix[128] = {0};
-	read_type(in, type, TYPE_DATA_ENUM);
-	skip_char(in, ' ');
-	if(read_word(in, self.name))
-		fail(*in, "expected enum name");
-	if(skip_char_maybe(in, ' ')) {
-		if(read_word(in, suffix))
-			fail(*in, "expected enum suffix");
+static const char *scan_bitfield_type(const struct Token *it) {
+	uint32_t bitWidth = 7;
+	for(; it < tokens_end && it->type == TType_Field && it->field.bitWidth; ++it)
+		bitWidth += it->field.bitWidth;
+	switch(bitWidth / 8) {
+		case 1: return "u8";
+		case 2: return "u16";
+		default: return "u32";
 	}
-	if(skip_char_maybe(in, ' '))
-		self.value = skip_number(in);
-	skip_char(in, '\n');
+}
 
-	char buf[131072], *buf_end = buf;
-	buf_end += sprintf(buf_end, "ENUM(%s, %s%s, {\n", type, self.name, suffix);
-	char *start = buf_end;
-	while(skip_tabs_maybe(in, indent + 1)) {
-		struct EnumEntry e = parse_value(header, source, in, indent + 1);
-		if(*e.name) {
-			if(e.value)
-				buf_end += sprintf(buf_end, "\t%s%s_%s = %lld,\n", self.name, suffix, e.name, atoll(e.value));
-			else
-				buf_end += sprintf(buf_end, "\t%s%s_%s,\n", self.name, suffix, e.name);
-		}
+static const char *fill_expr(const char *expr, const char *data, const char *ctx) {
+	static char out[8192];
+	char *out_end = out;
+	size_t data_len = strlen(data), ctx_len = strlen(ctx), pad = data_len > ctx_len ? data_len : ctx_len;
+	while(*expr == ' ')
+		++expr;
+	for(char prev = 0; *expr && out_end + pad - out < sizeof(out); prev = *expr++) {
+		if(*expr == '.' && !alpha(prev))
+			write_str(&out_end, data);
+		else if(*expr == '$')
+			write_str(&out_end, ctx);
+		else
+			*out_end++ = *expr;
 	}
-	if(start == buf_end)
-		header->enums += sprintf(header->enums, "typedef %s %s%s;\n", type, self.name, suffix);
+	*out_end = 0;
+	return out;
+}
+
+static const char *FieldToken_get_count(const struct FieldToken *field, const char *structName) {
+	static char out[8192];
+	if(*field->count)
+		snprintf(out, sizeof(out), "check_overflow(%s, %u, \"%s.%s\")", fill_expr(field->count, "data->", "ctx."), field->maxCount, structName, field->name);
 	else
-		header->enums += sprintf(header->enums, "%s})\n", buf);
-	if(enableLog) {
-		char fn[1024];
-		sprintf(fn, "void pkt_log%s%s(", self.name, suffix);
-		if(strstr(source_buf, fn) == 0) {
-			*source += sprintf(*source, "void pkt_log%s%s(struct PacketContext ctx, const char *name, char *buf, char *it, %s%s in) {", self.name, suffix, self.name, suffix);
-			if(start != buf_end)
-				*source += sprintf(*source, "\n\tuprintf(\"%%.*s%%s=%%u (%%s)\\n\", (uint32_t)(it - buf), buf, name, in, reflect(%s%s, in));\n", self.name, suffix);
-			*source += sprintf(*source, "}\n");
+		snprintf(out, sizeof(out), "%u", field->maxCount);
+	return out;
+}
+
+static void gen_source_rdwr(char **out, struct Token *token, bool wr, bool static_) {
+	uint32_t scope = 0, indent = 1, bitName = ~0u, bitOffset = 0;
+	const char *rdwr = wr ? "write" : "read", *structName = token->struct_.name, *switchName = NULL, *bitType = NULL;
+	write_fmt(out, "%s%s {\n", static_ ? "static " : "", sig_rdwr(structName, wr));
+	TOKEN_ITER(token) {
+		case TType_Enum_start: switchName = token->enum_.name; write_fmt_indent(out, indent++, "switch(%s) {\n", fill_expr(token->enum_.switchField, "data->", "ctx.")); break;
+		case TType_Enum_end: {
+			switchName = NULL;
+			write_fmt_indent(out, indent, "default: uprintf(\"Invalid value for enum `%s`\\n\"); longjmp(fail, 1);\n", token->enum_.name);
+			write_indent(out, --indent, "}\n");
+			break;
 		}
+		case TType_Struct_start: ++scope; break;
+		case TType_Struct_end: {
+			if(--scope)
+				break;
+			write_fmt(out, "}\n");
+			return;
+		}
+		case TType_If_start: write_fmt_indent(out, indent++, "if(%s) {\n", fill_expr(token->if_.condition, "data->", "ctx.")); break;
+		case TType_If_end: write_indent(out, --indent, "}\n"); break;
+		case TType_Field: {
+			if(scope != 1)
+				break;
+			if(token->field.bitWidth) {
+				if(bitOffset == 0) {
+					bitType = scan_bitfield_type(token);
+					write_fmt_indent(out, indent, "%s bitfield%u%s;\n", StructType(bitType), ++bitName, wr ? " = 0" : "");
+					if(!wr)
+						write_fmt_indent(out, indent, "_pkt_%s_read(&bitfield%u, pkt, end, ctx);\n", bitType, bitName);
+				}
+				if(wr) {
+					write_fmt_indent(out, indent, "bitfield%u |= (data->%s & %uu) << %u;\n", bitName, token->field.name, ~0llu >> (64 - token->field.bitWidth), bitOffset);
+					if(token[1].type != TType_Field || token[1].field.bitWidth == 0)
+						write_fmt_indent(out, indent, "_pkt_%s_write(&bitfield%u, pkt, end, ctx);\n", bitType, bitName);
+				} else {
+					write_fmt_indent(out, indent, "data->%s = bitfield%u >> %u & %u;\n", token->field.name, bitName, bitOffset, ~0llu >> (64 - token->field.bitWidth));
+				}
+				bitOffset += token->field.bitWidth;
+			} else {
+				bitOffset = 0;
+				const char *stype = SerialType(token->field.type);
+				if(switchName)
+					write_fmt_indent(out, indent, "case %s_%s: ", switchName, token->field.type);
+				if((strcmp(stype, "u8") == 0 || strcmp(stype, "i8") == 0) && token->field.maxCount != 1) {
+					write_fmt_indent(out, switchName ? 0 : indent, "_pkt_raw_%s(data->%s, pkt, end, ctx, %s);%s", rdwr, token->field.name, FieldToken_get_count(&token->field, structName), switchName ? "" : "\n");
+				} else {
+					if(token->field.maxCount != 1)
+						write_fmt_indent(out, switchName ? 0 : indent, "for(uint32_t i = 0, count = %s; i < count; ++i)%s", FieldToken_get_count(&token->field, structName), switchName ? " " : "\n\t");
+					write_fmt_indent(out, switchName ? 0 : indent, "_pkt_%s_%s(&data->%s%s, pkt, end, ctx);%s", stype, rdwr, token->field.name, token->field.maxCount == 1 ? "" : "[i]", switchName ? "" : "\n");
+				}
+				if(switchName)
+					write_str(out, " break;\n");
+			}
+			break;
+		}
+		default:;
 	}
-	return self;
+	fail("invalid token sequence");
 }
 
-void parse_extra(char **out, const char **in, uint32_t indent) {
-	while(skip_tabs_maybe(in, indent)) {
-		const char *start = *in;
-		skip_line(in);
-		*out += sprintf(*out, "%.*s", (uint32_t)(*in - start), start);
+static void gen_source(char **out, const char *headerName, const char *sourceName) {
+	write_fmt(out, "#include \"%s\"\n", headerName);
+	write_fmt(out, "#include \"%s.h\"\n", sourceName);
+	TOKEN_LOOP(token) {
+		case TType_Struct_start: {
+			if(token->struct_.recvIntern)
+				gen_source_rdwr(out, token, false, !token->struct_.recv);
+			if(token->struct_.sendIntern)
+				gen_source_rdwr(out, token, true, !token->struct_.send);
+			break;
+		}
+		default:;
 	}
 }
-void parse_source_extra(char **source, const char **in, uint32_t indent) {}
 
-struct EnumEntry parse_value(struct HeaderData *header, char **source, const char **in, uint32_t indent) {
-	struct EnumEntry e = {"", NULL};
-	if((**in == 'r' || **in == 's' || **in == 'd' || **in == 'n') && (*in)[1] == ' ') {
-		return parse_struct(header, source, in, indent);
-	} else if(strncmp(*in, "u8 ", 3) == 0 || strncmp(*in, "u16 ", 4) == 0 || strncmp(*in, "u32 ", 4) == 0 || strncmp(*in, "i32 ", 4) == 0) {
-		return parse_enum(header, source, in, indent);
-	} else if(skip_string_maybe(in, "z ")) {
-		if(read_word(in, e.name))
-			fail(*in, "expected name");
-		if(skip_char_maybe(in, ' '))
-			e.value = skip_number(in);
-		skip_char(in, '\n');
-	} else if(skip_string_maybe(in, "enum\n")) {
-		parse_extra(&header->enums, in, indent + 1);
-		return parse_value(header, source, in, indent);
-	} else if(skip_string_maybe(in, "head\n")) {
-		parse_extra(&header->funcs, in, indent + 1);
-		return parse_value(header, source, in, indent);
-	} else if(skip_string_maybe(in, "code\n")) {
-		parse_extra(source, in, indent + 1);
-		return parse_value(header, source, in, indent);
-	} else {
-		skip_line(in);
-	}
-	return e;
-}
-
-int main(int argc, char const *argv[]) {
+int32_t main(int32_t argc, const char *argv[]) {
 	if(argc == 5 && strcmp(argv[4], "-l") == 0) {
-		enableLog = 1;
+		enableLog = true;
+		uprintf("Logging functions not yet implemented\n");
+		return -1;
 	} else if(argc != 4) {
-		fprintf(stderr, "Usage: %s <definition.txt> <output.h> <output.c> [-l]", argv[0]);
-		return 1;
-	}
-	FILE *infile = fopen(argv[1], "rb");
-	fseek(infile, 0, SEEK_END);
-	size_t infile_len = ftell(infile);
-	char in[infile_len+1];
-	const char *in_end = in;
-	fseek(infile, 0, SEEK_SET);
-	if(fread(in, 1, infile_len, infile) != infile_len) {
-		fclose(infile);
-		fprintf(stderr, "Failed to read %s\n", argv[1]);
+		uprintf("Usage: %s <definition.txt> <output.h> <output.c> [-l]", argv[0]);
 		return -1;
 	}
-	fclose(infile);
-	desc = in, descName = argv[1];
-	in[infile_len] = 0;
+	parse_file(argv[1]);
+	parse("n PacketContext\n\tu8 netVersion\n\tu8 protocolVersion\n\tu8 windowSize\n\tu8 beatUpVersion\n");
+	resolve();
+	const char *headerName = argv[2], *sourceName = argv[3];
+	for(const char *it = headerName; *it;)
+		if(*it++ == '/')
+			headerName = it;
+	for(const char *it = sourceName; *it;)
+		if(*it++ == '/')
+			sourceName = it;
+	char output_h[524288], *output_h_end = output_h;
+	gen_header(&output_h_end, headerName);
+	char output_c[524288], *output_c_end = output_c;
+	gen_source(&output_c_end, headerName, sourceName);
 
-	char header_enums[524288];
-	char header_structs[524288];
-	char header_funcs[196608];
-	struct HeaderData header_end = {
-		.enums = header_enums,
-		.structs = header_structs,
-		.funcs = header_funcs,
-	};
-	write_fmt(&header_end.enums, "#ifndef PACKETS_H\n#define PACKETS_H\n\n");
-	write_warning(&header_end.enums);
-	write_fmt(&header_end.enums, "#include \"log.h\"\n");
-	write_fmt(&header_end.enums, "#include \"enum.h\"\n");
-	write_fmt(&header_end.enums, "#include <stdint.h>\n\n");
-	if(enableLog)
-		write_fmt(&header_end.enums, "#define PACKET_LOGGING_FUNCS\n\n");
-	write_fmt(&header_end.enums,
-		"struct PacketContext {\n"
-		"\tuint8_t netVersion;\n"
-		"\tuint8_t protocolVersion;\n"
-		"\tuint8_t windowSize;\n"
-		"\tuint8_t beatUpVersion;\n"
-		"};\n"
-		"#define PV_LEGACY_DEFAULT (struct PacketContext){11, 6, 64, 0}\n"
-		"extern const uint8_t _trap[128];\n\n");
-
-	char source[524288], *source_end = source;
-	source_buf = source;
-	write_warning(&source_end);
-	write_fmt(&source_end, "#include \"enum_reflection.h\"\n");
-	write_fmt(&source_end, "#include \"packets.OLD.h\"\n");
-	write_fmt(&source_end, "const uint8_t _trap[128] = {~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,~0,};\n");
-
-	while(*in_end)
-		parse_value(&header_end, &source_end, &in_end, 0);
-
-	write_fmt(&header_end.funcs, "#endif // PACKETS_H\n");
-
+	filename = argv[2];
 	FILE *outfile = fopen(argv[2], "wb");
-	if(fwrite(header_enums, 1, header_end.enums - header_enums, outfile) != header_end.enums - header_enums ||
-	   fwrite(header_structs, 1, header_end.structs - header_structs, outfile) != header_end.structs - header_structs ||
-	   fwrite(header_funcs, 1, header_end.funcs - header_funcs, outfile) != header_end.funcs - header_funcs) {
-		fclose(outfile);
-		fprintf(stderr, "Failed to write to %s\n", argv[2]);
-		return -1;
-	}
+	bool res = (fwrite(output_h, 1, output_h_end - output_h, outfile) != output_h_end - output_h);
 	fclose(outfile);
+	if(res)
+		fail("Failed to write\n");
 
+	filename = argv[3];
 	outfile = fopen(argv[3], "wb");
-	if(fwrite(source, 1, source_end - source, outfile) != source_end - source) {
-		fclose(outfile);
-		fprintf(stderr, "Failed to write to %s\n", argv[3]);
-		return -1;
-	}
+	res = (fwrite(output_c, 1, output_c_end - output_c, outfile) != output_c_end - output_c);
 	fclose(outfile);
+	if(res)
+		fail("Failed to write\n");
 	return 0;
 }

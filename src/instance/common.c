@@ -1,6 +1,4 @@
-#include "../enum_reflection.h"
-#include "../packets.OLD.h"
-#include "../debug.h"
+#include "../packets.h"
 #include "common.h"
 #include <stdlib.h>
 #include <time.h>
@@ -44,23 +42,26 @@ void instance_channels_free(struct Channels *channels) {
 	}
 }
 
-static void resend_add(struct PacketContext version, struct ReliableChannel *channel, const uint8_t *buf, uint32_t len, DeliveryMethod method, _Bool isFragmented, struct FragmentedHeader fragmentHeader) {
+static void resend_add(struct PacketContext version, struct ReliableChannel *channel, const uint8_t *buf, uint32_t len, DeliveryMethod method, bool isFragmented, struct FragmentedHeader fragmentHeader) {
 	struct InstanceResendPacket *resend = &channel->resend[channel->outboundSequence % version.windowSize];
 	resend->timeStamp = net_time() - NET_RESEND_DELAY;
 	uint8_t *data_end = resend->data;
-	pkt_writeNetPacketHeader(version, &data_end, (struct NetPacketHeader){PacketProperty_Channeled, 0, isFragmented});
-	pkt_writeChanneled(version, &data_end, (struct Channeled){
-		.sequence = channel->outboundSequence,
-		.channelId = method,
+	resend->len = pkt_write_c(&data_end, endof(resend->data), version, NetPacketHeader, {
+		.property = PacketProperty_Channeled,
+		.connectionNumber = 0,
+		.isFragmented = isFragmented,
+		.channeled = {
+			.sequence = channel->outboundSequence,
+			.channelId = method,
+		},
 	});
 	if(isFragmented)
-		pkt_writeFragmentedHeader(version, &data_end, fragmentHeader);
-	pkt_writeUint8Array(version, &data_end, buf, len);
-	resend->len = data_end - resend->data;
+		resend->len += pkt_write(&fragmentHeader, &data_end, endof(resend->data), version);
+	resend->len += pkt_write_bytes(buf, &data_end, endof(resend->data), version, len);
 	channel->outboundSequence = (channel->outboundSequence + 1) % NET_MAX_SEQUENCE;
 }
 
-static void instance_send_backlog(struct PacketContext version, struct Channels *channels, const uint8_t *buf, uint32_t len, DeliveryMethod channelId, _Bool isFragmented, struct FragmentedHeader fragmentHeader) {
+static void instance_send_backlog(struct PacketContext version, struct Channels *channels, const uint8_t *buf, uint32_t len, DeliveryMethod channelId, bool isFragmented, struct FragmentedHeader fragmentHeader) {
 	if(channelId != DeliveryMethod_ReliableOrdered) {
 		uprintf("instance_send_channeled(DeliveryMethod_%s) not implemented\n", reflect(DeliveryMethod, channelId));
 		abort();
@@ -103,30 +104,29 @@ void instance_send_channeled(struct NetSession *session, struct Channels *channe
 	instance_send_backlog(session->version, channels, buf, len, channelId, 1, fragmentHeader);
 }
 
-void handle_Ack(struct NetSession *session, struct Channels *channels, const uint8_t **data) {
-	struct Ack ack = pkt_readAck(session->version, data);
-	if(ack.channelId == DeliveryMethod_ReliableSequenced) {
-		if(ack.sequence == channels->rs.outboundSequence)
+void handle_Ack(struct NetSession *session, struct Channels *channels, const struct Ack *ack) {
+	if(ack->channelId == DeliveryMethod_ReliableSequenced) {
+		if(ack->sequence == channels->rs.outboundSequence)
 			channels->rs.resend.len = 0;
 		return;
 	}
-	struct ReliableChannel *channel = (ack.channelId == DeliveryMethod_ReliableUnordered) ? &channels->ru.base : &channels->ro.base;
-	if(ack.sequence >= NET_MAX_SEQUENCE || RelativeSequenceNumber(channel->outboundWindowStart, ack.sequence) < 0) {
+	struct ReliableChannel *channel = (ack->channelId == DeliveryMethod_ReliableUnordered) ? &channels->ru.base : &channels->ro.base;
+	if(ack->sequence >= NET_MAX_SEQUENCE || RelativeSequenceNumber(channel->outboundWindowStart, ack->sequence) < 0) {
 		uprintf("BAD ACK WINDOW\n");
 		return;
 	}
 	for(uint16_t sequence = channel->outboundWindowStart, end = channel->outboundSequence; sequence != end; sequence = (sequence + 1) % NET_MAX_SEQUENCE) {
-		if(RelativeSequenceNumber(sequence, ack.sequence) >= session->version.windowSize)
+		if(RelativeSequenceNumber(sequence, ack->sequence) >= session->version.windowSize)
 			break;
 		uint16_t pendingIdx = sequence % session->version.windowSize;
-		if((ack.data[pendingIdx / bitsize(*ack.data)] >> (pendingIdx % bitsize(*ack.data))) & 1)
+		if((ack->data[pendingIdx / bitsize(*ack->data)] >> (pendingIdx % bitsize(*ack->data))) & 1)
 			channel->resend[pendingIdx].len = 0;
 		if(channel->resend[pendingIdx].len || sequence != channel->outboundWindowStart)
 			continue;
 		channel->outboundWindowStart = (channel->outboundWindowStart + 1) % NET_MAX_SEQUENCE;
 		if(!channel->backlog)
 			continue;
-		resend_add(session->version, channel, channel->backlog->pkt.data, channel->backlog->pkt.len, ack.channelId, channel->backlog->pkt.isFragmented, channel->backlog->pkt.fragmentHeader);
+		resend_add(session->version, channel, channel->backlog->pkt.data, channel->backlog->pkt.len, ack->channelId, channel->backlog->pkt.isFragmented, channel->backlog->pkt.fragmentHeader);
 		struct InstancePacketList *e = channel->backlog;
 		channel->backlog = channel->backlog->next;
 		free(e);
@@ -135,12 +135,14 @@ void handle_Ack(struct NetSession *session, struct Channels *channels, const uin
 	}
 }
 
-static void process_Reliable(ChanneledHandler handler, struct NetSession *session, struct Channels *channels, void *p_ctx, void *p_room, void *p_session, const uint8_t **data, const uint8_t *end, DeliveryMethod channelId, _Bool isFragmented) {
+static void process_Reliable(ChanneledHandler handler, struct NetSession *session, struct Channels *channels, void *p_ctx, void *p_room, void *p_session, const uint8_t **data, const uint8_t *end, DeliveryMethod channelId, bool isFragmented) {
 	if(!isFragmented) {
 		handler(p_ctx, p_room, p_session, data, end, channelId);
 		return;
 	}
-	struct FragmentedHeader header = pkt_readFragmentedHeader(session->version, data);
+	struct FragmentedHeader header;
+	if(!pkt_read(&header, data, end, session->version))
+		return;
 	struct IncomingFragments **incoming = &channels->incomingFragmentsList;
 	do {
 		if(*incoming == NULL) {
@@ -167,16 +169,16 @@ static void process_Reliable(ChanneledHandler handler, struct NetSession *sessio
 		if(++(*incoming)->count < (*incoming)->total) {
 			(*incoming)->fragments[header.fragmentPart].len = end - *data;
 			(*incoming)->fragments[header.fragmentPart].isFragmented = 1;
-			pkt_readUint8Array(data, (*incoming)->fragments[header.fragmentPart].data, end - *data);
+			memcpy((*incoming)->fragments[header.fragmentPart].data, *data, end - *data), *data = end;
 			return;
 		} else {
 			uint8_t pkt[(*incoming)->size], *pkt_end = pkt;
 			const uint8_t *pkt_it = pkt;
 			for(uint32_t i = 0; i < (*incoming)->total; ++i) {
 				if(i == header.fragmentPart)
-					pkt_writeUint8Array(session->version, &pkt_end, *data, end - *data), *data = end;
+					pkt_write_bytes(*data, &pkt_end, endof(pkt), session->version, end - *data), *data = end;
 				else
-					pkt_writeUint8Array(session->version, &pkt_end, (*incoming)->fragments[i].data, (*incoming)->fragments[i].len);
+					pkt_write_bytes((*incoming)->fragments[i].data, &pkt_end, endof(pkt), session->version, (*incoming)->fragments[i].len);
 			}
 			#ifdef PACKET_LOGGING_FUNCS
 			{
@@ -195,8 +197,8 @@ static void process_Reliable(ChanneledHandler handler, struct NetSession *sessio
 	} while(0);
 }
 
-void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct NetSession *session, struct Channels *channels, void *p_ctx, void *p_room, void *p_session, const uint8_t **data, const uint8_t *end, _Bool isFragmented) {
-	struct Channeled channeled = pkt_readChanneled(session->version, data);
+void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct NetSession *session, struct Channels *channels, void *p_ctx, void *p_room, void *p_session, const struct NetPacketHeader *header, const uint8_t **data, const uint8_t *end) {
+	struct Channeled channeled = header->channeled;
 	if(channeled.sequence >= NET_MAX_SEQUENCE)
 		return;
 	struct ReliableChannel *channel = &channels->ro.base;
@@ -222,7 +224,7 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 				break;
 			channel->ack.data[ackIdx / bitsize(*channel->ack.data)] |= 1 << (ackIdx % bitsize(*channel->ack.data));
 			if(channeled.sequence == channel->inboundSequence) {
-				process_Reliable(handler, session, channels, p_ctx, p_room, p_session, data, end, channeled.channelId, isFragmented);
+				process_Reliable(handler, session, channels, p_ctx, p_room, p_session, data, end, channeled.channelId, header->isFragmented);
 				channel->inboundSequence = (channel->inboundSequence + 1) % NET_MAX_SEQUENCE;
 				if(channeled.channelId == DeliveryMethod_ReliableOrdered) {
 					while(channels->ro.receivedPackets[channel->inboundSequence % session->version.windowSize].len) {
@@ -244,18 +246,18 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 				return;
 			} else if(channeled.channelId == DeliveryMethod_ReliableOrdered) {
 				channels->ro.receivedPackets[ackIdx].len = end - *data;
-				channels->ro.receivedPackets[ackIdx].isFragmented = isFragmented;
+				channels->ro.receivedPackets[ackIdx].isFragmented = header->isFragmented;
 				memcpy(channels->ro.receivedPackets[ackIdx].data, *data, end - *data);
 			} else {
 				channels->ru.earlyReceived[ackIdx] = 1;
-				process_Reliable(handler, session, channels, p_ctx, p_room, p_session, data, end, DeliveryMethod_ReliableUnordered, isFragmented);
+				process_Reliable(handler, session, channels, p_ctx, p_room, p_session, data, end, DeliveryMethod_ReliableUnordered, header->isFragmented);
 				return;
 			}
 			break;
 		}
 		case DeliveryMethod_Sequenced: break;
 		case DeliveryMethod_ReliableSequenced: {
-			if(isFragmented) {
+			if(header->isFragmented) {
 				uprintf("MALFORMED PACKET\n");
 				break;
 			}
@@ -265,8 +267,12 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 				handler(p_ctx, p_room, p_session, data, end, DeliveryMethod_ReliableSequenced);
 			}
 			uint8_t resp[65536], *resp_end = resp;
-			pkt_writeNetPacketHeader(session->version, &resp_end, (struct NetPacketHeader){PacketProperty_Ack, 0, 0});
-			pkt_writeAck(session->version, &resp_end, channels->rs.ack);
+			pkt_write_c(&resp_end, endof(resp), session->version, NetPacketHeader, {
+				.property = PacketProperty_Ack,
+				.connectionNumber = 0,
+				.isFragmented = false,
+				.ack = channels->rs.ack,
+			});
 			net_queue_merged(net, session, resp, resp_end - resp);
 			return;
 		}
@@ -282,15 +288,18 @@ uint64_t get_time() {
 	return (uint64_t)now.tv_sec * 10000000LLU + (uint64_t)now.tv_nsec / 100LLU;
 }
 
-void handle_Ping(struct NetContext *net, struct NetSession *session, struct PingPong *pingpong, const uint8_t **data) {
-	struct Ping ping = pkt_readPing(session->version, data);
+void handle_Ping(struct NetContext *net, struct NetSession *session, struct PingPong *pingpong, struct Ping ping) {
 	uint64_t time = get_time();
 	if(RelativeSequenceNumber(ping.sequence, pingpong->pong.sequence) > 0) {
 		pingpong->pong.sequence = ping.sequence;
 		pingpong->pong.time = time;
 		uint8_t resp[65536], *resp_end = resp;
-		pkt_writeNetPacketHeader(session->version, &resp_end, (struct NetPacketHeader){PacketProperty_Pong, 0, 0});
-		pkt_writePong(session->version, &resp_end, pingpong->pong);
+		pkt_write_c(&resp_end, endof(resp), session->version, NetPacketHeader, {
+			.property = PacketProperty_Pong,
+			.connectionNumber = 0,
+			.isFragmented = false,
+			.pong = pingpong->pong,
+		});
 		net_send_internal(net, session, resp, resp_end - resp, 1);
 	}
 	if((time - pingpong->lastPing > 5000000LLU && !pingpong->waiting) || time - pingpong->lastPing > 30000000LLU) {
@@ -298,27 +307,32 @@ void handle_Ping(struct NetContext *net, struct NetSession *session, struct Ping
 		pingpong->waiting = 1;
 		++pingpong->ping.sequence;
 		uint8_t resp[65536], *resp_end = resp;
-		pkt_writeNetPacketHeader(session->version, &resp_end, (struct NetPacketHeader){PacketProperty_Ping, 0, 0});
-		pkt_writePing(session->version, &resp_end, pingpong->ping);
+		pkt_write_c(&resp_end, endof(resp), session->version, NetPacketHeader, {
+			.property = PacketProperty_Ping,
+			.connectionNumber = 0,
+			.isFragmented = false,
+			.ping = pingpong->ping,
+		});
 		net_send_internal(net, session, resp, resp_end - resp, 1);
 	}
 }
 
-float handle_Pong(struct NetContext *net, struct NetSession *session, struct PingPong *pingpong, const uint8_t **data) {
-	struct Pong pong = pkt_readPong(session->version, data);
+float handle_Pong(struct NetContext *net, struct NetSession *session, struct PingPong *pingpong, struct Pong pong) {
 	if(pong.sequence != pingpong->ping.sequence)
 		return 0;
 	pingpong->waiting = 0;
 	return (get_time() - pingpong->lastPing) / 10000000.f;
 }
 
-void handle_MtuCheck(struct NetContext *net, struct NetSession *session, const uint8_t **data) {
-	struct MtuCheck req = pkt_readMtuCheck(session->version, data);
+void handle_MtuCheck(struct NetContext *net, struct NetSession *session, const struct MtuCheck *req) {
 	uint8_t resp[65536], *resp_end = resp;
-	pkt_writeNetPacketHeader(session->version, &resp_end, (struct NetPacketHeader){PacketProperty_MtuOk, 0, 0});
-	pkt_writeMtuOk(session->version, &resp_end, (struct MtuOk){
-		.newMtu0 = req.newMtu0,
-		.newMtu1 = req.newMtu1,
+	pkt_write_c(&resp_end, endof(resp), session->version, NetPacketHeader, {
+		.property = PacketProperty_MtuOk,
+		.connectionNumber = 0,
+		.isFragmented = false,
+		.mtuOk = {
+			.base = req->base,
+		},
 	});
 	net_send_internal(net, session, resp, resp_end - resp, 1);
 }
@@ -334,10 +348,13 @@ void flush_ack(struct NetContext *net, struct NetSession *session, struct Ack *a
 	/*for(uint_fast8_t i = 0; i < lengthof(ack->data); ++i) {
 		if(ack->data[i]) {*/
 			uint8_t resp[65536], *resp_end = resp;
-			pkt_writeNetPacketHeader(session->version, &resp_end, (struct NetPacketHeader){PacketProperty_Ack, 0, 0});
-			pkt_writeAck(session->version, &resp_end, *ack);
+			pkt_write_c(&resp_end, endof(resp), session->version, NetPacketHeader, {
+				.property = PacketProperty_Ack,
+				.connectionNumber = 0,
+				.isFragmented = false,
+				.ack = *ack,
+			});
 			net_queue_merged(net, session, resp, resp_end - resp);
-			// memset(ack->data, 0, sizeof(ack->data));
 			return;
 		/*}
 	}*/

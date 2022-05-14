@@ -1,10 +1,13 @@
 #pragma once
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
+#define lengthof(x) (sizeof(x)/sizeof(*(x)))
+#define endof(x) (&(x)[lengthof(x)])
 
 static void vuprintf(const char *format, va_list vlist) {
-	static _Bool carry = 1;
+	static bool carry = 1;
 	va_list args;
 	va_copy(args, vlist);
 	char buf[vsnprintf(NULL, 0, format, vlist) + 1];

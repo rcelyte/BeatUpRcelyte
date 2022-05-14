@@ -1,7 +1,6 @@
 #include "log.h"
 #include "pool.h"
 #include "scramble.h"
-#include "packets.OLD.h"
 #include <stddef.h>
 #include <pthread.h>
 
@@ -28,7 +27,7 @@ static pthread_mutex_t pool_mutex;
 	return h;
 }*/
 
-static _Bool pool_reserve_room(ServerCode code) { // DO NOT RESERVE MORE THAN 15 ROOMS
+static bool pool_reserve_room(ServerCode code) { // DO NOT RESERVE MORE THAN 15 ROOMS
 	struct RoomHandle room;
 	struct WireRoomHandle handle;
 	pool_find_room(code, &room, &handle);
@@ -39,7 +38,7 @@ static _Bool pool_reserve_room(ServerCode code) { // DO NOT RESERVE MORE THAN 15
 	return 0;
 }
 
-_Bool pool_init() {
+bool pool_init() {
 	if(pthread_mutex_init(&pool_mutex, NULL)) {
 		uprintf("pthread_mutex_init() failed\n");
 		return 1;
@@ -75,7 +74,7 @@ void pool_free() {
 		uprintf("pthread_mutex_destroy() failed\n");
 }
 
-_Bool pool_request_room(struct RoomHandle *room_out, struct WireRoomHandle *handle_out, struct String managerId, struct GameplayServerConfiguration configuration) {
+bool pool_request_room(struct RoomHandle *room_out, struct WireRoomHandle *handle_out, struct String managerId, struct GameplayServerConfiguration configuration) {
 	pthread_mutex_lock(&pool_mutex);
 	uint16_t block = alloc[count];
 	if(rooms[block].idle == 0xffff)
@@ -115,14 +114,14 @@ ServerCode pool_room_code(struct RoomHandle room) {
 	return ((room.high * POOL_BLOCK_COUNT + room.block) << 4) | room.sub;
 }
 
-_Bool pool_find_room(ServerCode code, struct RoomHandle *room_out, struct WireRoomHandle *handle_out) {
+bool pool_find_room(ServerCode code, struct RoomHandle *room_out, struct WireRoomHandle *handle_out) {
 	handle_out->sub = room_out->sub = code & 15;
 	code >>= 4;
 	room_out->high = code / POOL_BLOCK_COUNT;
 	room_out->block = code - room_out->high * POOL_BLOCK_COUNT;
 	pthread_mutex_lock(&pool_mutex);
 	handle_out->block = rooms[room_out->block].handle;
-	_Bool notFound = ((rooms[room_out->block].idle >> room_out->sub) & 1) || room_out->high != rooms[room_out->block].high[room_out->sub];
+	bool notFound = ((rooms[room_out->block].idle >> room_out->sub) & 1) || room_out->high != rooms[room_out->block].high[room_out->sub];
 	pthread_mutex_unlock(&pool_mutex);
 	return notFound;
 }

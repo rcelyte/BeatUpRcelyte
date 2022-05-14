@@ -1,11 +1,8 @@
 #include "log.h"
 #define NET_H_PRIVATE(x) x
-#include "enum_reflection.h"
 #include "net.h"
 #include <mbedtls/ecdh.h>
 #include <mbedtls/error.h>
-
-#define lengthof(x) (sizeof(x)/sizeof(*(x)))
 
 #ifdef WINDOWS
 #define SHUT_RDWR SD_BOTH
@@ -35,7 +32,7 @@ static const uint32_t PossibleMtu[] = {
 const uint8_t *NetKeypair_get_random(const struct NetKeypair *keys) {
 	return keys->random;
 }
-_Bool NetKeypair_write_key(const struct NetKeypair *keys, struct NetContext *ctx, uint8_t *out, uint32_t *out_len) {
+bool NetKeypair_write_key(const struct NetKeypair *keys, struct NetContext *ctx, uint8_t *out, uint32_t *out_len) {
 	size_t keylen = 0;
 	int32_t err = mbedtls_ecp_tls_write_point(&ctx->grp, &keys->public, MBEDTLS_ECP_PF_UNCOMPRESSED, &keylen, out, *out_len);
 	if(err) {
@@ -49,7 +46,7 @@ _Bool NetKeypair_write_key(const struct NetKeypair *keys, struct NetContext *ctx
 const uint8_t *NetSession_get_cookie(const struct NetSession *session) {
 	return session->cookie;
 }
-_Bool NetSession_signature(const struct NetSession *session, struct NetContext *ctx, const mbedtls_pk_context *key, const uint8_t *in, uint32_t in_len, struct ByteArrayNetSerializable *out) {
+bool NetSession_signature(const struct NetSession *session, struct NetContext *ctx, const mbedtls_pk_context *key, const uint8_t *in, uint32_t in_len, struct ByteArrayNetSerializable *out) {
 	out->length = 0;
 	if(mbedtls_pk_get_type(key) != MBEDTLS_PK_RSA) {
 		uprintf("Key should be RSA\n");
@@ -70,7 +67,7 @@ _Bool NetSession_signature(const struct NetSession *session, struct NetContext *
 	out->length = mbedtls_rsa_get_len(rsa);
 	return 0;
 }
-_Bool NetSession_set_clientPublicKey(struct NetSession *session, struct NetContext *ctx, const struct ByteArrayNetSerializable *in) {
+bool NetSession_set_clientPublicKey(struct NetSession *session, struct NetContext *ctx, const struct ByteArrayNetSerializable *in) {
 	const uint8_t *buf = in->data;
 	mbedtls_ecp_point clientPublicKey;
 	mbedtls_ecp_point_init(&clientPublicKey);
@@ -148,7 +145,7 @@ uint32_t net_time() {
 	return now.tv_sec * 1000 + now.tv_nsec / 1000000;
 }
 
-void net_send_internal(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint32_t len, _Bool encrypt) {
+void net_send_internal(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint32_t len, bool encrypt) {
 	struct PacketEncryptionLayer layer;
 	layer.encrypted = 0;
 	
@@ -158,8 +155,8 @@ void net_send_internal(struct NetContext *ctx, struct NetSession *session, const
 	if(session->encryptionState.initialized && encrypt)
 		EncryptionState_encrypt(&session->encryptionState, &layer, &ctx->ctr_drbg, buf, len, body, &len);
 	else
-		memcpy(body, buf, len); // const correctness ._.
-	pkt_writePacketEncryptionLayer(session->version, &head_end, layer);
+		memcpy(body, buf, len);
+	pkt_write(&layer, &head_end, endof(head), session->version);
 	#ifdef WINSOCK_VERSION
 	WSABUF iov[] = {
 		{.len = head_end - head, .buf = (char*)head},
@@ -198,8 +195,8 @@ void net_send_internal(struct NetContext *ctx, struct NetSession *session, const
 	#endif
 }
 
-_Bool net_useIPv4 = 0;
-_Bool net_init(struct NetContext *ctx, uint16_t port) {
+bool net_useIPv4 = 0;
+bool net_init(struct NetContext *ctx, uint16_t port) {
 	ctx->sockfd = socket(net_useIPv4 ? AF_INET : AF_INET6, SOCK_DGRAM, 0);
 	mbedtls_ctr_drbg_init(&ctx->ctr_drbg);
 	mbedtls_entropy_init(&ctx->entropy);
@@ -293,11 +290,10 @@ static void net_set_mtu(struct NetSession *session, uint8_t idx) {
 	session->mtuIdx = idx;
 	uprintf("MTU %u -> %u\n", oldMtu, session->mtu);
 	uint8_t buf[NET_MAX_PKT_SIZE], *buf_end = buf;
-	pkt_writeNetPacketHeader(session->version, &buf_end, (struct NetPacketHeader){PacketProperty_Channeled, 0, 0});
-	pkt_writeChanneled(session->version, &buf_end, (struct Channeled){0, 0});
-	session->maxChanneledSize = (&buf[session->mtu] - buf_end);
-	pkt_writeFragmentedHeader(session->version, &buf_end, (struct FragmentedHeader){0, 0, 0});
-	session->maxFragmentSize = (&buf[session->mtu] - buf_end);
+	session->maxChanneledSize = session->mtu - pkt_write_c(&buf_end, endof(buf), session->version, NetPacketHeader, {
+		.property = PacketProperty_Channeled,
+	});
+	session->maxFragmentSize = session->maxChanneledSize - pkt_write_c(&buf_end, endof(buf), session->version, FragmentedHeader, {0});
 }
 
 void net_session_reset(struct NetContext *ctx, struct NetSession *session) {
@@ -399,7 +395,8 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct
 		goto retry;
 	// uprintf("recvfrom[%zi]\n", size);
 	uint8_t *head = buf;
-	struct PacketEncryptionLayer layer = pkt_readPacketEncryptionLayer((*session)->version, (const uint8_t**)&head);
+	struct PacketEncryptionLayer layer;
+	pkt_read(&layer, (const uint8_t**)&head, &buf[buf_len], (*session)->version);
 	if(layer.encrypted == 1) { // TODO: filter unencrypted?
 		uint32_t length = &buf[size] - head;
 		if(EncryptionState_decrypt(&(*session)->encryptionState, layer, head, &length)) {
@@ -421,7 +418,7 @@ void net_flush_merged(struct NetContext *ctx, struct NetSession *session) {
 	if(session->mergeData_end - session->mergeData > 3)
 		net_send_internal(ctx, session, session->mergeData, session->mergeData_end - session->mergeData, 1);
 	session->mergeData_end = session->mergeData;
-	pkt_writeNetPacketHeader(session->version, &session->mergeData_end, (struct NetPacketHeader){
+	pkt_write_c(&session->mergeData_end, endof(session->mergeData), session->version, NetPacketHeader, {
 		.property = PacketProperty_Merged,
 		.connectionNumber = 0,
 		.isFragmented = 0,
@@ -430,6 +427,8 @@ void net_flush_merged(struct NetContext *ctx, struct NetSession *session) {
 void net_queue_merged(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint16_t len) {
 	if((session->mergeData_end - session->mergeData) + len + 2 > session->mtu)
 		net_flush_merged(ctx, session);
-	pkt_writeUint16(session->version, &session->mergeData_end, len);
-	pkt_writeUint8Array(session->version, &session->mergeData_end, buf, len);
+	pkt_write_c(&session->mergeData_end, endof(session->mergeData), session->version, MergedHeader, {
+		.length = len,
+	});
+	pkt_write_bytes(buf, &session->mergeData_end, endof(session->mergeData), session->version, len);
 }

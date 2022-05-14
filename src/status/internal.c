@@ -1,8 +1,8 @@
 #include "internal.h"
 #include "status.h"
+#include "../scramble.h"
 #include <string.h>
 
-#define lengthof(x) (sizeof(x)/sizeof(*(x)))
 #define READ_SYM(dest, sym) (memcpy(dest, sym, sym##_end - sym), (sym##_end - sym))
 
 extern const uint8_t head0_html[], head0_html_end[];
@@ -96,7 +96,7 @@ static size_t escape(uint8_t *out, size_t limit, const uint8_t *in, size_t in_le
 }
 
 static uint32_t status_web(char *buf, ServerCode code) {
-	_Bool index = (code == StringToServerCode(NULL, 0));
+	bool index = (code == StringToServerCode(NULL, 0));
 	list[0].code = StringToServerCode("INDEX", 5);
 	char page[65536];
 	uint32_t len = READ_SYM(page, head0_html);
@@ -133,7 +133,7 @@ static uint32_t status_web(char *buf, ServerCode code) {
 	return status_bin(buf, "200 OK", "text/html", (const uint8_t*)page, len);
 }
 
-static _Bool status_identify(const char *buf, uint32_t buf_len) {
+static bool status_identify(const char *buf, uint32_t buf_len) {
 	const char *it = memchr(buf, '\n', buf_len), *end = &buf[buf_len];
 	if(it == NULL)
 		return 0;

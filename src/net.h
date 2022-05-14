@@ -1,5 +1,5 @@
 #pragma once
-#include "packets.OLD.h"
+#include "packets.h"
 #include "encryption.h"
 #include <mbedtls/x509_crt.h>
 #include <mbedtls/pk.h>
@@ -80,15 +80,15 @@ void net_keypair_init(struct NetKeypair *keys);
 void net_keypair_gen(struct NetContext *ctx, struct NetKeypair *keys);
 void net_keypair_free(struct NetKeypair *keys);
 const uint8_t *NetKeypair_get_random(const struct NetKeypair *keys);
-_Bool NetKeypair_write_key(const struct NetKeypair *keys, struct NetContext *ctx, uint8_t *out, uint32_t *out_len);
+bool NetKeypair_write_key(const struct NetKeypair *keys, struct NetContext *ctx, uint8_t *out, uint32_t *out_len);
 
 const uint8_t *NetSession_get_cookie(const struct NetSession *session);
-_Bool NetSession_signature(const struct NetSession *session, struct NetContext *ctx, const mbedtls_pk_context *key, const uint8_t *in, uint32_t in_len, struct ByteArrayNetSerializable *out);
-_Bool NetSession_set_clientPublicKey(struct NetSession *session, struct NetContext *ctx, const struct ByteArrayNetSerializable *in);
+bool NetSession_signature(const struct NetSession *session, struct NetContext *ctx, const mbedtls_pk_context *key, const uint8_t *in, uint32_t in_len, struct ByteArrayNetSerializable *out);
+bool NetSession_set_clientPublicKey(struct NetSession *session, struct NetContext *ctx, const struct ByteArrayNetSerializable *in);
 uint32_t NetSession_get_lastKeepAlive(struct NetSession *session);
 const struct SS *NetSession_get_addr(struct NetSession *session);
 
-_Bool net_init(struct NetContext *ctx, uint16_t port);
+bool net_init(struct NetContext *ctx, uint16_t port);
 void net_stop(struct NetContext *ctx);
 void net_cleanup(struct NetContext *ctx);
 void net_lock(struct NetContext *ctx);
@@ -99,17 +99,17 @@ void net_session_free(struct NetSession *session);
 uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct NetSession **session, const uint8_t **pkt, void **userdata_out);
 void net_flush_merged(struct NetContext *ctx, struct NetSession *session);
 void net_queue_merged(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint16_t len);
-void net_send_internal(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint32_t len, _Bool encrypt);
+void net_send_internal(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint32_t len, bool encrypt);
 int32_t net_get_sockfd(struct NetContext *ctx);
 mbedtls_ctr_drbg_context *net_get_ctr_drbg(struct NetContext *ctx);
 
 uint32_t net_time();
 
-_Bool master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_context *key, uint16_t port);
+bool master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_context *key, uint16_t port);
 void master_cleanup();
 
 static inline int32_t RelativeSequenceNumber(int32_t to, int32_t from) {
 	return (to - from + NET_MAX_SEQUENCE + NET_MAX_SEQUENCE / 2) % NET_MAX_SEQUENCE - NET_MAX_SEQUENCE / 2;
 }
 
-extern _Bool net_useIPv4;
+extern bool net_useIPv4;
