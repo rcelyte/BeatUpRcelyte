@@ -80,7 +80,7 @@
 			<ClientResource Include="data.bundle" LogicalName="BeatUpClient.data"/>
 			<ClientResource Include=".tmp/manifest.json" LogicalName=".manifest.json"/>
 		</ItemGroup>
-		<Csc TargetType="library" Optimize="true" EmitDebugInformation="false" AllowUnsafeBlocks="true" LangVersion="8" DefineConstants="CSPROJ_BUILD;MPCORE_SUPPORT" Sources="BeatUpClient.cs" OutputAssembly="BeatUpClient.dll" Resources="@(ClientResource)" References="@(ClientRef)"/>
+		<Csc TargetType="library" Optimize="true" EmitDebugInformation="false" AllowUnsafeBlocks="true" LangVersion="8" DefineConstants="MPCORE_SUPPORT" Sources="BeatUpClient.cs" OutputAssembly="BeatUpClient.dll" Resources="@(ClientResource)" References="@(ClientRef)"/>
 	</Target>
 	<ItemGroup>
 		<PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.0">

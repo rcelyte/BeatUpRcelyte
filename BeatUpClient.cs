@@ -1,5 +1,5 @@
+using static System.Linq.Enumerable;
 using static BeatUpClient;
-#if CSPROJ_BUILD
 #nullable enable
 namespace System.Diagnostics.CodeAnalysis {
 	[AttributeUsage(AttributeTargets.Parameter, Inherited = false)]
@@ -9,7 +9,6 @@ namespace System.Diagnostics.CodeAnalysis {
 			ReturnValue = returnValue;
 	}
 }
-#endif
 
 [IPA.Plugin(IPA.RuntimeOptions.SingleStartInit)]
 public class BeatUpClient {
@@ -17,9 +16,7 @@ public class BeatUpClient {
 		public struct FieldProxy<T> {
 			System.Reflection.FieldInfo field;
 			public object instance;
-			public T value {
-				get => (T)field.GetValue(instance);
-			}
+			public T value => (T)field.GetValue(instance);
 			public FieldProxy(object instance, System.Reflection.FieldInfo field) {
 				this.instance = instance;
 				this.field = field;
@@ -83,7 +80,7 @@ public class BeatUpClient {
 		public bool AllowModchartDownloads = false;
 		[IPA.Config.Stores.Attributes.NonNullable]
 		[IPA.Config.Stores.Attributes.UseConverter(typeof(IPA.Config.Stores.Converters.DictionaryConverter<string>))]
-		public virtual System.Collections.Generic.Dictionary<string, string?> Servers { get; set; } = new System.Collections.Generic.Dictionary<string, string?>(new[] {new System.Collections.Generic.KeyValuePair<string, string?>("master.battletrains.org", null)});
+		public virtual System.Collections.Generic.Dictionary<string, string?> Servers {get; set;} = new System.Collections.Generic.Dictionary<string, string?>(new[] {new System.Collections.Generic.KeyValuePair<string, string?>("master.battletrains.org", null)});
 		public virtual void Changed() {}
 	}
 
@@ -153,7 +150,7 @@ public class BeatUpClient {
 		System.Array.Fill(playerPreviews, new PacketHandler.RecommendPreview());
 	}
 	static PacketHandler.RecommendPreview? ResolvePreview(string levelId) =>
-		System.Linq.Enumerable.FirstOrDefault(playerPreviews, (PacketHandler.RecommendPreview preview) => preview.preview.levelID == levelId);
+		playerPreviews.FirstOrDefault((PacketHandler.RecommendPreview preview) => preview.levelID == levelId);
 	static PacketHandler.RecommendPreview SetPreviewFromLocal(int index, CustomPreviewBeatmapLevel previewBeatmapLevel) {
 		System.Collections.Generic.IEnumerable<string?> requirements = new string[0], suggestions = new string[0];
 		string path = System.IO.Path.Combine(previewBeatmapLevel.customLevelPath, "Info.dat");
@@ -165,8 +162,8 @@ public class BeatUpClient {
 			requirements = Newtonsoft.Json.Linq.Extensions.Values<string>(customData["_requirements"]);
 			suggestions = Newtonsoft.Json.Linq.Extensions.Values<string>(customData["_suggestions"]);
 		}
-		string?[] requirementArray = System.Linq.Enumerable.ToArray(System.Linq.Enumerable.ToHashSet(requirements));
-		string?[] suggestionArray = System.Linq.Enumerable.ToArray(System.Linq.Enumerable.ToHashSet(suggestions));
+		string?[] requirementArray = requirements.ToHashSet().ToArray();
+		string?[] suggestionArray = suggestions.ToHashSet().ToArray();
 		if(requirementArray.Length >= 1) {
 			Log?.Debug($"{requirementArray.Length} requirements for `{previewBeatmapLevel.levelID}`:");
 			foreach(string? req in requirementArray)
@@ -188,21 +185,21 @@ public class BeatUpClient {
 		};
 
 		public class NetworkPreviewBeatmapLevel : IPreviewBeatmapLevel, LiteNetLib.Utils.INetSerializable {
-			public string? levelID { get; set; } = System.String.Empty;
-			public string? songName { get; set; } = System.String.Empty;
-			public string? songSubName { get; set; } = System.String.Empty;
-			public string? songAuthorName { get; set; } = System.String.Empty;
-			public string? levelAuthorName { get; set; } = System.String.Empty;
-			public float beatsPerMinute { get; set; }
-			public float songTimeOffset { get; set; }
-			public float shuffle { get; set; }
-			public float shufflePeriod { get; set; }
-			public float previewStartTime { get; set; }
-			public float previewDuration { get; set; }
-			public float songDuration { get; set; }
-			public System.Collections.Generic.IReadOnlyList<PreviewDifficultyBeatmapSet>? previewDifficultyBeatmapSets { get; set; } = null;
-			public EnvironmentInfoSO? environmentInfo { get; set; } = null;
-			public EnvironmentInfoSO? allDirectionsEnvironmentInfo { get; set; } = null;
+			public string? levelID {get; set;} = System.String.Empty;
+			public string? songName {get; set;} = System.String.Empty;
+			public string? songSubName {get; set;} = System.String.Empty;
+			public string? songAuthorName {get; set;} = System.String.Empty;
+			public string? levelAuthorName {get; set;} = System.String.Empty;
+			public float beatsPerMinute {get; set;}
+			public float songTimeOffset {get; set;}
+			public float shuffle {get; set;}
+			public float shufflePeriod {get; set;}
+			public float previewStartTime {get; set;}
+			public float previewDuration {get; set;}
+			public float songDuration {get; set;}
+			public System.Collections.Generic.IReadOnlyList<PreviewDifficultyBeatmapSet>? previewDifficultyBeatmapSets {get; set;} = null;
+			public EnvironmentInfoSO? environmentInfo {get; set;} = null;
+			public EnvironmentInfoSO? allDirectionsEnvironmentInfo {get; set;} = null;
 			public readonly ByteArrayNetSerializable cover = new ByteArrayNetSerializable("cover", 0, 8192);
 			public System.Threading.Tasks.Task<byte[]> coverRenderTask = System.Threading.Tasks.Task.FromResult<byte[]>(new byte[0]);
 			public async System.Threading.Tasks.Task<UnityEngine.Sprite> GetCoverImageAsync(System.Threading.CancellationToken cancellationToken) {
@@ -302,12 +299,11 @@ public class BeatUpClient {
 				Init(beatmapLevel);
 		}
 
-		public class RecommendPreview : LiteNetLib.Utils.INetSerializable {
-			public NetworkPreviewBeatmapLevel preview = new NetworkPreviewBeatmapLevel();
+		public class RecommendPreview : NetworkPreviewBeatmapLevel, LiteNetLib.Utils.INetSerializable {
 			public string?[] requirements = new string[0];
 			public string?[] suggestions = new string[0];
-			public void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
-				preview.Serialize(writer);
+			void LiteNetLib.Utils.INetSerializable.Serialize(LiteNetLib.Utils.NetDataWriter writer) {
+				base.Serialize(writer);
 				writer.PutVarUInt(UpperBound((uint)requirements.Length, 16));
 				foreach(string? requirement in requirements)
 					writer.Put((string?)requirement);
@@ -315,8 +311,8 @@ public class BeatUpClient {
 				foreach(string? suggestion in suggestions)
 					writer.Put((string?)suggestion);
 			}
-			public void Deserialize(LiteNetLib.Utils.NetDataReader reader) {
-				preview.Deserialize(reader);
+			void LiteNetLib.Utils.INetSerializable.Deserialize(LiteNetLib.Utils.NetDataReader reader) {
+				base.Deserialize(reader);
 				requirements = new string[UpperBound(reader.GetVarUInt(), 16)];
 				for(uint i = 0; i < requirements.Length; ++i)
 					requirements[i] = reader.GetString();
@@ -325,11 +321,8 @@ public class BeatUpClient {
 					suggestions[i] = reader.GetString();
 			}
 			public RecommendPreview() {}
-			public RecommendPreview(IPreviewBeatmapLevel beatmapLevel, string?[] requirements, string?[] suggestions) {
-				this.preview = new NetworkPreviewBeatmapLevel(beatmapLevel);
-				this.requirements = requirements;
-				this.suggestions = suggestions;
-			}
+			public RecommendPreview(IPreviewBeatmapLevel beatmapLevel, string?[] requirements, string?[] suggestions) : base(beatmapLevel) =>
+				(this.requirements, this.suggestions) =  (requirements, suggestions);
 		}
 
 		public abstract class ShareInfo : LiteNetLib.Utils.INetSerializable {
@@ -405,10 +398,8 @@ public class BeatUpClient {
 				maxSize = reader.GetUShort();
 			}
 			public LevelFragmentRequest() {}
-			public LevelFragmentRequest(ulong offset, ushort maxSize) {
-				this.offset = offset;
-				this.maxSize = maxSize;
-			}
+			public LevelFragmentRequest(ulong offset, ushort maxSize) =>
+				(this.offset, this.maxSize) = (offset, maxSize);
 		}
 
 		public class LevelFragment : LiteNetLib.Utils.INetSerializable {
@@ -425,10 +416,8 @@ public class BeatUpClient {
 				reader.GetBytes(data, data.Length);
 			}
 			public LevelFragment() {}
-			public LevelFragment(ulong offset, byte[] data) {
-				this.offset = offset;
-				this.data = data;
-			}
+			public LevelFragment(ulong offset, byte[] data) =>
+				(this.offset, this.data) = (offset, data);
 		}
 
 		public struct LoadProgress : LiteNetLib.Utils.INetSerializable {
@@ -454,11 +443,8 @@ public class BeatUpClient {
 				state = (LoadState)reader.GetByte();
 				progress = reader.GetUShort();
 			}
-			public LoadProgress(LoadState state, ushort progress, uint sequence) {
-				this.sequence = sequence;
-				this.state = state;
-				this.progress = progress;
-			}
+			public LoadProgress(LoadState state, ushort progress, uint sequence) =>
+				(this.sequence, this.state, this.progress) = (sequence, state, progress);
 			public LoadProgress(LoadState state, ushort progress) : this(state, progress, ++localSequence) {}
 		}
 
@@ -516,7 +502,7 @@ public class BeatUpClient {
 				return false; // Entitlement[good]: no requirements
 			if(!haveSongCore)
 				return true; // Entitlement[fail]: need SongCore
-			if(!System.Linq.Enumerable.All(preview.requirements, x => NullableStringHelper.IsNullOrEmpty(x) || SongCore.Collections.capabilities.Contains(x)))
+			if(!preview.requirements.All(x => NullableStringHelper.IsNullOrEmpty(x) || SongCore.Collections.capabilities.Contains(x)))
 				return true; // Entitlement[fail]: missing requirements
 			return false; // Entitlement[good]: have all requirements
 		}
@@ -556,7 +542,7 @@ public class BeatUpClient {
 		}
 
 		public static void HandleRecommendPreview(RecommendPreview packet, IConnectedPlayer player) {
-			Log?.Debug($"HandleRecommendPreview(\"{packet.preview.levelID}\", {player})");
+			Log?.Debug($"HandleRecommendPreview(\"{packet.levelID}\", {player})");
 			playerPreviews[player.sortIndex] = packet;
 		}
 
@@ -592,63 +578,43 @@ public class BeatUpClient {
 	static PacketHandler handler = null!;
 
 	public class Downloader {
-		readonly CustomLevelLoader customLevelLoader;
-		readonly BeatmapCharacteristicCollectionSO beatmapCharacteristicCollection;
+		readonly CustomLevelLoader customLevelLoader = handler.container.Resolve<CustomLevelLoader>();
+		readonly BeatmapCharacteristicCollectionSO beatmapCharacteristicCollection = handler.container.Resolve<BeatmapCharacteristicCollectionSO>();
 		readonly string dataPath = System.IO.Path.Combine(System.IO.Path.GetFullPath(CustomLevelPathHelper.baseProjectPath), "BeatUpClient_Data");
-		readonly byte[] buffer;
-		readonly System.Collections.Generic.List<(ulong start, ulong end)> gaps;
 		readonly byte[] levelHash;
 		readonly string[] sourcePlayers;
 		readonly PacketHandler.RecommendPreview preview;
+		readonly byte[] buffer;
+		readonly System.Collections.Generic.List<(ulong start, ulong end)> gaps;
 		System.Collections.Generic.List<IConnectedPlayer>? sources;
-		public string? levelId => preview.preview.levelID;
+		public string? levelId => preview.levelID;
 		public Downloader(PacketHandler.DirectDownloadInfo info, PacketHandler.RecommendPreview preview) {
-			customLevelLoader = handler.container.Resolve<CustomLevelLoader>();
-			beatmapCharacteristicCollection = handler.container.Resolve<BeatmapCharacteristicCollectionSO>();
-			buffer = new byte[info.fileSize];
+			(this.levelHash, this.sourcePlayers, this.preview, buffer) = (info.levelHash, info.sourcePlayers, preview, new byte[info.fileSize]);
 			gaps = new System.Collections.Generic.List<(ulong, ulong)>(new[] {(0LU, info.fileSize)});
-			this.levelHash = info.levelHash;
-			this.sourcePlayers = info.sourcePlayers;
-			this.preview = preview;
 		}
-		bool ValidatedPath(string filename, out string path) {
-			path = System.IO.Path.Combine(dataPath, filename);
+		string ValidatedPath(string filename) {
+			string path = System.IO.Path.Combine(dataPath, filename);
 			if(System.IO.Path.GetDirectoryName(path) != dataPath)
-				Log?.Error($"PATH MISMATCH: `{System.IO.Path.GetDirectoryName(path)}` != `{dataPath}`");
-			else if(System.IO.Path.GetFileName(path) != filename)
-				Log?.Error($"FILENAME MISMATCH: `{System.IO.Path.GetFileName(path)}` != `{filename}`");
-			else
-				return true;
-			path = System.String.Empty;
-			return false;
+				throw new System.Security.SecurityException($"Path mismatch (`{System.IO.Path.GetDirectoryName(path)}` != `{dataPath}`)");
+			if(System.IO.Path.GetFileName(path) != filename)
+				throw new System.Security.SecurityException($"Filename mismatch (`{System.IO.Path.GetFileName(path)}` != `{filename}`)");
+			return path;
 		}
-		EnvironmentInfoSO LoadEnvironmentInfo(string environmentName, EnvironmentInfoSO defaultInfo) {
-			EnvironmentInfoSO environmentInfoSO = customLevelLoader._environmentSceneInfoCollection.GetEnvironmentInfoBySerializedName(environmentName);
-			if(environmentInfoSO == null)
-				environmentInfoSO = defaultInfo;
-			return environmentInfoSO;
-		}
-		CustomPreviewBeatmapLevel? LoadZippedPreviewBeatmapLevel(StandardLevelInfoSaveData standardLevelInfoSaveData, System.IO.Compression.ZipArchive archive) {
-			try {
-				EnvironmentInfoSO environmentInfo = LoadEnvironmentInfo(standardLevelInfoSaveData.environmentName, customLevelLoader._defaultEnvironmentInfo);
-				EnvironmentInfoSO allDirectionsEnvironmentInfo = LoadEnvironmentInfo(standardLevelInfoSaveData.allDirectionsEnvironmentName, customLevelLoader._defaultAllDirectionsEnvironmentInfo);
-				System.Collections.Generic.List<PreviewDifficultyBeatmapSet> sets = new System.Collections.Generic.List<PreviewDifficultyBeatmapSet>();
-				StandardLevelInfoSaveData.DifficultyBeatmapSet[] difficultyBeatmapSets = standardLevelInfoSaveData.difficultyBeatmapSets;
-				foreach(StandardLevelInfoSaveData.DifficultyBeatmapSet difficultyBeatmapSet in difficultyBeatmapSets) {
-					BeatmapCharacteristicSO? beatmapCharacteristicBySerializedName = beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(difficultyBeatmapSet.beatmapCharacteristicName);
-					if(beatmapCharacteristicBySerializedName != null) {
-						BeatmapDifficulty[] diffs = new BeatmapDifficulty[difficultyBeatmapSet.difficultyBeatmaps.Length];
-						for(int j = 0; j < difficultyBeatmapSet.difficultyBeatmaps.Length; j++) {
-							difficultyBeatmapSet.difficultyBeatmaps[j].difficulty.BeatmapDifficultyFromSerializedName(out BeatmapDifficulty difficulty);
-							diffs[j] = difficulty;
-						}
-						sets.Add(new PreviewDifficultyBeatmapSet(beatmapCharacteristicBySerializedName, diffs));
-					}
-				}
-				return new CustomPreviewBeatmapLevel(defaultPackCover, standardLevelInfoSaveData, dataPath, new MemorySpriteLoader(preview.preview.coverRenderTask), levelId, standardLevelInfoSaveData.songName, standardLevelInfoSaveData.songSubName, standardLevelInfoSaveData.songAuthorName, standardLevelInfoSaveData.levelAuthorName, standardLevelInfoSaveData.beatsPerMinute, standardLevelInfoSaveData.songTimeOffset, standardLevelInfoSaveData.shuffle, standardLevelInfoSaveData.shufflePeriod, standardLevelInfoSaveData.previewStartTime, standardLevelInfoSaveData.previewDuration, environmentInfo, allDirectionsEnvironmentInfo, sets.ToArray());
-			} catch {
-				return null;
-			}
+		EnvironmentInfoSO LoadEnvironmentInfo(string environmentName, EnvironmentInfoSO defaultInfo) =>
+			customLevelLoader._environmentSceneInfoCollection.GetEnvironmentInfoBySerializedName(environmentName) ?? defaultInfo;
+		CustomPreviewBeatmapLevel LoadZippedPreviewBeatmapLevel(StandardLevelInfoSaveData info, System.IO.Compression.ZipArchive archive) {
+			EnvironmentInfoSO envInfo = LoadEnvironmentInfo(info.environmentName, customLevelLoader._defaultEnvironmentInfo);
+			EnvironmentInfoSO envInfo360 = LoadEnvironmentInfo(info.allDirectionsEnvironmentName, customLevelLoader._defaultAllDirectionsEnvironmentInfo);
+			PreviewDifficultyBeatmapSet[] sets = info.difficultyBeatmapSets.Select(difficultyBeatmapSet => {
+				BeatmapCharacteristicSO beatmapCharacteristicBySerializedName = beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(difficultyBeatmapSet.beatmapCharacteristicName);
+				if(beatmapCharacteristicBySerializedName == null)
+					return null;
+				return new PreviewDifficultyBeatmapSet(beatmapCharacteristicBySerializedName, difficultyBeatmapSet.difficultyBeatmaps.Select(diff => {
+					diff.difficulty.BeatmapDifficultyFromSerializedName(out BeatmapDifficulty difficulty);
+					return difficulty;
+				}).ToArray());
+			}).Where(preview => preview != null).Select(preview => preview!).ToArray();
+			return new CustomPreviewBeatmapLevel(defaultPackCover, info, dataPath, new MemorySpriteLoader(preview.coverRenderTask), levelId, info.songName, info.songSubName, info.songAuthorName, info.levelAuthorName, info.beatsPerMinute, info.songTimeOffset, info.shuffle, info.shufflePeriod, info.previewStartTime, info.previewDuration, envInfo, envInfo360, sets);
 		}
 		static async System.Threading.Tasks.Task<UnityEngine.AudioClip?> DecodeAudio(System.IO.Compression.ZipArchiveEntry song, UnityEngine.AudioType type) {
 			byte[] songData = new byte[song.Length];
@@ -674,55 +640,35 @@ public class BeatUpClient {
 				return UnityEngine.Networking.DownloadHandlerAudioClip.GetContent(www);
 			}
 		}
-		async System.Threading.Tasks.Task<CustomBeatmapLevel?> LoadZippedBeatmapLevelAsync(CustomPreviewBeatmapLevel customPreviewBeatmapLevel, System.IO.Compression.ZipArchive archive, bool modded, System.Threading.CancellationToken cancellationToken) {
-			StandardLevelInfoSaveData standardLevelInfoSaveData = customPreviewBeatmapLevel.standardLevelInfoSaveData;
+		async System.Threading.Tasks.Task<CustomBeatmapLevel> LoadZippedBeatmapLevelAsync(CustomPreviewBeatmapLevel customPreviewBeatmapLevel, System.IO.Compression.ZipArchive archive, bool modded, System.Threading.CancellationToken cancellationToken) {
+			StandardLevelInfoSaveData info = customPreviewBeatmapLevel.standardLevelInfoSaveData;
+			System.IO.Compression.ZipArchiveEntry? song = archive.GetEntry(info.songFilename) ?? throw new System.IO.FileNotFoundException("File not found in archive: " + info.songFilename);
+			UnityEngine.AudioClip audioClip = await DecodeAudio(song, AudioTypeHelper.GetAudioTypeFromPath(info.songFilename)) ?? throw new System.InvalidOperationException("Null audio clip");
 			CustomBeatmapLevel customBeatmapLevel = new CustomBeatmapLevel(customPreviewBeatmapLevel);
-			CustomDifficultyBeatmapSet[] difficultyBeatmapSets = new CustomDifficultyBeatmapSet[standardLevelInfoSaveData.difficultyBeatmapSets.Length];
-			for(int i = 0; i < difficultyBeatmapSets.Length; ++i) {
-				BeatmapCharacteristicSO? beatmapCharacteristicBySerializedName = beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(standardLevelInfoSaveData.difficultyBeatmapSets[i].beatmapCharacteristicName);
-				CustomDifficultyBeatmap[] difficultyBeatmaps = new CustomDifficultyBeatmap[standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps.Length];
-				difficultyBeatmapSets[i] = new CustomDifficultyBeatmapSet(beatmapCharacteristicBySerializedName);
-				for(int j = 0; j < standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps.Length; ++j) {
-					string filename = standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps[j].beatmapFilename;
-					System.IO.Compression.ZipArchiveEntry file = archive.GetEntry(filename);
-					if(file == null) {
-						Log?.Error("File not found in archive: " + filename);
-						return null;
-					}
+			customBeatmapLevel.SetBeatmapLevelData(new BeatmapLevelData(audioClip, info.difficultyBeatmapSets.Select(setInfo => {
+				BeatmapCharacteristicSO? beatmapCharacteristicBySerializedName = beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(setInfo.beatmapCharacteristicName);
+				CustomDifficultyBeatmapSet beatmapSet = new CustomDifficultyBeatmapSet(beatmapCharacteristicBySerializedName);
+				beatmapSet.SetCustomDifficultyBeatmaps(setInfo.difficultyBeatmaps.Select(difficultyInfo => {
+					string filename = difficultyInfo.beatmapFilename;
+					System.IO.Compression.ZipArchiveEntry file = archive.GetEntry(filename) ?? throw new System.IO.FileNotFoundException("File not found in archive: " + filename);
 					byte[] rawData = new byte[file.Length];
 					file.Open().Read(rawData, 0, rawData.Length);
-					if(modded) {
-						if(ValidatedPath(filename, out string path))
-							System.IO.File.WriteAllBytes(path, rawData);
-						else
-							return null;
-					}
-					BeatmapSaveDataVersion3.BeatmapSaveData beatmapSaveData = BeatmapSaveDataVersion3.BeatmapSaveData.DeserializeFromJSONString(System.Text.Encoding.UTF8.GetString(rawData, 0, rawData.Length));
-					BeatmapDataBasicInfo beatmapDataBasicInfoFromSaveData = BeatmapDataLoader.GetBeatmapDataBasicInfoFromSaveData(beatmapSaveData);
-					standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps[j].difficulty.BeatmapDifficultyFromSerializedName(out BeatmapDifficulty difficulty);
-					difficultyBeatmaps[j] = new CustomDifficultyBeatmap(customBeatmapLevel, difficultyBeatmapSets[i], difficulty, standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps[j].difficultyRank, standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps[j].noteJumpMovementSpeed, standardLevelInfoSaveData.difficultyBeatmapSets[i].difficultyBeatmaps[j].noteJumpStartBeatOffset, standardLevelInfoSaveData.beatsPerMinute, beatmapSaveData, beatmapDataBasicInfoFromSaveData);
-				}
-				difficultyBeatmapSets[i].SetCustomDifficultyBeatmaps(difficultyBeatmaps);
-			}
-			System.IO.Compression.ZipArchiveEntry song = archive.GetEntry(standardLevelInfoSaveData.songFilename);
-			if(song == null) {
-				Log?.Error("File not found in archive: " + standardLevelInfoSaveData.songFilename);
-				return null;
-			}
-			UnityEngine.AudioClip? audioClip = await DecodeAudio(song, AudioTypeHelper.GetAudioTypeFromPath(standardLevelInfoSaveData.songFilename));
-			if(audioClip == null) {
-				Log?.Debug("NULL AUDIO CLIP");
-				return null;
-			}
-			Log?.Debug("customBeatmapLevel.SetBeatmapLevelData()");
-			customBeatmapLevel.SetBeatmapLevelData(new BeatmapLevelData(audioClip, difficultyBeatmapSets));
+					if(modded)
+						System.IO.File.WriteAllBytes(ValidatedPath(filename), rawData);
+					BeatmapSaveDataVersion3.BeatmapSaveData saveData = BeatmapSaveDataVersion3.BeatmapSaveData.DeserializeFromJSONString(System.Text.Encoding.UTF8.GetString(rawData, 0, rawData.Length));
+					BeatmapDataBasicInfo basicInfo = BeatmapDataLoader.GetBeatmapDataBasicInfoFromSaveData(saveData);
+					difficultyInfo.difficulty.BeatmapDifficultyFromSerializedName(out BeatmapDifficulty difficulty);
+					return new CustomDifficultyBeatmap(customBeatmapLevel, beatmapSet, difficulty, difficultyInfo.difficultyRank, difficultyInfo.noteJumpMovementSpeed, difficultyInfo.noteJumpStartBeatOffset, info.beatsPerMinute, saveData, basicInfo);
+				}).ToArray());
+				return beatmapSet;
+			}).ToArray()));
 			return customBeatmapLevel;
 		}
 		public async System.Threading.Tasks.Task<BeatmapLevelsModel.GetBeatmapLevelResult?> Resolve(System.Action<PacketHandler.LoadProgress> progress, System.Threading.CancellationToken cancellationToken) {
 			Log?.Debug("Starting direct download");
 			try {
 				cancellationToken.ThrowIfCancellationRequested();
-				sources ??= System.Linq.Enumerable.ToList(System.Linq.Enumerable.Where(System.Linq.Enumerable.Select(sourcePlayers, userId => handler.multiplayerSessionManager.GetPlayerByUserId(userId)), player => player is ConnectedPlayerManager.ConnectedPlayer));
+				sources ??= sourcePlayers.Select(userId => handler.multiplayerSessionManager.GetPlayerByUserId(userId)).Where(player => player is ConnectedPlayerManager.ConnectedPlayer).ToList();
 				int it = 0, p = 0;
 				uint cycle = 0;
 				ulong off = gaps[0].start;
@@ -759,25 +705,17 @@ public class BeatUpClient {
 					using System.Security.Cryptography.SHA256 sha256 = System.Security.Cryptography.SHA256.Create();
 					return sha256.ComputeHash(buffer);
 				});
-				if(!System.Linq.Enumerable.SequenceEqual(levelHash, hash)) {
-					Log?.Error("Hash mismatch!");
-					return null;
-				}
+				if(!levelHash.SequenceEqual(hash))
+					throw new System.IO.InvalidDataException("Hash mismatch");
 				using(System.IO.MemoryStream stream = new System.IO.MemoryStream(buffer)) {
-					using(System.IO.Compression.ZipArchive archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Read)) {
-						if(archive == null)
-							return null;
+					using(System.IO.Compression.ZipArchive archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Read) ?? throw new System.InvalidOperationException()) {
 						ulong totalLength = 0;
 						foreach(System.IO.Compression.ZipArchiveEntry entry in archive.Entries) {
 							totalLength += (ulong)entry.Length;
 							if((ulong)entry.Length > MaxUnzippedSize || totalLength > MaxUnzippedSize)
-								return null;
+								throw new System.InvalidOperationException("Unzipped size too large");
 						}
-						System.IO.Compression.ZipArchiveEntry infoFile = archive.GetEntry("Info.dat");
-						if(infoFile == null) {
-							Log?.Error("File not found in archive: Info.dat");
-							return null;
-						}
+						System.IO.Compression.ZipArchiveEntry infoFile = archive.GetEntry("Info.dat") ?? throw new System.IO.FileNotFoundException("File not found in archive: Info.dat");
 						if(System.IO.Directory.Exists(dataPath)) {
 							foreach(System.IO.FileInfo file in new System.IO.DirectoryInfo(dataPath).GetFiles())
 								file.Delete();
@@ -787,27 +725,18 @@ public class BeatUpClient {
 						bool modded = preview.requirements.Length >= 1 || preview.suggestions.Length >= 1;
 						byte[] rawInfo = new byte[infoFile.Length];
 						infoFile.Open().Read(rawInfo, 0, rawInfo.Length);
-						if(modded) {
-							if(ValidatedPath("Info.dat", out string path))
-								System.IO.File.WriteAllBytes(path, rawInfo);
-							else
-								return null;
-						}
+						if(modded)
+							System.IO.File.WriteAllBytes(ValidatedPath("Info.dat"), rawInfo);
 						StandardLevelInfoSaveData info = StandardLevelInfoSaveData.DeserializeFromJSONString(System.Text.Encoding.UTF8.GetString(rawInfo, 0, rawInfo.Length));
-						CustomPreviewBeatmapLevel? previewBeatmapLevel = LoadZippedPreviewBeatmapLevel(info, archive);
-						if(previewBeatmapLevel == null)
-							return null;
-						preview.preview.Init(previewBeatmapLevel);
-						CustomBeatmapLevel? level = await LoadZippedBeatmapLevelAsync(previewBeatmapLevel, archive, modded, cancellationToken);
-						if(level == null)
-							return null;
+						CustomPreviewBeatmapLevel previewBeatmapLevel = LoadZippedPreviewBeatmapLevel(info, archive);
+						preview.Init(previewBeatmapLevel);
+						CustomBeatmapLevel level = await LoadZippedBeatmapLevelAsync(previewBeatmapLevel, archive, modded, cancellationToken);
 						Log?.Debug($"level: {level}");
 						return new BeatmapLevelsModel.GetBeatmapLevelResult(isError: false, level);
 					}
 				}
 			} catch(System.Exception ex) {
 				Log?.Error("Direct download error: " + ex);
-				Log?.Error(ex.StackTrace);
 				return null;
 			}
 		}
@@ -851,7 +780,7 @@ public class BeatUpClient {
 			quickPlaySetupModel._request = null;
 		if(mainFlowCoordinator.childFlowCoordinator is MultiplayerModeSelectionFlowCoordinator multiplayerModeSelectionFlowCoordinator) {
 			editServerViewController.Dismiss(true);
-			mainFlowCoordinator.DismissFlowCoordinator(multiplayerModeSelectionFlowCoordinator, HMUI.ViewController.AnimationDirection.Horizontal, (System.Action)delegate() {
+			mainFlowCoordinator.DismissFlowCoordinator(multiplayerModeSelectionFlowCoordinator, HMUI.ViewController.AnimationDirection.Horizontal, () => {
 				mainFlowCoordinator.PresentMultiplayerModeSelectionFlowCoordinatorWithDisclaimerAndAvatarCreator();
 			}, true);
 		}
@@ -909,7 +838,7 @@ public class BeatUpClient {
 			protected override string TextForValue(int idx) =>
 				idx >= 1 ? options[idx - 1] : "Official Server";
 			public void SetOptions(System.Collections.Generic.IEnumerable<string> options) {
-				this.options = System.Linq.Enumerable.ToArray(options);
+				this.options = options.ToArray();
 				if(gameObject.activeSelf) {
 					gameObject.SetActive(false);
 					gameObject.SetActive(true);
@@ -933,7 +862,7 @@ public class BeatUpClient {
 		static UnityEngine.GameObject? toggleTemplate = null;
 		public static UnityEngine.RectTransform CreateToggle(UnityEngine.Transform parent, string name, string headerKey, ValueCB<bool> valueCB) {
 			if(toggleTemplate == null)
-				toggleTemplate = System.Linq.Enumerable.First(System.Linq.Enumerable.Select(UnityEngine.Resources.FindObjectsOfTypeAll<UnityEngine.UI.Toggle>(), x => x.transform.parent.gameObject), p => p.name == "Fullscreen");
+				toggleTemplate = UnityEngine.Resources.FindObjectsOfTypeAll<UnityEngine.UI.Toggle>().Select(x => x.transform.parent.gameObject).First(p => p.name == "Fullscreen");
 			UnityEngine.GameObject gameObject = CreateElementWithText(toggleTemplate, parent, name, headerKey);
 			UnityEngine.Object.Destroy(gameObject.GetComponent<BoolSettingsController>());
 			ToggleSetting toggleSetting = gameObject.AddComponent<ToggleSetting>();
@@ -944,7 +873,7 @@ public class BeatUpClient {
 		static UnityEngine.GameObject? pickerTemplate = null;
 		public static UnityEngine.RectTransform CreateValuePicker(UnityEngine.Transform parent, string name, string headerKey, ValueCB<float> valueCB, byte[] options) {
 			if(pickerTemplate == null)
-				pickerTemplate = System.Linq.Enumerable.First(System.Linq.Enumerable.Select(UnityEngine.Resources.FindObjectsOfTypeAll<StepValuePicker>(), x => x.transform.parent.gameObject), p => p.name == "MaxNumberOfPlayers");
+				pickerTemplate = UnityEngine.Resources.FindObjectsOfTypeAll<StepValuePicker>().Select(x => x.transform.parent.gameObject).First(p => p.name == "MaxNumberOfPlayers");
 			UnityEngine.GameObject gameObject = CreateElementWithText(pickerTemplate, parent, name, headerKey);
 			UnityEngine.Object.Destroy(gameObject.GetComponent<FormattedFloatListSettingsController>());
 			ValuePickerSetting valuePickerSetting = gameObject.AddComponent<ValuePickerSetting>();
@@ -956,7 +885,7 @@ public class BeatUpClient {
 		static UnityEngine.GameObject? simpleDropdownTemplate = null;
 		public static UnityEngine.RectTransform CreateSimpleDropdown(UnityEngine.Transform parent, string name, StringSO value, System.Collections.Generic.IEnumerable<string> options) {
 			if(simpleDropdownTemplate == null)
-				simpleDropdownTemplate = System.Linq.Enumerable.First(UnityEngine.Resources.FindObjectsOfTypeAll<HMUI.SimpleTextDropdown>(), dropdown => dropdown.GetComponents(typeof(UnityEngine.Component)).Length == 2).gameObject;
+				simpleDropdownTemplate = UnityEngine.Resources.FindObjectsOfTypeAll<HMUI.SimpleTextDropdown>().First(dropdown => dropdown.GetComponents(typeof(UnityEngine.Component)).Length == 2).gameObject;
 			UnityEngine.GameObject gameObject = CreateElement(simpleDropdownTemplate, parent, name);
 			DropdownSetting dropdownSetting = gameObject.AddComponent<DropdownSetting>();
 			dropdownSetting.value = value;
@@ -989,7 +918,7 @@ public class BeatUpClient {
 			keyboardKey._overrideText = $"{charCode}";
 			keyboardKey._canBeUppercase = canBeUppercase;
 			keyboardKey.Awake();
-			keyboard._buttonBinder.AddBinding(key.GetComponent<HMUI.NoTransitionsButton>(), delegate {
+			keyboard._buttonBinder.AddBinding(key.GetComponent<HMUI.NoTransitionsButton>(), () => {
 				System.Action<char>? evt = Reflection.Field<System.Action<char>>(keyboard, typeof(HMUI.UIKeyboard).GetEvent("keyWasPressedEvent").Name);
 				if(evt != null)
 					foreach(System.Delegate handler in evt.GetInvocationList())
@@ -1021,6 +950,7 @@ public class BeatUpClient {
 		BeatmapDifficultySegmentedControlController beatmapDifficultySegmentedControlController;
 		Reflection.FieldProxy<System.Action<BeatmapCharacteristicSegmentedControlController, BeatmapCharacteristicSO>> didSelectBeatmapCharacteristicEvent;
 		Reflection.FieldProxy<System.Action<BeatmapDifficultySegmentedControlController, BeatmapDifficulty>> didSelectDifficultyEvent;
+		bool hideHints;
 		public UnityEngine.RectTransform beatmapCharacteristic => (UnityEngine.RectTransform)beatmapCharacteristicSegmentedControlController.transform.parent;
 		public UnityEngine.RectTransform beatmapDifficulty => (UnityEngine.RectTransform)beatmapDifficultySegmentedControlController.transform.parent;
 
@@ -1038,15 +968,11 @@ public class BeatUpClient {
 			characteristicTemplate = Clone(LevelDetail._beatmapCharacteristicSegmentedControlController.transform.parent.gameObject);
 			difficultyTemplate = Clone(LevelDetail._beatmapDifficultySegmentedControlController.transform.parent.gameObject);
 		}
-		static void ChangeBackground(UnityEngine.RectTransform target, HMUI.ImageView newBackground) {
+		static void ChangeBackground(UnityEngine.RectTransform target, HMUI.ImageView newBG) {
 			HMUI.ImageView bg = target.Find("BG").GetComponent<HMUI.ImageView>();
-			bg._skew = newBackground._skew;
-			bg.color = newBackground.color;
-			bg.color0 = newBackground.color0;
-			bg.color1 = newBackground.color1;
-			bg._flipGradientColors = newBackground._flipGradientColors;
+			(bg._skew, bg.color, bg.color0, bg.color1, bg._flipGradientColors) = (newBG._skew, newBG.color, newBG.color0, newBG.color1, newBG._flipGradientColors);
 		}
-		public DifficultyPanel(UnityEngine.Transform parent, int index, float width, HMUI.ImageView? background = null) {
+		public DifficultyPanel(UnityEngine.Transform parent, int index, float width, HMUI.ImageView? background = null, bool hideHints = false) {
 			UnityEngine.RectTransform beatmapCharacteristic = UI.CreateClone(characteristicTemplate, parent, "BeatmapCharacteristic", index);
 			UnityEngine.RectTransform beatmapDifficulty = UI.CreateClone(difficultyTemplate, parent, "BeatmapDifficulty", index + 1);
 			if(background != null) {
@@ -1062,6 +988,7 @@ public class BeatUpClient {
 			beatmapCharacteristicSegmentedControlController._segmentedControl._container = new Zenject.DiContainer();
 			beatmapCharacteristicSegmentedControlController._segmentedControl._container.Bind<HMUI.HoverHintController>().FromInstance(UnityEngine.Resources.FindObjectsOfTypeAll<HMUI.HoverHintController>()[0]).AsSingle();
 			beatmapDifficultySegmentedControlController._difficultySegmentedControl._container = new Zenject.DiContainer();
+			this.hideHints = hideHints;
 		}
 		public void Clear() {
 			beatmapCharacteristicSegmentedControlController.transform.parent.gameObject.SetActive(false);
@@ -1075,15 +1002,18 @@ public class BeatUpClient {
 				return;
 			}
 			BeatmapDifficulty[] beatmapDifficulties = null!;
-			beatmapCharacteristicSegmentedControlController.SetData(System.Linq.Enumerable.ToList(System.Linq.Enumerable.Select(beatmapLevel.beatmapLevel.previewDifficultyBeatmapSets, set => {
+			beatmapCharacteristicSegmentedControlController.SetData(beatmapLevel.beatmapLevel.previewDifficultyBeatmapSets.Select(set => {
 				if(set.beatmapCharacteristic == beatmapLevel.beatmapCharacteristic) {
 					beatmapDifficulties = set.beatmapDifficulties;
-					beatmapDifficultySegmentedControlController.SetData(System.Linq.Enumerable.ToList(System.Linq.Enumerable.Select(set.beatmapDifficulties, diff => (IDifficultyBeatmap)new CustomDifficultyBeatmap(null, null, diff, 0, 0, 0, 0, null, null))), beatmapLevel.beatmapDifficulty);
+					beatmapDifficultySegmentedControlController.SetData(set.beatmapDifficulties.Select(diff => (IDifficultyBeatmap)new CustomDifficultyBeatmap(null, null, diff, 0, 0, 0, 0, null, null)).ToList(), beatmapLevel.beatmapDifficulty);
 				}
 				return (IDifficultyBeatmapSet)new CustomDifficultyBeatmapSet(set.beatmapCharacteristic);
-			})), beatmapLevel.beatmapCharacteristic);
-			beatmapCharacteristicSegmentedControlController.didSelectBeatmapCharacteristicEvent += delegate(BeatmapCharacteristicSegmentedControlController controller, BeatmapCharacteristicSO beatmapCharacteristic) {
-				PreviewDifficultyBeatmapSet set = System.Linq.Enumerable.First(beatmapLevel.beatmapLevel.previewDifficultyBeatmapSets, set => set.beatmapCharacteristic == beatmapCharacteristic);
+			}).ToList(), beatmapLevel.beatmapCharacteristic);
+			if(hideHints)
+				foreach(HMUI.HoverHint hint in beatmapCharacteristicSegmentedControlController.GetComponentsInChildren<HMUI.HoverHint>())
+					hint.enabled = false;
+			beatmapCharacteristicSegmentedControlController.didSelectBeatmapCharacteristicEvent += (controller, beatmapCharacteristic) => {
+				PreviewDifficultyBeatmapSet set = beatmapLevel.beatmapLevel.previewDifficultyBeatmapSets.First(set => set.beatmapCharacteristic == beatmapCharacteristic);
 				BeatmapDifficulty closestDifficulty = set.beatmapDifficulties[0];
 				foreach(BeatmapDifficulty difficulty in set.beatmapDifficulties) {
 					if(beatmapLevel.beatmapDifficulty < difficulty)
@@ -1092,9 +1022,8 @@ public class BeatUpClient {
 				}
 				onChange(new PreviewDifficultyBeatmap(beatmapLevel.beatmapLevel, beatmapCharacteristic, closestDifficulty));
 			};
-			beatmapDifficultySegmentedControlController.didSelectDifficultyEvent += delegate(BeatmapDifficultySegmentedControlController controller, BeatmapDifficulty difficulty) {
+			beatmapDifficultySegmentedControlController.didSelectDifficultyEvent += (controller, difficulty) =>
 				onChange(new PreviewDifficultyBeatmap(beatmapLevel.beatmapLevel, beatmapLevel.beatmapCharacteristic, difficulty));
-			};
 			beatmapCharacteristicSegmentedControlController.transform.parent.gameObject.SetActive(true);
 			beatmapDifficultySegmentedControlController.transform.parent.gameObject.SetActive(true);
 		}
@@ -1125,15 +1054,22 @@ public class BeatUpClient {
 			__result = AuthWrapper(__result, ____platform, ____userId, ____userName);
 	}
 
+	static string GetMaintenanceMessage(MultiplayerUnavailableReason reason, long? maintenanceWindowEndTime) {
+		if(reason == MultiplayerUnavailableReason.MaintenanceMode)
+			return Polyglot.Localization.GetFormat(MultiplayerUnavailableReasonMethods.LocalizedKey(reason), (TimeExtensions.AsUnixTime(maintenanceWindowEndTime.GetValueOrDefault()) - System.DateTime.UtcNow).ToString("h':'mm"));
+		return $"{Polyglot.Localization.Get(MultiplayerUnavailableReasonMethods.LocalizedKey(reason))} ({MultiplayerUnavailableReasonMethods.ErrorCode(reason)})";
+	}
+
 	[Patch(PatchType.Prefix, typeof(MultiplayerModeSelectionFlowCoordinator), nameof(MultiplayerModeSelectionFlowCoordinator.PresentMasterServerUnavailableErrorDialog))]
 	public static bool MultiplayerModeSelectionFlowCoordinator_PresentMasterServerUnavailableErrorDialog(MultiplayerModeSelectionFlowCoordinator __instance, MultiplayerModeSelectionViewController ____multiplayerModeSelectionViewController, MultiplayerUnavailableReason reason, long? maintenanceWindowEndTime, string? remoteLocalizedMessage) {
 		if(mainFlowCoordinator.childFlowCoordinator != __instance)
 			return false;
 		____multiplayerModeSelectionViewController.transform.Find("Buttons")?.gameObject.SetActive(false);
-		____multiplayerModeSelectionViewController._maintenanceMessageText.text = remoteLocalizedMessage ?? ((reason == MultiplayerUnavailableReason.MaintenanceMode) ? Polyglot.Localization.GetFormat(MultiplayerUnavailableReasonMethods.LocalizedKey(reason), (TimeExtensions.AsUnixTime(maintenanceWindowEndTime.GetValueOrDefault()) - System.DateTime.UtcNow).ToString("h':'mm")) : (Polyglot.Localization.Get(MultiplayerUnavailableReasonMethods.LocalizedKey(reason)) + " (" + MultiplayerUnavailableReasonMethods.ErrorCode(reason) + ")"));
-		____multiplayerModeSelectionViewController._maintenanceMessageText.richText = true;
-		____multiplayerModeSelectionViewController._maintenanceMessageText.transform.localPosition = new UnityEngine.Vector3(0, 15, 0);
-		____multiplayerModeSelectionViewController._maintenanceMessageText.gameObject.SetActive(true);
+		TMPro.TextMeshProUGUI message = ____multiplayerModeSelectionViewController._maintenanceMessageText;
+		message.text = remoteLocalizedMessage ?? GetMaintenanceMessage(reason, maintenanceWindowEndTime);
+		message.richText = true;
+		message.transform.localPosition = new UnityEngine.Vector3(0, 15, 0);
+		message.gameObject.SetActive(true);
 		__instance.ReplaceTopViewController(____multiplayerModeSelectionViewController, __instance.ProcessDeeplinkingToLobby, HMUI.ViewController.AnimationType.In, HMUI.ViewController.AnimationDirection.Horizontal);
 		__instance.SetTitle(Polyglot.Localization.Get("LABEL_CONNECTION_ERROR"), HMUI.ViewController.AnimationType.In);
 		return false;
@@ -1259,7 +1195,7 @@ public class BeatUpClient {
 	public static void LobbyPlayersDataModel_SetLocalPlayerBeatmapLevel(LobbyPlayersDataModel __instance, PreviewDifficultyBeatmap? beatmapLevel) {
 		if(beatmapLevel != null) {
 			PacketHandler.RecommendPreview? preview = playerPreviews[handler.multiplayerSessionManager.localPlayer.sortIndex];
-			if(preview.preview.levelID != beatmapLevel.beatmapLevel.levelID) {
+			if(preview.levelID != beatmapLevel.beatmapLevel.levelID) {
 				preview = ResolvePreview(beatmapLevel.beatmapLevel.levelID);
 				if(preview != null)
 					playerPreviews[handler.multiplayerSessionManager.localPlayer.sortIndex] = preview;
@@ -1289,23 +1225,21 @@ public class BeatUpClient {
 
 	[Patch(PatchType.Postfix, typeof(BeatmapLevelsModel), nameof(BeatmapLevelsModel.GetLevelPreviewForLevelId))]
 	public static void BeatmapLevelsModel_GetLevelPreviewForLevelId(ref IPreviewBeatmapLevel? __result, string levelId) =>
-		__result ??= (IPreviewBeatmapLevel?)ResolvePreview(levelId)?.preview ?? new ErrorBeatmapLevel(levelId);
+		__result ??= (IPreviewBeatmapLevel?)ResolvePreview(levelId) ?? new ErrorBeatmapLevel(levelId);
 
 	class CallbackStream : System.IO.Stream {
 		public readonly System.IO.Stream stream;
 		public readonly System.Action<int> onProgress;
-		public override bool CanRead {get => stream.CanRead;}
-		public override bool CanSeek {get => stream.CanSeek;}
-		public override bool CanWrite {get => stream.CanWrite;}
-		public override long Length {get => stream.Length;}
+		public override bool CanRead => stream.CanRead;
+		public override bool CanSeek => stream.CanSeek;
+		public override bool CanWrite => stream.CanWrite;
+		public override long Length => stream.Length;
 		public override long Position {
 			get => stream.Position;
 			set => stream.Position = value;
 		}
-		public CallbackStream(System.IO.Stream stream, System.Action<int> onProgress) {
-			this.stream = stream;
-			this.onProgress = onProgress;
-		}
+		public CallbackStream(System.IO.Stream stream, System.Action<int> onProgress) =>
+			(this.stream, this.onProgress) = (stream, onProgress);
 		public override void Flush() => stream.Flush();
 		public override long Seek(long offset, System.IO.SeekOrigin origin) => stream.Seek(offset, origin);
 		public override void SetLength(long value) => stream.SetLength(value);
@@ -1356,7 +1290,7 @@ public class BeatUpClient {
 						}
 					}
 				}
-				total = (ulong)System.Linq.Enumerable.Aggregate(files, 0L, (total, file) => total + new System.IO.FileInfo(file.path).Length);
+				total = (ulong)files.Aggregate(0L, (total, file) => total + new System.IO.FileInfo(file.path).Length);
 				if(total > MaxUnzippedSize) {
 					Log?.Debug("Level too large!");
 					return (buffer, hash);
@@ -1387,14 +1321,10 @@ public class BeatUpClient {
 		}
 	}
 
-	public static async System.Threading.Tasks.Task<EntitlementsStatus> ShareWrapper(System.Threading.Tasks.Task<EntitlementsStatus> task, string levelId) {
+	public static async System.Threading.Tasks.Task<EntitlementsStatus> ShareTask(string levelId) {
 		string? lastLevel = uploadLevel;
 		uploadLevel = null;
 		downloadPending = false;
-		EntitlementsStatus status = await task;
-		Log?.Debug($"EntitlementsStatus: {status}");
-		if(status != EntitlementsStatus.Ok)
-			return status;
 		BeatmapLevelsModel.GetBeatmapLevelResult result = await beatmapLevelsModel.GetBeatmapLevelAsync(levelId, default(System.Threading.CancellationToken));
 		Log?.Debug($"GetBeatmapLevelResult.isError: {result.isError}");
 		if(result.isError) {
@@ -1423,11 +1353,15 @@ public class BeatUpClient {
 		return EntitlementsStatus.Ok;
 	}
 
+	static async System.Threading.Tasks.Task<EntitlementsStatus> ShareWrapper(System.Threading.Tasks.Task<EntitlementsStatus> status, string levelId) =>
+		(await status != EntitlementsStatus.Ok) ? status.Result : await ShareTask(levelId);
+
 	[Patch(PatchType.Postfix, typeof(NetworkPlayerEntitlementChecker), "GetEntitlementStatus")]
 	public static void NetworkPlayerEntitlementChecker_GetEntitlementStatus(NetworkPlayerEntitlementChecker __instance, ref System.Threading.Tasks.Task<EntitlementsStatus> __result, string levelId) {
 		Log?.Debug($"NetworkPlayerEntitlementChecker_GetEntitlementStatus");
-		if(!haveMpCore)
-			__result = ShareWrapper(__result, levelId);
+		if(haveMpCore)
+			return;
+		__result = ShareWrapper(__result, levelId);
 	}
 
 	[Patch(PatchType.Prefix, typeof(MenuRpcManager), nameof(MenuRpcManager.SetIsEntitledToLevel))]
@@ -1458,8 +1392,8 @@ public class BeatUpClient {
 	}
 
 	[Patch(PatchType.Prefix, typeof(MultiplayerLevelLoader), nameof(MultiplayerLevelLoader.LoadLevel))]
-	public static void MultiplayerLevelLoader_LoadLevel_pre(int ____loaderState, out bool __state) =>
-		__state = (____loaderState == (int)MultiplayerLevelLoader.MultiplayerBeatmapLoaderState.NotLoading && !haveMpCore);
+	public static void MultiplayerLevelLoader_LoadLevel_pre(MultiplayerLevelLoader.MultiplayerBeatmapLoaderState ____loaderState, out bool __state) =>
+		__state = (____loaderState == MultiplayerLevelLoader.MultiplayerBeatmapLoaderState.NotLoading && !haveMpCore);
 
 	[Patch(PatchType.Postfix, typeof(MultiplayerLevelLoader), nameof(MultiplayerLevelLoader.LoadLevel))]
 	public static void MultiplayerLevelLoader_LoadLevel_post(MultiplayerLevelLoader __instance, bool __state, ILevelGameplaySetupData gameplaySetupData, float initialStartTime, System.Threading.CancellationTokenSource ____getBeatmapCancellationTokenSource, ref System.Threading.Tasks.Task<BeatmapLevelsModel.GetBeatmapLevelResult> ____getBeatmapLevelResultTask) {
@@ -1468,12 +1402,12 @@ public class BeatUpClient {
 	}
 
 	[Patch(PatchType.Prefix, typeof(MultiplayerLevelLoader), nameof(MultiplayerLevelLoader.Tick))]
-	public static void MultiplayerLevelLoader_Tick_pre(int ____loaderState, out bool __state) =>
-		__state = (____loaderState == (int)MultiplayerLevelLoader.MultiplayerBeatmapLoaderState.LoadingBeatmap);
+	public static void MultiplayerLevelLoader_Tick_pre(MultiplayerLevelLoader.MultiplayerBeatmapLoaderState ____loaderState, out bool __state) =>
+		__state = (____loaderState == MultiplayerLevelLoader.MultiplayerBeatmapLoaderState.LoadingBeatmap);
 
 	[Patch(PatchType.Postfix, typeof(MultiplayerLevelLoader), nameof(MultiplayerLevelLoader.Tick))]
-	public static void MultiplayerLevelLoader_Tick_post(int ____loaderState, bool __state, ILevelGameplaySetupData ____gameplaySetupData) {
-		if(__state && ____loaderState == (int)MultiplayerLevelLoader.MultiplayerBeatmapLoaderState.WaitingForCountdown)
+	public static void MultiplayerLevelLoader_Tick_post(MultiplayerLevelLoader.MultiplayerBeatmapLoaderState ____loaderState, bool __state, ILevelGameplaySetupData ____gameplaySetupData) {
+		if(__state && ____loaderState == MultiplayerLevelLoader.MultiplayerBeatmapLoaderState.WaitingForCountdown)
 			handler.rpcManager.SetIsEntitledToLevel(____gameplaySetupData.beatmapLevel.beatmapLevel.levelID, EntitlementsStatus.Ok);
 	}
 
@@ -1541,7 +1475,8 @@ public class BeatUpClient {
 			PreviewDifficultyBeatmap selectedPreview = original;
 			IDifficultyBeatmap? selectedBeatmap = null;
 			UnityEngine.RectTransform switchButton = UI.CreateButtonFrom(__instance._resumeButton.gameObject, __instance._resumeButton.transform.parent, "SwitchDifficulty", () => {
-				menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.Init(menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameMode, selectedPreview.beatmapLevel, selectedPreview.beatmapDifficulty, selectedPreview.beatmapCharacteristic, selectedBeatmap, menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.colorScheme, menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameplayCoreSceneSetupData.gameplayModifiers, menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameplayCoreSceneSetupData.playerSpecificSettings, menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameplayCoreSceneSetupData.practiceSettings, menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameplayCoreSceneSetupData.useTestNoteCutSoundEffects);
+				MultiplayerLevelScenesTransitionSetupDataSO setupData = menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData;
+				setupData.Init(setupData.gameMode, selectedPreview.beatmapLevel, selectedPreview.beatmapDifficulty, selectedPreview.beatmapCharacteristic, selectedBeatmap, setupData.colorScheme, setupData.gameplayCoreSceneSetupData.gameplayModifiers, setupData.gameplayCoreSceneSetupData.playerSpecificSettings, setupData.gameplayCoreSceneSetupData.practiceSettings, setupData.gameplayCoreSceneSetupData.useTestNoteCutSoundEffects);
 				menuTransitionsHelper._gameScenesManager.ReplaceScenes(menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData, null, .35f, null, container => {
 					MultiplayerController multiplayerController = container.Resolve<MultiplayerController>();
 					multiplayerController._songStartSyncController.syncStartSuccessEvent -= OnSongStart;
@@ -1554,7 +1489,7 @@ public class BeatUpClient {
 			});
 			switchButton.GetComponentInChildren<Polyglot.LocalizedTextMeshProUGUI>().Key = "BEATUPCLIENT_SWITCH";
 			switchButton.gameObject.SetActive(false);
-			DifficultyPanel panel = new DifficultyPanel(__instance._mainBar.transform, 1, -2, __instance._levelBar.transform.Find("BG").GetComponent<HMUI.ImageView>());
+			DifficultyPanel panel = new DifficultyPanel(__instance._mainBar.transform, 1, -2, __instance._levelBar.transform.Find("BG").GetComponent<HMUI.ImageView>(), true);
 			__instance._levelBar.transform.localPosition = new UnityEngine.Vector3(0, 13.25f, 0);
 			panel.beatmapCharacteristic.localPosition = new UnityEngine.Vector3(-1, -1.5f, 0);
 			panel.beatmapDifficulty.localPosition = new UnityEngine.Vector3(-1, -8.25f, 0);
@@ -1910,7 +1845,7 @@ public class BeatUpClient {
 			UnityEngine.RectTransform addButton = UI.CreateButtonFrom(editColorSchemeButton.gameObject, customServerEndPointText.transform, "AddServer", () =>
 				editServerViewController.TryPresent(mainFlowCoordinator.childFlowCoordinator, false));
 			addButton.localPosition = new UnityEngine.Vector3(-40, 39.5f, 0);
-			addButton.Find("Icon").GetComponent<HMUI.ImageView>().sprite = System.Linq.Enumerable.First(UnityEngine.Resources.FindObjectsOfTypeAll<UnityEngine.Sprite>(), sprite => sprite.name == "AddIcon");
+			addButton.Find("Icon").GetComponent<HMUI.ImageView>().sprite = UnityEngine.Resources.FindObjectsOfTypeAll<UnityEngine.Sprite>().First(sprite => sprite.name == "AddIcon");
 			UnityEngine.RectTransform editButton = UI.CreateButtonFrom(editColorSchemeButton.gameObject, customServerEndPointText.transform, "EditServer", () =>
 				editServerViewController.TryPresent(mainFlowCoordinator.childFlowCoordinator, true));
 			editButton.localPosition = new UnityEngine.Vector3(52, 39.5f, 0);
@@ -2014,8 +1949,8 @@ static class BeatUpClient_SongCore {
 		SongCore.Data.ExtraSongData? extraSongData = SongCore.Collections.RetrieveExtraSongData(levelHash);
 		if(extraSongData == null)
 			return;
-		requirements = System.Linq.Enumerable.SelectMany(extraSongData._difficulties, diff => diff.additionalDifficultyData._requirements);
-		suggestions = System.Linq.Enumerable.SelectMany(extraSongData._difficulties, diff => diff.additionalDifficultyData._suggestions);
+		requirements = extraSongData._difficulties.SelectMany(diff => diff.additionalDifficultyData._requirements);
+		suggestions = extraSongData._difficulties.SelectMany(diff => diff.additionalDifficultyData._suggestions);
 	}
 }
 
@@ -2024,7 +1959,7 @@ static class BeatUpClient_MpCore {
 	static class DiJack {
 		static System.Collections.Generic.Dictionary<System.Type, System.Type?> InjectMap = new System.Collections.Generic.Dictionary<System.Type, System.Type?>();
 		static void ConcreteBinderNonGeneric_To(Zenject.ConcreteBinderNonGeneric __instance, ref System.Collections.Generic.IEnumerable<System.Type> concreteTypes) {
-			System.Type[] newTypes = System.Linq.Enumerable.ToArray(concreteTypes);
+			System.Type[] newTypes = concreteTypes.ToArray();
 			uint i = 0;
 			foreach(System.Type type in concreteTypes) {
 				if(InjectMap.TryGetValue(type, out System.Type? inject)) {
@@ -2061,14 +1996,15 @@ static class BeatUpClient_MpCore {
 		}
 	}
 
-	public static async System.Threading.Tasks.Task<EntitlementsStatus> MpShareWrapper(System.Threading.Tasks.Task<EntitlementsStatus> task, string levelId, NetworkPlayerEntitlementChecker checker) {
-		EntitlementsStatus status = await task;
-		if(status != EntitlementsStatus.NotOwned)
-			return status;
-		return await checker._additionalContentModel.GetLevelEntitlementStatusAsync(levelId, default(System.Threading.CancellationToken)) switch {
-			AdditionalContentModel.EntitlementStatus.Owned => EntitlementsStatus.Ok, 
-			AdditionalContentModel.EntitlementStatus.NotOwned => EntitlementsStatus.NotOwned, 
-			_ => EntitlementsStatus.Unknown, 
+	public static async System.Threading.Tasks.Task<EntitlementsStatus> MpShareWrapper(System.Threading.Tasks.Task<EntitlementsStatus> status, string levelId, NetworkPlayerEntitlementChecker checker) {
+		switch(await status) {
+			case EntitlementsStatus.Ok: return await ShareTask(levelId);
+			case EntitlementsStatus.NotOwned: return await checker._additionalContentModel.GetLevelEntitlementStatusAsync(levelId, default(System.Threading.CancellationToken)) switch {
+					AdditionalContentModel.EntitlementStatus.Owned => await ShareTask(levelId),
+					AdditionalContentModel.EntitlementStatus.NotOwned => EntitlementsStatus.NotOwned,
+					_ => EntitlementsStatus.Unknown,
+			};
+			default: return status.Result;
 		};
 	}
 
@@ -2076,12 +2012,11 @@ static class BeatUpClient_MpCore {
 	public static void MpEntitlementChecker_GetEntitlementStatus(MultiplayerCore.Objects.MpEntitlementChecker __instance, ref System.Threading.Tasks.Task<EntitlementsStatus> __result, string levelId) {
 		Log?.Debug($"NetworkPlayerEntitlementChecker_GetEntitlementStatus");
 		__result = MpShareWrapper(__result, levelId, __instance);
-		__result = ShareWrapper(__result, levelId);
 	}
 
 	[Patch(PatchType.Prefix, typeof(MultiplayerCore.Objects.MpLevelLoader), nameof(MultiplayerCore.Objects.MpLevelLoader.LoadLevel))]
-	public static void MpLevelLoader_LoadLevel_pre(int ____loaderState, out bool __state) =>
-		__state = (____loaderState == (int)MultiplayerLevelLoader.MultiplayerBeatmapLoaderState.NotLoading);
+	public static void MpLevelLoader_LoadLevel_pre(MultiplayerLevelLoader.MultiplayerBeatmapLoaderState ____loaderState, out bool __state) =>
+		__state = (____loaderState == MultiplayerLevelLoader.MultiplayerBeatmapLoaderState.NotLoading);
 
 	[Patch(PatchType.Postfix, typeof(MultiplayerCore.Objects.MpLevelLoader), nameof(MultiplayerCore.Objects.MpLevelLoader.LoadLevel))]
 	public static void MpLevelLoader_LoadLevel_post(MultiplayerCore.Objects.MpLevelLoader __instance, bool __state, ILevelGameplaySetupData gameplaySetupData, float initialStartTime, System.Threading.CancellationTokenSource ____getBeatmapCancellationTokenSource, ref System.Threading.Tasks.Task<BeatmapLevelsModel.GetBeatmapLevelResult> ____getBeatmapLevelResultTask) =>
@@ -2113,7 +2048,7 @@ static class BeatUpClient_MpCore {
 		private void HandleMpexBeatmapPacket(MultiplayerCore.Beatmaps.Packets.MpBeatmapPacket packet, IConnectedPlayer player) {
 			BeatmapCharacteristicSO? characteristic = _beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName(packet.characteristic);
 			IPreviewBeatmapLevel preview = _beatmapLevelProvider.GetBeatmapFromPacket(packet);
-			PacketHandler.NetworkPreviewBeatmapLevel current = playerPreviews[player.sortIndex].preview;
+			PacketHandler.RecommendPreview current = playerPreviews[player.sortIndex];
 			if(preview.levelID != current.levelID || current.previewDifficultyBeatmapSets == null) // Ignore if we already have a BeatUpClient preview for this level
 				current.Init(preview);
 		}
