@@ -83,7 +83,7 @@ src/packets.h: src/packets.txt .obj/gen.$(HOST) makefile
 	@mkdir -p "$(@D)"
 	cc -std=c2x -no-pie "$<" -o "$@"
 
-.obj/MakeThingsPublic.exe: MakeThingsPublic.cs makefile
+.obj/MakeThingsPublic.exe: BeatUpClient/MakeThingsPublic.cs makefile
 	@echo "[csc $(notdir $@)]"
 	@mkdir -p "$(@D)"
 	csc -nologo -o+ -debug- -nullable+ -w:4 -warnaserror+ -langversion:8 "$<" -out:"$@" -r:$(BSINSTALL)/Libs/Mono.Cecil.dll
@@ -94,11 +94,11 @@ src/packets.h: src/packets.txt .obj/gen.$(HOST) makefile
 	@mkdir -p "$(@D)"
 	MONO_PATH=$(BSINSTALL)/Libs mono .obj/MakeThingsPublic.exe "$<" "$@"
 
-BeatUpClient.dll: BeatUpClient.cs $(PUBREFS) makefile
+BeatUpClient/BeatUpClient.dll: BeatUpClient/BeatUpClient.cs $(PUBREFS) makefile
 	@echo "[csc $@]"
 	@mkdir -p .obj/
 	printf "{\"\$$schema\":\"https://raw.githubusercontent.com/bsmg/BSIPA-MetadataFileSchema/master/Schema.json\",\"author\":\"rcelyte\",\"description\":\"Tweaks and enhancements for enabling modded multiplayer\",\"gameVersion\":\"1.20.0\",\"dependsOn\":{\"BSIPA\":\"*\"},\"conflictsWith\":{\"BeatTogether\":\"*\"},\"loadBefore\":[\"MultiplayerCore\"],\"id\":\"BeatUpClient\",\"name\":\"BeatUpClient\",\"version\":\"$(VERSION)\",\"links\":{\"project-source\":\"https://github.com/rcelyte/BeatUpRcelyte\"}}" > .obj/manifest.json
-	csc -nologo -t:library -nostdlib -o+ -debug- -nullable+ -unsafe+ -w:4 -warnaserror+ -langversion:8 -define:MPCORE_SUPPORT "$<" -res:.obj/manifest.json,.manifest.json -res:data.bundle,BeatUpClient.data -out:"$@" $(PUBREFS:%=-r:%)
+	csc -nologo -t:library -nostdlib -o+ -debug- -nullable+ -unsafe+ -w:4 -warnaserror+ -langversion:8 -define:MPCORE_SUPPORT "$<" -res:.obj/manifest.json,.manifest.json -res:BeatUpClient/data.bundle,BeatUpClient.data -out:"$@" $(PUBREFS:%=-r:%)
 
 install: beatupserver
 	@echo "[install $(notdir $<)]"

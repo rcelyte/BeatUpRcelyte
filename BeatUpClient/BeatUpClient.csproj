@@ -42,11 +42,10 @@
 		</ItemGroup>
 		<MakeDir Directories=".tmp"/>
 		<Copy DestinationFolder=".folderNameWithoutSpaces" SourceFiles="@(SourceDLL)"/>
-		<Move DestinationFiles=".folderNameWithoutSpaces/GameplayCore.dll" SourceFiles=".folderNameWithoutSpaces/GamePlayCore.dll"/>
 		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/BeatmapCore.dll .tmp/BeatmapCore.dll"/>
 		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/BGNet.dll .tmp/BGNet.dll"/>
 		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/Colors.dll .tmp/Colors.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/GameplayCore.dll .tmp/GameplayCore.dll"/>
+		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/GamePlayCore.dll .tmp/GamePlayCore.dll"/>
 		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/HMLib.dll .tmp/HMLib.dll"/>
 		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/HMUI.dll .tmp/HMUI.dll"/>
 		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/IPA.Loader.dll .tmp/IPA.Loader.dll"/>

@@ -99,7 +99,7 @@ class MainClass {
 		assemblyResolver.AddSearchDirectory(System.IO.Path.GetDirectoryName(args[0]));
 		Mono.Cecil.AssemblyDefinition assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(args[0], new Mono.Cecil.ReaderParameters {AssemblyResolver = assemblyResolver});
 		if(nonPublicMembers.TryGetValue(assembly.MainModule.Name, out string[] overrides)) {
-			System.Linq.ILookup<string, string> typeLookup = System.Linq.Enumerable.ToLookup(overrides, e => e.Split("::")[0], e => $"{e}::".Split("::")[1]);
+			System.Linq.ILookup<string, string> typeLookup = System.Linq.Enumerable.ToLookup(overrides, e => e.Split(':')[0], e => $"{e}::".Split(':')[2]);
 			foreach(Mono.Cecil.TypeDefinition type in assembly.MainModule.GetTypes()) {
 				System.Collections.Generic.HashSet<string> names = System.Linq.Enumerable.ToHashSet(typeLookup[type.FullName]);
 				if(names.Contains(""))
