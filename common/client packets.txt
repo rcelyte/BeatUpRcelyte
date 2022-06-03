@@ -1,0 +1,86 @@
+n ByteArrayNetSerializable
+	vu32 length
+	u8 data[8192, .length]
+vu32 BeatmapDifficulty
+	Easy
+	Normal
+	Hard
+	Expert
+	ExpertPlus
+n PreviewDifficultyBeatmapSet
+	String beatmapCharacteristicSerializedName
+	u8 count
+	BeatmapDifficulty difficulties[5,.count]
+n NetworkPreviewBeatmapLevel
+	LongString levelId
+	LongString songName
+	LongString songSubName
+	LongString songAuthorName
+	LongString levelAuthorName
+	f32 beatsPerMinute
+	f32 songTimeOffset
+	f32 shuffle
+	f32 shufflePeriod
+	f32 previewStartTime
+	f32 previewDuration
+	f32 songDuration
+	u8 count
+	PreviewDifficultyBeatmapSet previewDifficultyBeatmapSets[8,.count]
+	ByteArrayNetSerializable cover
+n RecommendPreview
+	NetworkPreviewBeatmapLevel base
+	vu32 requirements_len
+	String requirements[16,.requirements_len]
+	vu32 suggestions_len
+	String suggestions[16,.suggestions_len]
+n ShareInfo
+	LongString levelId
+	u8 levelHash[32]
+	vu64 fileSize
+n SetCanShareBeatmap
+	ShareInfo base
+	b canShare
+n DirectDownloadInfo
+	ShareInfo base
+	u8 count
+	String sourcePlayers[128,.count]
+n LevelFragmentRequest
+	vu64 offset
+	u16 maxSize
+n LevelFragment
+	vu64 offset
+	u16 size
+	u8 data[1500,.size]
+u8 LoadState
+	None
+	Failed
+	Exporting
+	Downloading
+	Loading
+	Done
+n LoadProgress
+	u32 sequence
+	LoadState state
+	u16 progress
+d BeatUpMessage
+	BeatUpMessageType type
+	u8 BeatUpMessageType(.type)
+		RecommendPreview recommendPreview
+		SetCanShareBeatmap setCanShareBeatmap
+		DirectDownloadInfo directDownloadInfo
+		LevelFragmentRequest levelFragmentRequest
+		LevelFragment levelFragment
+		LoadProgress loadProgress
+r BeatUpConnectInfo
+	u32 windowSize
+	u8 countdownDuration
+	b directDownloads:1
+	b skipResults:1
+	b perPlayerDifficulty:1
+	b perPlayerModifiers:1
+d BeatUpConnectHeader
+	u32 protocolId
+	BeatUpConnectInfo base
+d ModConnectHeader
+	vu32 length
+	String name

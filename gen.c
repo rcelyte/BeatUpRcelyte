@@ -169,8 +169,8 @@ static int64_t read_number(const char **it) {
 	return num;
 }
 
-static_assert(offsetof(struct Token, enum_.type) == offsetof(struct Token, field.type));
-static_assert(offsetof(struct Token, enum_.name) == offsetof(struct Token, field.name));
+static_assert(offsetof(struct Token, enum_.type) == offsetof(struct Token, field.type), "");
+static_assert(offsetof(struct Token, enum_.name) == offsetof(struct Token, field.name), "");
 [[nodiscard]] static const char *parse_struct_fields(const char *it, uint32_t indent, bool insideSwitch) {
 	while(skip_indent_maybe(&it, indent)) {
 		struct Token token = {
@@ -276,20 +276,31 @@ static_assert(offsetof(struct Token, enum_.name) == offsetof(struct Token, field
 	return it;
 }
 
-static void parse(const char *it) {
+static void parse_file(const char *name);
+static void parse(const char *it, const char *path, uint32_t path_len) {
 	while(*it) {
-		if((it[0] == 's' || it[0] == 'r' || it[0] == 'd' || it[0] == 'n') && it[1] == ' ')
+		if((it[0] == 's' || it[0] == 'r' || it[0] == 'd' || it[0] == 'n') && it[1] == ' ') {
 			it = parse_struct(it);
-		else if(alpha(*it))
+		} else if(alpha(*it)) {
 			it = parse_enum(it);
-		else
+		} else {
+			const char *start = it;
 			skip_line(&it);
+			if(strncmp(start, "@include ", 9) == 0) {
+				char name[8192];
+				snprintf(name, sizeof(name), "%.*s%.*s", path_len, path, (uint32_t)(it - 10 - start), &start[9]);
+				parse_file(name);
+			}
+		}
 	}
 }
 
 static void parse_file(const char *name) {
+	const char *oldFilename = filename;
 	filename = name;
 	FILE *infile = fopen(name, "rb");
+	if(!infile)
+		fail("File not found");
 	fseek(infile, 0, SEEK_END);
 	size_t infile_len = ftell(infile);
 	char desc[infile_len+8];
@@ -303,7 +314,12 @@ static void parse_file(const char *name) {
 	fclose(infile);
 	for(uint8_t i = 0; i < 8; ++i)
 		desc[infile_len + i] = 0;
-	parse(desc);
+	uint32_t path_len = 0;
+	for(uint32_t i = 0; name[i];)
+		if(name[i++] == '/')
+			path_len = i;
+	parse(desc, name, path_len);
+	filename = oldFilename;
 }
 
 static void write_str(char **out, const char *str) {
@@ -381,6 +397,7 @@ static void resolve() {
 				}
 				break;
 			}
+			default:;
 		}
 	}
 }
@@ -474,7 +491,7 @@ static void gen_header_reflect(char **out, struct Token *token) {
 }
 
 static void gen_header(char **out, const char *headerName) {
-	write_fmt(out, "#pragma once\n#include \"log.h\"\n#include <stdint.h>\n#include <stdbool.h>\n#include \"%s.h\"\n", headerName);
+	write_fmt(out, "#pragma once\n#include <stddef.h>\n#include <stdint.h>\n#include <stdbool.h>\n#include \"%s.h\"\n", headerName);
 	TOKEN_LOOP(token) {
 		case TType_Enum_start: {
 			gen_header_enum(out, token);
@@ -515,16 +532,18 @@ static void gen_header(char **out, const char *headerName) {
 	}
 	write_str(out,
 		"#define reflect(type, value) _reflect_##type(value)\n"
-		"size_t _pkt_try_read(void (*inner)(void *restrict, const uint8_t**, const uint8_t*, struct PacketContext), void *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);\n"
-		"size_t _pkt_try_write(void (*inner)(const void *restrict, uint8_t**, const uint8_t*, struct PacketContext), const void *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);\n"
-		"#define pkt_write_c(pkt, end, ctx, type, ...) _pkt_try_write((void (*)(const void *restrict, uint8_t**, const uint8_t*, struct PacketContext))_pkt_##type##_write, &(struct type)__VA_ARGS__, pkt, end, ctx)\n"
-		"#define pkt_read(data, ...) _pkt_try_read((void (*)(void *restrict, const uint8_t**, const uint8_t*, struct PacketContext))_Generic(*(data)");
+		"typedef void (*PacketWriteFunc)(const void *restrict, uint8_t**, const uint8_t*, struct PacketContext);\n"
+		"typedef void (*PacketReadFunc)(void *restrict, const uint8_t**, const uint8_t*, struct PacketContext);\n"
+		"size_t _pkt_try_read(PacketReadFunc inner, void *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);\n"
+		"size_t _pkt_try_write(PacketWriteFunc inner, const void *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);\n"
+		"#define pkt_write_c(pkt, end, ctx, type, ...) _pkt_try_write((PacketWriteFunc)_pkt_##type##_write, &(struct type)__VA_ARGS__, pkt, end, ctx)\n"
+		"#define pkt_read(data, ...) _pkt_try_read((PacketReadFunc)_Generic(*(data)");
 	for(struct Token *token = tokens; token < tokens_end; ++token)
 		if(token->type == TType_Struct_start && token->struct_.recv)
 			write_fmt(out, ", struct %s: _pkt_%s_read", token->struct_.name, token->struct_.name);
 	write_str(out,
 		"), data, __VA_ARGS__)\n"
-		"#define pkt_write(data, ...) _pkt_try_write((void (*)(const void *restrict, uint8_t**, const uint8_t*, struct PacketContext))_Generic(*(data)");
+		"#define pkt_write(data, ...) _pkt_try_write((PacketWriteFunc)_Generic(*(data)");
 	for(struct Token *token = tokens; token < tokens_end; ++token)
 		if(token->type == TType_Struct_start && token->struct_.send)
 			write_fmt(out, ", struct %s: _pkt_%s_write", token->struct_.name, token->struct_.name);
@@ -657,7 +676,7 @@ int32_t main(int32_t argc, const char *argv[]) {
 		return -1;
 	}
 	parse_file(argv[1]);
-	parse("n PacketContext\n\tu8 netVersion\n\tu8 protocolVersion\n\tu8 windowSize\n\tu8 beatUpVersion\n");
+	parse("n PacketContext\n\tu8 netVersion\n\tu8 protocolVersion\n\tu8 windowSize\n\tu8 beatUpVersion\n", NULL, 0);
 	resolve();
 	const char *headerName = argv[2], *sourceName = argv[3];
 	for(const char *it = headerName; *it;)

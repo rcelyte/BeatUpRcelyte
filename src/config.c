@@ -1,4 +1,4 @@
-#include "log.h"
+#include "global.h"
 #include "config.h"
 #include "json.h"
 #include <mbedtls/entropy.h>
@@ -131,10 +131,10 @@ bool config_load(struct Config *out, const char *path) {
 	*out->host_domain = 0;
 	*out->host_domainIPv4 = 0;
 	*out->status_domain = 0;
-	sprintf(out->status_path, "/");
+	*out->status_path = 0;
 	out->status_tls = 0;
 
-	char *key, *it = config_json;
+	const char *key, *it = config_json;
 	uint32_t key_len;
 	while(json_iter_object(&it, &key, &key_len)) {
 		/*if(key_len == 6 && memcmp(key, "master", 6) == 0)
@@ -145,7 +145,7 @@ bool config_load(struct Config *out, const char *path) {
 			it = json_skip_value(it);*/
 		#define IFEQ(str) if(key_len == sizeof(str) - 1 && memcmp(key, str, sizeof(str) - 1) == 0)
 		IFEQ("HostName") {
-			char *domain;
+			const char *domain;
 			uint32_t domain_len = 0;
 			it = json_get_string(it, &domain, &domain_len);
 			if(domain_len >= lengthof(out->host_domain)) {
@@ -154,7 +154,7 @@ bool config_load(struct Config *out, const char *path) {
 			}
 			sprintf(out->host_domain, "%.*s", domain_len, domain);
 		} else IFEQ("HostName_IPv4") {
-			char *domain;
+			const char *domain;
 			uint32_t domain_len = 0;
 			it = json_get_string(it, &domain, &domain_len);
 			if(domain_len >= lengthof(out->host_domainIPv4)) {
@@ -163,14 +163,14 @@ bool config_load(struct Config *out, const char *path) {
 			}
 			sprintf(out->host_domainIPv4, "%.*s", domain_len, domain);
 		} else IFEQ("HostCert") {
-			it = json_get_string(it, &master_cert, &master_cert_len);
+			it = json_get_string(it, (const char**)&master_cert, &master_cert_len);
 		} else IFEQ("HostKey") {
-			it = json_get_string(it, &master_key, &master_key_len);
+			it = json_get_string(it, (const char**)&master_key, &master_key_len);
 		} else IFEQ("Port") {
 			out->master_port = atoi(it);
 			it = json_skip_value(it);
 		} else IFEQ("StatusUri") {
-			char *uri;
+			const char *uri;
 			uint32_t uri_len;
 			it = json_get_string(it, &uri, &uri_len);
 			if(uri_len >= lengthof(out->status_domain)) {
@@ -184,32 +184,26 @@ bool config_load(struct Config *out, const char *path) {
 				out->status_tls = 0, out->status_port = 80;
 				uri += 7, uri_len -= 7;
 			} else {
-				uprintf("Error parsing config value \"StatusUri\": URI must begin with http:// or https://\n");
+				uprintf("Error parsing config value \"StatusUri\": URI must begin with `http://` or `https://`\n");
 				continue;
 			}
-			uint32_t sub_len;
-			for(sub_len = 0; sub_len < uri_len; ++sub_len)
-				if(uri[sub_len] == ':' || uri[sub_len] == '/')
-					break;
-			sprintf(out->status_domain, "%.*s", sub_len, uri);
-			uri += sub_len, uri_len -= sub_len;
-			if(uri_len == 0)
-				continue;
-			if(*uri == ':') {
-				out->status_port = atoi(&uri[1]);
-				for(; uri_len; ++uri, --uri_len)
-					if(*uri == '/')
-						break;
-				if(uri_len == 0)
-					continue;
+			const char *path = memchr(uri, '/', uri_len);
+			const char *port_end = path ? path : &uri[uri_len];
+			const char *port = memchr(uri, ':', port_end - uri);
+			memcpy(out->status_domain, uri, (port ? port : port_end) - uri);
+			if(port++)
+				out->status_port = atoi(port);
+			if(path++) {
+				size_t path_len = &uri[uri_len] - path;
+				memcpy(out->status_path, path, path_len);
+				if(path_len && out->status_path[path_len-1] != '/')
+					out->status_path[path_len++] = '/';
+				out->status_path[path_len] = 0;
 			}
-			sprintf(out->status_path, "%.*s", uri_len, uri);
-			if(out->status_path[uri_len-1] == '/')
-				out->status_path[uri_len-1] = 0;
 		} else IFEQ("StatusCert") {
-			it = json_get_string(it, &status_cert, &status_cert_len);
+			it = json_get_string(it, (const char**)&status_cert, &status_cert_len);
 		} else IFEQ("StatusKey") {
-			it = json_get_string(it, &status_key, &status_key_len);
+			it = json_get_string(it, (const char**)&status_key, &status_key_len);
 		} else {
 			it = json_skip_value(it);
 		}

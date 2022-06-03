@@ -1,4 +1,4 @@
-#include "log.h"
+#include "global.h"
 #include "scramble.h"
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/entropy.h>

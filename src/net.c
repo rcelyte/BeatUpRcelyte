@@ -1,12 +1,10 @@
-#include "log.h"
+#include "global.h"
 #define NET_H_PRIVATE(x) x
 #include "net.h"
 #include <mbedtls/ecdh.h>
 #include <mbedtls/error.h>
 
-#ifdef WINDOWS
-#define SHUT_RDWR SD_BOTH
-#else
+#ifndef WINDOWS
 #include <netdb.h>
 #include <fcntl.h>
 #endif
@@ -387,7 +385,7 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct
 		sendto(ctx->sockfd, (char*)buf, 1, 0, &addr.sa, addr.len);
 		char namestr[INET6_ADDRSTRLEN + 8];
 		net_tostr(&addr, namestr);
-		uprintf("ping[%s]: %hhu\n", namestr, buf[0]);
+		// uprintf("ping[%s]: %hhu\n", namestr, buf[0]);
 		goto retry;
 	}
 	*session = ctx->onResolve(ctx->user, addr, userdata_out);

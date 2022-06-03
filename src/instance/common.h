@@ -1,4 +1,4 @@
-#include "../log.h"
+#include "../global.h"
 #include "../net.h"
 
 #define LOAD_TIMEOUT 15

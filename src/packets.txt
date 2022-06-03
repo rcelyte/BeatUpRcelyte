@@ -1,7 +1,6 @@
+@include ../common/client packets.txt
+
 u32 ServerCode
-n ByteArrayNetSerializable
-	vu32 length
-	u8 data[8192, .length]
 vi32 EntitlementsStatus
 	Unknown
 	NotOwned
@@ -42,12 +41,6 @@ n BeatmapLevelSelectionMask
 	BeatmapDifficultyMask difficulties
 	GameplayModifierMask modifiers
 	SongPackMask songPacks
-vu32 BeatmapDifficulty
-	Easy
-	Normal
-	Hard
-	Expert
-	ExpertPlus
 n RemoteProcedureCall
 	f32 syncTime
 n PlayersMissingEntitlementsNetSerializable
@@ -718,70 +711,6 @@ n MpCore
 		MpBeatmapPacket mpBeatmapPacket
 		MpPlayerData mpPlayerData
 		CustomAvatarPacket customAvatarPacket
-n PreviewDifficultyBeatmapSet
-	String beatmapCharacteristicSerializedName
-	u8 count
-	BeatmapDifficulty difficulties[5,.count]
-n NetworkPreviewBeatmapLevel
-	LongString levelId
-	LongString songName
-	LongString songSubName
-	LongString songAuthorName
-	LongString levelAuthorName
-	f32 beatsPerMinute
-	f32 songTimeOffset
-	f32 shuffle
-	f32 shufflePeriod
-	f32 previewStartTime
-	f32 previewDuration
-	f32 songDuration
-	u8 count
-	PreviewDifficultyBeatmapSet previewDifficultyBeatmapSets[8,.count]
-	ByteArrayNetSerializable cover
-n RecommendPreview
-	NetworkPreviewBeatmapLevel base
-	vu32 requirements_len
-	String requirements[16,.requirements_len]
-	vu32 suggestions_len
-	String suggestions[16,.suggestions_len]
-n ShareInfo
-	LongString levelId
-	u8 levelHash[32]
-	vu64 fileSize
-n SetCanShareBeatmap
-	ShareInfo base
-	b canShare
-n DirectDownloadInfo
-	ShareInfo base
-	u8 count
-	String sourcePlayers[128,.count]
-n LevelFragmentRequest
-	vu64 offset
-	u16 maxSize
-n LevelFragment
-	vu64 offset
-	u16 size
-	u8 data[1500,.size]
-u8 LoadState
-	None
-	Failed
-	Exporting
-	Downloading
-	Loading
-	Done
-n LoadProgress
-	u32 sequence
-	LoadState state
-	u16 progress
-n BeatUpMessage
-	BeatUpMessageType type
-	u8 BeatUpMessageType(.type)
-		RecommendPreview recommendPreview
-		SetCanShareBeatmap setCanShareBeatmap
-		DirectDownloadInfo directDownloadInfo
-		LevelFragmentRequest levelFragmentRequest
-		LevelFragment levelFragment
-		LoadProgress loadProgress
 n SyncTime
 	f32 syncTime
 n PlayerConnected
@@ -1098,17 +1027,6 @@ n Ping
 n Pong
 	u16 sequence
 	u64 time
-r BeatUpConnectInfo
-	u32 protocolId
-	u32 windowSize
-	u8 countdownDuration
-	b directDownloads:1
-	b skipResults:1
-	b perPlayerDifficulty:1
-	b perPlayerModifiers:1
-r ModConnectHeader
-	vu32 length
-	String name
 n ConnectRequest
 	u32 protocolId
 	u64 connectTime
@@ -1127,12 +1045,7 @@ n ConnectAccept
 	if($netVersion >= 12)
 		i32 peerId
 	if($beatUpVersion)
-		u32 windowSize
-		u8 countdownDuration
-		b directDownloads:1
-		b skipResults:1
-		b perPlayerDifficulty:1
-		b perPlayerModifiers:1
+		BeatUpConnectInfo beatUp
 n Disconnect
 	u8 _pad0[8]
 d UnconnectedMessage

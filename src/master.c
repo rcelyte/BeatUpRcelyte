@@ -1,10 +1,6 @@
-#include "log.h"
+#include "global.h"
 #include "instance/instance.h"
-#ifdef WINDOWS
-#include <processthreadsapi.h>
-#else
-#include <pthread.h>
-#endif
+#include "thread.h"
 #include "pool.h"
 #include "scramble.h"
 #include <stdio.h>
@@ -626,12 +622,7 @@ static void handle_packet(struct Context *ctx, struct MasterSession *session, st
 	}
 }
 
-#ifdef WINDOWS
-static DWORD WINAPI
-#else
-static void*
-#endif
-master_handler(struct Context *ctx) {
+thread_return_t master_handler(struct Context *ctx) {
 	net_lock(&ctx->net);
 	uprintf("Started\n");
 	uint8_t buf[262144];
@@ -653,11 +644,7 @@ master_handler(struct Context *ctx) {
 	return 0;
 }
 
-#ifdef WINDOWS
-static HANDLE master_thread = NULL;
-#else
-static pthread_t master_thread = 0;
-#endif
+static thread_t master_thread = 0;
 static struct Context ctx = {{-1}, NULL, NULL, NULL};
 bool master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_context *key, uint16_t port) {
 	{
@@ -682,23 +669,14 @@ bool master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_context *key, ui
 	ctx.net.user = &ctx;
 	ctx.net.onResolve = master_onResolve;
 	ctx.net.onResend = master_onResend;
-	#ifdef WINDOWS
-	master_thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)master_handler, &ctx, 0, NULL);
-	return !master_thread;
-	#else
-	return pthread_create(&master_thread, NULL, (void*(*)(void*))&master_handler, &ctx) != 0;
-	#endif
+	return thread_create(&master_thread, master_handler, &ctx);
 }
 
 void master_cleanup() {
 	if(master_thread) {
 		net_stop(&ctx.net);
 		uprintf("Stopping\n");
-		#ifdef WINDOWS
-		WaitForSingleObject(master_thread, INFINITE);
-		#else
-		pthread_join(master_thread, NULL);
-		#endif
+		thread_join(master_thread);
 		master_thread = 0;
 	}
 	while(ctx.sessionList)

@@ -3,11 +3,7 @@
 
 #include "instance.h"
 #include "common.h"
-#ifdef WINDOWS
-#include <processthreadsapi.h>
-#else
-#include <pthread.h>
-#endif
+#include "../thread.h"
 #include "../pool.h"
 #include <mbedtls/error.h>
 #include <stdio.h>
@@ -21,10 +17,12 @@
 #define NOT_IMPLEMENTED(type) case type: uprintf(#type " not implemented\n"); break;
 #endif
 
+typedef uint32_t playerid_t;
+
 #define COUNTER_VAR CONCAT(_i_,__LINE__)
 
 #define FOR_SOME_PLAYERS(id, counter, ...) \
-	struct Counter128 COUNTER_VAR = (counter); __VA_ARGS__; for(uint32_t (id) = 0; Counter128_set_next(&COUNTER_VAR, &(id), 0); ++(id))
+	struct Counter128 COUNTER_VAR = (counter); __VA_ARGS__; for(playerid_t (id) = 0; Counter128_set_next(&COUNTER_VAR, &(id), 0); ++(id))
 
 #define FOR_EXCLUDING_PLAYER(room, session, id, counter) \
 	FOR_SOME_PLAYERS(id, counter, Counter128_set(&COUNTER_VAR, indexof((room)->players, session), 0))
@@ -157,9 +155,11 @@ struct InstanceSession {
 	bool sentIdentity, directDownloads;
 
 	ServerState state;
+	float recommendTime;
 	struct BeatmapIdentifierNetSerializable recommendedBeatmap;
 	struct GameplayModifiers recommendedModifiers;
 	struct PlayerSpecificSettingsNetSerializable settings;
+	struct ShareInfo shareInfo;
 };
 struct Room {
 	struct NetKeypair keys;
@@ -174,7 +174,7 @@ struct Room {
 		struct Counter128 isSpectating;
 		struct BeatmapIdentifierNetSerializable selectedBeatmap;
 		struct GameplayModifiers selectedModifiers;
-		uint32_t roundRobin;
+		playerid_t roundRobin;
 		float timeout;
 	} global;
 
@@ -188,9 +188,7 @@ struct Room {
 				struct Counter128 missing;
 				struct Counter128 deferred;
 				struct Counter128 canShare;
-				bool shareSet;
-				uint8_t shareHash[32];
-				uint64_t shareSize;
+				playerid_t requester;
 			} entitlement;
 		} lobby;
 		struct {
@@ -264,6 +262,10 @@ static bool PlayerStateHash_contains(struct PlayerStateHash state, const char *k
 	return 1;
 }
 
+static bool ShareInfo_eq(const struct ShareInfo *a, const struct ShareInfo *b) {
+	return a->fileSize == b->fileSize && memcmp(a->levelHash, b->levelHash, sizeof(a->levelHash)) == 0 && String_eq(a->levelId, b->levelId);
+}
+
 static bool BeatmapIdentifierNetSerializable_eq(const struct BeatmapIdentifierNetSerializable *a, const struct BeatmapIdentifierNetSerializable *b, bool ignoreDifficulty) {
 	if(!String_eq(a->levelID, b->levelID))
 		return 0;
@@ -288,12 +290,13 @@ static struct GameplayModifiers session_get_modifiers(const struct Room *room, c
 	return room->global.selectedModifiers;
 }
 
-static uint32_t roundRobin_next(uint32_t prev, struct Counter128 players) {
+static playerid_t roundRobin_next(playerid_t prev, struct Counter128 players) {
 	FOR_SOME_PLAYERS(id, players,)
 		if(id > prev)
 			return id;
-	uint32_t id = 0;
-	Counter128_set_next(&players, &id, 0);
+	playerid_t id = 0;
+	if(!Counter128_get(players, 0))
+		Counter128_set_next(&players, &id, 0);
 	return id;
 }
 
@@ -342,7 +345,7 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 				.type = MenuRpcType_SetMultiplayerGameState,
 				.setMultiplayerGameState = {
 					.base = base,
-					.flags = {1, 0, 0, 0},
+					.flags = {true, false, false, false},
 					.lobbyState = MultiplayerGameState_Lobby,
 				},
 			});
@@ -361,7 +364,7 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 				.type = MenuRpcType_SetSelectedBeatmap,
 				.setSelectedBeatmap = {
 					.base = base,
-					.flags = {1, 0, 0, 0},
+					.flags = {true, false, false, false},
 					.identifier = session_get_beatmap(room, session),
 				},
 			});
@@ -371,7 +374,7 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 				.type = MenuRpcType_StartLevel,
 				.startLevel = {
 					.base = base,
-					.flags = {1, 1, 1, 0},
+					.flags = {true, true, true, false},
 					.beatmapId = session_get_beatmap(room, session),
 					.gameplayModifiers = session_get_modifiers(room, session),
 					.startTime = room->global.timeout + 1048576,
@@ -381,7 +384,7 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 				.type = MenuRpcType_SetCountdownEndTime,
 				.setCountdownEndTime = {
 					.base = base,
-					.flags = {1, 0, 0, 0},
+					.flags = {true, false, false, false},
 					.newTime = room->global.timeout,
 				},
 			});
@@ -391,7 +394,7 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 			.type = MenuRpcType_SetMultiplayerGameState,
 			.setMultiplayerGameState = {
 				.base = base,
-				.flags = {1, 0, 0, 0},
+				.flags = {true, false, false, false},
 				.lobbyState = MultiplayerGameState_Game,
 			},
 		});
@@ -402,7 +405,7 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 				.type = MenuRpcType_GetIsEntitledToLevel,
 				.getIsEntitledToLevel = {
 					.base = base,
-					.flags = {1, 0, 0, 0},
+					.flags = {true, false, false, false},
 					.levelId = room->global.selectedBeatmap.levelID,
 				},
 			});
@@ -414,7 +417,7 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 				.type = MenuRpcType_SetIsStartButtonEnabled,
 				.setIsStartButtonEnabled = {
 					.base = base,
-					.flags = {1, 0, 0, 0},
+					.flags = {true, false, false, false},
 					.reason = room->lobby.reason,
 				},
 			});
@@ -427,7 +430,7 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 				.type = MenuRpcType_SetStartGameTime,
 				.setStartGameTime = {
 					.base = base,
-					.flags = {1, 0, 0, 0},
+					.flags = {true, false, false, false},
 					.newTime = base.syncTime,
 				},
 			});
@@ -444,16 +447,13 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 				.type = GameplayRpcType_SetGameplaySceneSyncFinish,
 				.setGameplaySceneSyncFinish = {
 					.base = base,
-					.flags = {1, 1, 0, 0},
+					.flags = {true, true, false, false},
 					.playersAtGameStart.count = 0,
-					.sessionGameId = {
-						.isNull = false,
-					},
+					.sessionGameId = String_from("00000000-0000-0000-0000-000000000000"),
 				},
 			}; ;
 			FOR_SOME_PLAYERS(id, room->connected,)
 				r_sync.setGameplaySceneSyncFinish.playersAtGameStart.activePlayerSpecificSettingsAtGameStart[r_sync.setGameplaySceneSyncFinish.playersAtGameStart.count++] = room->players[id].settings;
-			r_sync.setGameplaySceneSyncFinish.sessionGameId.length = sprintf(r_sync.setGameplaySceneSyncFinish.sessionGameId.data, "00000000-0000-0000-0000-000000000000");
 			SERIALIZE_GAMEPLAYRPC(&resp_end, endof(resp), session->net.version, {
 				.type = GameplayRpcType_GetGameplaySongReady,
 				.getGameplaySongReady = {
@@ -468,7 +468,7 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 				.type = GameplayRpcType_SetSongStartTime,
 				.setSongStartTime = {
 					.base = base,
-					.flags = {1, 0, 0, 0},
+					.flags = {true, false, false, false},
 					.startTime = room->game.startTime,
 				},
 			});
@@ -512,7 +512,7 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 	}
 	switch(state) {
 		case ServerState_Lobby_Entitlement: {
-			uint32_t select = ~0u;
+			playerid_t select = ~0u;
 			switch(room->configuration.songSelectionMode) {
 				case SongSelectionMode_Vote: vote_beatmap: {
 					uint8_t votes[126], max = 0;
@@ -542,7 +542,7 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 							break;
 						}
 					}
-					if(select == (uint32_t)~0u)
+					if(select == (playerid_t)~0u)
 						goto vote_beatmap;
 					break;
 				}
@@ -552,23 +552,25 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 					break;
 				}
 			}
-			if(select == (uint32_t)~0u || room->players[select].recommendedBeatmap.beatmapCharacteristicSerializedName.length == 0) {
+			if(select == (playerid_t)~0u || room->players[select].recommendedBeatmap.beatmapCharacteristicSerializedName.length == 0) {
 				room->lobby.isEntitled = room->connected;
 				room->global.selectedBeatmap = CLEAR_BEATMAP;
 				room_set_state(ctx, room, ServerState_Lobby_Idle);
 				return;
-			} else if(Counter128_eq(room->lobby.isEntitled, room->connected) && BeatmapIdentifierNetSerializable_eq(&room->players[select].recommendedBeatmap, &room->global.selectedBeatmap, 0)) {
-				return;
-			} else {
-				room->lobby.isEntitled = COUNTER128_CLEAR;
-				room->lobby.isDownloaded = COUNTER128_CLEAR;
-				room->global.selectedBeatmap = room->players[select].recommendedBeatmap;
-				room->lobby.entitlement.missing = COUNTER128_CLEAR;
-				room->lobby.entitlement.deferred = COUNTER128_CLEAR;
-				room->lobby.entitlement.canShare = COUNTER128_CLEAR;
-				room->lobby.entitlement.shareSet = 0;
-				room->lobby.entitlement.shareSize = 0;
 			}
+			if(Counter128_eq(room->lobby.isEntitled, room->connected) && BeatmapIdentifierNetSerializable_eq(&room->players[select].recommendedBeatmap, &room->global.selectedBeatmap, 0))
+				return;
+			room->lobby.isEntitled = COUNTER128_CLEAR;
+			room->lobby.isDownloaded = COUNTER128_CLEAR;
+			room->global.selectedBeatmap = room->players[select].recommendedBeatmap;
+			room->lobby.entitlement.missing = COUNTER128_CLEAR;
+			room->lobby.entitlement.deferred = COUNTER128_CLEAR;
+			room->lobby.entitlement.canShare = COUNTER128_CLEAR;
+			float requestTime = room->players[select].recommendTime;
+			room->lobby.entitlement.requester = select;
+			FOR_SOME_PLAYERS(id, room->connected,)
+				if(BeatmapIdentifierNetSerializable_eq(&room->players[id].recommendedBeatmap, &room->global.selectedBeatmap, room->perPlayerDifficulty) && room->players[select].recommendTime < requestTime)
+					room->lobby.entitlement.requester = id, requestTime = room->players[select].recommendTime;
 			break;
 		}
 		case ServerState_Lobby_Idle: {
@@ -630,12 +632,15 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 			struct SetIsEntitledToLevel entitlement = rpc->setIsEntitledToLevel;
 			if(!((room->state & ServerState_Lobby) && entitlement.flags.hasValue0 && String_eq(entitlement.levelId, room->global.selectedBeatmap.levelID)))
 				break;
-			if(!entitlement.flags.hasValue1)
+			if(!entitlement.flags.hasValue1) {
 				entitlement.entitlementStatus = EntitlementsStatus_Unknown;
-			if(entitlement.entitlementStatus == EntitlementsStatus_Ok)
-				if(Counter128_set(&room->lobby.isDownloaded, indexof(room->players, session), 1) == 0)
+			} else if(entitlement.entitlementStatus == EntitlementsStatus_Ok) {
+				if(!PlayerStateHash_contains(session->stateHash, "modded") && entitlement.levelId.length >= 13 && memcmp(entitlement.levelId.data, "custom_level_", 13) == 0)
+					entitlement.entitlementStatus = EntitlementsStatus_NotOwned; // Vanilla clients will misreport all custom IDs as owned
+				else if(Counter128_set(&room->lobby.isDownloaded, indexof(room->players, session), 1) == 0)
 					if((room->state & ServerState_Lobby_Downloading) && Counter128_contains(room->lobby.isDownloaded, room->connected))
 						room_set_state(ctx, room, ServerState_Game_LoadingScene);
+			}
 			if(!(room->state & ServerState_Lobby_Entitlement))
 				break;
 			if(Counter128_set(&room->lobby.isEntitled, indexof(room->players, session), 1))
@@ -647,35 +652,28 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 			uprintf("entitlement[%.*s]: %s\n", session->userName.base.length, session->userName.base.data, reflect(EntitlementsStatus, entitlement.entitlementStatus));
 			if(!Counter128_contains(room->lobby.isEntitled, room->connected))
 				break;
-			if(Counter128_isEmpty(room->lobby.entitlement.canShare))
-				room->lobby.entitlement.missing = Counter128_or(room->lobby.entitlement.missing, room->lobby.entitlement.deferred);
 			struct BeatUpMessage r_download = {
 				.type = BeatUpMessageType_DirectDownloadInfo,
-				.directDownloadInfo = {
-					.base = {
-						.levelId = room->global.selectedBeatmap.levelID,
-						.fileSize = room->lobby.entitlement.shareSize,
-					},
-					.count = 0,
-				},
+				.directDownloadInfo.count = 0,
 			};
-			memcpy(r_download.directDownloadInfo.base.levelHash, room->lobby.entitlement.shareHash, sizeof(r_download.directDownloadInfo.base.levelHash));
+			if(!Counter128_get(room->lobby.entitlement.canShare, room->lobby.entitlement.requester)) {
+				room->lobby.entitlement.missing = Counter128_or(room->lobby.entitlement.missing, room->lobby.entitlement.deferred);
+			} else if(Counter128_isEmpty(room->lobby.entitlement.missing)) {
+				r_download.directDownloadInfo.base = room->players[room->lobby.entitlement.requester].shareInfo;
+				FOR_SOME_PLAYERS(id, room->lobby.entitlement.canShare,)
+					if(ShareInfo_eq(&room->players[id].shareInfo, &r_download.directDownloadInfo.base))
+						r_download.directDownloadInfo.sourcePlayers[r_download.directDownloadInfo.count++] = room->players[id].permissions.userId;
+			}
 			struct MenuRpc r_missing = {
 				.type = MenuRpcType_SetPlayersMissingEntitlementsToLevel,
 				.setPlayersMissingEntitlementsToLevel = {
-					.base = {
-						.syncTime = room_get_syncTime(room),
-					},
-					.flags = {1, 0, 0, 0},
+					.base.syncTime = room_get_syncTime(room),
+					.flags = {true, false, false, false},
 					.playersMissingEntitlements.count = 0,
 				},
 			};
 			FOR_SOME_PLAYERS(id, room->lobby.entitlement.missing,)
 				r_missing.setPlayersMissingEntitlementsToLevel.playersMissingEntitlements.playersWithoutEntitlements[r_missing.setPlayersMissingEntitlementsToLevel.playersMissingEntitlements.count++] = room->players[id].permissions.userId;
-			if(r_missing.setPlayersMissingEntitlementsToLevel.playersMissingEntitlements.count == 0) {
-				FOR_SOME_PLAYERS(id, room->lobby.entitlement.canShare,)
-					r_download.directDownloadInfo.sourcePlayers[r_download.directDownloadInfo.count++] = room->players[id].permissions.userId;
-			}
 			FOR_SOME_PLAYERS(id, room->connected,) {
 				uint8_t resp[65536], *resp_end = resp;
 				pkt_write_c(&resp_end, endof(resp), room->players[id].net.version, RoutingHeader, {0, 127, false});
@@ -701,7 +699,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 				.type = MenuRpcType_SetSelectedBeatmap,
 				.setSelectedBeatmap = {
 					.base = base,
-					.flags = {1, 0, 0, 0},
+					.flags = {true, false, false, false},
 					.identifier = session_get_beatmap(room, session),
 				},
 			});
@@ -716,6 +714,8 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 			}
 			if(!((room->state & ServerState_Lobby) && session->permissions.hasRecommendBeatmapsPermission))
 				break;
+			if(!BeatmapIdentifierNetSerializable_eq(&session->recommendedBeatmap, &beatmap.identifier, room->perPlayerDifficulty))
+				session->recommendTime = room_get_syncTime(room);
 			session->recommendedBeatmap = beatmap.identifier;
 			room_set_state(ctx, room, ServerState_Lobby_Entitlement);
 			break;
@@ -730,7 +730,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 				.type = MenuRpcType_SetSelectedGameplayModifiers,
 				.setSelectedGameplayModifiers = {
 					.base = base,
-					.flags = {1, 0, 0, 0},
+					.flags = {true, false, false, false},
 					.gameplayModifiers = session_get_modifiers(room, session),
 				},
 			});
@@ -746,7 +746,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 			if(!((room->state & ServerState_Lobby) && session->permissions.hasRecommendGameplayModifiersPermission))
 				break;
 			session->recommendedModifiers = modifiers.gameplayModifiers;
-			uint32_t select = ~0u;
+			playerid_t select = ~0u;
 			switch(room->configuration.songSelectionMode) {
 				case SongSelectionMode_Vote: vote_modifiers: {
 					uint8_t votes[126], max = 0;
@@ -776,7 +776,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 							break;
 						}
 					}
-					if(select == (uint32_t)~0u)
+					if(select == (playerid_t)~0u)
 						goto vote_modifiers;
 					break;
 				}
@@ -787,7 +787,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 					break;
 				}
 			}
-			if(select == (uint32_t)~0u || GameplayModifiers_eq(&room->players[select].recommendedModifiers, &room->global.selectedModifiers, 0))
+			if(select == (playerid_t)~0u || GameplayModifiers_eq(&room->players[select].recommendedModifiers, &room->global.selectedModifiers, 0))
 				break;
 			room->global.selectedModifiers = room->players[select].recommendedModifiers;
 			struct RemoteProcedureCall base = {room_get_syncTime(room)};
@@ -798,7 +798,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 					.type = MenuRpcType_SetSelectedGameplayModifiers,
 					.setSelectedGameplayModifiers = {
 						.base = base,
-						.flags = {1, 0, 0, 0},
+						.flags = {true, false, false, false},
 						.gameplayModifiers = session_get_modifiers(room, session),
 					},
 				});
@@ -824,7 +824,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 				.type = MenuRpcType_StartLevel,
 				.startLevel = {
 					.base = base,
-					.flags = {1, 1, 1, 0},
+					.flags = {true, true, true, false},
 					.beatmapId = session_get_beatmap(room, session),
 					.gameplayModifiers = session_get_modifiers(room, session),
 					.startTime = base.syncTime,
@@ -841,10 +841,8 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 			SERIALIZE_MENURPC(&resp_end, endof(resp), session->net.version, {
 				.type = MenuRpcType_SetMultiplayerGameState,
 				.setMultiplayerGameState = {
-					.base = {
-						.syncTime = room_get_syncTime(room),
-					},
-					.flags = {1, 0, 0, 0},
+					.base.syncTime = room_get_syncTime(room),
+					.flags = {true, false, false, false},
 					.lobbyState = (room->state & ServerState_Lobby) ? MultiplayerGameState_Lobby : MultiplayerGameState_Game,
 				},
 			});
@@ -879,7 +877,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 				.type = MenuRpcType_SetIsStartButtonEnabled,
 				.setIsStartButtonEnabled = {
 					.base = base,
-					.flags = {1, 0, 0, 0},
+					.flags = {true, false, false, false},
 					.reason = room->lobby.reason,
 				},
 			});
@@ -888,7 +886,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 					.type = MenuRpcType_SetCountdownEndTime,
 					.setCountdownEndTime = {
 						.base = base,
-						.flags = {1, 0, 0, 0},
+						.flags = {true, false, false, false},
 						.newTime = room->global.timeout,
 					},
 				});
@@ -907,7 +905,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 				.type = MenuRpcType_SetPermissionConfiguration,
 				.setPermissionConfiguration = {
 					.base.syncTime = room_get_syncTime(room),
-					.flags = {1, 0, 0, 0},
+					.flags = {true, false, false, false},
 					.playersPermissionConfiguration.count = 0,
 				},
 			};
@@ -930,7 +928,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 				.type = MenuRpcType_SetIsStartButtonEnabled,
 				.setIsStartButtonEnabled = {
 					.base = base,
-					.flags = {1, 0, 0, 0},
+					.flags = {true, false, false, false},
 					.reason = room->lobby.reason,
 				},
 			});
@@ -1022,21 +1020,10 @@ static void handle_BeatUpMessage(struct Context *ctx, struct Room *room, struct 
 		case BeatUpMessageType_RecommendPreview: break;
 		case BeatUpMessageType_SetCanShareBeatmap: {
 			struct SetCanShareBeatmap share = message->setCanShareBeatmap;
-			if(!((room->state & ServerState_Lobby_Entitlement) && share.base.fileSize && String_eq(share.base.levelId, room->global.selectedBeatmap.levelID)))
-				break;
-			if(!room->lobby.entitlement.shareSet) {
-				room->lobby.entitlement.shareSet = 1;
-				memcpy(room->lobby.entitlement.shareHash, share.base.levelHash, sizeof(share.base.levelHash));
-				room->lobby.entitlement.shareSize = share.base.fileSize;
-			} else if(share.base.fileSize != room->lobby.entitlement.shareSize || memcmp(share.base.levelHash, room->lobby.entitlement.shareHash, sizeof(share.base.levelHash))) {
-				if(room->lobby.entitlement.shareSize)
-					uprintf("Hash mismatch; Disabling direct downloads\n");
-				room->lobby.entitlement.canShare = COUNTER128_CLEAR;
-				room->lobby.entitlement.shareSize = 0;
-				break;
+			if((room->state & ServerState_Lobby_Entitlement) && share.base.fileSize && String_eq(share.base.levelId, room->global.selectedBeatmap.levelID)) {
+				session->shareInfo = share.base;
+				Counter128_set(&room->lobby.entitlement.canShare, indexof(room->players, session), share.canShare);
 			}
-			if(share.canShare)
-				Counter128_set(&room->lobby.entitlement.canShare, indexof(room->players, session), 1);
 			break;
 		}
 		case BeatUpMessageType_DirectDownloadInfo: uprintf("BAD TYPE: BeatUpMessageType_DirectDownloadInfo\n"); break;
@@ -1242,9 +1229,7 @@ static void process_message(struct Context *ctx, struct Room *room, struct Insta
 				};
 				struct InternalMessage r_sync = {
 					.type = InternalMessageType_SyncTime,
-					.syncTime = {
-						.syncTime = room_get_syncTime(room),
-					},
+					.syncTime.syncTime = room_get_syncTime(room),
 				};
 				uint8_t resp[65536], *resp_end = resp;
 				pkt_write_c(&resp_end, endof(resp), session->net.version, RoutingHeader, {0, 0, false});
@@ -1277,20 +1262,20 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 		const uint8_t *sub = *data;
 		*data += mod.length;
 		if(String_is(mod.name, "BeatUpClient beta0")) {
-			struct BeatUpConnectInfo info;
+			struct BeatUpConnectHeader info;
 			pkt_read(&info, &sub, *data, session->net.version);
 			session->net.version.beatUpVersion = info.protocolId;
-			session->net.version.windowSize = info.windowSize;
+			session->net.version.windowSize = info.base.windowSize;
 			if(session->net.version.windowSize > NET_MAX_WINDOW_SIZE)
 				session->net.version.windowSize = NET_MAX_WINDOW_SIZE;
 			if(session->net.version.windowSize < 32)
 				session->net.version.windowSize = 32;
-			session->directDownloads = info.directDownloads;
+			session->directDownloads = info.base.directDownloads;
 			if(String_eq(req->userId, room->managerId)) {
-				room->countdownDuration = info.countdownDuration / 4.f;
-				room->skipResults = info.skipResults;
-				room->perPlayerDifficulty = info.perPlayerDifficulty;
-				room->perPlayerModifiers = info.perPlayerModifiers;
+				room->countdownDuration = info.base.countdownDuration / 4.f;
+				room->skipResults = info.base.skipResults;
+				room->perPlayerDifficulty = info.base.perPlayerDifficulty;
+				room->perPlayerModifiers = info.base.perPlayerModifiers;
 			}
 		} else {
 			uprintf("UNIDENTIFIED MOD: %.*s\n", mod.name.length, mod.name.data);
@@ -1308,12 +1293,14 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 			.reusedPeer = 0,
 			.connectNum = 0,
 			.peerId = indexof(room->players, session),
-			.windowSize = session->net.version.windowSize,
-			.countdownDuration = room->countdownDuration * 4,
-			.directDownloads = session->directDownloads,
-			.skipResults = room->skipResults,
-			.perPlayerDifficulty = room->perPlayerDifficulty,
-			.perPlayerModifiers = room->perPlayerModifiers,
+			.beatUp = {
+				.windowSize = session->net.version.windowSize,
+				.countdownDuration = room->countdownDuration * 4,
+				.directDownloads = session->directDownloads,
+				.skipResults = room->skipResults,
+				.perPlayerDifficulty = room->perPlayerDifficulty,
+				.perPlayerModifiers = room->perPlayerModifiers,
+			},
 		},
 	});
 	if(resp_end == resp)
@@ -1326,9 +1313,7 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 	pkt_write_c(&resp_end, endof(resp), session->net.version, RoutingHeader, {0, 127, false});
 	struct InternalMessage r_sync = {
 		.type = InternalMessageType_SyncTime,
-		.syncTime = {
-			.syncTime = room_get_syncTime(room),
-		},
+		.syncTime.syncTime = room_get_syncTime(room),
 	};
 	if(pkt_serialize(&r_sync, &resp_end, endof(resp), session->net.version))
 		instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
@@ -1368,9 +1353,7 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 			.playerIdentity = {
 				.playerState = room->players[id].stateHash,
 				.playerAvatar = room->players[id].avatar,
-				.random = {
-					.length = 32,
-				},
+				.random.length = 32,
 				.publicEncryptionKey = session->publicEncryptionKey,
 			},
 		};
@@ -1393,9 +1376,7 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 				},
 			},
 			.random.length = 32,
-			.publicEncryptionKey = {
-				.length = sizeof(r_identity.playerIdentity.publicEncryptionKey.data),
-			},
+			.publicEncryptionKey.length = sizeof(r_identity.playerIdentity.publicEncryptionKey.data),
 		},
 	};
 	memset(&r_identity.playerIdentity.playerAvatar, 0, sizeof(r_identity.playerIdentity.playerAvatar));
@@ -1535,12 +1516,7 @@ static inline void handle_packet(struct Context *ctx, struct Room **room, struct
 	} while(data < end);
 }
 
-#ifdef WINDOWS
-static DWORD WINAPI
-#else
-static void*
-#endif
-instance_handler(struct Context *ctx) {
+static thread_return_t instance_handler(struct Context *ctx) {
 	net_lock(&ctx->net);
 	uprintf("Started\n");
 	uint8_t buf[262144];
@@ -1613,11 +1589,7 @@ static void instance_onResend(struct Context *ctx, uint32_t currentTime, uint32_
 	}
 }
 
-#ifdef WINDOWS
-static HANDLE instance_threads[THREAD_COUNT];
-#else
-static pthread_t instance_threads[THREAD_COUNT];
-#endif
+static thread_t instance_threads[THREAD_COUNT];
 static const char *instance_domain = NULL, *instance_domainIPv4 = NULL;
 bool instance_init(const char *domain, const char *domainIPv4) {
 	instance_domain = domain;
@@ -1634,12 +1606,8 @@ bool instance_init(const char *domain, const char *domainIPv4) {
 		contexts[i].blockAlloc = COUNTER16_CLEAR;
 		memset(contexts[i].rooms, 0, sizeof(contexts->rooms));
 
-		#ifdef WINDOWS
-		instance_threads[i] = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)instance_handler, &contexts[i], 0, NULL);
-		#else
-		if(pthread_create(&instance_threads[i], NULL, (void*(*)(void*))&instance_handler, &contexts[i]))
+		if(thread_create(&instance_threads[i], instance_handler, &contexts[i]))
 			instance_threads[i] = 0;
-		#endif
 		if(!instance_threads[i]) {
 			uprintf("Instance thread creation failed\n");
 			return 1;
@@ -1653,11 +1621,7 @@ void instance_cleanup() {
 		if(instance_threads[i]) {
 			net_stop(&contexts[i].net);
 			uprintf("Stopping #%u\n", i);
-			#ifdef WINDOWS
-			WaitForSingleObject(instance_threads[i], INFINITE);
-			#else
-			pthread_join(instance_threads[i], NULL);
-			#endif
+			thread_join(instance_threads[i]);
 			instance_threads[i] = 0;
 			FOR_ALL_ROOMS(&contexts[i], room)
 				room_close(&contexts[i], room);
@@ -1821,6 +1785,7 @@ struct NetSession *instance_room_resolve_session(uint16_t thread, uint16_t group
 	session->sentIdentity = 0;
 	session->directDownloads = 0;
 	session->state = 0;
+	session->recommendTime = 0;
 	session->recommendedBeatmap = CLEAR_BEATMAP;
 	session->recommendedModifiers = CLEAR_MODIFIERS;
 

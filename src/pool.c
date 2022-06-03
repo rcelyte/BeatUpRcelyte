@@ -1,4 +1,4 @@
-#include "log.h"
+#include "global.h"
 #include "pool.h"
 #include "scramble.h"
 #include <stddef.h>

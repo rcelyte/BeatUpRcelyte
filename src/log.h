@@ -3,8 +3,6 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
-#define lengthof(x) (sizeof(x)/sizeof(*(x)))
-#define endof(x) (&(x)[lengthof(x)])
 
 static void vuprintf(const char *format, va_list vlist) {
 	static bool carry = 1;

@@ -11,6 +11,8 @@
 #ifdef WINDOWS
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#define SHUT_RD SD_RECEIVE
+#define SHUT_RDWR SD_BOTH
 typedef int socklen_t;
 #else
 #include <arpa/inet.h>

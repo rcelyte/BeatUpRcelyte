@@ -1,4 +1,4 @@
-#include "log.h"
+#include "global.h"
 #include "packets.h"
 #include "encryption.h"
 #include <mbedtls/ssl.h>

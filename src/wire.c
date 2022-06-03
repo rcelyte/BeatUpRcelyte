@@ -1,4 +1,4 @@
-#include "log.h"
+#include "global.h"
 #include "wire.h"
 #include "instance/instance.h"
 

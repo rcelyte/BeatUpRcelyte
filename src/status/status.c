@@ -1,11 +1,6 @@
+#include "../thread.h"
 #include "../net.h"
 #include "internal.h"
-#ifdef WINDOWS
-#include <processthreadsapi.h>
-#define SHUT_RD SD_RECEIVE
-#else
-#include <pthread.h>
-#endif
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
@@ -13,37 +8,29 @@
 struct Context {
 	int32_t listenfd;
 	const char *path;
-};
+} static ctx;
 
-#ifdef WINDOWS
-static DWORD WINAPI
-#else
-static void*
-#endif
-status_handler(struct Context *ctx) {
-	uprintf("Started HTTP\n");
-	struct SS addr = {sizeof(struct sockaddr_storage)};
-	int32_t clientfd;
-	while((clientfd = accept(ctx->listenfd, &addr.sa, &addr.len)) != -1) {
-		char buf[65536];
-		ssize_t size = recv(clientfd, buf, sizeof(buf), 0);
-		if(size < 0) {
-			close(clientfd);
-			continue;
-		}
-		size = status_resp("HTTP", ctx->path, buf, size);
+static thread_return_t handle_client(intptr_t fd) {
+	char buf[65536];
+	ssize_t size = recv(fd, buf, sizeof(buf), 0);
+	if(size >= 0) {
+		size = status_resp("HTTP", ctx.path, buf, size);
 		if(size)
-			send(clientfd, buf, size, 0);
-		close(clientfd);
+			send(fd, buf, size, 0);
 	}
+	close(fd);
 	return 0;
 }
-#ifdef WINDOWS
-static HANDLE status_thread = NULL;
-#else
-static pthread_t status_thread = 0;
-#endif
-static struct Context ctx;
+
+static thread_return_t status_handler(void *userptr) {
+	uprintf("Started HTTP\n");
+	struct SS addr = {sizeof(struct sockaddr_storage)};
+	for(intptr_t clientfd; (clientfd = accept(ctx.listenfd, &addr.sa, &addr.len)) != -1;)
+		thread_create((thread_t[]){0}, handle_client, (void*)clientfd);
+	return 0;
+}
+
+static thread_t status_thread = 0;
 bool status_init(const char *path, uint16_t port) {
 	ctx.listenfd = socket(AF_INET6, SOCK_STREAM, 0);
 	{
@@ -69,12 +56,7 @@ bool status_init(const char *path, uint16_t port) {
 		return 1;
 	}
 	ctx.path = path;
-	#ifdef WINDOWS
-	status_thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)status_handler, &ctx, 0, NULL);
-	return !status_thread;
-	#else
-	return pthread_create(&status_thread, NULL, (void*(*)(void*))&status_handler, &ctx) != 0;
-	#endif
+	return thread_create(&status_thread, status_handler, NULL);
 }
 void status_cleanup() {
 	if(ctx.listenfd != -1) {
@@ -83,11 +65,7 @@ void status_cleanup() {
 		close(ctx.listenfd);
 		ctx.listenfd = -1;
 		if(status_thread) {
-			#ifdef WINDOWS
-			WaitForSingleObject(status_thread, INFINITE);
-			#else
-			pthread_join(status_thread, NULL);
-			#endif
+			thread_join(status_thread);
 			status_thread = 0;
 		}
 	}
