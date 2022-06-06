@@ -7,6 +7,7 @@ MAKEFLAGS += --no-print-directory -j$(command nproc 2>/dev/null || echo 2)
 .ONESHELL:
 
 HOST := $(shell uname -m)
+NATIVE_CC ?= cc
 OBJDIR := .obj/$(shell $(CC) -dumpmachine)
 FILES := $(wildcard src/*.c src/*/*.c)
 HTMLS := $(wildcard src/*/*.html)
@@ -81,7 +82,7 @@ src/packets.h: src/packets.txt .obj/gen.$(HOST) makefile
 .obj/gen.$(HOST): gen.c
 	@echo "[cc $(notdir $@)]"
 	@mkdir -p "$(@D)"
-	cc -std=c2x -no-pie "$<" -o "$@"
+	$(NATIVE_CC) -std=c2x -no-pie "$<" -o "$@"
 
 .obj/MakeThingsPublic.exe: BeatUpClient/MakeThingsPublic.cs makefile
 	@echo "[csc $(notdir $@)]"
