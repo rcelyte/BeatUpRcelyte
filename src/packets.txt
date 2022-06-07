@@ -1,4 +1,4 @@
-@include ../common/client packets.txt
+@include ../common/packets.txt
 
 u32 ServerCode
 vi32 EntitlementsStatus
@@ -946,7 +946,7 @@ n GetPublicServersResponse
 	GetPublicServersResponse_Result result
 	if(.result == GetPublicServersResponse_Result_Success)
 		vu32 publicServerCount
-		PublicServerInfo publicServers[8192, .publicServerCount]
+		PublicServerInfo publicServers[1024, .publicServerCount]
 d UserMessage
 	UserMessageType type
 	u8 UserMessageType(.type)

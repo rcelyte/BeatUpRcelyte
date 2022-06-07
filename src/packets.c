@@ -2073,7 +2073,7 @@ static void _pkt_GetPublicServersResponse_read(struct GetPublicServersResponse *
 	_pkt_u8_read(&data->result, pkt, end, ctx);
 	if(data->result == GetPublicServersResponse_Result_Success) {
 		_pkt_vu32_read(&data->publicServerCount, pkt, end, ctx);
-		for(uint32_t i = 0, count = check_overflow(data->publicServerCount, 8192, "GetPublicServersResponse.publicServers"); i < count; ++i)
+		for(uint32_t i = 0, count = check_overflow(data->publicServerCount, 1024, "GetPublicServersResponse.publicServers"); i < count; ++i)
 			_pkt_PublicServerInfo_read(&data->publicServers[i], pkt, end, ctx);
 	}
 }
@@ -2082,7 +2082,7 @@ static void _pkt_GetPublicServersResponse_write(const struct GetPublicServersRes
 	_pkt_u8_write(&data->result, pkt, end, ctx);
 	if(data->result == GetPublicServersResponse_Result_Success) {
 		_pkt_vu32_write(&data->publicServerCount, pkt, end, ctx);
-		for(uint32_t i = 0, count = check_overflow(data->publicServerCount, 8192, "GetPublicServersResponse.publicServers"); i < count; ++i)
+		for(uint32_t i = 0, count = check_overflow(data->publicServerCount, 1024, "GetPublicServersResponse.publicServers"); i < count; ++i)
 			_pkt_PublicServerInfo_write(&data->publicServers[i], pkt, end, ctx);
 	}
 }

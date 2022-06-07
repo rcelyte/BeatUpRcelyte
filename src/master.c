@@ -431,7 +431,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		},
 	};
 	if(req->configuration.maxPlayerCount >= 127) { // connection IDs are 7 bits, with ID `127` reserved for broadcast packets and `0` for local
-		r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_ConfigMismatch; // TODO: is this the correct error to use?
+		r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_InvalidCode;
 		goto send;
 	}
 	struct String managerId = req->base.userId;
@@ -441,7 +441,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 	struct RoomHandle room;
 	struct WireRoomHandle handle;
 	if(req->code == StringToServerCode(NULL, 0)) {
-		if(req->selectionMask.difficulties != BeatmapDifficultyMask_All && req->selectionMask.modifiers == GameplayModifierMask_NoFail && req->configuration.maxPlayerCount == 5 && req->configuration.discoveryPolicy == DiscoveryPolicy_Public && req->configuration.invitePolicy == InvitePolicy_AnyoneCanInvite && req->configuration.gameplayServerMode == GameplayServerMode_Countdown && req->configuration.songSelectionMode == SongSelectionMode_Vote && req->configuration.gameplayServerControlSettings == GameplayServerControlSettings_None) {
+		if(req->configuration.gameplayServerMode == GameplayServerMode_Countdown) {
 			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers; // Quick Play not yet available
 			goto send;
 		}
@@ -570,12 +570,9 @@ static void handle_packet(struct Context *ctx, struct MasterSession *session, st
 		}
 		if(header.type == MessageType_UserMessage) {
 			struct UserMessage message = {~0};
-			size_t len = pkt_read(&message, &sub, &sub[serial.length], session->net.version);
-			if(len != serial.length) {
-				if(len)
-					uprintf("BAD USER MESSAGE LENGTH (expected %u, read %zu)\n", serial.length, len);
+			pkt_read(&message, &sub, &sub[serial.length], session->net.version);
+			if(check_length("BAD USER MESSAGE LENGTH", sub, data, serial.length))
 				continue;
-			}
 			switch(message.type) {
 				case UserMessageType_AuthenticateUserRequest: handle_AuthenticateUserRequest(ctx, session, &message.authenticateUserRequest); break;
 				case UserMessageType_AuthenticateUserResponse: uprintf("BAD TYPE: UserMessageType_AuthenticateUserResponse\n"); break;
@@ -586,16 +583,13 @@ static void handle_packet(struct Context *ctx, struct MasterSession *session, st
 				case UserMessageType_SessionKeepaliveMessage: break;
 				case UserMessageType_GetPublicServersRequest: uprintf("UserMessageType_GetPublicServersRequest not implemented\n"); abort();
 				case UserMessageType_GetPublicServersResponse: uprintf("UserMessageType_GetPublicServersResponse not implemented\n"); abort();
-				default: uprintf("BAD USER MESSAGE TYPE\n");
+				default: uprintf("BAD USER MESSAGE TYPE: %hhu\n", message.type);
 			}
 		} else if(header.type == MessageType_HandshakeMessage) {
 			struct HandshakeMessage message = {~0};
-			size_t len = pkt_read(&message, &sub, &sub[serial.length], session->net.version);
-			if(len != serial.length) {
-				if(len)
-					uprintf("BAD USER MESSAGE LENGTH (expected %u, read %zu)\n", serial.length, len);
+			pkt_read(&message, &sub, &sub[serial.length], session->net.version);
+			if(check_length("BAD HANDSHAKE MESSAGE LENGTH", sub, data, serial.length))
 				continue;
-			}
 			switch(message.type) {
 				case HandshakeMessageType_ClientHelloRequest: handle_ClientHelloRequest(ctx, session, &message.clientHelloRequest, header.protocolVersion); break;
 				case HandshakeMessageType_HelloVerifyRequest: uprintf("BAD TYPE: HandshakeMessageType_HelloVerifyRequest\n"); break;
@@ -614,10 +608,10 @@ static void handle_packet(struct Context *ctx, struct MasterSession *session, st
 					break;
 				}
 				case HandshakeMessageType_MultipartMessage: uprintf("BAD TYPE: HandshakeMessageType_HandshakeMultipartMessage\n"); break;
-				default: uprintf("BAD HANDSHAKE MESSAGE TYPE\n");
+				default: uprintf("BAD HANDSHAKE MESSAGE TYPE: %hhu\n", message.type);
 			}
 		} else {
-			uprintf("BAD MESSAGE TYPE\n");
+			uprintf("BAD MESSAGE TYPE: %u\n", header.type);
 		}
 	}
 }

@@ -1899,7 +1899,7 @@ struct GetPublicServersResponse {
 	struct BaseMasterServerReliableResponse base;
 	GetPublicServersResponse_Result result;
 	uint32_t publicServerCount;
-	struct PublicServerInfo publicServers[8192];
+	struct PublicServerInfo publicServers[1024];
 };
 struct UserMessage {
 	UserMessageType type;

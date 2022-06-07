@@ -1169,23 +1169,6 @@ static bool handle_RoutingHeader(struct Context *ctx, struct Room *room, struct 
 	return false;
 }
 
-static void log_length_error(const char *msg, const uint8_t *read, const uint8_t *data, size_t length) {
-	/*if(read >= _trap && read < &_trap[sizeof(_trap)])
-		uprintf("%s (expected %u)\n", msg, length);
-	else*/
-		uprintf("%s (expected %u, read %zu)\n", msg, length, read - (data - length));
-	if(read < data) {
-		uprintf("\t");
-		for(const uint8_t *it = data - length; it < data; ++it)
-			uprintf("%02hhx", *it);
-		uprintf("\n\t");
-		for(const uint8_t *it = data - length; it < read; ++it)
-			uprintf("  ");
-		uprintf("^ extra data starts here");
-	}
-	uprintf("\n");
-}
-
 static void process_message(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data, const uint8_t *end, bool reliable, DeliveryMethod channelId) {
 	if(handle_RoutingHeader(ctx, room, session, data, end, reliable, channelId)) {
 		*data = end;
@@ -1241,8 +1224,7 @@ static void process_message(struct Context *ctx, struct Room *room, struct Insta
 			case InternalMessageType_PongMessage: break;
 			default: uprintf("BAD INTERNAL MESSAGE TYPE\n");
 		}
-		if(sub != *data)
-			log_length_error("BAD INTERNAL MESSAGE LENGTH", sub, *data, serial.length);
+		check_length("BAD INTERNAL MESSAGE LENGTH", sub, *data, serial.length);
 	}
 }
 
@@ -1258,12 +1240,19 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 	}
 	while(*data < end) {
 		struct ModConnectHeader mod;
-		pkt_read(&mod, data, end, session->net.version);
+		if(!pkt_read(&mod, data, end, session->net.version))
+			break;
 		const uint8_t *sub = *data;
 		*data += mod.length;
+		if(*data > end) {
+			*data = end;
+			uprintf("Invalid mod header length: %u\n", mod.length);
+			break;
+		}
 		if(String_is(mod.name, "BeatUpClient beta0")) {
 			struct BeatUpConnectHeader info;
-			pkt_read(&info, &sub, *data, session->net.version);
+			if(!pkt_read(&info, &sub, *data, session->net.version))
+				continue;
 			session->net.version.beatUpVersion = info.protocolId;
 			session->net.version.windowSize = info.base.windowSize;
 			if(session->net.version.windowSize > NET_MAX_WINDOW_SIZE)
@@ -1280,8 +1269,7 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 		} else {
 			uprintf("UNIDENTIFIED MOD: %.*s\n", mod.name.length, mod.name.data);
 		}
-		if(sub != *data)
-			log_length_error("BAD MOD HEADER LENGTH", sub, *data, mod.length);
+		check_length("BAD MOD HEADER LENGTH", sub, *data, mod.length);
 	}
 	uint8_t resp[65536], *resp_end = resp;
 	pkt_write_c(&resp_end, endof(resp), session->net.version, NetPacketHeader, {
@@ -1511,8 +1499,7 @@ static inline void handle_packet(struct Context *ctx, struct Room **room, struct
 			case PacketProperty_Merged: uprintf("BAD TYPE: PacketProperty_Merged\n"); break;
 			default: uprintf("BAD PACKET PROPERTY\n");
 		}
-		if(sub != data)
-			uprintf("BAD PACKET LENGTH (expected %u, read %zu)\n", merged.length, merged.length + sub - data);
+		check_length("BAD PACKET LENGTH", sub, data, merged.length);
 	} while(data < end);
 }
 
@@ -1679,17 +1666,17 @@ void instance_block_release(uint16_t thread, uint16_t group) {
 }
 
 bool instance_room_open(uint16_t thread, uint16_t group, uint8_t sub, struct String managerId, struct GameplayServerConfiguration configuration) {
+	bool res = true;
 	net_lock(&contexts[thread].net);
 	uprintf("opening room (%hu,%hu,%hhu)\n", thread, group, sub);
 	if(contexts[thread].rooms[group][sub]) {
-		net_unlock(&contexts[thread].net);
 		uprintf("Room already open!\n");
-		return 1;
+		goto fail;
 	}
 	struct Room *room = malloc(sizeof(struct Room) + configuration.maxPlayerCount * sizeof(*room->players));
 	if(!room) {
 		uprintf("alloc error\n");
-		abort();
+		goto fail;
 	}
 	net_keypair_init(&room->keys);
 	net_keypair_gen(&contexts[0].net, &room->keys);
@@ -1710,8 +1697,10 @@ bool instance_room_open(uint16_t thread, uint16_t group, uint8_t sub, struct Str
 	room->global.roundRobin = 0;
 	room_set_state(&contexts[thread], room, ServerState_Lobby_Idle);
 	contexts[thread].rooms[group][sub] = room;
+	res = false;
+	fail:
 	net_unlock(&contexts[thread].net);
-	return 0;
+	return res;
 }
 
 void instance_room_close(uint16_t thread, uint16_t group, uint8_t sub) {
