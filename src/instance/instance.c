@@ -1363,11 +1363,11 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 					.d1 = 576531121051926529,
 				},
 			},
+			.playerAvatar = CLEAR_AVATARDATA,
 			.random.length = 32,
 			.publicEncryptionKey.length = sizeof(r_identity.playerIdentity.publicEncryptionKey.data),
 		},
 	};
-	memset(&r_identity.playerIdentity.playerAvatar, 0, sizeof(r_identity.playerIdentity.playerAvatar));
 	memcpy(r_identity.playerIdentity.random.data, NetKeypair_get_random(&room->keys), 32);
 	NetKeypair_write_key(&room->keys, &ctx->net, r_identity.playerIdentity.publicEncryptionKey.data, &r_identity.playerIdentity.publicEncryptionKey.length);
 	if(pkt_serialize(&r_identity, &resp_end, endof(resp), session->net.version))

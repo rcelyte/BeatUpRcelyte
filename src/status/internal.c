@@ -136,24 +136,28 @@ static uint32_t status_web(char *buf, ServerCode code) {
 #define startsWithBytes(start, end, str, len) ((end) - (start) >= (len) && memcmp((start), (str), (len)) == 0)
 #define startsWith(start, end, str) startsWithBytes(start, end, str, sizeof(str) - sizeof(""))
 
-static bool isGame(const char *buf, const char *end) {
-	const char *it = memchr(buf, '\n', end - buf);
-	if(it == NULL)
-		return 0;
-	++it;
-	if(end - it > 24)
-		if(memcmp(it, "Connection: keep-alive\r\n", 24) == 0)
-			it += 24;
-	if(end - it <= 6)
-		return 0;
-	if(memcmp(it, "Host: ", 6))
-		return 0;
-	it = memchr(it, '\n', end - it);
-	if(it == NULL)
-		return 0;
-	if(end - it != 3)
-		return 0;
-	return memcmp(&it[1], "\r\n", 2) == 0;
+static const char *nextLine(const char *start, const char *end) {
+	for(; &start[5] < end; ++start)
+		if(start[0] == '\r' && start[1] == '\n')
+			return &start[2];
+	return NULL;
+}
+
+static const char *identify(const char *buf, const char *end) {
+	const char *userAgent = "game";
+	uint32_t lineCount = 0;
+	for(; (buf = nextLine(buf, end)); ++lineCount) {
+		if(startsWith(buf, end, "Host: "))
+			continue;
+		if(startsWith(buf, end, "Connection: "))
+			continue;
+		if(startsWith(buf, end, "User-Agent: BeatSaberServerBrowser")) {
+			userAgent = "bssb";
+			continue;
+		}
+		return NULL;
+	}
+	return (lineCount >= 2) ? userAgent : NULL;
 }
 
 uint32_t status_resp(const char *source, const char *path, char *buf, uint32_t buf_len) {
@@ -161,12 +165,12 @@ uint32_t status_resp(const char *source, const char *path, char *buf, uint32_t b
 	if(!startsWith(req, req_end, "GET /"))
 		return status_text(buf, "404 Not Found", "text/plain", "");
 	req += 5;
-	bool fromGame = isGame(req, req_end);
+	const char *userAgent = identify(req, req_end);
 	const char *reqPath_end = (char*)memchr(req, ' ', req_end - req);
-	uprintf("(%s,%s): /%.*s\n", source, fromGame ? "game" : "web", (int32_t)(reqPath_end - req), req);
+	uprintf("(%s,%s): /%.*s\n", source, userAgent ? userAgent : "web", (int32_t)(reqPath_end - req), req);
 	if(startsWith(req, req_end, "robots.txt "))
 		return status_text(buf, "200 OK", "text/plain", "User-agent: *\nDisallow: /\n");
-	if(fromGame) {
+	if(userAgent) {
 		size_t path_len = strlen(path);
 		if(!startsWithBytes(req, req_end, path, path_len * sizeof(*path)))
 			return status_text(buf, "404 Not Found", "text/plain", "");
