@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <inttypes.h>
 
 #ifdef DEBUG
 #define NOT_IMPLEMENTED(type) case type: uprintf(#type " not implemented\n"); abort();
@@ -170,6 +171,7 @@ struct Room {
 
 	ServerState state;
 	struct {
+		uint64_t sessionId[2];
 		struct Counter128 inLobby;
 		struct Counter128 isSpectating;
 		struct BeatmapIdentifierNetSerializable selectedBeatmap;
@@ -449,9 +451,10 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 					.base = base,
 					.flags = {true, true, false, false},
 					.playersAtGameStart.count = 0,
-					.sessionGameId = String_from("00000000-0000-0000-0000-000000000000"),
 				},
-			}; ;
+			};
+			struct String *id = &r_sync.setGameplaySceneSyncFinish.sessionGameId;
+			id->length = snprintf(id->data, sizeof(id->data), "%08"PRIx64"-%04"PRIx64"-%04"PRIx64"-%04"PRIx64"-%012"PRIx64, (room->global.sessionId[0] >> 32) & 0xffffffff, (room->global.sessionId[0] >> 16) & 0xffff, room->global.sessionId[0] & 0xffff, (room->global.sessionId[1] >> 48) & 0xffff, room->global.sessionId[1] & 0xffffffffffff);
 			FOR_SOME_PLAYERS(id, room->connected,)
 				r_sync.setGameplaySceneSyncFinish.playersAtGameStart.activePlayerSpecificSettingsAtGameStart[r_sync.setGameplaySceneSyncFinish.playersAtGameStart.count++] = room->players[id].settings;
 			SERIALIZE_GAMEPLAYRPC(&resp_end, endof(resp), session->net.version, {
@@ -612,6 +615,8 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 			break;
 		}
 		case ServerState_Game_LoadingSong: {
+			room->global.sessionId[0] = time(NULL);
+			++room->global.sessionId[1];
 			room->game.loadingSong.isLoaded = COUNTER128_CLEAR;
 			room->global.timeout = room_get_syncTime(room) + LOAD_TIMEOUT;
 			break;
@@ -1665,7 +1670,7 @@ void instance_block_release(uint16_t thread, uint16_t group) {
 	net_unlock(&contexts[thread].net);
 }
 
-bool instance_room_open(uint16_t thread, uint16_t group, uint8_t sub, struct String managerId, struct GameplayServerConfiguration configuration) {
+bool instance_room_open(uint16_t thread, uint16_t group, uint8_t sub, struct String managerId, struct GameplayServerConfiguration configuration, ServerCode code) {
 	bool res = true;
 	net_lock(&contexts[thread].net);
 	uprintf("opening room (%hu,%hu,%hhu)\n", thread, group, sub);
@@ -1690,6 +1695,8 @@ bool instance_room_open(uint16_t thread, uint16_t group, uint8_t sub, struct Str
 	room->connected = COUNTER128_CLEAR;
 	room->playerSort = COUNTER128_CLEAR;
 	room->state = 0;
+	room->global.sessionId[0] = time(NULL);
+	room->global.sessionId[1] = (uint64_t)code << 32;
 	room->global.inLobby = COUNTER128_CLEAR;
 	room->global.isSpectating = COUNTER128_CLEAR;
 	room->global.selectedBeatmap = CLEAR_BEATMAP;

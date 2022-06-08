@@ -13,10 +13,10 @@ void wire_block_release(struct WireBlockHandle block) {
 	instance_block_release(block.thread, block.group);
 }
 
-bool wire_room_open(struct WireRoomHandle handle, struct String managerId, struct GameplayServerConfiguration configuration) {
+bool wire_room_open(struct WireRoomHandle handle, struct String managerId, struct GameplayServerConfiguration configuration, ServerCode code) {
 	if(handle.block.host != 0 || handle.block.thread != 0)
 		return 1;
-	return instance_room_open(handle.block.thread, handle.block.group, handle.sub, managerId, configuration);
+	return instance_room_open(handle.block.thread, handle.block.group, handle.sub, managerId, configuration, code);
 }
 
 void wire_room_close(struct WireRoomHandle handle) {

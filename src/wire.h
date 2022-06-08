@@ -13,7 +13,7 @@ struct WireRoomHandle {
 bool wire_request_block(struct WireBlockHandle *block_out, uint16_t notify);
 void wire_block_release(struct WireBlockHandle block);
 
-bool wire_room_open(struct WireRoomHandle handle, struct String managerId, struct GameplayServerConfiguration configuration);
+bool wire_room_open(struct WireRoomHandle handle, struct String managerId, struct GameplayServerConfiguration configuration, ServerCode code);
 void wire_room_close(struct WireRoomHandle handle);
 struct String wire_room_get_managerId(struct WireRoomHandle handle);
 struct GameplayServerConfiguration wire_room_get_configuration(struct WireRoomHandle handle);

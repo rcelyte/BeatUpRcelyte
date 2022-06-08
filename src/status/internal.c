@@ -157,7 +157,7 @@ static const char *identify(const char *buf, const char *end) {
 		}
 		return NULL;
 	}
-	return (lineCount >= 2) ? userAgent : NULL;
+	return (lineCount >= 1) ? userAgent : NULL;
 }
 
 uint32_t status_resp(const char *source, const char *path, char *buf, uint32_t buf_len) {

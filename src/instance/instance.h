@@ -7,7 +7,7 @@ void instance_cleanup();
 
 bool instance_block_request(uint16_t thread, uint16_t *group_out, uint16_t notify);
 void instance_block_release(uint16_t thread, uint16_t group);
-bool instance_room_open(uint16_t thread, uint16_t group, uint8_t sub, struct String managerId, struct GameplayServerConfiguration configuration);
+bool instance_room_open(uint16_t thread, uint16_t group, uint8_t sub, struct String managerId, struct GameplayServerConfiguration configuration, ServerCode code);
 void instance_room_close(uint16_t thread, uint16_t group, uint8_t sub);
 struct String instance_room_get_managerId(uint16_t thread, uint16_t group, uint8_t sub);
 struct GameplayServerConfiguration instance_room_get_configuration(uint16_t thread, uint16_t group, uint8_t sub);
