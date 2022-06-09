@@ -1229,7 +1229,7 @@ static void process_message(struct Context *ctx, struct Room *room, struct Insta
 			case InternalMessageType_PongMessage: break;
 			default: uprintf("BAD INTERNAL MESSAGE TYPE\n");
 		}
-		check_length("BAD INTERNAL MESSAGE LENGTH", sub, *data, serial.length);
+		check_length("BAD INTERNAL MESSAGE LENGTH", sub, *data, serial.length, session->net.version);
 	}
 }
 
@@ -1274,7 +1274,7 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 		} else {
 			uprintf("UNIDENTIFIED MOD: %.*s\n", mod.name.length, mod.name.data);
 		}
-		check_length("BAD MOD HEADER LENGTH", sub, *data, mod.length);
+		check_length("BAD MOD HEADER LENGTH", sub, *data, mod.length, session->net.version);
 	}
 	uint8_t resp[65536], *resp_end = resp;
 	pkt_write_c(&resp_end, endof(resp), session->net.version, NetPacketHeader, {
@@ -1504,7 +1504,7 @@ static inline void handle_packet(struct Context *ctx, struct Room **room, struct
 			case PacketProperty_Merged: uprintf("BAD TYPE: PacketProperty_Merged\n"); break;
 			default: uprintf("BAD PACKET PROPERTY\n");
 		}
-		check_length("BAD PACKET LENGTH", sub, data, merged.length);
+		check_length("BAD PACKET LENGTH", sub, data, merged.length, session->net.version);
 	} while(data < end);
 }
 

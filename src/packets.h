@@ -2058,14 +2058,14 @@ struct PacketEncryptionLayer {
 struct PacketContext {
 	uint8_t netVersion;
 	uint8_t protocolVersion;
-	uint8_t windowSize;
 	uint8_t beatUpVersion;
+	uint32_t windowSize;
 };
 static const struct PacketContext PV_LEGACY_DEFAULT = {
 	.netVersion = 11,
 	.protocolVersion = 6,
-	.windowSize = 64,
 	.beatUpVersion = 0,
+	.windowSize = 64,
 };
 void _pkt_BeatUpMessage_read(struct BeatUpMessage *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 void _pkt_BeatUpMessage_write(const struct BeatUpMessage *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);

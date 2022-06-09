@@ -519,8 +519,8 @@ static void gen_header(char **out, const char *headerName) {
 		"static const struct PacketContext PV_LEGACY_DEFAULT = {\n"
 		"\t.netVersion = 11,\n"
 		"\t.protocolVersion = 6,\n"
-		"\t.windowSize = 64,\n"
 		"\t.beatUpVersion = 0,\n"
+		"\t.windowSize = 64,\n"
 		"};\n");
 	for(struct Token *token = tokens; token < tokens_end; ++token) {
 		if(token->type != TType_Struct_start)
@@ -676,7 +676,7 @@ int32_t main(int32_t argc, const char *argv[]) {
 		return -1;
 	}
 	parse_file(argv[1]);
-	parse("n PacketContext\n\tu8 netVersion\n\tu8 protocolVersion\n\tu8 windowSize\n\tu8 beatUpVersion\n", NULL, 0);
+	parse("n PacketContext\n\tu8 netVersion\n\tu8 protocolVersion\n\tu8 beatUpVersion\n\tu32 windowSize\n", NULL, 0);
 	resolve();
 	const char *headerName = argv[2], *sourceName = argv[3];
 	for(const char *it = headerName; *it;)

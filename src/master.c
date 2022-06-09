@@ -243,10 +243,8 @@ static void master_send_ack(struct Context *ctx, struct MasterSession *session, 
 	master_send(&ctx->net, session, type, resp, resp_end, false);
 }
 
-static void handle_ClientHelloRequest(struct Context *ctx, struct MasterSession *session, const struct ClientHelloRequest *req, uint32_t protocolVersion) {
-	if(session->handshakeStep == 255) {
-		session->net.version.protocolVersion = protocolVersion;
-	} else {
+static void handle_ClientHelloRequest(struct Context *ctx, struct MasterSession *session, const struct ClientHelloRequest *req) {
+	if(session->handshakeStep != 255) {
 		if(net_time() - NetSession_get_lastKeepAlive(&session->net) < 5000) // 5 second timeout to prevent clients from getting "locked out" if their previous session hasn't closed or timed out yet
 			return;
 		net_session_reset(&ctx->net, &session->net); // security or something idk
@@ -569,9 +567,11 @@ static void handle_packet(struct Context *ctx, struct MasterSession *session, st
 			return;
 		}
 		if(header.type == MessageType_UserMessage) {
+			if(header.protocolVersion > session->net.version.protocolVersion)
+				session->net.version.protocolVersion = header.protocolVersion;
 			struct UserMessage message = {~0};
 			pkt_read(&message, &sub, &sub[serial.length], session->net.version);
-			if(check_length("BAD USER MESSAGE LENGTH", sub, data, serial.length))
+			if(check_length("BAD USER MESSAGE LENGTH", sub, data, serial.length, session->net.version))
 				continue;
 			switch(message.type) {
 				case UserMessageType_AuthenticateUserRequest: handle_AuthenticateUserRequest(ctx, session, &message.authenticateUserRequest); break;
@@ -586,12 +586,14 @@ static void handle_packet(struct Context *ctx, struct MasterSession *session, st
 				default: uprintf("BAD USER MESSAGE TYPE: %hhu\n", message.type);
 			}
 		} else if(header.type == MessageType_HandshakeMessage) {
+			if(header.protocolVersion > session->net.version.protocolVersion)
+				session->net.version.protocolVersion = header.protocolVersion;
 			struct HandshakeMessage message = {~0};
 			pkt_read(&message, &sub, &sub[serial.length], session->net.version);
-			if(check_length("BAD HANDSHAKE MESSAGE LENGTH", sub, data, serial.length))
+			if(check_length("BAD HANDSHAKE MESSAGE LENGTH", sub, data, serial.length, session->net.version))
 				continue;
 			switch(message.type) {
-				case HandshakeMessageType_ClientHelloRequest: handle_ClientHelloRequest(ctx, session, &message.clientHelloRequest, header.protocolVersion); break;
+				case HandshakeMessageType_ClientHelloRequest: handle_ClientHelloRequest(ctx, session, &message.clientHelloRequest); break;
 				case HandshakeMessageType_HelloVerifyRequest: uprintf("BAD TYPE: HandshakeMessageType_HelloVerifyRequest\n"); break;
 				case HandshakeMessageType_ClientHelloWithCookieRequest: handle_ClientHelloWithCookieRequest(ctx, session, &message.clientHelloWithCookieRequest); break;
 				case HandshakeMessageType_ServerHelloRequest: uprintf("BAD TYPE: HandshakeMessageType_ServerHelloRequest\n"); break;
