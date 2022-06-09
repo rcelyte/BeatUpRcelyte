@@ -1,5 +1,6 @@
 // #define THREAD_COUNT 256
 #define THREAD_COUNT 1
+#define USE_RANDOM_GUIDS
 
 #include "instance.h"
 #include "common.h"
@@ -615,8 +616,12 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 			break;
 		}
 		case ServerState_Game_LoadingSong: {
+			#ifdef USE_RANDOM_GUIDS
+			mbedtls_ctr_drbg_random(&ctx->net.ctr_drbg, (uint8_t*)room->global.sessionId, sizeof(room->global.sessionId));
+			#else
 			room->global.sessionId[0] = time(NULL);
 			++room->global.sessionId[1];
+			#endif
 			room->game.loadingSong.isLoaded = COUNTER128_CLEAR;
 			room->global.timeout = room_get_syncTime(room) + LOAD_TIMEOUT;
 			break;
@@ -1695,7 +1700,7 @@ bool instance_room_open(uint16_t thread, uint16_t group, uint8_t sub, struct Str
 	room->connected = COUNTER128_CLEAR;
 	room->playerSort = COUNTER128_CLEAR;
 	room->state = 0;
-	room->global.sessionId[0] = time(NULL);
+	room->global.sessionId[0] = 0;
 	room->global.sessionId[1] = (uint64_t)code << 32;
 	room->global.inLobby = COUNTER128_CLEAR;
 	room->global.isSpectating = COUNTER128_CLEAR;
