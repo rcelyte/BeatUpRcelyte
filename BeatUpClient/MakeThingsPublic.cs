@@ -1,37 +1,38 @@
 class MainClass {
 	static System.Collections.Generic.Dictionary<string, string[]> nonPublicMembers = new System.Collections.Generic.Dictionary<string, string[]>() {
 		["BGNet.dll"] = new[] {
+			"ConnectedPlayerManager/ConnectedPlayer",
 			"ConnectedPlayerManager/ConnectedPlayer::_connection",
 			"ConnectedPlayerManager/ConnectedPlayer::_connectionId",
 			"ConnectedPlayerManager/ConnectedPlayer::_remoteConnectionId",
 			"ConnectedPlayerManager/PlayerConnectedPacket",
 			"ConnectedPlayerManager::WriteOne",
-		 	"ConnectedPlayerManager/ConnectedPlayer",
 		},
 		["HMLib.dll"] = new[] {
 			"SceneInfo::_sceneName",
 		},
 		["HMUI.dll"] = new[] {
 			"HMUI.DropdownWithTableView::Hide",
+			"HMUI.FlowCoordinator::_parentFlowCoordinator",
 			"HMUI.FlowCoordinator::_screenSystem",
 			"HMUI.FlowCoordinator::DismissFlowCoordinator",
 			"HMUI.FlowCoordinator::DismissViewController",
 			"HMUI.FlowCoordinator::PresentViewController",
-			"HMUI.FlowCoordinator::ReplaceTopViewController",
-			"HMUI.FlowCoordinator::ReplaceTopViewController",
+			"HMUI.FlowCoordinator::set_showBackButton",
 			"HMUI.FlowCoordinator::SetTitle",
+			"HMUI.FlowCoordinator::TopViewControllerWillChange",
+			"HMUI.HoverHintController::_isHiding",
 			"HMUI.IconSegmentedControl::_container",
 			"HMUI.ImageView::_flipGradientColors",
 			"HMUI.ImageView::_skew",
 			"HMUI.InputFieldView::_placeholderText",
 			"HMUI.InputFieldView::_textLengthLimit",
-			"HMUI.InputFieldView::UpdateClearButton",
 			"HMUI.TextSegmentedControl::_container",
 			"HMUI.UIKeyboard::_buttonBinder",
+			"HMUI.UIKeyboard::keyWasPressedEvent",
 			"HMUI.UIKeyboardKey::_canBeUppercase",
 			"HMUI.UIKeyboardKey::_keyCode",
 			"HMUI.UIKeyboardKey::_overrideText",
-			"HMUI.UIKeyboardKey::Awake",
 		},
 		["LiteNetLib.dll"] = new[] {
 			"LiteNetLib.NetConnectAcceptPacket",
@@ -41,41 +42,36 @@ class MainClass {
 		["Main.dll"] = new[] {
 			"BeatmapCallbacksController::_startFilterTime",
 			"BeatmapCharacteristicSegmentedControlController::_segmentedControl",
+			"BeatmapCharacteristicSegmentedControlController::didSelectBeatmapCharacteristicEvent",
 			"BeatmapDifficultySegmentedControlController::_difficultySegmentedControl",
+			"BeatmapDifficultySegmentedControlController::didSelectDifficultyEvent",
 			"ColorsOverrideSettingsPanelController::_editColorSchemeButton",
 			"CustomLevelLoader::_defaultAllDirectionsEnvironmentInfo",
 			"CustomLevelLoader::_defaultEnvironmentInfo",
 			"CustomLevelLoader::_environmentSceneInfoCollection",
 			"DropdownSettingsController::_dropdown",
 			"EnterPlayerGuestNameViewController::_nameInputFieldView",
+			"GameplayCoreSceneSetupData::gameplayModifiers",
 			"GameServerPlayerTableCell::_localPlayerBackgroundImage",
-			"GameServerPlayerTableCell::Awake",
 			"GameSongController::_beatmapCallbacksController",
 			"IncDecSettingsController::_stepValuePicker",
-			"JoiningLobbyViewController::_text",
+			"JoiningLobbyViewController::_loadingControl",
 			"LevelScenesTransitionSetupDataSO::get_gameplayCoreSceneSetupData",
-			"LobbyPlayersDataModel::HandleMenuRpcManagerGetRecommendedBeatmap",
 			"MainSystemInit::_networkConfig",
 			"MenuTransitionsHelper::_gameScenesManager",
 			"MenuTransitionsHelper::_multiplayerLevelScenesTransitionSetupData",
 			"MultiplayerController::_playersManager",
 			"MultiplayerController::_songStartSyncController",
-			"MultiplayerController::GetCurrentSongTime",
-			"MultiplayerController::GetSongStartSyncTime",
-			"MultiplayerLobbyAvatarManager::AddPlayer",
 			"MultiplayerLocalActivePlayerFacade::_gameSongController",
 			"MultiplayerLocalActivePlayerInGameMenuViewController::_levelBar",
 			"MultiplayerLocalActivePlayerInGameMenuViewController::_localPlayerInGameMenuInitData",
 			"MultiplayerLocalActivePlayerInGameMenuViewController::_mainBar",
 			"MultiplayerLocalActivePlayerInGameMenuViewController::_resumeButton",
-			"MultiplayerLocalActivePlayerInGameMenuViewController::Start",
-			"MultiplayerModeSelectionFlowCoordinator::PresentMasterServerUnavailableErrorDialog",
-			"MultiplayerModeSelectionFlowCoordinator::ProcessDeeplinkingToLobby",
+			"MultiplayerModeSelectionFlowCoordinator::_multiplayerModeSelectionViewController",
 			"MultiplayerModeSelectionViewController::_customServerEndPointText",
 			"MultiplayerModeSelectionViewController::_maintenanceMessageText",
 			"MultiplayerStatusModel::_request",
 			"NetworkPlayerEntitlementChecker::_additionalContentModel",
-			"NetworkPlayerEntitlementChecker::_rpcManager",
 			"PCAppInit::TransitionToNextScene",
 			"QuickPlaySetupModel::_request",
 			"StandardLevelDetailView::_beatmapCharacteristicSegmentedControlController",
@@ -83,19 +79,29 @@ class MainClass {
 			"SwitchSettingsController::_toggle",
 		},
 		["MultiplayerCore.dll"] = new[] {
-			"MultiplayerCore.Objects.MpLevelLoader::.ctor",
 			"MultiplayerCore.Objects.MpPlayersDataModel::.ctor",
 			"MultiplayerCore.Objects.MpPlayersDataModel::_beatmapLevelProvider",
 			"MultiplayerCore.Objects.MpPlayersDataModel::_packetSerializer",
 		},
 		["Polyglot.dll"] = new[] {
 			"Polyglot.LocalizationImporter::Import",
+			"Polyglot.LocalizedTextComponent`1::localizedComponent",
+		},
+		["Zenject.dll"] = new[] {
+			"Zenject.MonoInstallerBase::get_Container",
 		},
 	};
+	class FixedAssemblyResolver : Mono.Cecil.BaseAssemblyResolver {
+		public override Mono.Cecil.AssemblyDefinition Resolve(Mono.Cecil.AssemblyNameReference name) {
+			if(name.Name == "GameplayCore")
+				name.Name = "GamePlayCore";
+			return base.Resolve(name);
+		}
+	}
 	public static void Main(string[] args) {
 		if(args.Length != 2)
 			return;
-		Mono.Cecil.DefaultAssemblyResolver assemblyResolver = new Mono.Cecil.DefaultAssemblyResolver();
+		FixedAssemblyResolver assemblyResolver = new FixedAssemblyResolver();
 		assemblyResolver.AddSearchDirectory(System.IO.Path.GetDirectoryName(args[0]));
 		Mono.Cecil.AssemblyDefinition assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(args[0], new Mono.Cecil.ReaderParameters {AssemblyResolver = assemblyResolver});
 		if(nonPublicMembers.TryGetValue(assembly.MainModule.Name, out string[] overrides)) {
@@ -113,6 +119,9 @@ class MainClass {
 						field.IsInitOnly = false;
 					}
 				}
+				foreach(Mono.Cecil.EventDefinition ev in type.Events)
+					if(names.Contains(ev.Name))
+						ev.Name += "$";
 			}
 		}
 		assembly.MainModule.Write(args[1]);

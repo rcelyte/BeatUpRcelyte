@@ -1,0 +1,33 @@
+{
+	"sharedDir": ".obj",
+	"dependenciesDir": "extern",
+	"info": {
+		"name": "BeatUpClient",
+		"id": "BeatUpClient",
+		"version": "0.3.0",
+		"url": null,
+		"additionalData": {}
+	},
+	"dependencies": [
+		{
+			"id": "beatsaber-hook",
+			"versionRange": "3.8.5",
+			"additionalData": {
+				"extraFiles": [
+					"src/inline-hook"
+				]
+			}
+		},
+		{
+			"id": "custom-types",
+			"versionRange": "*",
+			"additionalData": {}
+		},
+		{
+			"id": "codegen",
+			"versionRange": "*",
+			"additionalData": {}
+		}
+	],
+	"additionalData": {}
+}

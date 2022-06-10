@@ -1,6 +1,5 @@
 #!/bin/make
 DESTDIR := /usr/local
-VERSION := 0.2.2
 
 MAKEFLAGS += --no-print-directory -j$(command nproc 2>/dev/null || echo 2)
 .SILENT:
@@ -17,9 +16,6 @@ DEPS := $(FILES:%=$(OBJDIR)/%.d)
 
 CFLAGS := -g -std=gnu2x -Imbedtls/include -Wall -Werror -pedantic-errors -DFORCE_MASSIVE_LOBBIES
 LDFLAGS := -O2 -Wl,--gc-sections,--fatal-warnings
-
-CSREFS := ../Libs/0Harmony.dll ../Plugins/SongCore.dll ../Plugins/SiraUtil.dll ../Plugins/MultiplayerCore.dll Managed/mscorlib.dll Managed/IPA.Loader.dll Managed/BGNet.dll Managed/BeatmapCore.dll Managed/Colors.dll Managed/GameplayCore.dll Managed/HMLib.dll Managed/HMUI.dll Managed/Main.dll Managed/UnityEngine.CoreModule.dll Managed/UnityEngine.AssetBundleModule.dll Managed/UnityEngine.AudioModule.dll Managed/UnityEngine.ImageConversionModule.dll Managed/UnityEngine.UnityWebRequestModule.dll Managed/UnityEngine.UnityWebRequestAudioModule.dll Managed/UnityEngine.UIModule.dll Managed/UnityEngine.UI.dll Managed/Unity.TextMeshPro.dll Managed/Polyglot.dll Managed/System.IO.Compression.dll Managed/Newtonsoft.Json.dll Managed/LiteNetLib.dll Managed/VRUI.dll Managed/Zenject.dll Managed/Zenject-usage.dll
-PUBREFS := $(CSREFS:%=.obj/Refs/Data/%)
 
 sinclude makefile.user
 
@@ -84,22 +80,11 @@ src/packets.h: src/packets.txt .obj/gen.$(HOST) makefile
 	@mkdir -p "$(@D)"
 	$(NATIVE_CC) -std=c2x -no-pie "$<" -o "$@"
 
-.obj/MakeThingsPublic.exe: BeatUpClient/MakeThingsPublic.cs makefile
-	@echo "[csc $(notdir $@)]"
-	@mkdir -p "$(@D)"
-	csc -nologo -o+ -debug- -nullable+ -w:4 -warnaserror+ -langversion:8 "$<" -out:"$@" -r:$(BSINSTALL)/Libs/Mono.Cecil.dll
-	MONO_PATH=$(BSINSTALL)/Libs mono --aot -O=all "$@"
+bsipa BeatUpClient/BeatUpClient.dll:
+	$(MAKE) -C BeatUpClient BeatUpClient.dll
 
-.obj/Refs/Data/%.dll: $(BSINSTALL)/Beat\ Saber_Data/%.dll .obj/MakeThingsPublic.exe
-	@echo "[MakeThingsPublic $(notdir $@)]"
-	@mkdir -p "$(@D)"
-	MONO_PATH=$(BSINSTALL)/Libs mono .obj/MakeThingsPublic.exe "$<" "$@"
-
-BeatUpClient/BeatUpClient.dll: BeatUpClient/BeatUpClient.cs $(PUBREFS) makefile
-	@echo "[csc $@]"
-	@mkdir -p .obj/
-	printf "{\"\$$schema\":\"https://raw.githubusercontent.com/bsmg/BSIPA-MetadataFileSchema/master/Schema.json\",\"author\":\"rcelyte\",\"description\":\"Tweaks and enhancements for enabling modded multiplayer\",\"gameVersion\":\"1.20.0\",\"dependsOn\":{\"BSIPA\":\"*\"},\"conflictsWith\":{\"BeatTogether\":\"*\"},\"loadBefore\":[\"MultiplayerCore\"],\"id\":\"BeatUpClient\",\"name\":\"BeatUpClient\",\"version\":\"$(VERSION)\",\"links\":{\"project-source\":\"https://github.com/rcelyte/BeatUpRcelyte\"}}" > .obj/manifest.json
-	csc -nologo -t:library -nostdlib -o+ -debug- -nullable+ -unsafe+ -w:4 -warnaserror+ -langversion:8 -define:MPCORE_SUPPORT "$<" -res:.obj/manifest.json,.manifest.json -res:BeatUpClient/data.bundle,BeatUpClient.data -out:"$@" $(PUBREFS:%=-r:%)
+bmbf BeatUpClient/BeatUpClient.qmod:
+	$(MAKE) -C BeatUpClient BeatUpClient.qmod
 
 install: beatupserver
 	@echo "[install $(notdir $<)]"
@@ -110,11 +95,12 @@ uninstall remove:
 
 clean:
 	@echo "[cleaning]"
+	$(MAKE) -C BeatUpClient clean
 	$(MAKE) -C mbedtls/library clean
 	rm -rf .obj/
 	rm -f beatupserver*
 
-.PHONY: default install uninstall remove clean
+.PHONY: default bsipa bmbf install uninstall remove clean
 
 include $(OBJDIR)/libs.mk
 sinclude $(DEPS)
