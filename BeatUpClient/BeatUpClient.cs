@@ -1611,10 +1611,10 @@ public class BeatUpClient {
 	}
 
 	[Patch(PatchType.Prefix, typeof(MultiplayerConnectedPlayerInstaller), nameof(MultiplayerConnectedPlayerInstaller.InstallBindings))]
-	public static void MultiplayerConnectedPlayerInstaller_InstallBindings(MultiplayerConnectedPlayerInstaller __instance, GameplayCoreSceneSetupData ____sceneSetupData) {
+	public static void MultiplayerConnectedPlayerInstaller_InstallBindings(GameplayCoreSceneSetupData ____sceneSetupData, IConnectedPlayer ____connectedPlayer) {
 		bool zenMode = ____sceneSetupData.gameplayModifiers.zenMode || (Config.Instance.HideOtherLevels && !haveMpEx);
-		if(connectInfo?.perPlayerModifiers == true) {
-			PlayerData.ModifiersWeCareAbout mods = playerData.lockedModifiers[__instance.Container.Resolve<IConnectedPlayer>().sortIndex]; // TODO: `Unable to resolve 'IConnectedPlayer'`
+		if(connectInfo?.perPlayerModifiers == true && ____connectedPlayer.sortIndex < playerData.lockedModifiers.Length) {
+			PlayerData.ModifiersWeCareAbout mods = playerData.lockedModifiers[____connectedPlayer.sortIndex];
 			____sceneSetupData.gameplayModifiers = ____sceneSetupData.gameplayModifiers.CopyWith(disappearingArrows: mods.disappearingArrows, ghostNotes: mods.ghostNotes, zenMode: zenMode, smallCubes: mods.smallCubes);
 		} else {
 			____sceneSetupData.gameplayModifiers = ____sceneSetupData.gameplayModifiers.CopyWith(zenMode: zenMode);

@@ -87,9 +87,6 @@ class MainClass {
 			"Polyglot.LocalizationImporter::Import",
 			"Polyglot.LocalizedTextComponent`1::localizedComponent",
 		},
-		["Zenject.dll"] = new[] {
-			"Zenject.MonoInstallerBase::get_Container",
-		},
 	};
 	class FixedAssemblyResolver : Mono.Cecil.BaseAssemblyResolver {
 		public override Mono.Cecil.AssemblyDefinition Resolve(Mono.Cecil.AssemblyNameReference name) {
