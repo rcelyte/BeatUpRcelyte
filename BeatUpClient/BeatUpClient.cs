@@ -685,7 +685,8 @@ public class BeatUpClient {
 				case EntitlementsStatus.Ok: state = LoadProgress.LoadState.Done; break;
 				default: return;
 			};
-			playerData.cells[player.sortIndex].UpdateData(new LoadProgress(state, 0, 0), true);
+			if(player.sortIndex < playerData.cells.Length)
+				playerData.cells[player.sortIndex].UpdateData(new LoadProgress(state, 0, 0), true);
 		}
 
 		public void SendUnreliableToPlayer<T>(T message, IConnectedPlayer player) where T : LiteNetLib.Utils.INetSerializable {
@@ -729,8 +730,10 @@ public class BeatUpClient {
 		void HandleLevelFragment(LevelFragment packet, IConnectedPlayer player) =>
 			downloader?.HandleFragment(packet, player);
 
-		public static void HandleLoadProgress(LoadProgress packet, IConnectedPlayer player) =>
-			playerData.cells[player.sortIndex].UpdateData(packet);
+		public static void HandleLoadProgress(LoadProgress packet, IConnectedPlayer player) {
+			if(player.sortIndex < playerData.cells.Length)
+				playerData.cells[player.sortIndex].UpdateData(packet);
+		}
 	}
 	static PacketHandler handler = null!;
 
@@ -1611,7 +1614,7 @@ public class BeatUpClient {
 	public static void MultiplayerConnectedPlayerInstaller_InstallBindings(MultiplayerConnectedPlayerInstaller __instance, GameplayCoreSceneSetupData ____sceneSetupData) {
 		bool zenMode = ____sceneSetupData.gameplayModifiers.zenMode || (Config.Instance.HideOtherLevels && !haveMpEx);
 		if(connectInfo?.perPlayerModifiers == true) {
-			PlayerData.ModifiersWeCareAbout mods = playerData.lockedModifiers[__instance.Container.Resolve<IConnectedPlayer>().sortIndex];
+			PlayerData.ModifiersWeCareAbout mods = playerData.lockedModifiers[__instance.Container.Resolve<IConnectedPlayer>().sortIndex]; // TODO: `Unable to resolve 'IConnectedPlayer'`
 			____sceneSetupData.gameplayModifiers = ____sceneSetupData.gameplayModifiers.CopyWith(disappearingArrows: mods.disappearingArrows, ghostNotes: mods.ghostNotes, zenMode: zenMode, smallCubes: mods.smallCubes);
 		} else {
 			____sceneSetupData.gameplayModifiers = ____sceneSetupData.gameplayModifiers.CopyWith(zenMode: zenMode);
@@ -1635,7 +1638,8 @@ public class BeatUpClient {
 			foreach(UnityEngine.Transform child in background.transform) {
 				if(child.gameObject.name == "BeatUpClient_Progress") {
 					IConnectedPlayer player = sortedPlayers[cell.idx];
-					playerData.cells[player.sortIndex].SetBar((UnityEngine.RectTransform)child, background, player.isMe ? new UnityEngine.Color(0.1254902f, 0.7529412f, 1, 0.2509804f) : new UnityEngine.Color(0, 0, 0, 0));
+					if(player.sortIndex < playerData.cells.Length)
+						playerData.cells[player.sortIndex].SetBar((UnityEngine.RectTransform)child, background, player.isMe ? new UnityEngine.Color(0.1254902f, 0.7529412f, 1, 0.2509804f) : new UnityEngine.Color(0, 0, 0, 0));
 					break;
 				}
 			}
@@ -2241,7 +2245,7 @@ static class BeatUpClient_MpCore {
 		};
 	}
 
-	[Patch(PatchType.Postfix, typeof(MultiplayerCore.Objects.MpEntitlementChecker), "GetEntitlementStatus")]
+	[Patch(PatchType.Postfix, typeof(MultiplayerCore.Objects.MpEntitlementChecker), nameof(MultiplayerCore.Objects.MpEntitlementChecker.GetEntitlementStatus))]
 	public static void MpEntitlementChecker_GetEntitlementStatus(MultiplayerCore.Objects.MpEntitlementChecker __instance, ref System.Threading.Tasks.Task<EntitlementsStatus> __result, string levelId) {
 		Log?.Debug($"MpEntitlementChecker_GetEntitlementStatus(levelId=\"{levelId}\")");
 		__result = MpShareWrapper(__result, levelId, __instance);
