@@ -1297,7 +1297,7 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 				.directDownloads = session->directDownloads,
 				.skipResults = room->skipResults,
 				.perPlayerDifficulty = room->perPlayerDifficulty,
-				.perPlayerModifiers = room->perPlayerModifiers,
+				.perPlayerModifiers = room->perPlayerModifiers && session->net.version.beatUpVersion >= 2,
 			},
 		},
 	});

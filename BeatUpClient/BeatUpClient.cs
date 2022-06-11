@@ -1225,7 +1225,7 @@ public class BeatUpClient {
 	// This callback triggers twice if `_multiplayerStatusModel.GetMultiplayerStatusAsync()` was cancelled by pressing the back button
 	[Patch(PatchType.Prefix, typeof(MainFlowCoordinator), nameof(MainFlowCoordinator.HandleMultiplayerModeSelectionFlowCoordinatorDidFinish))]
 	public static bool MainFlowCoordinator_HandleMultiplayerModeSelectionFlowCoordinatorDidFinish(MultiplayerModeSelectionFlowCoordinator multiplayerModeSelectionFlowCoordinator) =>
-		multiplayerModeSelectionFlowCoordinator._parentFlowCoordinator != null;
+		multiplayerModeSelectionFlowCoordinator.isActivated;
 
 	// The UI deletes itself at the end of `MultiplayerModeSelectionFlowCoordinator.TryShowModeSelection()` without this
 	[PatchOverload(PatchType.Prefix, typeof(HMUI.FlowCoordinator), "ReplaceTopViewController", new[] {typeof(HMUI.ViewController), typeof(System.Action), typeof(HMUI.ViewController.AnimationType), typeof(HMUI.ViewController.AnimationDirection)})]
@@ -1312,7 +1312,7 @@ public class BeatUpClient {
 	}
 
 	public class BeatUpConnectHeader : BeatUpConnectInfo {
-		public uint protocolId = 1;
+		public uint protocolId = 2;
 		public override void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
 			writer.Put((uint)protocolId);
 			base.Serialize(writer);

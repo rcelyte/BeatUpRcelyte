@@ -13,7 +13,6 @@ class MainClass {
 		},
 		["HMUI.dll"] = new[] {
 			"HMUI.DropdownWithTableView::Hide",
-			"HMUI.FlowCoordinator::_parentFlowCoordinator",
 			"HMUI.FlowCoordinator::_screenSystem",
 			"HMUI.FlowCoordinator::DismissFlowCoordinator",
 			"HMUI.FlowCoordinator::DismissViewController",
