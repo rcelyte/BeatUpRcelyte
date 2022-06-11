@@ -685,7 +685,7 @@ public class BeatUpClient {
 				case EntitlementsStatus.Ok: state = LoadProgress.LoadState.Done; break;
 				default: return;
 			};
-			if(player.sortIndex < playerData.cells.Length)
+			if((uint)player.sortIndex < playerData.cells.Length)
 				playerData.cells[player.sortIndex].UpdateData(new LoadProgress(state, 0, 0), true);
 		}
 
@@ -731,7 +731,7 @@ public class BeatUpClient {
 			downloader?.HandleFragment(packet, player);
 
 		public static void HandleLoadProgress(LoadProgress packet, IConnectedPlayer player) {
-			if(player.sortIndex < playerData.cells.Length)
+			if((uint)player.sortIndex < playerData.cells.Length)
 				playerData.cells[player.sortIndex].UpdateData(packet);
 		}
 	}
@@ -1613,7 +1613,7 @@ public class BeatUpClient {
 	[Patch(PatchType.Prefix, typeof(MultiplayerConnectedPlayerInstaller), nameof(MultiplayerConnectedPlayerInstaller.InstallBindings))]
 	public static void MultiplayerConnectedPlayerInstaller_InstallBindings(GameplayCoreSceneSetupData ____sceneSetupData, IConnectedPlayer ____connectedPlayer) {
 		bool zenMode = ____sceneSetupData.gameplayModifiers.zenMode || (Config.Instance.HideOtherLevels && !haveMpEx);
-		if(connectInfo?.perPlayerModifiers == true && ____connectedPlayer.sortIndex < playerData.lockedModifiers.Length) {
+		if(connectInfo?.perPlayerModifiers == true && (uint)____connectedPlayer.sortIndex < playerData.lockedModifiers.Length) {
 			PlayerData.ModifiersWeCareAbout mods = playerData.lockedModifiers[____connectedPlayer.sortIndex];
 			____sceneSetupData.gameplayModifiers = ____sceneSetupData.gameplayModifiers.CopyWith(disappearingArrows: mods.disappearingArrows, ghostNotes: mods.ghostNotes, zenMode: zenMode, smallCubes: mods.smallCubes);
 		} else {
@@ -1638,7 +1638,7 @@ public class BeatUpClient {
 			foreach(UnityEngine.Transform child in background.transform) {
 				if(child.gameObject.name == "BeatUpClient_Progress") {
 					IConnectedPlayer player = sortedPlayers[cell.idx];
-					if(player.sortIndex < playerData.cells.Length)
+					if((uint)player.sortIndex < playerData.cells.Length)
 						playerData.cells[player.sortIndex].SetBar((UnityEngine.RectTransform)child, background, player.isMe ? new UnityEngine.Color(0.1254902f, 0.7529412f, 1, 0.2509804f) : new UnityEngine.Color(0, 0, 0, 0));
 					break;
 				}
