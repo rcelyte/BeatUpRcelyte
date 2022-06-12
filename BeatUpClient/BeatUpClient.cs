@@ -288,8 +288,10 @@ public class BeatUpClient {
 				Log?.Debug("NetworkPreviewBeatmapLevel.GetCoverImageAsync()");
 				return await new MemorySpriteLoader(coverRenderTask).LoadSpriteAsync("", cancellationToken) ?? defaultPackCover;
 			}
-			public async System.Threading.Tasks.Task<byte[]> RenderCoverImageAsync(IPreviewBeatmapLevel beatmapLevel) {
-				UnityEngine.Sprite fullSprite = await beatmapLevel.GetCoverImageAsync(System.Threading.CancellationToken.None);
+			public async System.Threading.Tasks.Task<byte[]> RenderCoverImage(IPreviewBeatmapLevel beatmapLevel) {
+				UnityEngine.Sprite? fullSprite = await beatmapLevel.GetCoverImageAsync(System.Threading.CancellationToken.None);
+				if(fullSprite == null)
+					return new byte[0];
 				UnityEngine.RenderTexture target = new UnityEngine.RenderTexture(128, 128, 0);
 				UnityEngine.Graphics.SetRenderTarget(target);
 				UnityEngine.GL.LoadPixelMatrix(0, 1, 1, 0);
@@ -375,8 +377,10 @@ public class BeatUpClient {
 				songDuration = beatmapLevel.songDuration;
 				previewDifficultyBeatmapSets = beatmapLevel.previewDifficultyBeatmapSets;
 				cover.data = new byte[0];
-				if(!mpCore)
-					coverRenderTask = RenderCoverImageAsync(beatmapLevel);
+				if(beatmapLevel is NetworkPreviewBeatmapLevel preview)
+					coverRenderTask = preview.coverRenderTask;
+				else if(!mpCore)
+					coverRenderTask = RenderCoverImage(beatmapLevel);
 				environmentInfo = beatmapLevel.environmentInfo;
 				allDirectionsEnvironmentInfo = beatmapLevel.allDirectionsEnvironmentInfo;
 				Log?.Debug($"NetworkPreviewBeatmapLevel.Init(beatmapLevel={beatmapLevel}, previewDifficultyBeatmapSets={previewDifficultyBeatmapSets}, mpCore={mpCore})");
