@@ -2,64 +2,42 @@
 
 BeatUpServer
 ============
-A multiplayer private server for *you!* Planned support for crossplay between PC and Quest.
+A lightweight server to enable modded multiplayer in Beat Saber 1.19.0 and newer.
 
-*Not to be confused with the in-game "Create Server" button, which creates a **room** on a server.*
+*The official BeatUpServer instance is hosted at `master.battletrains.org`*
 
-Joining
--------
-There are a few ways to access private servers in game:
+Ways to Join (from least difficult to most)
+-------------------------------------------
 
-### Beat Saber Server Browser
-ServerBrowser, available for [PC](https://github.com/roydejong/BeatSaberServerBrowser#beat-saber-server-browser-pc) and [Quest](https://github.com/EnderdracheLP/BeatSaberServerBrowserQuest#beat-saber-server-browser-quest), lets you join existing public rooms created on any server.
+### Beat Saber Server Browser \[[PC](https://github.com/roydejong/BeatSaberServerBrowser#installation)\]
+ServerBrowser lets you join existing public lobbies created on any server.
 
-### BeatTogether (recommended)
-Install BeatTogether for [PC](https://github.com/pythonology/BeatTogether#installation) or [Quest](https://github.com/pythonology/BeatTogether.Quest#installation), then open and close the game at least once.
+### BeatUpClient | BETA \[[PC](https://github.com/rcelyte/BeatUpRcelyte/releases/tag/0.3.1)\]
+The easiest way to host lobbies on any server. Enables the following additional features in BeatUpServer lobbies:
+* Downloading of levels not available on BeatSaver
+* Per-player difficulty
+* Per-player modifiers
+* Skipping the countdown
+* Skipping the end-of-level podium
 
-Add your server's hostname and status uri to `UserData/BeatTogether.json` in your Beat Saber game directory. The file should look something like this:
+### BeatTogether Mod \[[PC](https://github.com/pythonology/BeatTogether#installation)\]
+BeatTogether has historically been the most popular mod for enabling modded multiplayer. To access BeatUpServer, add the hostname to your BeatTogether config located at `UserData\BeatTogether.json` in your game directory:
 ```json
 {
-    "SelectedServer": "BeatTogether",
-    "Servers": [
-        {
-            "ServerName": "BeatTogether",
-            "HostName": "master.beattogether.systems",
-            "Port": 2328,
-            "StatusUri": "http://master.beattogether.systems/status"
-        },
-        {
-            "ServerName": "My Private Server",
-            "HostName": "my.server.com",
-            "Port": 2328,
-            "StatusUri": "http://my.server.com"
-        }
-    ]
+  "SelectedServer": "BeatUpServer",
+  "Servers": [
+    {
+      "ServerName": "BeatTogether",
+      "HostName": "master.beattogether.systems",
+      "Port": 2328,
+      "StatusUri": "http://master.beattogether.systems/status"
+    },
+    {
+      "ServerName": "BeatUpServer",
+      "HostName": "master.battletrains.org",
+      "Port": 2328,
+      "StatusUri": "https://status.master.battletrains.org"
+    }
+  ]
 }
 ```
-You should now be able to select your server in the multiplayer menu.
-
-### Vanilla
-*This method overrides the official servers. Use [BeatTogether](#beattogether-recommended) if you want the ability to switch between servers.*
-
-[*Server side configuration is required for this to work, see notes below*](#hosting)
-
-
-
-That's right, you can use custom servers *without* mods!
-
-Open `settings.cfg`, located under `%AppData%\..\LocalLow\Hyperbolic Magnetism\Beat Saber` on Windows, or `~/.steam/steam/steamapps/compatdata/620980/pfx/drive_c/users/steamuser/AppData/LocalLow/Hyperbolic Magnetism/Beat Saber` on Linux.
-
-Search for "useCustomServerEnvironment".
-
-Set `useCustomServerEnvironment` to `true`, and `customServerHostName` to your server's hostname. The file should look something like this:
-```
-...ₒₜh":4.0,"useCustomServerEnvironment":true,"customServerHostName":"my.server.com","voₗᵤ...
-```
-
-Hosting
--------
-Looking to host your own private server?
-
-Download and run the latest build for Windows (*no releases yet*) or Linux (*no releases yet*).
-
-*Note: Vanilla Beat Saber requires the status uri to be the `status` subdomain of the hostname (i.e. `status.my.server.com`), hosted over HTTPS with a **valid SSL certificate***
