@@ -56,6 +56,7 @@ class MainClass {
 			"IncDecSettingsController::_stepValuePicker",
 			"JoiningLobbyViewController::_loadingControl",
 			"LevelScenesTransitionSetupDataSO::get_gameplayCoreSceneSetupData",
+			"LobbyPlayersDataModel::_multiplayerSessionManager",
 			"MainSystemInit::_networkConfig",
 			"MenuTransitionsHelper::_gameScenesManager",
 			"MenuTransitionsHelper::_multiplayerLevelScenesTransitionSetupData",
@@ -78,9 +79,8 @@ class MainClass {
 			"SwitchSettingsController::_toggle",
 		},
 		["MultiplayerCore.dll"] = new[] {
-			"MultiplayerCore.Objects.MpPlayersDataModel::.ctor",
-			"MultiplayerCore.Objects.MpPlayersDataModel::_beatmapLevelProvider",
-			"MultiplayerCore.Objects.MpPlayersDataModel::_packetSerializer",
+			"MultiplayerCore.Patches.DataModelBinderPatch",
+			"MultiplayerCore.Patches.DataModelBinderPatch::_playersDataModelMethod",
 		},
 		["Polyglot.dll"] = new[] {
 			"Polyglot.LocalizationImporter::Import",
@@ -89,8 +89,8 @@ class MainClass {
 	};
 	class FixedAssemblyResolver : Mono.Cecil.BaseAssemblyResolver {
 		public override Mono.Cecil.AssemblyDefinition Resolve(Mono.Cecil.AssemblyNameReference name) {
-			if(name.Name == "GameplayCore")
-				name.Name = "GamePlayCore";
+			/*if(name.Name == "GameplayCore")
+				name.Name = "GamePlayCore";*/
 			return base.Resolve(name);
 		}
 	}
