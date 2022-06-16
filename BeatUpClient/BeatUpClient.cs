@@ -1716,9 +1716,28 @@ public class BeatUpClient {
 		}
 	}
 
+	struct VanillaNetworkConfig : INetworkConfig {
+		public int maxPartySize {get;}
+		public int discoveryPort {get;}
+		public int partyPort {get;}
+		public int multiplayerPort {get;}
+		public DnsEndPoint masterServerEndPoint {get;}
+		public string multiplayerStatusUrl {get;}
+		public string quickPlaySetupUrl {get;}
+		public string graphUrl {get;}
+		public string graphAccessToken {get;}
+		public bool forceGameLift {get;}
+		public ServiceEnvironment serviceEnvironment {get;}
+		public VanillaNetworkConfig(NetworkConfigSO from) => // Bypass getters since MpCore patches them
+			(this.maxPartySize, this.discoveryPort, this.partyPort, this.multiplayerPort, this.masterServerEndPoint, this.multiplayerStatusUrl, this.quickPlaySetupUrl, this.graphUrl, this.graphAccessToken, this.forceGameLift, this.serviceEnvironment) = 
+				(from._maxPartySize, from._discoveryPort, from._partyPort, from._multiplayerPort, new DnsEndPoint(from._masterServerHostName, from._masterServerPort), from._multiplayerStatusUrl, from._quickPlaySetupUrl, from.graphUrl, from.graphAccessToken, from._forceGameLift, from._serviceEnvironment);
+	}
+	static VanillaNetworkConfig officialNetworkConfig;
+
 	[Patch(PatchType.Postfix, typeof(MainSystemInit), nameof(MainSystemInit.InstallBindings))]
 	public static void MainSystemInit_InstallBindings_post(MainSystemInit __instance, Zenject.DiContainer container) {
-		mainSystemInit = __instance;
+		if(officialNetworkConfig.masterServerEndPoint == null)
+			officialNetworkConfig = new VanillaNetworkConfig(__instance._networkConfig);
 		handler = new PacketHandler(container);
 		multiplayerStatusModel = container.TryResolve<IMultiplayerStatusModel>() as MultiplayerStatusModel;
 		quickPlaySetupModel = container.TryResolve<IQuickPlaySetupModel>() as QuickPlaySetupModel;
@@ -1773,7 +1792,6 @@ public class BeatUpClient {
 	public static UnityEngine.GameObject[] badges = null!;
 	public static StringSO customServerHostName = null!;
 	public static CustomNetworkConfig? customNetworkConfig = null;
-	public static MainSystemInit mainSystemInit = null!;
 	public static MainFlowCoordinator mainFlowCoordinator = null!;
 	public static BeatmapLevelsModel beatmapLevelsModel = null!;
 	public static bool haveSiraUtil = false;
@@ -1803,11 +1821,10 @@ public class BeatUpClient {
 		editServerButton.interactable = false;
 		if(customNetworkConfig == null)
 			return;
-		NetworkConfigSO networkConfigPrefab = mainSystemInit._networkConfig;
-		string[] hostname = new[] {networkConfigPrefab.masterServerEndPoint.hostName};
-		int port = networkConfigPrefab.masterServerEndPoint.port;
-		bool forceGameLift = networkConfigPrefab.forceGameLift;
-		string? multiplayerStatusUrl = networkConfigPrefab.multiplayerStatusUrl;
+		string[] hostname = new[] {officialNetworkConfig.masterServerEndPoint.hostName};
+		int port = officialNetworkConfig.masterServerEndPoint.port;
+		bool forceGameLift = officialNetworkConfig.forceGameLift;
+		string? multiplayerStatusUrl = officialNetworkConfig.multiplayerStatusUrl;
 		if(!NullableStringHelper.IsNullOrEmpty(customServerHostName.value)) {
 			editServerButton.interactable = true;
 			hostname = customServerHostName.value.ToLower().Split(new[] {':'});
@@ -1819,11 +1836,11 @@ public class BeatUpClient {
 		}
 		string oldMultiplayerStatusUrl = customNetworkConfig.multiplayerStatusUrl;
 		Log?.Debug($"CustomNetworkConfig(customServerHostName=\"{hostname[0]}\", port={port}, forceGameLift={forceGameLift}), multiplayerStatusUrl={multiplayerStatusUrl}");
-		typeof(CustomNetworkConfig).GetConstructors()[0].Invoke(customNetworkConfig, new object[] {networkConfigPrefab, hostname[0], port, forceGameLift});
+		typeof(CustomNetworkConfig).GetConstructors()[0].Invoke(customNetworkConfig, new object[] {officialNetworkConfig, hostname[0], port, forceGameLift});
 		if(!NullableStringHelper.IsNullOrEmpty(multiplayerStatusUrl))
 			HarmonyLib.AccessTools.Field(typeof(CustomNetworkConfig), "<multiplayerStatusUrl>k__BackingField").SetValue(customNetworkConfig, (string)multiplayerStatusUrl);
 		if(!forceGameLift)
-			HarmonyLib.AccessTools.Field(typeof(CustomNetworkConfig), "<serviceEnvironment>k__BackingField").SetValue(customNetworkConfig, (ServiceEnvironment)networkConfigPrefab.serviceEnvironment);
+			HarmonyLib.AccessTools.Field(typeof(CustomNetworkConfig), "<serviceEnvironment>k__BackingField").SetValue(customNetworkConfig, officialNetworkConfig.serviceEnvironment);
 		if(customNetworkConfig.multiplayerStatusUrl != oldMultiplayerStatusUrl)
 			InvalidateModels();
 	}
@@ -2125,7 +2142,8 @@ public class BeatUpClient {
 		try {
 			UnityEngine.SceneManagement.SceneManager.sceneLoaded -= OnSceneLoaded;
 			harmony.UnpatchSelf();
-			BeatUpClient_MpCore.Unpatch();
+			if(haveMpCore)
+				BeatUpClient_MpCore.Unpatch();
 		} catch(System.Exception ex) {
 			Log?.Error("Error removing patches: " + ex.Message);
 			Log?.Debug(ex);
@@ -2149,17 +2167,12 @@ static class BeatUpClient_SongCore {
 static class BeatUpClient_MpCore {
 	#if MPCORE_SUPPORT
 	static class DiJack {
-		static readonly System.Collections.Generic.Dictionary<System.Type, System.Type?> InjectMap = new System.Collections.Generic.Dictionary<System.Type, System.Type?>();
+		static readonly System.Collections.Generic.Dictionary<System.Type, System.Type> InjectMap = new System.Collections.Generic.Dictionary<System.Type, System.Type>();
 		static void ConcreteBinderNonGeneric_To(Zenject.ConcreteBinderNonGeneric __instance, ref System.Collections.Generic.IEnumerable<System.Type> concreteTypes) {
 			System.Type[] newTypes = concreteTypes.ToArray();
 			uint i = 0;
 			foreach(System.Type type in concreteTypes) {
 				if(InjectMap.TryGetValue(type, out System.Type? inject)) {
-					if(inject == null) {
-						Log?.Debug($"Suppressing {type}");
-						concreteTypes = new System.Type[0];
-						return;
-					}
 					Log?.Debug($"Replacing {type} with {inject}");
 					newTypes[i] = inject;
 					__instance.BindInfo.ContractTypes.Add(inject);
@@ -2168,9 +2181,6 @@ static class BeatUpClient_MpCore {
 			}
 			concreteTypes = newTypes;
 		}
-
-		public static void Suppress(System.Type original) =>
-			InjectMap.Add(original, null);
 
 		public static void Register(System.Type type) =>
 			InjectMap.Add(type.BaseType, type);
@@ -2277,11 +2287,19 @@ static class BeatUpClient_MpCore {
 		}
 	}
 
+	static System.Collections.Generic.HashSet<System.Type> Suppressions = new System.Collections.Generic.HashSet<System.Type> {
+		typeof(MultiplayerCore.Objects.MpPlayersDataModel),
+		typeof(MultiplayerCore.Patchers.CustomLevelsPatcher),
+		typeof(MultiplayerCore.Patchers.ModeSelectionPatcher),
+		typeof(MultiplayerCore.Patchers.NetworkConfigPatcher),
+	};
+
+	[Patch(PatchType.Prefix, typeof(SiraUtil.Affinity.Harmony.HarmonyAffinityPatcher), nameof(SiraUtil.Affinity.Harmony.HarmonyAffinityPatcher.Patch))]
+	public static bool HarmonyAffinityPatcher_Patch(SiraUtil.Affinity.IAffinity affinity) =>
+		!Suppressions.Contains(affinity.GetType());
+
 	public static void Patch() {
 		MultiplayerCore.Patches.DataModelBinderPatch._playersDataModelMethod = HarmonyLib.AccessTools.Method(typeof(BeatUpClient_MpCore), nameof(BeatUpClient_MpCore.Patch)); // Suppress transpiler
-		DiJack.Suppress(typeof(MultiplayerCore.Patchers.CustomLevelsPatcher));
-		DiJack.Suppress(typeof(MultiplayerCore.Patchers.ModeSelectionPatcher));
-		DiJack.Suppress(typeof(MultiplayerCore.Objects.MpPlayersDataModel));
 		DiJack.Register(typeof(PlayersDataModel));
 		DiJack.Patch();
 	}

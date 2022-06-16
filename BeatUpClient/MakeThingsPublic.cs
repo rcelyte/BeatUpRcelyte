@@ -71,6 +71,16 @@ class MainClass {
 			"MultiplayerModeSelectionViewController::_customServerEndPointText",
 			"MultiplayerModeSelectionViewController::_maintenanceMessageText",
 			"MultiplayerStatusModel::_request",
+			"NetworkConfigSO::_discoveryPort",
+			"NetworkConfigSO::_forceGameLift",
+			"NetworkConfigSO::_masterServerHostName",
+			"NetworkConfigSO::_masterServerPort",
+			"NetworkConfigSO::_maxPartySize",
+			"NetworkConfigSO::_multiplayerPort",
+			"NetworkConfigSO::_multiplayerStatusUrl",
+			"NetworkConfigSO::_partyPort",
+			"NetworkConfigSO::_quickPlaySetupUrl",
+			"NetworkConfigSO::_serviceEnvironment",
 			"NetworkPlayerEntitlementChecker::_additionalContentModel",
 			"PCAppInit::TransitionToNextScene",
 			"QuickPlaySetupModel::_request",
@@ -85,6 +95,9 @@ class MainClass {
 		["Polyglot.dll"] = new[] {
 			"Polyglot.LocalizationImporter::Import",
 			"Polyglot.LocalizedTextComponent`1::localizedComponent",
+		},
+		["SiraUtil.dll"] = new[] {
+			"SiraUtil.Affinity.Harmony.HarmonyAffinityPatcher",
 		},
 	};
 	class FixedAssemblyResolver : Mono.Cecil.BaseAssemblyResolver {

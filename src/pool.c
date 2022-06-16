@@ -88,7 +88,7 @@ bool pool_request_room(struct RoomHandle *room_out, struct WireRoomHandle *handl
 	room_out->high = rooms[room_out->block].high[room_out->sub];
 	rooms[room_out->block].idle &= rooms[room_out->block].idle - 1;
 	count += (rooms[room_out->block].idle == 0);
-	uprintf("%u rooms open\n", ++roomCount);
+	++roomCount, uprintf("%u room%s open\n", roomCount, (roomCount == 1) ? "" : "s");
 	pthread_mutex_unlock(&pool_mutex);
 	return wire_room_open(*handle_out, managerId, configuration, pool_room_code(*room_out));
 }
@@ -105,7 +105,7 @@ void pool_room_close_notify(struct RoomHandle room) {
 	rooms[room.block].idle |= 1 << room.sub;
 	if(rooms[room.block].idle == 0xffff)
 		wire_block_release(rooms[room.block].handle);
-	uprintf("%u rooms open\n", --roomCount);
+	--roomCount, uprintf("%u room%s open\n", roomCount, (roomCount == 1) ? "" : "s");
 	pthread_mutex_unlock(&pool_mutex);
 }
 
