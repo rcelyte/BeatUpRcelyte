@@ -2,9 +2,6 @@ class MainClass {
 	static System.Collections.Generic.Dictionary<string, string[]> nonPublicMembers = new System.Collections.Generic.Dictionary<string, string[]>() {
 		["BGNet.dll"] = new[] {
 			"ConnectedPlayerManager/ConnectedPlayer",
-			"ConnectedPlayerManager/ConnectedPlayer::_connection",
-			"ConnectedPlayerManager/ConnectedPlayer::_connectionId",
-			"ConnectedPlayerManager/ConnectedPlayer::_remoteConnectionId",
 			"ConnectedPlayerManager/PlayerConnectedPacket",
 			"ConnectedPlayerManager::WriteOne",
 		},

@@ -195,6 +195,14 @@ public class BeatUpClient {
 		}
 	}
 
+	public static int PlayerIndex(IConnectedPlayer? player) { // A unique persistent index
+		if(player?.isMe == true)
+			return 0;
+		if(player is ConnectedPlayerManager.ConnectedPlayer connectedPlayer)
+			return connectedPlayer.connectionId;
+		return 127;
+	}
+
 	public struct PlayerData {
 		public struct ModifiersWeCareAbout {
 			public GameplayModifiers.SongSpeed songSpeed;
@@ -210,10 +218,10 @@ public class BeatUpClient {
 		public readonly ModifiersWeCareAbout[] lockedModifiers;
 		public readonly System.Collections.Generic.Dictionary<string, byte> tiers;
 		public PlayerData(int playerCount) {
-			previews = new PacketHandler.RecommendPreview[playerCount];
-			cells = new PlayerCell[playerCount];
-			modifiers = new ModifiersWeCareAbout[playerCount];
-			lockedModifiers = new ModifiersWeCareAbout[playerCount];
+			previews = new PacketHandler.RecommendPreview[128];
+			cells = new PlayerCell[128];
+			modifiers = new ModifiersWeCareAbout[128];
+			lockedModifiers = new ModifiersWeCareAbout[128];
 			tiers = new System.Collections.Generic.Dictionary<string, byte>();
 			System.Array.Fill(previews, new PacketHandler.RecommendPreview());
 			System.Array.Fill(modifiers, new ModifiersWeCareAbout {songSpeed = (GameplayModifiers.SongSpeed)255});
@@ -254,7 +262,7 @@ public class BeatUpClient {
 		return parts[2];
 	}
 
-	public class PacketHandler : System.IDisposable {
+	public struct PacketHandler : System.IDisposable {
 		public enum MessageType : byte {
 			RecommendPreview, // client -> client
 			SetCanShareBeatmap, // client -> server
@@ -566,7 +574,7 @@ public class BeatUpClient {
 				if(reader.GetString() == "MpBeatmapPacket") {
 					MpBeatmapPacket packet = new MpBeatmapPacket();
 					packet.Deserialize(reader);
-					PacketHandler.RecommendPreview current = playerData.previews[player.sortIndex];
+					PacketHandler.RecommendPreview current = playerData.previews[PlayerIndex(player)];
 					if(packet.levelID != current.levelID || current.previewDifficultyBeatmapSets == null) // Ignore if we already have a BeatUpClient preview for this level
 						current.Init(packet);
 				}
@@ -583,8 +591,8 @@ public class BeatUpClient {
 		public BeatmapCharacteristicCollectionSO characteristics;
 		public MultiplayerSessionManager multiplayerSessionManager;
 		NetworkPacketSerializer<MessageType, IConnectedPlayer> serializer;
-		MpFallbackSerializer? mpSerializer = null;
-		public Downloader? downloader = null;
+		MpFallbackSerializer? mpSerializer;
+		public Downloader? downloader;
 
 		public PacketHandler(Zenject.DiContainer container) {
 			Log?.Debug("PacketHandler()");
@@ -593,6 +601,8 @@ public class BeatUpClient {
 			characteristics = container.Resolve<BeatmapCharacteristicCollectionSO>();
 			multiplayerSessionManager = (MultiplayerSessionManager)container.Resolve<IMultiplayerSessionManager>();
 			serializer = new NetworkPacketSerializer<MessageType, IConnectedPlayer>();
+			mpSerializer = null;
+			downloader = null;
 
 			multiplayerSessionManager.SetLocalPlayerState("modded", true);
 			multiplayerSessionManager.RegisterSerializer(messageType, serializer);
@@ -651,9 +661,9 @@ public class BeatUpClient {
 
 		// Mono.Cecil likes to break nested types, so we need to avoid referencing `ConnectedPlayerManager.ConnectedPlayer`
 		public IConnectedPlayer? GetPlayer(string userId) {
-			for(int i = 0; i < multiplayerSessionManager.connectedPlayerManager.connectedPlayerCount; i++) {
+			for(int i = 0; i < multiplayerSessionManager.connectedPlayerManager.connectedPlayerCount; ++i) {
 				IConnectedPlayer player = multiplayerSessionManager.connectedPlayerManager.GetConnectedPlayer(i);
-				if(object.Equals(player.userId, userId))
+				if(player.userId == userId)
 					return player;
 			}
 			return null;
@@ -673,13 +683,11 @@ public class BeatUpClient {
 			HandleSetIsEntitledToLevel(GetPlayer(userId), levelId, entitlementStatus);
 
 		void HandleRecommendModifiers(string userId, GameplayModifiers gameplayModifiers) {
-			IConnectedPlayer? player = GetPlayer(userId);
-			if(player != null)
-				playerData.modifiers[player.sortIndex] = new PlayerData.ModifiersWeCareAbout(gameplayModifiers);
+			playerData.modifiers[PlayerIndex(GetPlayer(userId))] = new PlayerData.ModifiersWeCareAbout(gameplayModifiers);
 		}
 
 		static void HandleLevelStart(string userId, BeatmapIdentifierNetSerializable beatmapId, GameplayModifiers gameplayModifiers, float startTime) {
-			for(int i = 0; i < playerData.modifiers.Length; ++i)
+			for(int i = 0; i < playerData.lockedModifiers.Length; ++i)
 				playerData.lockedModifiers[i] = (playerData.modifiers[i].songSpeed == gameplayModifiers.songSpeed) ? playerData.modifiers[i] : new PlayerData.ModifiersWeCareAbout(gameplayModifiers);
 		}
 
@@ -693,21 +701,20 @@ public class BeatUpClient {
 				case EntitlementsStatus.Ok: state = LoadProgress.LoadState.Done; break;
 				default: return;
 			};
-			if((uint)player.sortIndex < playerData.cells.Length)
-				playerData.cells[player.sortIndex].UpdateData(new LoadProgress(state, 0, 0), true);
+			playerData.cells[PlayerIndex(player)].UpdateData(new LoadProgress(state, 0, 0), true);
 		}
 
 		public void SendUnreliableToPlayer<T>(T message, IConnectedPlayer player) where T : LiteNetLib.Utils.INetSerializable {
 			ConnectedPlayerManager? connectedPlayerManager = multiplayerSessionManager.connectedPlayerManager;
 			if(connectedPlayerManager?.isConnected == true && player is ConnectedPlayerManager.ConnectedPlayer connectedPlayer)
-				connectedPlayer._connection.Send(connectedPlayerManager.WriteOne(((ConnectedPlayerManager.ConnectedPlayer)connectedPlayerManager.localPlayer)._connectionId, connectedPlayer._remoteConnectionId, message), LiteNetLib.DeliveryMethod.Unreliable);
+				connectedPlayer.connection.Send(connectedPlayerManager.WriteOne(((ConnectedPlayerManager.ConnectedPlayer)connectedPlayerManager.localPlayer).connectionId, connectedPlayer.remoteConnectionId, message), LiteNetLib.DeliveryMethod.Unreliable);
 			else if(message is IPoolablePacket poolable)
 				poolable.Release();
 		}
 
 		public static void HandleRecommendPreview(RecommendPreview packet, IConnectedPlayer player) {
 			Log?.Debug($"HandleRecommendPreview(\"{packet.levelID}\", {player})");
-			playerData.previews[player.sortIndex] = packet;
+			playerData.previews[PlayerIndex(player)] = packet;
 		}
 
 		static void HandleSetCanShareBeatmap(SetCanShareBeatmap packet, IConnectedPlayer player) {}
@@ -717,6 +724,7 @@ public class BeatUpClient {
 			RecommendPreview? preview = playerData.ResolvePreview(packet.levelId);
 			if(connectInfo?.directDownloads != true || preview == null || MissingRequirements(preview, true) || packet.fileSize > MaxDownloadSize)
 				return;
+			MultiplayerSessionManager multiplayerSessionManager = this.multiplayerSessionManager;
 			beatmapLevelsModel.GetBeatmapLevelAsync(packet.levelId, System.Threading.CancellationToken.None).ContinueWith(result => {
 				if(!result.Result.isError)
 					return;
@@ -738,12 +746,10 @@ public class BeatUpClient {
 		void HandleLevelFragment(LevelFragment packet, IConnectedPlayer player) =>
 			downloader?.HandleFragment(packet, player);
 
-		public static void HandleLoadProgress(LoadProgress packet, IConnectedPlayer player) {
-			if((uint)player.sortIndex < playerData.cells.Length)
-				playerData.cells[player.sortIndex].UpdateData(packet);
-		}
+		public static void HandleLoadProgress(LoadProgress packet, IConnectedPlayer player) =>
+			playerData.cells[PlayerIndex(player)].UpdateData(packet);
 	}
-	static PacketHandler handler = null!;
+	static PacketHandler handler;
 
 	public class Downloader {
 		readonly CustomLevelLoader customLevelLoader = handler.container.Resolve<CustomLevelLoader>();
@@ -1298,9 +1304,9 @@ public class BeatUpClient {
 	public static void MultiplayerLevelSelectionFlowCoordinator_notAllowedCharacteristics(ref BeatmapCharacteristicSO[] __result) =>
 		__result = new BeatmapCharacteristicSO[0];
 
-	[Patch(PatchType.Prefix, typeof(MultiplayerSessionManager), "HandlePlayerOrderChanged")]
-	public static void MultiplayerSessionManager_HandlePlayerOrderChanged(IConnectedPlayer player) =>
-		playerData.Reset(player.sortIndex);
+	[Patch(PatchType.Prefix, typeof(ConnectedPlayerManager), "AddPlayer")]
+	public static void ConnectedPlayerManager_AddPlayer(IConnectedPlayer? player) =>
+		playerData.Reset(PlayerIndex(player));
 
 	[Patch(PatchType.Postfix, typeof(BasicConnectionRequestHandler), nameof(BasicConnectionRequestHandler.GetConnectionMessage))]
 	public static void BasicConnectionRequestHandler_GetConnectionMessage(LiteNetLib.Utils.NetDataWriter writer) {
@@ -1358,18 +1364,18 @@ public class BeatUpClient {
 
 	[Patch(PatchType.Prefix, typeof(LobbyPlayersDataModel), nameof(LobbyPlayersDataModel.HandleMenuRpcManagerGetRecommendedBeatmap))]
 	public static void LobbyPlayersDataModel_HandleMenuRpcManagerGetRecommendedBeatmap(string userId) =>
-		handler.multiplayerSessionManager.Send(playerData.previews[handler.multiplayerSessionManager.localPlayer.sortIndex]);
+		handler.multiplayerSessionManager.Send(playerData.previews[PlayerIndex(handler.multiplayerSessionManager.localPlayer)]);
 
 	[Patch(PatchType.Prefix, typeof(LobbyPlayersDataModel), nameof(LobbyPlayersDataModel.SetLocalPlayerBeatmapLevel))]
 	public static void LobbyPlayersDataModel_SetLocalPlayerBeatmapLevel(LobbyPlayersDataModel __instance, PreviewDifficultyBeatmap? beatmapLevel) {
 		if(beatmapLevel != null) {
-			PacketHandler.RecommendPreview? preview = playerData.previews[handler.multiplayerSessionManager.localPlayer.sortIndex];
+			PacketHandler.RecommendPreview? preview = playerData.previews[PlayerIndex(handler.multiplayerSessionManager.localPlayer)];
 			if(preview.levelID != beatmapLevel.beatmapLevel.levelID) {
 				preview = playerData.ResolvePreview(beatmapLevel.beatmapLevel.levelID);
 				if(preview != null)
-					playerData.previews[handler.multiplayerSessionManager.localPlayer.sortIndex] = preview;
+					playerData.previews[PlayerIndex(handler.multiplayerSessionManager.localPlayer)] = preview;
 				else if(beatmapLevel.beatmapLevel is CustomPreviewBeatmapLevel previewBeatmapLevel)
-					preview = playerData.SetPreviewFromLocal(handler.multiplayerSessionManager.localPlayer.sortIndex, previewBeatmapLevel);
+					preview = playerData.SetPreviewFromLocal(PlayerIndex(handler.multiplayerSessionManager.localPlayer), previewBeatmapLevel);
 			}
 			if(preview != null) {
 				if(!haveMpCore)
@@ -1605,8 +1611,8 @@ public class BeatUpClient {
 	[Patch(PatchType.Prefix, typeof(MultiplayerConnectedPlayerInstaller), nameof(MultiplayerConnectedPlayerInstaller.InstallBindings))]
 	public static void MultiplayerConnectedPlayerInstaller_InstallBindings(GameplayCoreSceneSetupData ____sceneSetupData, IConnectedPlayer ____connectedPlayer) {
 		bool zenMode = ____sceneSetupData.gameplayModifiers.zenMode || (Config.Instance.HideOtherLevels && !haveMpEx);
-		if(connectInfo?.perPlayerModifiers == true && (uint)____connectedPlayer.sortIndex < playerData.lockedModifiers.Length) {
-			PlayerData.ModifiersWeCareAbout mods = playerData.lockedModifiers[____connectedPlayer.sortIndex];
+		if(connectInfo?.perPlayerModifiers == true && PlayerIndex(____connectedPlayer) < 128) {
+			PlayerData.ModifiersWeCareAbout mods = playerData.lockedModifiers[PlayerIndex(____connectedPlayer)];
 			____sceneSetupData.gameplayModifiers = ____sceneSetupData.gameplayModifiers.CopyWith(disappearingArrows: mods.disappearingArrows, ghostNotes: mods.ghostNotes, zenMode: zenMode, smallCubes: mods.smallCubes);
 		} else {
 			____sceneSetupData.gameplayModifiers = ____sceneSetupData.gameplayModifiers.CopyWith(zenMode: zenMode);
@@ -1630,8 +1636,7 @@ public class BeatUpClient {
 			foreach(UnityEngine.Transform child in background.transform) {
 				if(child.gameObject.name == "BeatUpClient_Progress") {
 					IConnectedPlayer player = sortedPlayers[cell.idx];
-					if((uint)player.sortIndex < playerData.cells.Length)
-						playerData.cells[player.sortIndex].SetBar((UnityEngine.RectTransform)child, background, player.isMe ? new UnityEngine.Color(0.1254902f, 0.7529412f, 1, 0.2509804f) : new UnityEngine.Color(0, 0, 0, 0));
+					playerData.cells[PlayerIndex(player)].SetBar((UnityEngine.RectTransform)child, background, player.isMe ? new UnityEngine.Color(0.1254902f, 0.7529412f, 1, 0.2509804f) : new UnityEngine.Color(0, 0, 0, 0));
 					break;
 				}
 			}
@@ -2265,7 +2270,7 @@ static class BeatUpClient_MpCore {
 		void HandleMpexBeatmapPacket(MultiplayerCore.Beatmaps.Packets.MpBeatmapPacket packet, IConnectedPlayer player) {
 			Log?.Debug($"PlayersDataModel.HandleMpexBeatmapPacket(player=\"{player}\")");
 			IPreviewBeatmapLevel preview = beatmapLevelProvider.GetBeatmapFromPacket(packet);
-			PacketHandler.RecommendPreview current = playerData.previews[player.sortIndex];
+			PacketHandler.RecommendPreview current = playerData.previews[PlayerIndex(player)];
 			if(preview.levelID != current.levelID || current.previewDifficultyBeatmapSets == null) // Ignore if we already have a BeatUpClient preview for this level
 				current.Init(preview);
 			Log?.Debug("PlayersDataModel.HandleMpexBeatmapPacket() post");
