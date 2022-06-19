@@ -256,7 +256,7 @@ public class BeatUpClient {
 	public static PlayerData playerData = new PlayerData(0);
 
 	public static string? HashForLevelID(string? levelId) {
-		string[] parts = (levelId ?? "").Split('_', ' ');
+		string[] parts = (levelId ?? "").Split(new[] {'_', ' '});
 		if(parts.Length < 3 || parts[2].Length != 40)
 			return null;
 		return parts[2];
@@ -1191,13 +1191,13 @@ public class BeatUpClient {
 		}
 	}
 
-	[Patch(PatchType.Prefix, typeof(ClientCertificateValidator), "ValidateCertificateChainInternal")]
-	public static bool ClientCertificateValidator_ValidateCertificateChainInternal() =>
-		customNetworkConfig == null;
-
 	[Patch(PatchType.Postfix, typeof(MainSettingsModelSO), nameof(MainSettingsModelSO.Load))]
 	public static void MainSettingsModelSO_Load(ref MainSettingsModelSO __instance) =>
 		customServerHostName = __instance.customServerHostName;
+
+	[Patch(PatchType.Prefix, typeof(ClientCertificateValidator), "ValidateCertificateChainInternal")]
+	public static bool ClientCertificateValidator_ValidateCertificateChainInternal() =>
+		customNetworkConfig == null;
 
 	public static async System.Threading.Tasks.Task<AuthenticationToken> AuthWrapper(System.Threading.Tasks.Task<AuthenticationToken> task, AuthenticationToken.Platform platform, string userId, string userName) {
 		try {
@@ -2088,10 +2088,20 @@ public class BeatUpClient {
 	}
 	[IPA.OnEnable]
 	public void OnEnable() {
-		if((uint)HarmonyLib.AccessTools.Field(typeof(NetworkConstants), nameof(NetworkConstants.kProtocolVersion)).GetValue(null) != 8u) {
-			Log?.Critical("Unsupported game version!");
+		uint protocolVersion = (uint)HarmonyLib.AccessTools.Field(typeof(NetworkConstants), nameof(NetworkConstants.kProtocolVersion)).GetValue(null);
+		if(protocolVersion != 8u) {
+			BeatUpClient_ERROR.Init("Incompatible BeatUpClient Version", $"This version of BeatUpClient requires a{((protocolVersion < 8u) ? " newer" : "n older")} version of Beat Saber.");
 			return;
 		}
+		string? err = BeatUpClient_BETA.CheckVersion(pluginVersion);
+		if(err != null) {
+			if(err.Length != 0)
+				BeatUpClient_ERROR.Init("Unsupported BeatUpClient Version", err);
+			else
+				BeatUpClient_ERROR.Init("BeatUpClient Validation Error", "BeatUpClient encountered a critical error. Please message rcelyte#5372.");
+			return;
+		}
+
 		string localization = "Polyglot\t100\n" +
 			"BEATUP_COUNTDOWN_DURATION\t\tCountdown Duration\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
 			"BEATUP_SKIP_RESULTS_PYRAMID\t\tSkip Results Pyramid\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
@@ -2153,6 +2163,74 @@ public class BeatUpClient {
 			Log?.Error("Error removing patches: " + ex.Message);
 			Log?.Debug(ex);
 		}
+	}
+}
+
+static unsafe class BeatUpClient_BETA {
+	[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+	struct TxtRecord {
+		public TxtRecord *pNext;
+		public System.IntPtr pName;
+		public short wType, wDataLength;
+		public uint flags, dwTtl, dwReserved, dwStringCount;
+		public System.IntPtr pStringArray;
+	}
+	[System.Runtime.InteropServices.DllImport("Dnsapi.dll", EntryPoint = "DnsQuery_W", ExactSpelling = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+	static extern int DnsQuery(string lpstrName, short wType, int options, System.IntPtr pExtra, ref TxtRecord* ppQueryResultsSet, System.IntPtr pReserved);
+	[System.Runtime.InteropServices.DllImport("Dnsapi.dll")]
+	static extern void DnsRecordListFree(TxtRecord* pRecordList, int freeType);
+	static System.Collections.Generic.List<string> GetTxtRecords(string domain) {
+		TxtRecord *resultSet = null;
+		System.Collections.Generic.List<string> result = new System.Collections.Generic.List<string>();
+		try {
+			if(DnsQuery(domain, 0x0010, 0x00000000, System.IntPtr.Zero, ref resultSet, System.IntPtr.Zero) != 0)
+				return result;
+			for(TxtRecord *record = resultSet; record != null; record = record->pNext) {
+				if(record->wType != 0x0010)
+					continue;
+				System.Text.StringBuilder builder = new System.Text.StringBuilder();
+				System.IntPtr* stringArray = &record->pStringArray;
+				for(uint i = 0; i < record->dwStringCount; ++i)
+					builder.Append(System.Runtime.InteropServices.Marshal.PtrToStringUni(stringArray[i]));
+				result.Add(builder.ToString());
+			}
+		} finally {
+			if(resultSet != null)
+				DnsRecordListFree(resultSet, 1);
+		}
+		return result;
+	}
+	public static string? CheckVersion(Hive.Versioning.Version version) {
+		foreach(string record in GetTxtRecords("beatup_beta.battletrains.org")) {
+			string[] parts = record.Split(new[] {'|'}, 2);
+			if(parts.Length != 2)
+				continue;
+			foreach(string range in parts[0].Split(new[] {';'}))
+				if((new Hive.Versioning.VersionRange(range)).Matches(version))
+					return null;
+			return parts[1];
+		}
+		return string.Empty;
+	}
+}
+
+static class BeatUpClient_ERROR {
+	static string header = string.Empty, message = string.Empty;
+	static bool skip = false;
+	[Patch(PatchType.Prefix, typeof(MainFlowCoordinator), nameof(MainFlowCoordinator.HandleMainMenuViewControllerDidFinish))]
+	public static bool HandleMainMenuViewControllerDidFinish(MainFlowCoordinator __instance, MainMenuViewController viewController, MainMenuViewController.MenuButton subMenuType, SimpleDialogPromptViewController ____simpleDialogPromptViewController) {
+		return (skip || subMenuType != MainMenuViewController.MenuButton.Multiplayer).Or(() => {
+			____simpleDialogPromptViewController.Init(header, message, Polyglot.Localization.Get("BUTTON_OK"), buttonNumber => {
+				skip = true;
+				__instance.DismissViewController(____simpleDialogPromptViewController, HMUI.ViewController.AnimationDirection.Vertical, () =>
+					__instance.HandleMainMenuViewControllerDidFinish(viewController, MainMenuViewController.MenuButton.Multiplayer));
+			});
+			__instance.PresentViewController(____simpleDialogPromptViewController);
+		});
+	}
+	public static void Init(string header, string message) {
+		(BeatUpClient_ERROR.header, BeatUpClient_ERROR.message) = (header, message);
+		PatchAll(typeof(BeatUpClient_ERROR));
 	}
 }
 

@@ -23,6 +23,7 @@ FILES := $(wildcard src/*.c src/*.cpp)
 OBJS := $(FILES:%=$(OBJDIR)/%.o)
 
 CSREFS := ../Libs/0Harmony.dll ../Libs/Hive.Versioning.dll ../Plugins/SongCore.dll ../Plugins/SiraUtil.dll ../Plugins/MultiplayerCore.dll Managed/mscorlib.dll Managed/IPA.Loader.dll Managed/BGNet.dll Managed/BeatmapCore.dll Managed/Colors.dll Managed/GameplayCore.dll Managed/HMLib.dll Managed/HMUI.dll Managed/Main.dll Managed/UnityEngine.CoreModule.dll Managed/UnityEngine.AssetBundleModule.dll Managed/UnityEngine.AudioModule.dll Managed/UnityEngine.ImageConversionModule.dll Managed/UnityEngine.UnityWebRequestModule.dll Managed/UnityEngine.UnityWebRequestAudioModule.dll Managed/UnityEngine.UIModule.dll Managed/UnityEngine.UI.dll Managed/Unity.TextMeshPro.dll Managed/Polyglot.dll Managed/System.IO.Compression.dll Managed/Newtonsoft.Json.dll Managed/LiteNetLib.dll Managed/VRUI.dll Managed/Zenject.dll Managed/Zenject-usage.dll
+CSREFS += Managed/netstandard.dll # TODO: Required by `Hive.Versioning.VersionRange`; remove once beta version check is gone
 PUBREFS := $(CSREFS:%=.obj/Refs/Data/%)
 
 libBeatUpClient.so: $(OBJS) | ndk
