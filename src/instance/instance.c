@@ -1077,7 +1077,7 @@ static void handle_PlayerIdentity(struct Context *ctx, struct Room *room, struct
 	session->publicEncryptionKey = identity->publicEncryptionKey;
 	if(session->sentIdentity)
 		return;
-	session->sentIdentity = 1;
+	session->sentIdentity = true;
 
 	{
 		struct InternalMessage r_connected = {
@@ -1352,10 +1352,10 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 				.playerState = room->players[id].stateHash,
 				.playerAvatar = room->players[id].avatar,
 				.random.length = 32,
-				.publicEncryptionKey = session->publicEncryptionKey,
+				.publicEncryptionKey = room->players[id].publicEncryptionKey,
 			},
 		};
-		memcpy(r_identity.playerIdentity.random.data, session->random, sizeof(session->random));
+		memcpy(r_identity.playerIdentity.random.data, room->players[id].random, sizeof(room->players->random));
 		uprintf("TODO: do we need to include the encrytion key?\n");
 		pkt_write_c(&resp_end, endof(resp), session->net.version, RoutingHeader, {id + 1, 0, false});
 		if(pkt_serialize(&r_identity, &resp_end, endof(resp), session->net.version))
@@ -1636,7 +1636,7 @@ struct NetContext *instance_get_net(uint16_t thread) {
 struct IPEndPoint instance_get_endpoint(bool ipv4) {
 	struct IPEndPoint out;
 	out.address.length = 0;
-	out.address.isNull = 0;
+	out.address.isNull = false;
 	out.port = 0;
 	if(ipv4)
 		out.address.length = sprintf(out.address.data, "%s", instance_domainIPv4);
@@ -1783,6 +1783,7 @@ struct NetSession *instance_room_resolve_session(uint16_t thread, uint16_t group
 	session->permissions.hasRecommendGameplayModifiersPermission = (room->configuration.gameplayServerControlSettings == GameplayServerControlSettings_AllowModifierSelection || room->configuration.gameplayServerControlSettings == GameplayServerControlSettings_All);
 	session->permissions.hasKickVotePermission = session->permissions.isServerOwner;
 	session->permissions.hasInvitePermission = (room->configuration.invitePolicy == InvitePolicy_AnyoneCanInvite) || (session->permissions.isServerOwner && room->configuration.invitePolicy == InvitePolicy_OnlyConnectionOwnerCanInvite);
+	session->publicEncryptionKey.length = 0;
 	session->sentIdentity = 0;
 	session->directDownloads = 0;
 	session->state = 0;

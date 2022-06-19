@@ -1270,12 +1270,15 @@ public class BeatUpClient {
 		return false;
 	}
 
+	static UnityEngine.GameObject[] BeatUpServerUI = new UnityEngine.GameObject[0];
 	[Patch(PatchType.Prefix, typeof(MultiplayerModeSelectionViewController), nameof(MultiplayerModeSelectionViewController.SetData))]
-	public static void MultiplayerModeSelectionViewController_SetData(MultiplayerModeSelectionViewController __instance, TMPro.TextMeshProUGUI ____maintenanceMessageText) {
+	public static void MultiplayerModeSelectionViewController_SetData(MultiplayerModeSelectionViewController __instance, MultiplayerStatusData multiplayerStatusData, TMPro.TextMeshProUGUI ____maintenanceMessageText) {
 		ShowLoading(null);
 		____maintenanceMessageText.richText = false;
 		____maintenanceMessageText.transform.localPosition = new UnityEngine.Vector3(0, -5, 0);
 		__instance.transform.Find("Buttons")?.gameObject.SetActive(true);
+		foreach(UnityEngine.GameObject element in BeatUpServerUI)
+			element.SetActive((int)multiplayerStatusData.status == 101);
 	}
 
 	[Patch(PatchType.Prefix, typeof(LobbySetupViewController), nameof(LobbySetupViewController.SetPlayersMissingLevelText))]
@@ -2011,10 +2014,12 @@ public class BeatUpClient {
 		Log?.Debug("load MainMenu");
 		if(customNetworkConfig != null) {
 			UnityEngine.Transform CreateServerFormView = UnityEngine.Resources.FindObjectsOfTypeAll<CreateServerFormController>()[0].transform;
-			UI.CreateValuePicker(CreateServerFormView, "CountdownDuration", "BEATUP_COUNTDOWN_DURATION", new Property<float>(Config.Instance, nameof(Config.CountdownDuration)), new byte[] {(byte)(Config.Instance.CountdownDuration * 4), 0, 12, 20, 32, 40, 60});
-			UI.CreateToggle(CreateServerFormView, "SkipResults", "BEATUP_SKIP_RESULTS_PYRAMID", new Property<bool>(Config.Instance, nameof(Config.SkipResults)));
-			UI.CreateToggle(CreateServerFormView, "PerPlayerDifficulty", "BEATUP_PER_PLAYER_DIFFICULTY", new Property<bool>(Config.Instance, nameof(Config.PerPlayerDifficulty)));
-			UI.CreateToggle(CreateServerFormView, "PerPlayerModifiers", "BEATUP_PER_PLAYER_MODIFIERS", new Property<bool>(Config.Instance, nameof(Config.PerPlayerModifiers)));
+			BeatUpServerUI = new[] {
+				UI.CreateValuePicker(CreateServerFormView, "CountdownDuration", "BEATUP_COUNTDOWN_DURATION", new Property<float>(Config.Instance, nameof(Config.CountdownDuration)), new byte[] {(byte)(Config.Instance.CountdownDuration * 4), 0, 12, 20, 32, 40, 60}).gameObject,
+				UI.CreateToggle(CreateServerFormView, "SkipResults", "BEATUP_SKIP_RESULTS_PYRAMID", new Property<bool>(Config.Instance, nameof(Config.SkipResults))).gameObject,
+				UI.CreateToggle(CreateServerFormView, "PerPlayerDifficulty", "BEATUP_PER_PLAYER_DIFFICULTY", new Property<bool>(Config.Instance, nameof(Config.PerPlayerDifficulty))).gameObject,
+				UI.CreateToggle(CreateServerFormView, "PerPlayerModifiers", "BEATUP_PER_PLAYER_MODIFIERS", new Property<bool>(Config.Instance, nameof(Config.PerPlayerModifiers))).gameObject,
+			};
 			CreateServerFormView.parent.gameObject.GetComponent<UnityEngine.UI.VerticalLayoutGroup>().enabled = true;
 			CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.VerticalLayoutGroup>().enabled = true;
 			CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.ContentSizeFitter>().enabled = true;

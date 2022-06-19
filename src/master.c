@@ -443,6 +443,10 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers; // Quick Play not yet available
 			goto send;
 		}
+		if(session->net.version.protocolVersion >= 9) {
+			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_VersionMismatch;
+			goto send;
+		}
 		r_conn.connectToServerResponse.configuration = req->configuration;
 		#ifdef FORCE_MASSIVE_LOBBIES
 		r_conn.connectToServerResponse.configuration.maxPlayerCount = 126;
@@ -492,8 +496,8 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 			goto send;
 		}
 		net_unlock(net);
-		r_conn.connectToServerResponse.userId.isNull = 0;
-		r_conn.connectToServerResponse.userId.length = sprintf(r_conn.connectToServerResponse.userId.data, "dtxJlHm56k6ZXcnxhbyfiA");
+		r_conn.connectToServerResponse.userId.isNull = false;
+		r_conn.connectToServerResponse.userId.length = sprintf(r_conn.connectToServerResponse.userId.data, "beatupserver:%08x", rand()); // TODO: use meaningful id here once wire instances are implemented
 		r_conn.connectToServerResponse.userName.length = 0;
 		r_conn.connectToServerResponse.secret = req->secret;
 		r_conn.connectToServerResponse.selectionMask = req->selectionMask;

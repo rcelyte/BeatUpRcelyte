@@ -19,7 +19,7 @@
 	*data = StringToServerCode(str.data, str.length);
 }
 [[maybe_unused]] static void _pkt_ServerCode_write(const ServerCode *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	struct String str = {.length = 0, .isNull = 0};
+	struct String str = {.length = 0, .isNull = false};
 	for(ServerCode code = scramble_encode(*data); code; code /= 36)
 		str.data[str.length++] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--code % 36];
 	_pkt_String_write(&str, pkt, end, ctx);
