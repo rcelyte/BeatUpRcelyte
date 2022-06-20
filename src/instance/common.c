@@ -88,20 +88,19 @@ void instance_send_channeled(struct NetSession *session, struct Channels *channe
 	struct FragmentedHeader fragmentHeader = {0, 0, 0};
 	if(len <= session->maxChanneledSize) {
 		instance_send_backlog(session->version, channels, buf, len, channelId, 0, fragmentHeader);
-		return;
-	}
-	if(channelId != DeliveryMethod_ReliableUnordered && channelId != DeliveryMethod_ReliableOrdered) {
+	} else if(channelId != DeliveryMethod_ReliableUnordered && channelId != DeliveryMethod_ReliableOrdered) {
 		uprintf("Packet too large (%u > %u)\n", len, session->maxChanneledSize);
-		abort();
 	} else if(len >= 65536) {
 		uprintf("Reliable packet too large (%u >= 65536)\n", len);
-		abort();
+	} else if(session->maxFragmentSize - 1 >= NET_MAX_PKT_SIZE) {
+		uprintf("`session->maxFragmentSize` out of range\n");
+	} else {
+		fragmentHeader.fragmentId = ++session->fragmentId;
+		fragmentHeader.fragmentsTotal = (len + session->maxFragmentSize - 1) / session->maxFragmentSize;
+		for(fragmentHeader.fragmentPart = 0; fragmentHeader.fragmentPart < fragmentHeader.fragmentsTotal - 1; ++fragmentHeader.fragmentPart, buf += session->maxFragmentSize, len -= session->maxFragmentSize)
+			instance_send_backlog(session->version, channels, buf, session->maxFragmentSize, channelId, 1, fragmentHeader);
+		instance_send_backlog(session->version, channels, buf, len, channelId, 1, fragmentHeader);
 	}
-	fragmentHeader.fragmentId = ++session->fragmentId;
-	fragmentHeader.fragmentsTotal = (len + session->maxFragmentSize - 1) / session->maxFragmentSize;
-	for(fragmentHeader.fragmentPart = 0; fragmentHeader.fragmentPart < fragmentHeader.fragmentsTotal - 1; ++fragmentHeader.fragmentPart, buf += session->maxFragmentSize, len -= session->maxFragmentSize)
-		instance_send_backlog(session->version, channels, buf, session->maxFragmentSize, channelId, 1, fragmentHeader);
-	instance_send_backlog(session->version, channels, buf, len, channelId, 1, fragmentHeader);
 }
 
 void handle_Ack(struct NetSession *session, struct Channels *channels, const struct Ack *ack) {
