@@ -25,6 +25,9 @@ static class Extensions {
 public class BeatUpClient {
 	public const ulong MaxDownloadSize = 268435456;
 	public const ulong MaxUnzippedSize = 268435456;
+	static readonly string[] SafeMods = new[] { // Some mods like to load AssetBundles from the level folder, leading to remote code execution
+		"MappingExtensions",
+	};
 
 	public class Config {
 		public static Config Instance = new Config();
@@ -37,7 +40,6 @@ public class BeatUpClient {
 		public ushort WindowSize {get; set;} = LiteNetLib.NetConstants.DefaultWindowSize;
 		public bool UnreliableState {get; set;} = false;
 		public bool DirectDownloads {get; set;} = true;
-		public bool AllowModchartDownloads {get; set;} = false;
 		[IPA.Config.Stores.Attributes.NonNullable]
 		[IPA.Config.Stores.Attributes.UseConverter(typeof(IPA.Config.Stores.Converters.DictionaryConverter<string>))]
 		public System.Collections.Generic.Dictionary<string, string?> Servers {get; set;} = new System.Collections.Generic.Dictionary<string, string?> {
@@ -648,13 +650,14 @@ public class BeatUpClient {
 		public static bool MissingRequirements(RecommendPreview? preview, bool download) {
 			if(preview == null)
 				return false; // Entitlement[good]: no preview
-			if(preview.requirements.Length + preview.suggestions.Length >= 1 && download && !Config.Instance.AllowModchartDownloads)
-				return true; // Entitlement[fail]: blocked by `AllowModchartDownloads`
+			if(preview.requirements.Length + preview.suggestions.Length >= 1 && download)
+				if(!System.Linq.Enumerable.Concat(preview.requirements, preview.suggestions).Where(req => !NullableStringHelper.IsNullOrEmpty(req)).All(req => SafeMods.Contains(req)))
+					return true; // Entitlement[fail]: map requires untrusted mods
 			if(preview.requirements.Length < 1)
 				return false; // Entitlement[good]: no requirements
 			if(!haveSongCore)
 				return true; // Entitlement[fail]: need SongCore
-			if(!preview.requirements.All(x => NullableStringHelper.IsNullOrEmpty(x) || SongCore.Collections.capabilities.Contains(x)))
+			if(!preview.requirements.Where(req => !string.IsNullOrEmpty(req)).All(req => SongCore.Collections.capabilities.Contains(req!)))
 				return true; // Entitlement[fail]: missing requirements
 			return false; // Entitlement[good]: have all requirements
 		}
