@@ -1271,14 +1271,28 @@ public class BeatUpClient {
 	}
 
 	static UnityEngine.GameObject[] BeatUpServerUI = new UnityEngine.GameObject[0];
+	static UnityEngine.Sprite[] altCreateButtonSprites = new UnityEngine.Sprite[4];
+	static bool createButtonSpriteState = false;
 	[Patch(PatchType.Prefix, typeof(MultiplayerModeSelectionViewController), nameof(MultiplayerModeSelectionViewController.SetData))]
 	public static void MultiplayerModeSelectionViewController_SetData(MultiplayerModeSelectionViewController __instance, MultiplayerStatusData multiplayerStatusData, TMPro.TextMeshProUGUI ____maintenanceMessageText) {
 		ShowLoading(null);
 		____maintenanceMessageText.richText = false;
 		____maintenanceMessageText.transform.localPosition = new UnityEngine.Vector3(0, -5, 0);
-		__instance.transform.Find("Buttons")?.gameObject.SetActive(true);
+		bool isBeatUp = ((int)multiplayerStatusData.status == 101);
 		foreach(UnityEngine.GameObject element in BeatUpServerUI)
-			element.SetActive((int)multiplayerStatusData.status == 101);
+			element.SetActive(isBeatUp);
+		UnityEngine.Transform? buttons = __instance.transform.Find("Buttons");
+		if(buttons == null)
+			return;
+		HMUI.ButtonSpriteSwap? sprites = buttons.Find("CreateServerButton")?.GetComponent<HMUI.ButtonSpriteSwap>();
+		if(sprites != null && createButtonSpriteState != isBeatUp) {
+			(sprites._normalStateSprite, altCreateButtonSprites[0]) = (altCreateButtonSprites[0], sprites._normalStateSprite);
+			(sprites._highlightStateSprite, altCreateButtonSprites[1]) = (altCreateButtonSprites[1], sprites._highlightStateSprite);
+			(sprites._pressedStateSprite, altCreateButtonSprites[2]) = (altCreateButtonSprites[2], sprites._pressedStateSprite);
+			(sprites._disabledStateSprite, altCreateButtonSprites[3]) = (altCreateButtonSprites[3], sprites._disabledStateSprite);
+			createButtonSpriteState = isBeatUp;
+		}
+		buttons.gameObject.SetActive(true);
 	}
 
 	[Patch(PatchType.Prefix, typeof(LobbySetupViewController), nameof(LobbySetupViewController.SetPlayersMissingLevelText))]
@@ -2143,7 +2157,12 @@ public class BeatUpClient {
 				WarmMethods(type);
 			Log?.Debug("Loading assets");
 			UnityEngine.AssetBundle data = UnityEngine.AssetBundle.LoadFromStream(System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("BeatUpClient.data"));
-			defaultPackCover = data.LoadAllAssets<UnityEngine.Sprite>()[0];
+			UnityEngine.Sprite[] sprites = data.LoadAllAssets<UnityEngine.Sprite>();
+			defaultPackCover = sprites[0];
+			altCreateButtonSprites[0] = sprites[1];
+			altCreateButtonSprites[1] = sprites[2];
+			altCreateButtonSprites[2] = sprites[2];
+			altCreateButtonSprites[3] = sprites[1];
 			badges = data.LoadAllAssets<UnityEngine.GameObject>();
 			Log?.Debug("Applying patches");
 			if(haveMpCore)

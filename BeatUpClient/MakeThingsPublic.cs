@@ -9,6 +9,10 @@ class MainClass {
 			"SceneInfo::_sceneName",
 		},
 		["HMUI.dll"] = new[] {
+			"HMUI.ButtonSpriteSwap::_disabledStateSprite",
+			"HMUI.ButtonSpriteSwap::_highlightStateSprite",
+			"HMUI.ButtonSpriteSwap::_normalStateSprite",
+			"HMUI.ButtonSpriteSwap::_pressedStateSprite",
 			"HMUI.DropdownWithTableView::Hide",
 			"HMUI.FlowCoordinator::_screenSystem",
 			"HMUI.FlowCoordinator::DismissFlowCoordinator",
