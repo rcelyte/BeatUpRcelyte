@@ -83,12 +83,6 @@ public class BeatUpClient {
 	public static uint windowSize = LiteNetLib.NetConstants.DefaultWindowSize; // Needed by transpiler
 	static UnityEngine.GameObject infoText = null!;
 
-	public enum PatchType : byte {
-		Prefix,
-		Postfix,
-		Transpiler,
-	}
-
 	delegate T CreateArrayCallback<T>(uint i);
 	static T[] CreateArray<T>(uint count, CreateArrayCallback<T> cb) {
 		T[] arr = new T[count];
@@ -97,36 +91,49 @@ public class BeatUpClient {
 		return arr;
 	}
 
+	public enum PatchType : byte {
+		Prefix,
+		Postfix,
+		Transpiler,
+	}
 	[System.AttributeUsage(System.AttributeTargets.Method, AllowMultiple = true)]
-	public class PatchAttribute : System.Attribute {
+	public class Patch : System.Attribute {
+		[System.AttributeUsage(System.AttributeTargets.Method, AllowMultiple = true)]
+		public class Overload : Patch {
+			public Overload(PatchType patchType, System.Type type, string fn, params System.Type[] args) =>
+				(this.patchType, method) = (patchType, HarmonyLib.AccessTools.DeclaredMethod(type, fn, args));
+		}
+		[System.AttributeUsage(System.AttributeTargets.Method, AllowMultiple = true)]
+		public class Generic : Patch {
+			public Generic(PatchType patchType, System.Type type, string fn, params System.Type[] generics) =>
+				(this.patchType, method) = (patchType, HarmonyLib.AccessTools.DeclaredMethod(type, fn, null, generics));
+		}
 		System.Reflection.MethodBase? method;
 		PatchType patchType;
-		public PatchAttribute(PatchType patchType, System.Reflection.MethodBase? method, System.Type? genericType) {
-			this.method = (method == null || genericType == null) ? method : ((System.Reflection.MethodInfo)method).MakeGenericMethod(genericType);
-			this.patchType = patchType;
-		}
-		public PatchAttribute(PatchType patchType, System.Type type, string fn, System.Type? genericType = null) : this(patchType, fn == ".ctor" ? (System.Reflection.MethodBase)type.GetConstructors()[0] : HarmonyLib.AccessTools.Method(type, fn), genericType) {}
-		public PatchAttribute(PatchType patchType, System.Type refType, string type, string fn) : this(patchType, refType.Assembly.GetType(type), fn) {}
-		public void Apply(System.Reflection.MethodInfo self) {
+		Patch() {}
+		public Patch(PatchType patchType, System.Type type, string fn) =>
+			(this.patchType, method) = (patchType, fn == ".ctor" ? (System.Reflection.MethodBase)type.GetConstructors()[0] : HarmonyLib.AccessTools.DeclaredMethod(type, fn));
+		void Apply(System.Reflection.MethodInfo self) {
 			if(method == null)
 				throw new System.ArgumentException($"Missing original method for `{self}`");
 			// Log?.Debug($"Patching {method.DeclaringType.FullName} : {method}");
 			HarmonyLib.HarmonyMethod hm = new HarmonyLib.HarmonyMethod(self);
-			harmony.Patch(method, prefix: patchType == PatchType.Prefix ? hm : null, postfix: patchType == PatchType.Postfix ? hm : null, transpiler: patchType == PatchType.Transpiler ? hm : null);
+			var processor = harmony.CreateProcessor(method);
+			switch(patchType) {
+				case PatchType.Prefix: processor.AddPrefix(hm); break;
+				case PatchType.Postfix: processor.AddPostfix(hm); break;
+				case PatchType.Transpiler: processor.AddTranspiler(hm); break;
+			}
+			processor.Patch();
+		}
+		public static void ApplyAllFor(System.Type type) {
+			foreach(System.Reflection.MethodInfo method in type.GetMethods())
+				foreach(System.Attribute attrib in method.GetCustomAttributes(false))
+					if(attrib is Patch patch)
+						patch.Apply(method);
 		}
 	}
 
-	[System.AttributeUsage(System.AttributeTargets.Method, AllowMultiple = true)]
-	public class PatchOverloadAttribute : PatchAttribute {
-		public PatchOverloadAttribute(PatchType patchType, System.Type type, string fn, params System.Type[] args) : base(patchType, HarmonyLib.AccessTools.Method(type, fn, args), null) {}
-	}
-
-	public static void PatchAll(System.Type type) {
-		foreach(System.Reflection.MethodInfo method in type.GetMethods())
-			foreach(System.Attribute attrib in method.GetCustomAttributes(false))
-				if(attrib is PatchAttribute patch)
-					patch.Apply(method);
-	}
 
 	public static class NullableStringHelper {
 		public static bool IsNullOrEmpty([System.Diagnostics.CodeAnalysis.NotNullWhen(false)] string? str) =>
@@ -578,7 +585,7 @@ public class BeatUpClient {
 					packet.Deserialize(reader);
 					PacketHandler.RecommendPreview current = playerData.previews[PlayerIndex(player)];
 					if(packet.levelID != current.levelID || current.previewDifficultyBeatmapSets == null) // Ignore if we already have a BeatUpClient preview for this level
-						current.Init(packet);
+						current = new PacketHandler.RecommendPreview(packet, current.requirements, current.suggestions);
 				}
 				reader.SkipBytes(end - reader.Position);
 			}
@@ -725,8 +732,14 @@ public class BeatUpClient {
 		void HandleDirectDownloadInfo(DirectDownloadInfo packet, IConnectedPlayer player) {
 			Log?.Debug($"DirectDownloadInfo:\n    levelId=\"{packet.levelId}\"\n    levelHash=\"{packet.levelHash}\"\n    fileSize={packet.fileSize}\n    source=\"{packet.sourcePlayers[0]}\"");
 			RecommendPreview? preview = playerData.ResolvePreview(packet.levelId);
-			if(connectInfo?.directDownloads != true || preview == null || MissingRequirements(preview, true) || packet.fileSize > MaxDownloadSize)
+			if(connectInfo?.directDownloads != true || preview == null || MissingRequirements(preview, true)) {
+				Log?.Debug($"Disabling direct downloader");
 				return;
+			}
+			if(packet.fileSize > MaxDownloadSize) {
+				Log?.Debug($"Selected level is too large for direct downloading ({packet.fileSize} > {MaxDownloadSize})");
+				return;
+			}
 			MultiplayerSessionManager multiplayerSessionManager = this.multiplayerSessionManager;
 			beatmapLevelsModel.GetBeatmapLevelAsync(packet.levelId, System.Threading.CancellationToken.None).ContinueWith(result => {
 				if(!result.Result.isError)
@@ -767,6 +780,7 @@ public class BeatUpClient {
 		public Downloader(PacketHandler.DirectDownloadInfo info, PacketHandler.RecommendPreview preview) {
 			(this.levelHash, this.sourcePlayers, this.preview, buffer) = (info.levelHash, info.sourcePlayers, preview, new byte[info.fileSize]);
 			gaps = new System.Collections.Generic.List<(ulong, ulong)>(new[] {(0LU, info.fileSize)});
+			Log?.Debug($"Downloader(info={info}, preview={preview}, levelId={levelId})");
 		}
 		string ValidatedPath(string filename) {
 			string path = System.IO.Path.Combine(dataPath, filename);
@@ -1245,7 +1259,7 @@ public class BeatUpClient {
 		multiplayerModeSelectionFlowCoordinator.isActivated;
 
 	// The UI deletes itself at the end of `MultiplayerModeSelectionFlowCoordinator.TryShowModeSelection()` without this
-	[PatchOverload(PatchType.Prefix, typeof(HMUI.FlowCoordinator), "ReplaceTopViewController", new[] {typeof(HMUI.ViewController), typeof(System.Action), typeof(HMUI.ViewController.AnimationType), typeof(HMUI.ViewController.AnimationDirection)})]
+	[Patch.Overload(PatchType.Prefix, typeof(HMUI.FlowCoordinator), "ReplaceTopViewController", new[] {typeof(HMUI.ViewController), typeof(System.Action), typeof(HMUI.ViewController.AnimationType), typeof(HMUI.ViewController.AnimationDirection)})]
 	public static bool FlowCoordinator_ReplaceTopViewController(HMUI.FlowCoordinator __instance, HMUI.ViewController viewController, System.Action finishedCallback, HMUI.ViewController.AnimationType animationType) {
 		return (!(viewController is MultiplayerModeSelectionViewController)).Or(() => {
 			__instance.TopViewControllerWillChange(viewController, viewController, animationType);
@@ -1614,6 +1628,7 @@ public class BeatUpClient {
 
 	[Patch(PatchType.Postfix, typeof(MultiplayerLevelLoader), nameof(MultiplayerLevelLoader.LoadLevel))]
 	public static void MultiplayerLevelLoader_LoadLevel_post(MultiplayerLevelLoader __instance, bool __state, ILevelGameplaySetupData gameplaySetupData, float initialStartTime, System.Threading.CancellationTokenSource ____getBeatmapCancellationTokenSource, ref System.Threading.Tasks.Task<BeatmapLevelsModel.GetBeatmapLevelResult> ____getBeatmapLevelResultTask) {
+		Log?.Debug($"MultiplayerLevelLoader_LoadLevel_post(downloader?.levelId={handler.downloader?.levelId}, beatmapLevel.levelID={gameplaySetupData.beatmapLevel.beatmapLevel.levelID})");
 		if(__state && handler.downloader?.levelId == gameplaySetupData.beatmapLevel.beatmapLevel.levelID)
 			____getBeatmapLevelResultTask = DownloadWrapper(____getBeatmapLevelResultTask, handler.downloader, ____getBeatmapCancellationTokenSource.Token);
 	}
@@ -1639,7 +1654,7 @@ public class BeatUpClient {
 		}
 	}
 
-	[Patch(PatchType.Prefix, typeof(MultiplayerSessionManager), "Send", typeof(LiteNetLib.Utils.INetSerializable))]
+	[Patch.Generic(PatchType.Prefix, typeof(MultiplayerSessionManager), "Send", typeof(LiteNetLib.Utils.INetSerializable))]
 	public static bool MultiplayerSessionManager_Send(MultiplayerSessionManager __instance, LiteNetLib.Utils.INetSerializable message) =>
 		(!(Config.Instance.UnreliableState && (message is NodePoseSyncStateNetSerializable || message is StandardScoreSyncStateNetSerializable))).Or(() => __instance.SendUnreliable(message));
 
@@ -1796,7 +1811,7 @@ public class BeatUpClient {
 	}
 
 	static bool initialSceneRegistered = false;
-	[PatchOverload(PatchType.Prefix, typeof(Zenject.Context), "InstallInstallers", new[] {typeof(System.Collections.Generic.List<Zenject.InstallerBase>), typeof(System.Collections.Generic.List<System.Type>), typeof(System.Collections.Generic.List<Zenject.ScriptableObjectInstaller>), typeof(System.Collections.Generic.List<Zenject.MonoInstaller>), typeof(System.Collections.Generic.List<Zenject.MonoInstaller>)})]
+	[Patch.Overload(PatchType.Prefix, typeof(Zenject.Context), "InstallInstallers", new[] {typeof(System.Collections.Generic.List<Zenject.InstallerBase>), typeof(System.Collections.Generic.List<System.Type>), typeof(System.Collections.Generic.List<Zenject.ScriptableObjectInstaller>), typeof(System.Collections.Generic.List<Zenject.MonoInstaller>), typeof(System.Collections.Generic.List<Zenject.MonoInstaller>)})]
 	public static void Context_InstallInstallers(Zenject.Context __instance) =>
 		initialSceneRegistered |= (__instance.name == "AppCoreSceneContext");
 
@@ -2025,7 +2040,7 @@ public class BeatUpClient {
 		}
 	}
 
-	public static void OnSceneLoaded(UnityEngine.SceneManagement.Scene scene, UnityEngine.SceneManagement.LoadSceneMode mode) {
+	static void OnSceneLoaded(UnityEngine.SceneManagement.Scene scene, UnityEngine.SceneManagement.LoadSceneMode mode) {
 		if(scene.name != "MainMenu")
 			return;
 		Log?.Debug("load MainMenu");
@@ -2171,7 +2186,7 @@ public class BeatUpClient {
 			if(haveMpCore)
 				BeatUpClient_MpCore.Patch();
 			foreach(System.Type type in sections)
-				PatchAll(type);
+				Patch.ApplyAllFor(type);
 			UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnSceneLoaded;
 		} catch(System.Exception ex) {
 			Log?.Error("Error applying patches: " + ex.Message);
@@ -2257,7 +2272,7 @@ static class BeatUpClient_ERROR {
 	}
 	public static void Init(string header, string message) {
 		(BeatUpClient_ERROR.header, BeatUpClient_ERROR.message) = (header, message);
-		PatchAll(typeof(BeatUpClient_ERROR));
+		Patch.ApplyAllFor(typeof(BeatUpClient_ERROR));
 	}
 }
 
@@ -2323,20 +2338,16 @@ static class BeatUpClient_MpCore {
 		__result = MpShareWrapper(__result, levelId, __instance);
 	}
 
-	[Patch(PatchType.Prefix, typeof(MultiplayerCore.Objects.MpLevelLoader), nameof(MultiplayerCore.Objects.MpLevelLoader.LoadLevel))]
-	public static void MpLevelLoader_LoadLevel_pre(MultiplayerLevelLoader.MultiplayerBeatmapLoaderState ____loaderState, out bool __state) =>
-		__state = (____loaderState == MultiplayerLevelLoader.MultiplayerBeatmapLoaderState.NotLoading);
-
 	[Patch(PatchType.Postfix, typeof(MultiplayerCore.Objects.MpLevelLoader), nameof(MultiplayerCore.Objects.MpLevelLoader.LoadLevel))]
-	public static void MpLevelLoader_LoadLevel_post(MultiplayerCore.Objects.MpLevelLoader __instance, bool __state, ILevelGameplaySetupData gameplaySetupData, float initialStartTime, System.Threading.CancellationTokenSource ____getBeatmapCancellationTokenSource, ref System.Threading.Tasks.Task<BeatmapLevelsModel.GetBeatmapLevelResult> ____getBeatmapLevelResultTask) =>
-		MultiplayerLevelLoader_LoadLevel_post(__instance, __state, gameplaySetupData, initialStartTime, ____getBeatmapCancellationTokenSource, ref ____getBeatmapLevelResultTask);
+	public static void MpLevelLoader_LoadLevel_post(MultiplayerCore.Objects.MpLevelLoader __instance, ILevelGameplaySetupData gameplaySetupData, float initialStartTime, System.Threading.CancellationTokenSource ____getBeatmapCancellationTokenSource, ref System.Threading.Tasks.Task<BeatmapLevelsModel.GetBeatmapLevelResult> ____getBeatmapLevelResultTask) =>
+		MultiplayerLevelLoader_LoadLevel_post(__instance, true, gameplaySetupData, initialStartTime, ____getBeatmapCancellationTokenSource, ref ____getBeatmapLevelResultTask);
 
 	[Patch(PatchType.Postfix, typeof(MultiplayerCore.Objects.MpLevelLoader), nameof(MultiplayerCore.Objects.MpLevelLoader.Report))]
 	public static void MpLevelLoader_Report(double value) =>
 		Progress(new PacketHandler.LoadProgress(PacketHandler.LoadProgress.LoadState.Downloading, (ushort)(value * 65535)));
 
-	[PatchOverload(PatchType.Postfix, typeof(MultiplayerCore.Patchers.NetworkConfigPatcher), nameof(MultiplayerCore.Patchers.NetworkConfigPatcher.UseMasterServer), new[] {typeof(DnsEndPoint), typeof(string), typeof(System.Nullable<int>)})]
-	[PatchOverload(PatchType.Postfix, typeof(MultiplayerCore.Patchers.NetworkConfigPatcher), nameof(MultiplayerCore.Patchers.NetworkConfigPatcher.UseMasterServer), new[] {typeof(DnsEndPoint), typeof(string), typeof(System.Nullable<int>), typeof(string)})]
+	[Patch.Overload(PatchType.Postfix, typeof(MultiplayerCore.Patchers.NetworkConfigPatcher), nameof(MultiplayerCore.Patchers.NetworkConfigPatcher.UseMasterServer), new[] {typeof(DnsEndPoint), typeof(string), typeof(System.Nullable<int>)})]
+	[Patch.Overload(PatchType.Postfix, typeof(MultiplayerCore.Patchers.NetworkConfigPatcher), nameof(MultiplayerCore.Patchers.NetworkConfigPatcher.UseMasterServer), new[] {typeof(DnsEndPoint), typeof(string), typeof(System.Nullable<int>), typeof(string)})]
 	public static void NetworkConfigPatcher_UseMasterServer(DnsEndPoint endPoint, string statusUrl) =>
 		UpdateNetworkConfig(endPoint.ToString(), statusUrl);
 
@@ -2377,7 +2388,7 @@ static class BeatUpClient_MpCore {
 			IPreviewBeatmapLevel preview = beatmapLevelProvider.GetBeatmapFromPacket(packet);
 			PacketHandler.RecommendPreview current = playerData.previews[PlayerIndex(player)];
 			if(preview.levelID != current.levelID || current.previewDifficultyBeatmapSets == null) // Ignore if we already have a BeatUpClient preview for this level
-				current.Init(preview);
+				current = new PacketHandler.RecommendPreview(preview, current.requirements, current.suggestions);
 			Log?.Debug("PlayersDataModel.HandleMpexBeatmapPacket() post");
 		}
 
@@ -2409,7 +2420,7 @@ static class BeatUpClient_MpCore {
 		!Suppressions.Contains(affinity.GetType());
 
 	public static void Patch() {
-		MultiplayerCore.Patches.DataModelBinderPatch._playersDataModelMethod = HarmonyLib.AccessTools.Method(typeof(BeatUpClient_MpCore), nameof(BeatUpClient_MpCore.Patch)); // Suppress transpiler
+		MultiplayerCore.Patches.DataModelBinderPatch._playersDataModelMethod = HarmonyLib.AccessTools.DeclaredMethod(typeof(BeatUpClient_MpCore), nameof(BeatUpClient_MpCore.Patch)); // Suppress transpiler
 		DiJack.Register(typeof(PlayersDataModel));
 		DiJack.Patch();
 	}

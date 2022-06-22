@@ -22,9 +22,9 @@ endif
 FILES := $(wildcard src/*.c src/*.cpp)
 OBJS := $(FILES:%=$(OBJDIR)/%.o)
 
-CSREFS := ../Libs/0Harmony.dll ../Libs/Hive.Versioning.dll ../Plugins/SongCore.dll ../Plugins/SiraUtil.dll ../Plugins/MultiplayerCore.dll Managed/mscorlib.dll Managed/IPA.Loader.dll Managed/BGNet.dll Managed/BeatmapCore.dll Managed/Colors.dll Managed/GameplayCore.dll Managed/HMLib.dll Managed/HMUI.dll Managed/Main.dll Managed/UnityEngine.CoreModule.dll Managed/UnityEngine.AssetBundleModule.dll Managed/UnityEngine.AudioModule.dll Managed/UnityEngine.ImageConversionModule.dll Managed/UnityEngine.UnityWebRequestModule.dll Managed/UnityEngine.UnityWebRequestAudioModule.dll Managed/UnityEngine.UIModule.dll Managed/UnityEngine.UI.dll Managed/Unity.TextMeshPro.dll Managed/Polyglot.dll Managed/System.IO.Compression.dll Managed/Newtonsoft.Json.dll Managed/LiteNetLib.dll Managed/VRUI.dll Managed/Zenject.dll Managed/Zenject-usage.dll
-CSREFS += Managed/netstandard.dll # TODO: Required by `Hive.Versioning.VersionRange`; remove once beta version check is gone
-PUBREFS := $(CSREFS:%=.obj/Refs/Data/%)
+CSREFS := Libs/0Harmony.dll Libs/Hive.Versioning.dll Libs/Newtonsoft.Json.dll Plugins/SongCore.dll Plugins/SiraUtil.dll Plugins/MultiplayerCore.dll Data/mscorlib.dll Data/IPA.Loader.dll Data/BGNet.dll Data/BeatmapCore.dll Data/Colors.dll Data/GameplayCore.dll Data/HMLib.dll Data/HMUI.dll Data/Main.dll Data/UnityEngine.CoreModule.dll Data/UnityEngine.AssetBundleModule.dll Data/UnityEngine.AudioModule.dll Data/UnityEngine.ImageConversionModule.dll Data/UnityEngine.UnityWebRequestModule.dll Data/UnityEngine.UnityWebRequestAudioModule.dll Data/UnityEngine.UIModule.dll Data/UnityEngine.UI.dll Data/Unity.TextMeshPro.dll Data/Polyglot.dll Data/System.IO.Compression.dll Data/LiteNetLib.dll Data/VRUI.dll Data/Zenject.dll Data/Zenject-usage.dll
+CSREFS += Data/netstandard.dll # TODO: Required by `Hive.Versioning.VersionRange`; remove once beta version check is gone
+PUBREFS := $(CSREFS:%=.obj/Refs/%)
 
 libBeatUpClient.so: $(OBJS) | ndk
 	@echo "[cxx $@]"
@@ -66,7 +66,15 @@ extern:
 	csc -nologo -o+ -debug- -nullable+ -w:4 -warnaserror+ -langversion:8 "$<" -out:"$@" -r:$(BSINSTALL)/Libs/Mono.Cecil.dll
 	MONO_PATH=$(BSINSTALL)/Libs mono --aot -O=all "$@"
 
-.obj/Refs/Data/%.dll: $(BSINSTALL)/Beat\ Saber_Data/%.dll .obj/MakeThingsPublic.exe
+.obj/Refs/Data/%.dll: $(BSINSTALL)/Beat\ Saber_Data/Managed/%.dll .obj/MakeThingsPublic.exe
+	@echo "[MakeThingsPublic $(notdir $@)]"
+	@mkdir -p "$(@D)"
+	MONO_PATH=$(BSINSTALL)/Libs mono .obj/MakeThingsPublic.exe "$<" "$@"
+.obj/Refs/Plugins/%.dll: $(BSINSTALL)/Plugins/%.dll .obj/MakeThingsPublic.exe
+	@echo "[MakeThingsPublic $(notdir $@)]"
+	@mkdir -p "$(@D)"
+	MONO_PATH=$(BSINSTALL)/Libs mono .obj/MakeThingsPublic.exe "$<" "$@"
+.obj/Refs/Libs/%.dll: $(BSINSTALL)/Libs/%.dll .obj/MakeThingsPublic.exe
 	@echo "[MakeThingsPublic $(notdir $@)]"
 	@mkdir -p "$(@D)"
 	MONO_PATH=$(BSINSTALL)/Libs mono .obj/MakeThingsPublic.exe "$<" "$@"
