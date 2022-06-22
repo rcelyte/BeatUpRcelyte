@@ -304,6 +304,7 @@ void net_session_reset(struct NetContext *ctx, struct NetSession *session) {
 	session->lastKeepAlive = net_time();
 	session->mtu = 0;
 	net_set_mtu(session, 0);
+	session->alive = true;
 	session->fragmentId = 0;
 	session->mergeData_end = session->mergeData;
 	net_flush_merged(ctx, session);
@@ -402,7 +403,8 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct
 			goto retry;
 		}
 		size = length + (head - buf);
-		(*session)->lastKeepAlive = net_time();
+		if((*session)->alive)
+			(*session)->lastKeepAlive = net_time();
 		while((*session)->mtu < size && (*session)->mtuIdx < lengthof(PossibleMtu) - 1)
 			net_set_mtu(*session, (*session)->mtuIdx + 1);
 	} else if(layer.encrypted) {

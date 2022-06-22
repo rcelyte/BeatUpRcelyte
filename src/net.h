@@ -55,9 +55,10 @@ struct NetSession {
 	uint8_t NET_H_PRIVATE(cookie)[32];
 	struct EncryptionState NET_H_PRIVATE(encryptionState);
 	struct SS NET_H_PRIVATE(addr);
-	uint32_t NET_H_PRIVATE(lastKeepAlive);
+	uint32_t lastKeepAlive;
 	uint16_t NET_H_PRIVATE(mtu);
 	uint8_t NET_H_PRIVATE(mtuIdx);
+	bool alive;
 	uint16_t maxChanneledSize, maxFragmentSize, fragmentId;
 	uint8_t *NET_H_PRIVATE(mergeData_end);
 	uint8_t NET_H_PRIVATE(mergeData)[NET_MAX_PKT_SIZE];

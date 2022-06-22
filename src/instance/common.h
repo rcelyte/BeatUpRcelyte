@@ -2,6 +2,8 @@
 #include "../net.h"
 
 #define LOAD_TIMEOUT 15
+#define IDLE_TIMEOUT_MS 10000
+#define KICK_TIMEOUT_MS 3000
 
 #define bitsize(e) (sizeof(e) * 8)
 #define indexof(a, e) ((e) - (a))

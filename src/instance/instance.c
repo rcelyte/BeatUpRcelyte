@@ -412,8 +412,7 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 					.levelId = room->global.selectedBeatmap.levelID,
 				},
 			});
-			break;
-		}
+		} // fallthrough
 		case ServerState_Lobby_Idle:
 		case ServerState_Lobby_Ready: {
 			SERIALIZE_MENURPC(&resp_end, endof(resp), session->net.version, {
@@ -564,6 +563,7 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 			}
 			if(Counter128_eq(room->lobby.isEntitled, room->connected) && BeatmapIdentifierNetSerializable_eq(&room->players[select].recommendedBeatmap, &room->global.selectedBeatmap, 0))
 				return;
+			room->lobby.reason = 0;
 			room->lobby.isEntitled = COUNTER128_CLEAR;
 			room->lobby.isDownloaded = COUNTER128_CLEAR;
 			room->global.selectedBeatmap = room->players[select].recommendedBeatmap;
@@ -908,7 +908,29 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 		case MenuRpcType_CancelCountdown: uprintf("BAD TYPE: MenuRpcType_CancelCountdown\n"); break;
 		NOT_IMPLEMENTED(MenuRpcType_GetOwnedSongPacks);
 		case MenuRpcType_SetOwnedSongPacks: break;
-		NOT_IMPLEMENTED(MenuRpcType_RequestKickPlayer);
+		case MenuRpcType_RequestKickPlayer: {
+			if(!(session->permissions.hasKickVotePermission && rpc->requestKickPlayer.flags.hasValue0))
+				break;
+			struct Counter128 players = room->playerSort;
+			Counter128_set(&players, indexof(room->players, session), 0);
+			FOR_SOME_PLAYERS(id, players,) {
+				if(!String_eq(room->players[id].permissions.userId, rpc->requestKickPlayer.kickedPlayerId))
+					continue;
+				uint8_t resp[65536], *resp_end = resp;
+				struct InternalMessage r_kick = {
+					.type = InternalMessageType_KickPlayer,
+					.kickPlayer.disconnectedReason = DisconnectedReason_Kicked,
+				};
+				pkt_write_c(&resp_end, endof(resp), room->players[id].net.version, RoutingHeader, {0, 0, false});
+				if(pkt_serialize(&r_kick, &resp_end, endof(resp), room->players[id].net.version))
+					instance_send_channeled(&room->players[id].net, &room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+				room->players[id].net.alive = false; // timeout if client refuses to leave
+				uint32_t time = net_time();
+				if(time - room->players[id].net.lastKeepAlive < IDLE_TIMEOUT_MS - KICK_TIMEOUT_MS)
+					room->players[id].net.lastKeepAlive = time + KICK_TIMEOUT_MS - IDLE_TIMEOUT_MS;
+			}
+			break;
+		}
 		case MenuRpcType_GetPermissionConfiguration:  {
 			uint8_t resp[65536], *resp_end = resp;
 			struct MenuRpc r_permission = {
@@ -1180,6 +1202,8 @@ static bool handle_RoutingHeader(struct Context *ctx, struct Room *room, struct 
 }
 
 static void process_message(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data, const uint8_t *end, bool reliable, DeliveryMethod channelId) {
+	if(!session->net.alive)
+		return;
 	if(handle_RoutingHeader(ctx, room, session, data, end, reliable, channelId)) {
 		*data = end;
 		return;
@@ -1198,15 +1222,15 @@ static void process_message(struct Context *ctx, struct Room *room, struct Insta
 		if(!pkt_read(&message, &sub, *data, session->net.version))
 			return;
 		switch(message.type) {
-			case InternalMessageType_SyncTime: uprintf("BAD TYPE: InternalMessageType_SyncTime\n");
-			case InternalMessageType_PlayerConnected: uprintf("BAD TYPE: InternalMessageType_PlayerConnected\n");
+			case InternalMessageType_SyncTime: uprintf("BAD TYPE: InternalMessageType_SyncTime\n"); break;
+			case InternalMessageType_PlayerConnected: uprintf("BAD TYPE: InternalMessageType_PlayerConnected\n"); break;
 			case InternalMessageType_PlayerIdentity: handle_PlayerIdentity(ctx, room, session, &message.playerIdentity); break;
 			NOT_IMPLEMENTED(InternalMessageType_PlayerLatencyUpdate);
-			case InternalMessageType_PlayerDisconnected: uprintf("BAD TYPE: InternalMessageType_PlayerDisconnected\n");
-			case InternalMessageType_PlayerSortOrderUpdate: uprintf("BAD TYPE: InternalMessageType_PlayerSortOrderUpdate\n");
+			case InternalMessageType_PlayerDisconnected: uprintf("BAD TYPE: InternalMessageType_PlayerDisconnected\n"); break;
+			case InternalMessageType_PlayerSortOrderUpdate: uprintf("BAD TYPE: InternalMessageType_PlayerSortOrderUpdate\n"); break;
 			NOT_IMPLEMENTED(InternalMessageType_Party);
 			case InternalMessageType_MultiplayerSession: handle_MultiplayerSession(ctx, room, session, &message.multiplayerSession); break;
-			NOT_IMPLEMENTED(InternalMessageType_KickPlayer);
+			case InternalMessageType_KickPlayer: uprintf("BAD TYPE: InternalMessageType_KickPlayer\n"); break;
 			case InternalMessageType_PlayerStateUpdate: {
 				session->stateHash = message.playerStateUpdate.playerState;
 				session_refresh_stateHash(ctx, room, session);
@@ -1544,7 +1568,7 @@ static void instance_onResend(struct Context *ctx, uint32_t currentTime, uint32_
 	FOR_ALL_ROOMS(ctx, room) {
 		FOR_SOME_PLAYERS(id, (*room)->playerSort,) {
 			struct InstanceSession *session = &(*room)->players[id];
-			uint32_t kickTime = NetSession_get_lastKeepAlive(&session->net) + 10000;
+			uint32_t kickTime = NetSession_get_lastKeepAlive(&session->net) + IDLE_TIMEOUT_MS;
 			if(currentTime > kickTime) {
 				uprintf("session timeout\n");
 				room_disconnect(ctx, room, session, DC_NOTIFY);
