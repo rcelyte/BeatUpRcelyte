@@ -1284,6 +1284,10 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 			break;
 		}
 		if(String_is(mod.name, "BeatUpClient beta0")) {
+			uprintf("Outdated BeatUpClient version from \"%.*s\"\n", session->userName.base.length, session->userName.base.data);
+			return;
+		}
+		if(String_is(mod.name, "BeatUpClient beta1")) {
 			struct BeatUpConnectHeader info;
 			if(!pkt_read(&info, &sub, *data, session->net.version))
 				continue;
@@ -1321,7 +1325,7 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 				.directDownloads = session->directDownloads,
 				.skipResults = room->skipResults,
 				.perPlayerDifficulty = room->perPlayerDifficulty,
-				.perPlayerModifiers = room->perPlayerModifiers && session->net.version.beatUpVersion >= 2,
+				.perPlayerModifiers = room->perPlayerModifiers,
 			},
 		},
 	});
@@ -1808,8 +1812,8 @@ struct NetSession *instance_room_resolve_session(uint16_t thread, uint16_t group
 	session->permissions.hasKickVotePermission = session->permissions.isServerOwner;
 	session->permissions.hasInvitePermission = (room->configuration.invitePolicy == InvitePolicy_AnyoneCanInvite) || (session->permissions.isServerOwner && room->configuration.invitePolicy == InvitePolicy_OnlyConnectionOwnerCanInvite);
 	session->publicEncryptionKey.length = 0;
-	session->sentIdentity = 0;
-	session->directDownloads = 0;
+	session->sentIdentity = false;
+	session->directDownloads = false;
 	session->state = 0;
 	session->recommendTime = 0;
 	session->recommendedBeatmap = CLEAR_BEATMAP;

@@ -1342,12 +1342,12 @@ public class BeatUpClient {
 			perPlayerModifiers = Config.Instance.PerPlayerModifiers,
 		}.Serialize(sub);
 		writer.PutVarUInt((uint)sub.Length);
-		writer.Put("BeatUpClient beta0");
+		writer.Put("BeatUpClient beta1");
 		writer.Put(sub.CopyData());
 	}
 
 	public class BeatUpConnectHeader : BeatUpConnectInfo {
-		public uint protocolId = 2;
+		public uint protocolId = 1;
 		public override void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
 			writer.Put((uint)protocolId);
 			base.Serialize(writer);
