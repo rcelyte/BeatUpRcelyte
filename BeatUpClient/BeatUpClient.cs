@@ -331,24 +331,24 @@ public class BeatUpClient {
 				writer.Put((string?)songAuthorName);
 				writer.Put((string?)levelAuthorName);
 				writer.Put((float)beatsPerMinute);
-				if(!mpCore) {
-					writer.Put((float)songTimeOffset);
-					writer.Put((float)shuffle);
-					writer.Put((float)shufflePeriod);
-					writer.Put((float)previewStartTime);
-					writer.Put((float)previewDuration);
+				if(mpCore) {
+					writer.Put((float)songDuration);
+					return;
 				}
+				writer.Put((float)songTimeOffset);
+				writer.Put((float)shuffle);
+				writer.Put((float)shufflePeriod);
+				writer.Put((float)previewStartTime);
+				writer.Put((float)previewDuration);
 				writer.Put((float)songDuration);
-				if(!mpCore) {
-					writer.Put((byte)UpperBound((uint)(previewDifficultyBeatmapSets?.Count ?? 0), 8));
-					foreach(PreviewDifficultyBeatmapSet previewDifficultyBeatmapSet in previewDifficultyBeatmapSets ?? new PreviewDifficultyBeatmapSet[0]) {
-						writer.Put((string)previewDifficultyBeatmapSet.beatmapCharacteristic.serializedName);
-						writer.Put((byte)UpperBound((uint)previewDifficultyBeatmapSet.beatmapDifficulties.Length, 5));
-						foreach(BeatmapDifficulty difficulty in previewDifficultyBeatmapSet.beatmapDifficulties)
-							writer.PutVarUInt((uint)difficulty);
-					}
-					cover.Serialize(writer);
+				writer.Put((byte)UpperBound((uint)(previewDifficultyBeatmapSets?.Count ?? 0), 8));
+				foreach(PreviewDifficultyBeatmapSet previewDifficultyBeatmapSet in previewDifficultyBeatmapSets ?? new PreviewDifficultyBeatmapSet[0]) {
+					writer.Put((string)previewDifficultyBeatmapSet.beatmapCharacteristic.serializedName);
+					writer.Put((byte)UpperBound((uint)previewDifficultyBeatmapSet.beatmapDifficulties.Length, 5));
+					foreach(BeatmapDifficulty difficulty in previewDifficultyBeatmapSet.beatmapDifficulties)
+						writer.PutVarUInt((uint)difficulty);
 				}
+				cover.Serialize(writer);
 			}
 			public void Deserialize(LiteNetLib.Utils.NetDataReader reader) {
 				levelID = reader.GetString();
@@ -359,42 +359,32 @@ public class BeatUpClient {
 				songAuthorName = reader.GetString();
 				levelAuthorName = reader.GetString();
 				beatsPerMinute = reader.GetFloat();
-				if(!mpCore) {
-					songTimeOffset = reader.GetFloat();
-					shuffle = reader.GetFloat();
-					shufflePeriod = reader.GetFloat();
-					previewStartTime = reader.GetFloat();
-					previewDuration = reader.GetFloat();
+				if(mpCore) {
+					songDuration = reader.GetFloat();
+					return;
 				}
+				songTimeOffset = reader.GetFloat();
+				shuffle = reader.GetFloat();
+				shufflePeriod = reader.GetFloat();
+				previewStartTime = reader.GetFloat();
+				previewDuration = reader.GetFloat();
 				songDuration = reader.GetFloat();
-				if(!mpCore) {
-					uint count = UpperBound(reader.GetByte(), 8);
-					previewDifficultyBeatmapSets = (count < 1) ? null : CreateArray(count, i =>
-						new PreviewDifficultyBeatmapSet(handler.characteristics.GetBeatmapCharacteristicBySerializedName(reader.GetString()), CreateArray(UpperBound(reader.GetByte(), 5), i =>
-							(BeatmapDifficulty)reader.GetVarUInt())));
-					cover.Deserialize(reader);
-				}
+				uint count = UpperBound(reader.GetByte(), 8);
+				previewDifficultyBeatmapSets = (count < 1) ? null : CreateArray(count, i =>
+					new PreviewDifficultyBeatmapSet(handler.characteristics.GetBeatmapCharacteristicBySerializedName(reader.GetString()), CreateArray(UpperBound(reader.GetByte(), 5), i =>
+						(BeatmapDifficulty)reader.GetVarUInt())));
+				cover.Deserialize(reader);
 			}
-			public void Init(IPreviewBeatmapLevel beatmapLevel) {
-				Log?.Debug($"NetworkPreviewBeatmapLevel.Init(beatmapLevel={beatmapLevel}, previewDifficultyBeatmapSets={previewDifficultyBeatmapSets}, mpCore={mpCore}) pre");
-				levelID = beatmapLevel.levelID;
-				songName = beatmapLevel.songName;
-				songSubName = beatmapLevel.songSubName;
-				songAuthorName = beatmapLevel.songAuthorName;
-				levelAuthorName = beatmapLevel.levelAuthorName;
-				beatsPerMinute = beatmapLevel.beatsPerMinute;
-				songTimeOffset = beatmapLevel.songTimeOffset;
-				shuffle = beatmapLevel.shuffle;
-				shufflePeriod = beatmapLevel.shufflePeriod;
-				previewStartTime = beatmapLevel.previewStartTime;
-				previewDuration = beatmapLevel.previewDuration;
-				songDuration = beatmapLevel.songDuration;
-				previewDifficultyBeatmapSets = beatmapLevel.previewDifficultyBeatmapSets;
+			public void Init(IPreviewBeatmapLevel prv) {
+				Log?.Debug($"NetworkPreviewBeatmapLevel.Init(beatmapLevel={prv}, previewDifficultyBeatmapSets={previewDifficultyBeatmapSets}, mpCore={mpCore}) pre");
+				(levelID, songName, songSubName, songAuthorName, levelAuthorName, beatsPerMinute, songTimeOffset, shuffle, shufflePeriod, previewStartTime, previewDuration, songDuration) =
+					(prv.levelID, prv.songName, prv.songSubName, prv.songAuthorName, prv.levelAuthorName, prv.beatsPerMinute, prv.songTimeOffset, prv.shuffle, prv.shufflePeriod, prv.previewStartTime, prv.previewDuration, prv.songDuration);
+				previewDifficultyBeatmapSets = prv.previewDifficultyBeatmapSets;
 				cover.data = new byte[0];
-				if(beatmapLevel is NetworkPreviewBeatmapLevel preview) {
+				if(prv is NetworkPreviewBeatmapLevel preview) {
 					cover.data = preview.cover.data;
 				} else if(!mpCore) {
-					System.Threading.Tasks.Task<byte[]> renderTask = RenderCoverImage(beatmapLevel);
+					System.Threading.Tasks.Task<byte[]> renderTask = RenderCoverImage(prv);
 					if(renderTask.IsCompleted) { // TODO: `Wait()`ing on an async method will deadlock
 						cover.data = renderTask.Result;
 						Log?.Debug($"    Cover size: {cover.data.Length} bytes");
@@ -402,9 +392,9 @@ public class BeatUpClient {
 						Log?.Debug($"    Cover not encoded; operation would block");
 					}
 				}
-				environmentInfo = beatmapLevel.environmentInfo;
-				allDirectionsEnvironmentInfo = beatmapLevel.allDirectionsEnvironmentInfo;
-				Log?.Debug($"NetworkPreviewBeatmapLevel.Init(beatmapLevel={beatmapLevel}, previewDifficultyBeatmapSets={previewDifficultyBeatmapSets}, mpCore={mpCore}) post");
+				environmentInfo = prv.environmentInfo;
+				allDirectionsEnvironmentInfo = prv.allDirectionsEnvironmentInfo;
+				Log?.Debug($"NetworkPreviewBeatmapLevel.Init(beatmapLevel={prv}, previewDifficultyBeatmapSets={previewDifficultyBeatmapSets}, mpCore={mpCore}) post");
 			}
 			public NetworkPreviewBeatmapLevel(bool mpCore) =>
 				this.mpCore = mpCore;
@@ -616,7 +606,7 @@ public class BeatUpClient {
 			multiplayerSessionManager.SetLocalPlayerState("modded", true);
 			multiplayerSessionManager.RegisterSerializer(messageType, serializer);
 			serializer.RegisterCallback<RecommendPreview>(MessageType.RecommendPreview, HandleRecommendPreview);
-			serializer.RegisterCallback<SetCanShareBeatmap>(MessageType.SetCanShareBeatmap, HandleSetCanShareBeatmap);
+			serializer.RegisterCallback<SetCanShareBeatmap>(MessageType.SetCanShareBeatmap, (packet, player) => {});
 			serializer.RegisterCallback<DirectDownloadInfo>(MessageType.DirectDownloadInfo, HandleDirectDownloadInfo);
 			serializer.RegisterCallback<LevelFragmentRequest>(MessageType.LevelFragmentRequest, HandleLevelFragmentRequest);
 			serializer.RegisterCallback<LevelFragment>(MessageType.LevelFragment, HandleLevelFragment);
@@ -692,9 +682,8 @@ public class BeatUpClient {
 		void HandleSetIsEntitledToLevelRpc(string userId, string levelId, EntitlementsStatus entitlementStatus) =>
 			HandleSetIsEntitledToLevel(GetPlayer(userId), levelId, entitlementStatus);
 
-		void HandleRecommendModifiers(string userId, GameplayModifiers gameplayModifiers) {
+		void HandleRecommendModifiers(string userId, GameplayModifiers gameplayModifiers) =>
 			playerData.modifiers[PlayerIndex(GetPlayer(userId))] = new PlayerData.ModifiersWeCareAbout(gameplayModifiers);
-		}
 
 		static void HandleLevelStart(string userId, BeatmapIdentifierNetSerializable beatmapId, GameplayModifiers gameplayModifiers, float startTime) {
 			for(int i = 0; i < playerData.lockedModifiers.Length; ++i)
@@ -726,8 +715,6 @@ public class BeatUpClient {
 			Log?.Debug($"HandleRecommendPreview(\"{packet.levelID}\", {player})");
 			playerData.previews[PlayerIndex(player)] = packet;
 		}
-
-		static void HandleSetCanShareBeatmap(SetCanShareBeatmap packet, IConnectedPlayer player) {}
 
 		void HandleDirectDownloadInfo(DirectDownloadInfo packet, IConnectedPlayer player) {
 			Log?.Debug($"DirectDownloadInfo:\n    levelId=\"{packet.levelId}\"\n    levelHash=\"{packet.levelHash}\"\n    fileSize={packet.fileSize}\n    source=\"{packet.sourcePlayers[0]}\"");
@@ -2052,10 +2039,20 @@ public class BeatUpClient {
 				UI.CreateToggle(CreateServerFormView, "PerPlayerDifficulty", "BEATUP_PER_PLAYER_DIFFICULTY", new Property<bool>(Config.Instance, nameof(Config.PerPlayerDifficulty))).gameObject,
 				UI.CreateToggle(CreateServerFormView, "PerPlayerModifiers", "BEATUP_PER_PLAYER_MODIFIERS", new Property<bool>(Config.Instance, nameof(Config.PerPlayerModifiers))).gameObject,
 			};
-			CreateServerFormView.parent.gameObject.GetComponent<UnityEngine.UI.VerticalLayoutGroup>().enabled = true;
-			CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.VerticalLayoutGroup>().enabled = true;
-			CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.ContentSizeFitter>().enabled = true;
-			CreateServerFormView.parent.parent.gameObject.SetActive(true);
+			{
+				UnityEngine.Transform parent = CreateServerFormView.parent;
+				foreach(UnityEngine.RectTransform child in parent) {
+					if(child.GetComponents<UnityEngine.UI.ILayoutElement>().Length > 0)
+						continue;
+					UnityEngine.UI.LayoutElement layout = child.gameObject.AddComponent<UnityEngine.UI.LayoutElement>();
+					layout.preferredHeight = child.sizeDelta.y;
+				}
+				UnityEngine.UI.VerticalLayoutGroup parentGroup = parent.gameObject.GetComponent<UnityEngine.UI.VerticalLayoutGroup>();
+				parentGroup.enabled = true;
+				parentGroup.childControlHeight = true;
+				CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.VerticalLayoutGroup>().enabled = true;
+				CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.ContentSizeFitter>().enabled = true;
+			}
 
 			mainFlowCoordinator = UnityEngine.Resources.FindObjectsOfTypeAll<MainFlowCoordinator>()[0];
 			MultiplayerModeSelectionViewController multiplayerModeSelectionViewController = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerModeSelectionViewController>()[0];
