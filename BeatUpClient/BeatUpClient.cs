@@ -575,7 +575,7 @@ public class BeatUpClient {
 					packet.Deserialize(reader);
 					PacketHandler.RecommendPreview current = playerData.previews[PlayerIndex(player)];
 					if(packet.levelID != current.levelID || current.previewDifficultyBeatmapSets == null) // Ignore if we already have a BeatUpClient preview for this level
-						current = new PacketHandler.RecommendPreview(packet, current.requirements, current.suggestions);
+						playerData.previews[PlayerIndex(player)] = new PacketHandler.RecommendPreview(packet, current.requirements, current.suggestions);
 				}
 				reader.SkipBytes(end - reader.Position);
 			}
@@ -2385,7 +2385,7 @@ static class BeatUpClient_MpCore {
 			IPreviewBeatmapLevel preview = beatmapLevelProvider.GetBeatmapFromPacket(packet);
 			PacketHandler.RecommendPreview current = playerData.previews[PlayerIndex(player)];
 			if(preview.levelID != current.levelID || current.previewDifficultyBeatmapSets == null) // Ignore if we already have a BeatUpClient preview for this level
-				current = new PacketHandler.RecommendPreview(preview, current.requirements, current.suggestions);
+				playerData.previews[PlayerIndex(player)] = new PacketHandler.RecommendPreview(preview, current.requirements, current.suggestions);
 			Log?.Debug("PlayersDataModel.HandleMpexBeatmapPacket() post");
 		}
 
