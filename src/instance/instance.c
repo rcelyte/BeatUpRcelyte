@@ -137,6 +137,12 @@ bool Counter128_isEmpty(struct Counter128 set) {
 	return 1;
 }
 
+struct Counter128 Counter128_and(struct Counter128 a, struct Counter128 b) {
+	for(uint32_t i = 0; i < lengthof(a.bits); ++i)
+		a.bits[i] &= b.bits[i];
+	return a;
+}
+
 struct Counter128 Counter128_or(struct Counter128 a, struct Counter128 b) {
 	for(uint32_t i = 0; i < lengthof(a.bits); ++i)
 		a.bits[i] |= b.bits[i];
@@ -1180,11 +1186,14 @@ static bool handle_RoutingHeader(struct Context *ctx, struct Room *room, struct 
 		return true;
 	if(routing.connectionId) {
 		struct Counter128 mask = room->connected;
-		if(routing.connectionId != 127) {
-			mask = COUNTER128_CLEAR;
-			Counter128_set(&mask, routing.connectionId - 1, 1);
-		}
 		Counter128_set(&mask, indexof(room->players, session), 0);
+		if(routing.connectionId != 127) {
+			struct Counter128 single = COUNTER128_CLEAR;
+			Counter128_set(&single, routing.connectionId - 1, 1);
+			mask = Counter128_and(mask, single);
+			if(Counter128_isEmpty(mask))
+				uprintf("    connectionId %hhu points to nonexistent player!\n", routing.connectionId);
+		}
 		FOR_SOME_PLAYERS(id, mask,) {
 			uint8_t resp[65536], *resp_end = resp;
 			if(!reliable)

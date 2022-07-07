@@ -92,9 +92,12 @@ void instance_send_channeled(struct NetSession *session, struct Channels *channe
 		uprintf("Packet too large (%u > %u)\n", len, session->maxChanneledSize);
 	} else if(len >= 65536) {
 		uprintf("Reliable packet too large (%u >= 65536)\n", len);
-	} else if(session->maxFragmentSize - 1 >= NET_MAX_PKT_SIZE) {
-		uprintf("`session->maxFragmentSize` out of range\n");
 	} else {
+		if((uint32_t)(session->maxFragmentSize - 1u) >= NET_MAX_PKT_SIZE) { // Guards against SIGFPE
+			// Note: Accoring to the C standard, just putting `1u` should be enough, but we abolutely CANNOT risk the possibility of the compiler using a signed integer here.
+			uprintf("CORRUPTION DETECTED: `session->maxFragmentSize` out of range\n");
+			session->maxFragmentSize = 435;
+		}
 		fragmentHeader.fragmentId = ++session->fragmentId;
 		fragmentHeader.fragmentsTotal = (len + session->maxFragmentSize - 1) / session->maxFragmentSize;
 		for(fragmentHeader.fragmentPart = 0; fragmentHeader.fragmentPart < fragmentHeader.fragmentsTotal - 1; ++fragmentHeader.fragmentPart, buf += session->maxFragmentSize, len -= session->maxFragmentSize)
