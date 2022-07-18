@@ -2,6 +2,8 @@
 
 BeatUpServer
 ============
+*"beat saber gettin violent these days" -some Discord user*
+
 A lightweight server to enable modded multiplayer in Beat Saber 1.19.0 and newer.
 
 *The official BeatUpServer instance is hosted at `master.battletrains.org`*

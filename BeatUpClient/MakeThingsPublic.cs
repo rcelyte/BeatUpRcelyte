@@ -3,7 +3,12 @@ class MainClass {
 		["BGNet.dll"] = new[] {
 			"ConnectedPlayerManager/ConnectedPlayer",
 			"ConnectedPlayerManager/PlayerConnectedPacket",
+			"ConnectedPlayerManager::kMaxUnreliableMessageLength",
+			"ConnectedPlayerManager::Write",
 			"ConnectedPlayerManager::WriteOne",
+			"MultiplayerSessionManager::_packetSerializer",
+			"NetworkPacketSerializer`2::_messsageHandlers",
+			"NetworkPacketSerializer`2::_typeRegistry",
 		},
 		["HMLib.dll"] = new[] {
 			"SceneInfo::_sceneName",
@@ -13,6 +18,7 @@ class MainClass {
 			"HMUI.ButtonSpriteSwap::_highlightStateSprite",
 			"HMUI.ButtonSpriteSwap::_normalStateSprite",
 			"HMUI.ButtonSpriteSwap::_pressedStateSprite",
+			"HMUI.DropdownWithTableView::_modalView",
 			"HMUI.DropdownWithTableView::Hide",
 			"HMUI.FlowCoordinator::_screenSystem",
 			"HMUI.FlowCoordinator::DismissFlowCoordinator",
@@ -27,6 +33,9 @@ class MainClass {
 			"HMUI.ImageView::_skew",
 			"HMUI.InputFieldView::_placeholderText",
 			"HMUI.InputFieldView::_textLengthLimit",
+			"HMUI.ModalView::_dismissPanelAnimation",
+			"HMUI.PanelAnimationSO::_duration",
+			"HMUI.SimpleTextDropdown::_text",
 			"HMUI.TextSegmentedControl::_container",
 			"HMUI.UIKeyboard::_buttonBinder",
 			"HMUI.UIKeyboard::keyWasPressedEvent",
@@ -37,7 +46,10 @@ class MainClass {
 		["LiteNetLib.dll"] = new[] {
 			"LiteNetLib.NetConnectAcceptPacket",
 			"LiteNetLib.NetPacket",
+			"LiteNetLib.PacketProperty",
 			"LiteNetLib.ReliableChannel",
+			"LiteNetLib.ReliableChannel/PendingPacket",
+			"LiteNetLib.Utils.NetDataWriter::_position",
 		},
 		["Main.dll"] = new[] {
 			"BeatmapCallbacksController::_startFilterTime",
@@ -50,6 +62,8 @@ class MainClass {
 			"CustomLevelLoader::_defaultEnvironmentInfo",
 			"CustomLevelLoader::_environmentSceneInfoCollection",
 			"DropdownSettingsController::_dropdown",
+			"DropdownSettingsController::_idx",
+			"EditColorSchemeController::_closeButton",
 			"EnterPlayerGuestNameViewController::_nameInputFieldView",
 			"GameplayCoreSceneSetupData::gameplayModifiers",
 			"GameServerPlayerTableCell::_localPlayerBackgroundImage",
@@ -89,9 +103,16 @@ class MainClass {
 			"StandardLevelDetailView::_beatmapDifficultySegmentedControlController",
 			"SwitchSettingsController::_toggle",
 		},
+		["mscorlib.dll"] = new[] {
+			"System.Runtime.CompilerServices.Unsafe",
+			"System.Security.Cryptography.HashAlgorithm::HashCore",
+			"System.Security.Cryptography.HashAlgorithm::HashFinal",
+		},
 		["MultiplayerCore.dll"] = new[] {
+			"MultiplayerCore.Networking.MpPacketSerializer::registeredTypes",
 			"MultiplayerCore.Patches.DataModelBinderPatch",
 			"MultiplayerCore.Patches.DataModelBinderPatch::_playersDataModelMethod",
+			"MultiplayerCore.Plugin",
 		},
 		["Polyglot.dll"] = new[] {
 			"Polyglot.LocalizationImporter::Import",
@@ -99,6 +120,9 @@ class MainClass {
 		},
 		["SiraUtil.dll"] = new[] {
 			"SiraUtil.Affinity.Harmony.HarmonyAffinityPatcher",
+		},
+		["System.IO.Compression.dll"] = new[] {
+			"System.IO.Compression.ZipArchiveEntry::get_UncompressedData",
 		},
 	};
 	class FixedAssemblyResolver : Mono.Cecil.BaseAssemblyResolver {

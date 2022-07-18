@@ -333,7 +333,7 @@ n SetActivePlayerFailedToConnect
 	if(.flags.hasValue0)
 		String failedUserId
 	if(.flags.hasValue1)
-		PlayerSpecificSettingsAtStartNetSerializable playersAtGameStartNetSerializable
+		PlayerSpecificSettingsAtStartNetSerializable playersAtGameStart
 	if(.flags.hasValue2)
 		String sessionGameId
 n SetGameplaySongReady
@@ -682,6 +682,33 @@ u32 MpBeatmapDifficulty
 	Hard
 	Expert
 	ExpertPlus
+n MpRequirementSet
+	u8 difficulty
+	u8 requirements_len
+	String requirements[16,.requirements_len]
+n MpMapColor
+	u8 difficulty
+	b have_colorLeft:1
+	b have_colorRight:1
+	b have_envColorLeft:1
+	b have_envColorRight:1
+	b have_envColorLeftBoost:1
+	b have_envColorRightBoost:1
+	b have_obstacleColor:1
+	if(.have_colorLeft)
+		ColorNoAlphaSerializable colorLeft
+	if(.have_colorRight)
+		ColorNoAlphaSerializable colorRight
+	if(.have_envColorLeft)
+		ColorNoAlphaSerializable envColorLeft
+	if(.have_envColorRight)
+		ColorNoAlphaSerializable envColorRight
+	if(.have_envColorLeftBoost)
+		ColorNoAlphaSerializable envColorLeftBoost
+	if(.have_envColorRightBoost)
+		ColorNoAlphaSerializable envColorRightBoost
+	if(.have_obstacleColor)
+		ColorNoAlphaSerializable obstacleColor
 n MpBeatmapPacket
 	String levelHash
 	LongString songName
@@ -692,6 +719,12 @@ n MpBeatmapPacket
 	f32 songDuration
 	String characteristic
 	MpBeatmapDifficulty difficulty
+	u8 requirementSets_len
+	MpRequirementSet requirementSets[5,.requirementSets_len]
+	u8 contributors_len
+	String contributors[24,.contributors_len*3]
+	u8 mapColors_len
+	MpMapColor mapColors[5,.mapColors_len]
 i32 MpPlatform
 	Unknown
 	Steam
@@ -716,7 +749,7 @@ n SyncTime
 n PlayerConnected
 	u8 remoteConnectionId
 	String userId
-	ExString userName
+	String userName
 	b isConnectionOwner
 n PlayerStateHash
 	BitMask128 bloomFilter
@@ -897,7 +930,8 @@ n ConnectToServerResponse
 		String userName
 		String secret
 		BeatmapLevelSelectionMask selectionMask
-		u8 flags
+		b isConnectionOwner:1
+		b isDedicatedServer:1
 		IPEndPoint remoteEndPoint
 		u8 random[32]
 		ByteArrayNetSerializable publicKey
@@ -1045,7 +1079,7 @@ n ConnectAccept
 	if($netVersion >= 12)
 		i32 peerId
 	if($beatUpVersion)
-		BeatUpConnectInfo beatUp
+		ServerConnectInfo beatUp
 n Disconnect
 	u8 _pad0[8]
 d UnconnectedMessage

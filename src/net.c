@@ -98,7 +98,7 @@ mbedtls_ctr_drbg_context *net_get_ctr_drbg(struct NetContext *ctx) {
 	return &ctx->ctr_drbg;
 }
 
-void net_tostr(const struct SS *a, char *out) {
+void net_tostr(const struct SS *a, char out[static INET6_ADDRSTRLEN + 8]) {
 	char ipStr[INET6_ADDRSTRLEN];
 	switch(a->ss.ss_family) {
 		case AF_UNSPEC: {

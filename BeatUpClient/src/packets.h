@@ -133,17 +133,15 @@ struct BeatUpMessage {
 		struct LoadProgress loadProgress;
 	};
 };
-struct BeatUpConnectInfo {
+struct ServerConnectInfo_LEGACY {
+	uint32_t protocolId;
+	uint16_t maxBlockSize;
 	uint32_t windowSize;
 	uint8_t countdownDuration;
 	bool directDownloads;
 	bool skipResults;
 	bool perPlayerDifficulty;
 	bool perPlayerModifiers;
-};
-struct BeatUpConnectHeader {
-	uint32_t protocolId;
-	struct BeatUpConnectInfo base;
 };
 struct ModConnectHeader {
 	uint32_t length;
@@ -167,9 +165,7 @@ static const struct PacketContext PV_LEGACY_DEFAULT = {
 };
 void _pkt_BeatUpMessage_read(struct BeatUpMessage *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 void _pkt_BeatUpMessage_write(const struct BeatUpMessage *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
-void _pkt_BeatUpConnectInfo_read(struct BeatUpConnectInfo *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
-void _pkt_BeatUpConnectHeader_read(struct BeatUpConnectHeader *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
-void _pkt_BeatUpConnectHeader_write(const struct BeatUpConnectHeader *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
+void _pkt_ServerConnectInfo_LEGACY_read(struct ServerConnectInfo_LEGACY *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 void _pkt_ModConnectHeader_read(struct ModConnectHeader *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 void _pkt_ModConnectHeader_write(const struct ModConnectHeader *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 void _pkt_BeatUpConnectHeaderFull_write(const struct BeatUpConnectHeaderFull *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
@@ -179,6 +175,6 @@ typedef void (*PacketReadFunc)(void *restrict, const uint8_t**, const uint8_t*, 
 size_t _pkt_try_read(PacketReadFunc inner, void *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 size_t _pkt_try_write(PacketWriteFunc inner, const void *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 #define pkt_write_c(pkt, end, ctx, type, ...) _pkt_try_write((PacketWriteFunc)_pkt_##type##_write, &(struct type)__VA_ARGS__, pkt, end, ctx)
-#define pkt_read(data, ...) _pkt_try_read((PacketReadFunc)_Generic(*(data), struct BeatUpMessage: _pkt_BeatUpMessage_read, struct BeatUpConnectInfo: _pkt_BeatUpConnectInfo_read, struct BeatUpConnectHeader: _pkt_BeatUpConnectHeader_read, struct ModConnectHeader: _pkt_ModConnectHeader_read), data, __VA_ARGS__)
-#define pkt_write(data, ...) _pkt_try_write((PacketWriteFunc)_Generic(*(data), struct BeatUpMessage: _pkt_BeatUpMessage_write, struct BeatUpConnectHeader: _pkt_BeatUpConnectHeader_write, struct ModConnectHeader: _pkt_ModConnectHeader_write, struct BeatUpConnectHeaderFull: _pkt_BeatUpConnectHeaderFull_write), data, __VA_ARGS__)
+#define pkt_read(data, ...) _pkt_try_read((PacketReadFunc)_Generic(*(data), struct BeatUpMessage: _pkt_BeatUpMessage_read, struct ServerConnectInfo_LEGACY: _pkt_ServerConnectInfo_LEGACY_read, struct ModConnectHeader: _pkt_ModConnectHeader_read), data, __VA_ARGS__)
+#define pkt_write(data, ...) _pkt_try_write((PacketWriteFunc)_Generic(*(data), struct BeatUpMessage: _pkt_BeatUpMessage_write, struct ModConnectHeader: _pkt_ModConnectHeader_write, struct BeatUpConnectHeaderFull: _pkt_BeatUpConnectHeaderFull_write), data, __VA_ARGS__)
 size_t pkt_write_bytes(const uint8_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx, size_t count);

@@ -1,6 +1,9 @@
 n ByteArrayNetSerializable
 	vu32 length
 	u8 data[8192, .length]
+n ConnectInfo
+	u32 protocolId
+	u16 blockSize
 vu32 BeatmapDifficulty
 	Easy
 	Normal
@@ -8,11 +11,11 @@ vu32 BeatmapDifficulty
 	Expert
 	ExpertPlus
 n PreviewDifficultyBeatmapSet
-	String beatmapCharacteristicSerializedName
-	u8 count
-	BeatmapDifficulty difficulties[5,.count]
-n NetworkPreviewBeatmapLevel
-	LongString levelId
+	String characteristic
+	u8 difficulties_len
+	BeatmapDifficulty difficulties[5,.difficulties_len]
+n PreviewBeatmapLevel
+	LongString levelID
 	LongString songName
 	LongString songSubName
 	LongString songAuthorName
@@ -24,33 +27,45 @@ n NetworkPreviewBeatmapLevel
 	f32 previewStartTime
 	f32 previewDuration
 	f32 songDuration
-	u8 count
-	PreviewDifficultyBeatmapSet previewDifficultyBeatmapSets[8,.count]
+	String environmentInfo
+	String allDirectionsEnvironmentInfo
+	u8 beatmapSets_len
+	PreviewDifficultyBeatmapSet beatmapSets[8,.beatmapSets_len]
 	ByteArrayNetSerializable cover
+n CustomLabelSet
+	u8 difficulties_len
+	LongString difficulties[5,.difficulties_len]
 n RecommendPreview
-	NetworkPreviewBeatmapLevel base
+	PreviewBeatmapLevel base
+	CustomLabelSet labelSets[8,.base.beatmapSets_len]
 	vu32 requirements_len
 	String requirements[16,.requirements_len]
 	vu32 suggestions_len
 	String suggestions[16,.suggestions_len]
+n ShareMeta
+	vu64 byteLength
+	u8 hash[32]
+u16 ShareableType
+	None
+	Generic
+	BeatmapAudio
+	BeatmapSet
+	Avatar
+n ShareId
+	ShareableType usage
+	if(.usage != ShareableType_None)
+		String mimeType
+		LongString name
 n ShareInfo
-	LongString levelId
-	u8 levelHash[32]
-	vu64 fileSize
-n SetCanShareBeatmap
-	ShareInfo base
-	b canShare
-n DirectDownloadInfo
-	ShareInfo base
+	u32 offset
+	u16 blockSize
+	ShareMeta meta
+	ShareId id
+n DataFragmentRequest
+	u32 offset
 	u8 count
-	String sourcePlayers[128,.count]
-n LevelFragmentRequest
-	vu64 offset
-	u16 maxSize
-n LevelFragment
-	vu64 offset
-	u16 size
-	u8 data[1500,.size]
+n DataFragment
+	u32 offset
 u8 LoadState
 	None
 	Failed
@@ -65,22 +80,20 @@ n LoadProgress
 d BeatUpMessage
 	BeatUpMessageType type
 	u8 BeatUpMessageType(.type)
+		ConnectInfo connectInfo
 		RecommendPreview recommendPreview
-		SetCanShareBeatmap setCanShareBeatmap
-		DirectDownloadInfo directDownloadInfo
-		LevelFragmentRequest levelFragmentRequest
-		LevelFragment levelFragment
+		ShareInfo shareInfo
+		DataFragmentRequest dataFragmentRequest
+		DataFragment dataFragment
 		LoadProgress loadProgress
-r BeatUpConnectInfo
+r ServerConnectInfo
+	ConnectInfo base
 	u32 windowSize
 	u8 countdownDuration
 	b directDownloads:1
 	b skipResults:1
 	b perPlayerDifficulty:1
 	b perPlayerModifiers:1
-d BeatUpConnectHeader
-	u32 protocolId
-	BeatUpConnectInfo base
 d ModConnectHeader
 	vu32 length
 	String name

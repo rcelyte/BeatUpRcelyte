@@ -156,7 +156,11 @@ void _pkt_BeatUpMessage_write(const struct BeatUpMessage *restrict data, uint8_t
 		default: uprintf("Invalid value for enum `BeatUpMessageType`\n"); longjmp(fail, 1);
 	}
 }
-void _pkt_BeatUpConnectInfo_read(struct BeatUpConnectInfo *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+void _pkt_ServerConnectInfo_LEGACY_read(struct ServerConnectInfo_LEGACY *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u32_read(&data->protocolId, pkt, end, ctx);
+	if(data->protocolId >= 2) {
+		_pkt_u16_read(&data->maxBlockSize, pkt, end, ctx);
+	}
 	_pkt_u32_read(&data->windowSize, pkt, end, ctx);
 	_pkt_u8_read(&data->countdownDuration, pkt, end, ctx);
 	uint8_t bitfield0;
@@ -165,24 +169,6 @@ void _pkt_BeatUpConnectInfo_read(struct BeatUpConnectInfo *restrict data, const 
 	data->skipResults = bitfield0 >> 1 & 1;
 	data->perPlayerDifficulty = bitfield0 >> 2 & 1;
 	data->perPlayerModifiers = bitfield0 >> 3 & 1;
-}
-static void _pkt_BeatUpConnectInfo_write(const struct BeatUpConnectInfo *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_u32_write(&data->windowSize, pkt, end, ctx);
-	_pkt_u8_write(&data->countdownDuration, pkt, end, ctx);
-	uint8_t bitfield0 = 0;
-	bitfield0 |= (data->directDownloads & 1u) << 0;
-	bitfield0 |= (data->skipResults & 1u) << 1;
-	bitfield0 |= (data->perPlayerDifficulty & 1u) << 2;
-	bitfield0 |= (data->perPlayerModifiers & 1u) << 3;
-	_pkt_u8_write(&bitfield0, pkt, end, ctx);
-}
-void _pkt_BeatUpConnectHeader_read(struct BeatUpConnectHeader *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_u32_read(&data->protocolId, pkt, end, ctx);
-	_pkt_BeatUpConnectInfo_read(&data->base, pkt, end, ctx);
-}
-void _pkt_BeatUpConnectHeader_write(const struct BeatUpConnectHeader *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_u32_write(&data->protocolId, pkt, end, ctx);
-	_pkt_BeatUpConnectInfo_write(&data->base, pkt, end, ctx);
 }
 void _pkt_ModConnectHeader_read(struct ModConnectHeader *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_vu32_read(&data->length, pkt, end, ctx);

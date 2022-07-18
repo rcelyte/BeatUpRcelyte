@@ -1,4 +1,5 @@
-<?xml version="1.0" encoding="utf-8"?>
+<!-- OUT OF DATE -->
+<!-- <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<TargetFramework>net472</TargetFramework>
@@ -10,7 +11,7 @@
 		<LocalRefsDir Condition="Exists('..\Refs')">..\Refs</LocalRefsDir>
 		<BeatSaberDir>$(LocalRefsDir)</BeatSaberDir>
 		<DebugType>full</DebugType>
-		<ModVersion>0.3.4</ModVersion>
+		<ModVersion>0.4.0</ModVersion>
 	</PropertyGroup>
 	<ItemGroup>
 		<Reference Include="Mono.Cecil">
@@ -91,3 +92,4 @@
 		</PackageReference>
 	</ItemGroup>
 </Project>
+ -->

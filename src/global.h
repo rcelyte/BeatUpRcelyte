@@ -9,11 +9,11 @@
 	if(head == end)
 		return false;
 	const uint8_t *start = end - expect;
-	uprintf("%s [netVersion=%hhu, protocolVersion=%hhu, beatUpVersion=%hhu, windowSize=%u] (expected %u, read %zu)\n\t", errorMessage, ctx.netVersion, ctx.protocolVersion, ctx.beatUpVersion, ctx.windowSize, expect, head - start);
+	uprintf("%s [netVersion=%hhu, protocolVersion=%hhu, beatUpVersion=%hhu, windowSize=%u] (expected %u, read %zu)\n    ", errorMessage, ctx.netVersion, ctx.protocolVersion, ctx.beatUpVersion, ctx.windowSize, expect, head - start);
 	for(const uint8_t *it = start; it < end; ++it)
 		uprintf("%02hhx", *it);
 	if(head - start < expect) {
-		uprintf("\n\t");
+		uprintf("\n    ");
 		for(const uint8_t *it = start; it < head; ++it)
 			uprintf("  ");
 		uprintf("^ extra data starts here");

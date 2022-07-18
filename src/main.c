@@ -36,6 +36,7 @@ int main(int argc, const char *argv[]) {
 	}
 	#endif
 	struct Config cfg;
+	memset(&cfg, 0, sizeof(cfg));
 	if(config_load(&cfg, config_path))
 		goto fail0;
 	status_internal_init();

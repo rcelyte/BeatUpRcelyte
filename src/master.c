@@ -475,7 +475,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 	req->selectionMask.songPacks.bloomFilter.d0 |= customs.d0;
 	req->selectionMask.songPacks.bloomFilter.d1 |= customs.d1;*/
 	{
-		isession = TEMPwire_room_resolve_session(handle, addr, req->secret, req->base.userId, (struct ExString){req->base.userName, 0}, session->net.version);
+		isession = TEMPwire_room_resolve_session(handle, addr, req->secret, req->base.userId, req->base.userName, session->net.version);
 		if(!isession) { // TODO: the room should close implicitly if the first user to connect fails
 			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_UnknownError;
 			goto send;
@@ -501,7 +501,8 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		r_conn.connectToServerResponse.userName.length = 0;
 		r_conn.connectToServerResponse.secret = req->secret;
 		r_conn.connectToServerResponse.selectionMask = req->selectionMask;
-		r_conn.connectToServerResponse.flags = 3;
+		r_conn.connectToServerResponse.isConnectionOwner = true;
+		r_conn.connectToServerResponse.isDedicatedServer = true;
 		r_conn.connectToServerResponse.remoteEndPoint = wire_block_get_endpoint(handle.block, addr.ss.ss_family != AF_INET6 || memcmp(addr.in6.sin6_addr.s6_addr, (const uint8_t[]){0,0,0,0,0,0,0,0,0,0,255,255}, 12) == 0);
 		r_conn.connectToServerResponse.managerId = managerId;
 		r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_Success;

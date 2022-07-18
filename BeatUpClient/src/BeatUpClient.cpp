@@ -307,7 +307,7 @@ static char *TryReadText(const char *path) {
 }
 
 static RecommendPreview new_RecommendPreview(GlobalNamespace::CustomPreviewBeatmapLevel *previewBeatmapLevel, std::vector<std::string_view> *requirements, std::vector<std::string_view> *suggestions) {
-	RecommendPreview out = {
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));	RecommendPreview out = {
 		.base = {
 			.levelId = new_String<LongString>(previewBeatmapLevel->get_levelID()),
 			.songName = new_String<LongString>(previewBeatmapLevel->get_songName()),
@@ -328,22 +328,22 @@ static RecommendPreview new_RecommendPreview(GlobalNamespace::CustomPreviewBeatm
 		.requirements_len = 0,
 		.suggestions_len = 0,
 	};
-	System::Collections::Generic::IReadOnlyList_1<GlobalNamespace::PreviewDifficultyBeatmapSet*> *sets = previewBeatmapLevel->get_previewDifficultyBeatmapSets();
-	out.base.count = ((System::Collections::Generic::IReadOnlyCollection_1<GlobalNamespace::PreviewDifficultyBeatmapSet*>*)sets)->get_Count();
-	for(uint32_t i = 0; i < out.base.count; ++i) {
-		GlobalNamespace::PreviewDifficultyBeatmapSet *set = sets->get_Item(i);
-		PreviewDifficultyBeatmapSet *set_out = &out.base.previewDifficultyBeatmapSets[i];
-		set_out->beatmapCharacteristicSerializedName = new_String(set->get_beatmapCharacteristic()->get_serializedName());
-		set_out->count = 0;
-		for(GlobalNamespace::BeatmapDifficulty diff : set->get_beatmapDifficulties())
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));	System::Collections::Generic::IReadOnlyList_1<GlobalNamespace::PreviewDifficultyBeatmapSet*> *sets = previewBeatmapLevel->get_previewDifficultyBeatmapSets();
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));	out.base.count = ((System::Collections::Generic::IReadOnlyCollection_1<GlobalNamespace::PreviewDifficultyBeatmapSet*>*)sets)->get_Count();
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));	for(uint32_t i = 0; i < out.base.count; ++i) {
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		GlobalNamespace::PreviewDifficultyBeatmapSet *set = sets->get_Item(i);
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		PreviewDifficultyBeatmapSet *set_out = &out.base.previewDifficultyBeatmapSets[i];
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		set_out->beatmapCharacteristicSerializedName = new_String(set->get_beatmapCharacteristic()->get_serializedName());
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		set_out->count = 0;
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		for(GlobalNamespace::BeatmapDifficulty diff : set->get_beatmapDifficulties())
 			if(set_out->count < lengthof(set_out->difficulties))
 				set_out->difficulties[set_out->count++] = diff;
-	}
-	for(std::string_view str : *requirements)
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));	}
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));	for(std::string_view str : *requirements)
 		out.requirements[out.requirements_len++] = new_String(str);
-	for(std::string_view str : *suggestions)
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));	for(std::string_view str : *suggestions)
 		out.suggestions[out.suggestions_len++] = new_String(str);
-	return out;
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));	return out;
 }
 
 struct PlayerData {
@@ -368,14 +368,14 @@ struct PlayerData {
 	ModifiersWeCareAbout modifiers[128];
 	ModifiersWeCareAbout lockedModifiers[128];
 	void Init(int32_t playerCount) {
-		len = playerCount;
-		memset(previews, 0, sizeof(previews));
-		memset(cells, 0, sizeof(cells));
-		for(ModifiersWeCareAbout &e : modifiers)
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		len = playerCount;
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		memset(previews, 0, sizeof(previews));
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		memset(cells, 0, sizeof(cells));
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		for(ModifiersWeCareAbout &e : modifiers)
 			e = ModifiersWeCareAbout();
-		for(ModifiersWeCareAbout &e : lockedModifiers)
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		for(ModifiersWeCareAbout &e : lockedModifiers)
 			e = ModifiersWeCareAbout();
-	}
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));	}
 	void Reset(int index) {
 		cells[index].SetData(LoadProgress{0, LoadState_None, 0});
 		lockedModifiers[index] = modifiers[index] = ModifiersWeCareAbout();
@@ -440,10 +440,10 @@ struct PlayerData {
 		} else {
 			logger->info("No requirements for `%s`", levelId.c_str());
 		}
-		previews[index] = new_RecommendPreview(previewBeatmapLevel, &requirements, &suggestions);
-		if(info_dat)
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		previews[index] = new_RecommendPreview(previewBeatmapLevel, &requirements, &suggestions);
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		if(info_dat)
 			free(info_dat);
-		return &previews[index];
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		return &previews[index];
 	}
 } static playerData;
 
@@ -972,72 +972,72 @@ class DifficultyPanel {
 		return Update(beatmapLevel, std::function(onChange));
 	}
 	bool Update(GlobalNamespace::PreviewDifficultyBeatmap *beatmapLevel, std::function<void(GlobalNamespace::PreviewDifficultyBeatmap)> onChange) {
-		characteristicSelector->didSelectBeatmapCharacteristicEvent = MakeDelegate<System::Action_2<GlobalNamespace::BeatmapCharacteristicSegmentedControlController*, GlobalNamespace::BeatmapCharacteristicSO*>*>((void (*)(GlobalNamespace::BeatmapCharacteristicSegmentedControlController*, GlobalNamespace::BeatmapCharacteristicSO*))[](GlobalNamespace::BeatmapCharacteristicSegmentedControlController*, GlobalNamespace::BeatmapCharacteristicSO*){});
-		difficultySelector->didSelectDifficultyEvent = MakeDelegate<System::Action_2<GlobalNamespace::BeatmapDifficultySegmentedControlController*, GlobalNamespace::BeatmapDifficulty>*>((void (*)(GlobalNamespace::BeatmapDifficultySegmentedControlController*, GlobalNamespace::BeatmapDifficulty))[](GlobalNamespace::BeatmapDifficultySegmentedControlController*, GlobalNamespace::BeatmapDifficulty){});
-		if(!beatmapLevel)
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		characteristicSelector->didSelectBeatmapCharacteristicEvent = MakeDelegate<System::Action_2<GlobalNamespace::BeatmapCharacteristicSegmentedControlController*, GlobalNamespace::BeatmapCharacteristicSO*>*>((void (*)(GlobalNamespace::BeatmapCharacteristicSegmentedControlController*, GlobalNamespace::BeatmapCharacteristicSO*))[](GlobalNamespace::BeatmapCharacteristicSegmentedControlController*, GlobalNamespace::BeatmapCharacteristicSO*){});
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		difficultySelector->didSelectDifficultyEvent = MakeDelegate<System::Action_2<GlobalNamespace::BeatmapDifficultySegmentedControlController*, GlobalNamespace::BeatmapDifficulty>*>((void (*)(GlobalNamespace::BeatmapDifficultySegmentedControlController*, GlobalNamespace::BeatmapDifficulty))[](GlobalNamespace::BeatmapDifficultySegmentedControlController*, GlobalNamespace::BeatmapDifficulty){});
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		if(!beatmapLevel)
 			return Clear();
-		System::Collections::Generic::IReadOnlyList_1<GlobalNamespace::PreviewDifficultyBeatmapSet*> *previewDifficultyBeatmapSets = beatmapLevel->get_beatmapLevel()->get_previewDifficultyBeatmapSets();
-		if(!previewDifficultyBeatmapSets)
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		System::Collections::Generic::IReadOnlyList_1<GlobalNamespace::PreviewDifficultyBeatmapSet*> *previewDifficultyBeatmapSets = beatmapLevel->get_beatmapLevel()->get_previewDifficultyBeatmapSets();
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		if(!previewDifficultyBeatmapSets)
 			return Clear();
-		uint32_t beatmapCharacteristics_len = ((System::Collections::Generic::IReadOnlyCollection_1<GlobalNamespace::PreviewDifficultyBeatmapSet*>*)previewDifficultyBeatmapSets)->get_Count();
-		GlobalNamespace::CustomDifficultyBeatmapSet beatmapCharacteristics[beatmapCharacteristics_len];
-		ArrayW<GlobalNamespace::IDifficultyBeatmapSet*> beatmapCharacteristic_ptrs = ArrayW<GlobalNamespace::IDifficultyBeatmapSet*>(beatmapCharacteristics_len);
-		for(uint32_t i = 0; i < beatmapCharacteristics_len; ++i) {
-			GlobalNamespace::PreviewDifficultyBeatmapSet *set = previewDifficultyBeatmapSets->get_Item(i);
-			GlobalNamespace::BeatmapCharacteristicSO *beatmapCharacteristic = set->get_beatmapCharacteristic();
-			if(beatmapCharacteristic == beatmapLevel->get_beatmapCharacteristic()) {
-				ArrayW<GlobalNamespace::BeatmapDifficulty> beatmapDifficulties = set->get_beatmapDifficulties();
-				uint32_t difficultyBeatmaps_len = beatmapDifficulties.Length();
-				GlobalNamespace::CustomDifficultyBeatmap difficultyBeatmaps[difficultyBeatmaps_len];
-				ArrayW<GlobalNamespace::IDifficultyBeatmap*> difficultyBeatmap_ptrs = ArrayW<GlobalNamespace::IDifficultyBeatmap*>(difficultyBeatmaps_len);
-				for(uint32_t i = 0; i < difficultyBeatmaps_len; ++i) {
-					difficultyBeatmaps[i] = GlobalNamespace::CustomDifficultyBeatmap{
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		uint32_t beatmapCharacteristics_len = ((System::Collections::Generic::IReadOnlyCollection_1<GlobalNamespace::PreviewDifficultyBeatmapSet*>*)previewDifficultyBeatmapSets)->get_Count();
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		GlobalNamespace::CustomDifficultyBeatmapSet beatmapCharacteristics[beatmapCharacteristics_len];
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		ArrayW<GlobalNamespace::IDifficultyBeatmapSet*> beatmapCharacteristic_ptrs = ArrayW<GlobalNamespace::IDifficultyBeatmapSet*>(beatmapCharacteristics_len);
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		for(uint32_t i = 0; i < beatmapCharacteristics_len; ++i) {
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));			GlobalNamespace::PreviewDifficultyBeatmapSet *set = previewDifficultyBeatmapSets->get_Item(i);
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));			GlobalNamespace::BeatmapCharacteristicSO *beatmapCharacteristic = set->get_beatmapCharacteristic();
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));			if(beatmapCharacteristic == beatmapLevel->get_beatmapCharacteristic()) {
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));				ArrayW<GlobalNamespace::BeatmapDifficulty> beatmapDifficulties = set->get_beatmapDifficulties();
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));				uint32_t difficultyBeatmaps_len = beatmapDifficulties.Length();
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));				GlobalNamespace::CustomDifficultyBeatmap difficultyBeatmaps[difficultyBeatmaps_len];
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));				ArrayW<GlobalNamespace::IDifficultyBeatmap*> difficultyBeatmap_ptrs = ArrayW<GlobalNamespace::IDifficultyBeatmap*>(difficultyBeatmaps_len);
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));				for(uint32_t i = 0; i < difficultyBeatmaps_len; ++i) {
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));					difficultyBeatmaps[i] = GlobalNamespace::CustomDifficultyBeatmap{
 						.difficulty = beatmapDifficulties[i],
 					};
-					difficultyBeatmap_ptrs[i] = (GlobalNamespace::IDifficultyBeatmap*)&difficultyBeatmaps[i];
-				}
-				difficultySelector->SetData((System::Collections::Generic::IReadOnlyList_1<GlobalNamespace::IDifficultyBeatmap*>*)difficultyBeatmap_ptrs.convert(), beatmapLevel->get_beatmapDifficulty());
-			}
-			beatmapCharacteristics[i] = GlobalNamespace::CustomDifficultyBeatmapSet{
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));					difficultyBeatmap_ptrs[i] = (GlobalNamespace::IDifficultyBeatmap*)&difficultyBeatmaps[i];
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));				}
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));				difficultySelector->SetData((System::Collections::Generic::IReadOnlyList_1<GlobalNamespace::IDifficultyBeatmap*>*)difficultyBeatmap_ptrs.convert(), beatmapLevel->get_beatmapDifficulty());
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));			}
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));			beatmapCharacteristics[i] = GlobalNamespace::CustomDifficultyBeatmapSet{
 				.beatmapCharacteristic = beatmapCharacteristic,
 			};
-			beatmapCharacteristic_ptrs[i] = (GlobalNamespace::IDifficultyBeatmapSet*)&beatmapCharacteristics[i];
-		}
-		characteristicSelector->SetData((System::Collections::Generic::IReadOnlyList_1<GlobalNamespace::IDifficultyBeatmapSet*>*)beatmapCharacteristic_ptrs.convert(), beatmapLevel->get_beatmapCharacteristic());
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));			beatmapCharacteristic_ptrs[i] = (GlobalNamespace::IDifficultyBeatmapSet*)&beatmapCharacteristics[i];
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		}
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		characteristicSelector->SetData((System::Collections::Generic::IReadOnlyList_1<GlobalNamespace::IDifficultyBeatmapSet*>*)beatmapCharacteristic_ptrs.convert(), beatmapLevel->get_beatmapCharacteristic());
 		/*if(hideHints) // TODO: make this work
 			foreach(HMUI.HoverHint hint in characteristicSelector.GetComponentsInChildren<HMUI.HoverHint>())
 				hint.enabled = false;*/
-		characteristicSelector->add_didSelectBeatmapCharacteristicEvent(MakeDelegate<System::Action_2<GlobalNamespace::BeatmapCharacteristicSegmentedControlController*, GlobalNamespace::BeatmapCharacteristicSO*>*>([=](GlobalNamespace::BeatmapCharacteristicSegmentedControlController *controller, GlobalNamespace::BeatmapCharacteristicSO *characteristic) {
-				GlobalNamespace::PreviewDifficultyBeatmapSet *set;
-				for(uint32_t i = 0; i < beatmapCharacteristics_len; ++i) {
-					set = previewDifficultyBeatmapSets->get_Item(i);
-					if(set->get_beatmapCharacteristic() == characteristic)
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		characteristicSelector->add_didSelectBeatmapCharacteristicEvent(MakeDelegate<System::Action_2<GlobalNamespace::BeatmapCharacteristicSegmentedControlController*, GlobalNamespace::BeatmapCharacteristicSO*>*>([=](GlobalNamespace::BeatmapCharacteristicSegmentedControlController *controller, GlobalNamespace::BeatmapCharacteristicSO *characteristic) {
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));				GlobalNamespace::PreviewDifficultyBeatmapSet *set;
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));				for(uint32_t i = 0; i < beatmapCharacteristics_len; ++i) {
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));					set = previewDifficultyBeatmapSets->get_Item(i);
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));					if(set->get_beatmapCharacteristic() == characteristic)
 						break;
-				}
-				ArrayW<GlobalNamespace::BeatmapDifficulty> beatmapDifficulties = set->get_beatmapDifficulties();
-				GlobalNamespace::BeatmapDifficulty closestDifficulty = beatmapDifficulties[0];
-				for(BeatmapDifficulty difficulty : beatmapDifficulties) {
-					if(beatmapLevel->get_beatmapDifficulty() < difficulty)
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));				}
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));				ArrayW<GlobalNamespace::BeatmapDifficulty> beatmapDifficulties = set->get_beatmapDifficulties();
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));				GlobalNamespace::BeatmapDifficulty closestDifficulty = beatmapDifficulties[0];
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));				for(BeatmapDifficulty difficulty : beatmapDifficulties) {
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));					if(beatmapLevel->get_beatmapDifficulty() < difficulty)
 						break;
-					closestDifficulty = difficulty;
-				}
-				onChange(GlobalNamespace::PreviewDifficultyBeatmap{
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));					closestDifficulty = difficulty;
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));				}
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));				onChange(GlobalNamespace::PreviewDifficultyBeatmap{
 					.beatmapLevel = beatmapLevel->get_beatmapLevel(),
 					.beatmapCharacteristic = characteristic,
 					.beatmapDifficulty = closestDifficulty,
 				});
-			}
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));			}
 		));
-		difficultySelector->add_didSelectDifficultyEvent(MakeDelegate<System::Action_2<GlobalNamespace::BeatmapDifficultySegmentedControlController*, GlobalNamespace::BeatmapDifficulty>*>([=](GlobalNamespace::BeatmapDifficultySegmentedControlController *controller, GlobalNamespace::BeatmapDifficulty difficulty) {
-			onChange(GlobalNamespace::PreviewDifficultyBeatmap{
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		difficultySelector->add_didSelectDifficultyEvent(MakeDelegate<System::Action_2<GlobalNamespace::BeatmapDifficultySegmentedControlController*, GlobalNamespace::BeatmapDifficulty>*>([=](GlobalNamespace::BeatmapDifficultySegmentedControlController *controller, GlobalNamespace::BeatmapDifficulty difficulty) {
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));			onChange(GlobalNamespace::PreviewDifficultyBeatmap{
 				.beatmapLevel = beatmapLevel->get_beatmapLevel(),
 				.beatmapCharacteristic = beatmapLevel->get_beatmapCharacteristic(),
 				.beatmapDifficulty = difficulty,
 			});
-		}));
-		GameObject_SetActive(characteristicSelector->get_transform()->get_parent()->get_gameObject(), true);
-		GameObject_SetActive(difficultySelector->get_transform()->get_parent()->get_gameObject(), true);
-		return false;
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		}));
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		GameObject_SetActive(characteristicSelector->get_transform()->get_parent()->get_gameObject(), true);
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		GameObject_SetActive(difficultySelector->get_transform()->get_parent()->get_gameObject(), true);
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		return false;
 	}
 } static lobbyDifficultyPanel, gameplayDifficultyPanel;
 UnityEngine::GameObject *DifficultyPanel::characteristicTemplate = NULL;
@@ -1160,15 +1160,15 @@ BSC_MAKE_HOOK_MATCH(GlobalNamespace::MultiplayerModeSelectionViewController::Set
 static bool enableCustomLevels = false;
 void HandleConnectToServerSuccess(bool notGameLift, GlobalNamespace::BeatmapLevelSelectionMask selectionMask, GlobalNamespace::GameplayServerConfiguration configuration) {
 	logger->info("HandleConnectToServerSuccess()");
-	enableCustomLevels = notGameLift && selectionMask.songPacks.Contains(StringW("custom_levelpack_CustomLevels"sv));
-	playerData.Init(configuration.maxPlayerCount);
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));	enableCustomLevels = notGameLift && selectionMask.songPacks.Contains(StringW("custom_levelpack_CustomLevels"sv));
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));	playerData.Init(configuration.maxPlayerCount);
 	#ifndef DISABLE_SELECTORS
 	lobbyDifficultyPanel.Clear();
 	#endif
-	connectInfo = DefaultConnectInfo();
-	clientActive = false;
-	GameObject_SetActive(infoText, false);
-	logger->info("HandleConnectToServerSuccess() end");
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));	connectInfo = DefaultConnectInfo();
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));	clientActive = false;
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));	GameObject_SetActive(infoText, false);
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));	logger->info("HandleConnectToServerSuccess() end");
 }
 
 BSC_MAKE_HOOK_MATCH(GlobalNamespace::MasterServerConnectionManager::HandleConnectToServerSuccess, void, GlobalNamespace::MasterServerConnectionManager *self, ::StringW remoteUserId, ::StringW remoteUserName, ::System::Net::IPEndPoint* remoteEndPoint, ::StringW secret, ::StringW code, ::GlobalNamespace::BeatmapLevelSelectionMask selectionMask, ::GlobalNamespace::GameplayServerConfiguration configuration, ::ArrayW<uint8_t> preMasterSecret, ::ArrayW<uint8_t> myRandom, ::ArrayW<uint8_t> remoteRandom, bool isConnectionOwner, bool isDedicatedServer, ::StringW managerId) {
@@ -1265,26 +1265,26 @@ BSC_MAKE_HOOK_MATCH(GlobalNamespace::LobbyPlayersDataModel::SetLocalPlayerBeatma
 		RecommendPreview *preview = &playerData.previews[localIndex];
 		std::string levelId = to_utf8(csstrtostr(beatmapLevel->get_beatmapLevel()->get_levelID()));
 		if(!String_eq_view(&preview->base.levelId, levelId)) {
-			preview = playerData.ResolvePreview(levelId);
-			if(preview)
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));			preview = playerData.ResolvePreview(levelId);
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));			if(preview)
 				playerData.previews[localIndex] = *preview;
 			else if(GlobalNamespace::CustomPreviewBeatmapLevel *previewBeatmapLevel = il2cpp_utils::try_cast<GlobalNamespace::CustomPreviewBeatmapLevel>(beatmapLevel->get_beatmapLevel()).value_or(nullptr); previewBeatmapLevel)
 				preview = playerData.SetPreviewFromLocal(localIndex, previewBeatmapLevel);
-		}
-		if(preview) {
-			handler.Send({
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		}
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		if(preview) {
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));			handler.Send({
 				.type = BeatUpMessageType_RecommendPreview,
 				.recommendPreview = *preview,
 			});
-		}
-	}
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));		}
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));	}
 	#ifndef DISABLE_SELECTORS
 	lobbyDifficultyPanel.Update(beatmapLevel, [=](GlobalNamespace::PreviewDifficultyBeatmap beatmapLevel) {
 		body(self, CRASH_UNLESS(il2cpp_utils::New<GlobalNamespace::PreviewDifficultyBeatmap*>(beatmapLevel.beatmapLevel, beatmapLevel.beatmapCharacteristic, beatmapLevel.beatmapDifficulty)));
 	});
 	#endif
-	base(self, beatmapLevel);
-}
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));	base(self, beatmapLevel);
+logger->info(__FILE__ ":" STRINGIFY(__LINE__));}
 
 BSC_MAKE_HOOK_MATCH(GlobalNamespace::LobbyPlayersDataModel::ClearLocalPlayerBeatmapLevel, void, GlobalNamespace::LobbyPlayersDataModel *self) {
 	#ifndef DISABLE_SELECTORS

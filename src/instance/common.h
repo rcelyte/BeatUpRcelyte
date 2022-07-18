@@ -24,11 +24,13 @@
 #define SERIALIZE_GAMEPLAYRPC(pkt, end, ctx, ...) SERIALIZE_SESSION(GameplayRpc, gameplayRpc, pkt, end, ctx, __VA_ARGS__)
 #define SERIALIZE_BEATUP(pkt, end, ctx, ...) SERIALIZE_SESSION(BeatUpMessage, beatUpMessage, pkt, end, ctx, __VA_ARGS__)
 
-#define CLEAR_BEATMAP (struct BeatmapIdentifierNetSerializable){{0, false}, {0, false}, 0}
+#define CLEAR_STRING (struct String){0, false}
+#define CLEAR_LONGSTRING (struct LongString){0, false}
+#define CLEAR_BEATMAP (struct BeatmapIdentifierNetSerializable){CLEAR_LONGSTRING, CLEAR_STRING, 0}
 #define CLEAR_MODIFIERS (struct GameplayModifiers){EnergyType_Bar, 0, 0, 0, EnabledObstacleType_All, 0, 0, 0, 0, 0, 0, SongSpeed_Normal, 0, 0, 0, 0, 0}
 #define CLEAR_COLORSCHEME (struct ColorSchemeNetSerializable){{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}}
-#define CLEAR_AVATARDATA (struct MultiplayerAvatarData){{0, false}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, false}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, {{0, 0, 0, 1}, {0, 0, 0, 1}}, {0, false}, {0, false}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, false}, {0, false}, {0, false}}
-#define CLEAR_SETTINGS (struct PlayerSpecificSettingsNetSerializable){{0, false}, {0, false}, 0, 0, 0, 0, CLEAR_COLORSCHEME}
+#define CLEAR_AVATARDATA (struct MultiplayerAvatarData){CLEAR_STRING, {0, 0, 0, 1}, {0, 0, 0, 1}, CLEAR_STRING, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, {{0, 0, 0, 1}, {0, 0, 0, 1}}, CLEAR_STRING, CLEAR_STRING, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, CLEAR_STRING, CLEAR_STRING, CLEAR_STRING}
+#define CLEAR_SETTINGS (struct PlayerSpecificSettingsNetSerializable){CLEAR_STRING, CLEAR_STRING, 0, 0, 0, 0, CLEAR_COLORSCHEME}
 
 typedef uint16_t ServerState;
 enum ServerState {

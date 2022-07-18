@@ -2,17 +2,6 @@
 #include "../common/packets.c.h"
 #include "scramble.h"
 
-[[maybe_unused]] static void _pkt_ExString_read(struct ExString *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_String_read(&data->base, pkt, end, ctx);
-	data->tier = 0;
-}
-[[maybe_unused]] static void _pkt_ExString_write(const struct ExString *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	struct String str = data->base;
-	if(ctx.beatUpVersion)
-		str.data[str.length++] = data->tier + 16;
-	_pkt_String_write(&str, pkt, end, ctx);
-}
-
 [[maybe_unused]] static void _pkt_ServerCode_read(ServerCode *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	struct String str;
 	_pkt_String_read(&str, pkt, end, ctx);

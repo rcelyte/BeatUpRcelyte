@@ -21,6 +21,24 @@ enum {
 		default: return "???";
 	}
 }
+typedef uint16_t ShareableType;
+enum {
+	ShareableType_None,
+	ShareableType_Generic,
+	ShareableType_BeatmapAudio,
+	ShareableType_BeatmapSet,
+	ShareableType_Avatar,
+};
+[[maybe_unused]] static const char *_reflect_ShareableType(ShareableType value) {
+	switch(value) {
+		case ShareableType_None: return "None";
+		case ShareableType_Generic: return "Generic";
+		case ShareableType_BeatmapAudio: return "BeatmapAudio";
+		case ShareableType_BeatmapSet: return "BeatmapSet";
+		case ShareableType_Avatar: return "Avatar";
+		default: return "???";
+	}
+}
 typedef uint8_t LoadState;
 enum {
 	LoadState_None,
@@ -43,20 +61,20 @@ enum {
 }
 typedef uint8_t BeatUpMessageType;
 enum {
+	BeatUpMessageType_ConnectInfo,
 	BeatUpMessageType_RecommendPreview,
-	BeatUpMessageType_SetCanShareBeatmap,
-	BeatUpMessageType_DirectDownloadInfo,
-	BeatUpMessageType_LevelFragmentRequest,
-	BeatUpMessageType_LevelFragment,
+	BeatUpMessageType_ShareInfo,
+	BeatUpMessageType_DataFragmentRequest,
+	BeatUpMessageType_DataFragment,
 	BeatUpMessageType_LoadProgress,
 };
 [[maybe_unused]] static const char *_reflect_BeatUpMessageType(BeatUpMessageType value) {
 	switch(value) {
+		case BeatUpMessageType_ConnectInfo: return "ConnectInfo";
 		case BeatUpMessageType_RecommendPreview: return "RecommendPreview";
-		case BeatUpMessageType_SetCanShareBeatmap: return "SetCanShareBeatmap";
-		case BeatUpMessageType_DirectDownloadInfo: return "DirectDownloadInfo";
-		case BeatUpMessageType_LevelFragmentRequest: return "LevelFragmentRequest";
-		case BeatUpMessageType_LevelFragment: return "LevelFragment";
+		case BeatUpMessageType_ShareInfo: return "ShareInfo";
+		case BeatUpMessageType_DataFragmentRequest: return "DataFragmentRequest";
+		case BeatUpMessageType_DataFragment: return "DataFragment";
 		case BeatUpMessageType_LoadProgress: return "LoadProgress";
 		default: return "???";
 	}
@@ -1000,13 +1018,17 @@ struct ByteArrayNetSerializable {
 	uint32_t length;
 	uint8_t data[8192];
 };
+struct ConnectInfo {
+	uint32_t protocolId;
+	uint16_t blockSize;
+};
 struct PreviewDifficultyBeatmapSet {
-	struct String beatmapCharacteristicSerializedName;
-	uint8_t count;
+	struct String characteristic;
+	uint8_t difficulties_len;
 	BeatmapDifficulty difficulties[5];
 };
-struct NetworkPreviewBeatmapLevel {
-	struct LongString levelId;
+struct PreviewBeatmapLevel {
+	struct LongString levelID;
 	struct LongString songName;
 	struct LongString songSubName;
 	struct LongString songAuthorName;
@@ -1018,39 +1040,45 @@ struct NetworkPreviewBeatmapLevel {
 	float previewStartTime;
 	float previewDuration;
 	float songDuration;
-	uint8_t count;
-	struct PreviewDifficultyBeatmapSet previewDifficultyBeatmapSets[8];
+	struct String environmentInfo;
+	struct String allDirectionsEnvironmentInfo;
+	uint8_t beatmapSets_len;
+	struct PreviewDifficultyBeatmapSet beatmapSets[8];
 	struct ByteArrayNetSerializable cover;
 };
+struct CustomLabelSet {
+	uint8_t difficulties_len;
+	struct LongString difficulties[5];
+};
 struct RecommendPreview {
-	struct NetworkPreviewBeatmapLevel base;
+	struct PreviewBeatmapLevel base;
+	struct CustomLabelSet labelSets[8];
 	uint32_t requirements_len;
 	struct String requirements[16];
 	uint32_t suggestions_len;
 	struct String suggestions[16];
 };
+struct ShareMeta {
+	uint64_t byteLength;
+	uint8_t hash[32];
+};
+struct ShareId {
+	ShareableType usage;
+	struct String mimeType;
+	struct LongString name;
+};
 struct ShareInfo {
-	struct LongString levelId;
-	uint8_t levelHash[32];
-	uint64_t fileSize;
+	uint32_t offset;
+	uint16_t blockSize;
+	struct ShareMeta meta;
+	struct ShareId id;
 };
-struct SetCanShareBeatmap {
-	struct ShareInfo base;
-	bool canShare;
-};
-struct DirectDownloadInfo {
-	struct ShareInfo base;
+struct DataFragmentRequest {
+	uint32_t offset;
 	uint8_t count;
-	struct String sourcePlayers[128];
 };
-struct LevelFragmentRequest {
-	uint64_t offset;
-	uint16_t maxSize;
-};
-struct LevelFragment {
-	uint64_t offset;
-	uint16_t size;
-	uint8_t data[1500];
+struct DataFragment {
+	uint32_t offset;
 };
 struct LoadProgress {
 	uint32_t sequence;
@@ -1060,25 +1088,22 @@ struct LoadProgress {
 struct BeatUpMessage {
 	BeatUpMessageType type;
 	union {
+		struct ConnectInfo connectInfo;
 		struct RecommendPreview recommendPreview;
-		struct SetCanShareBeatmap setCanShareBeatmap;
-		struct DirectDownloadInfo directDownloadInfo;
-		struct LevelFragmentRequest levelFragmentRequest;
-		struct LevelFragment levelFragment;
+		struct ShareInfo shareInfo;
+		struct DataFragmentRequest dataFragmentRequest;
+		struct DataFragment dataFragment;
 		struct LoadProgress loadProgress;
 	};
 };
-struct BeatUpConnectInfo {
+struct ServerConnectInfo {
+	struct ConnectInfo base;
 	uint32_t windowSize;
 	uint8_t countdownDuration;
 	bool directDownloads;
 	bool skipResults;
 	bool perPlayerDifficulty;
 	bool perPlayerModifiers;
-};
-struct BeatUpConnectHeader {
-	uint32_t protocolId;
-	struct BeatUpConnectInfo base;
 };
 struct ModConnectHeader {
 	uint32_t length;
@@ -1393,7 +1418,7 @@ struct SetActivePlayerFailedToConnect {
 	struct RemoteProcedureCall base;
 	struct RemoteProcedureCallFlags flags;
 	struct String failedUserId;
-	struct PlayerSpecificSettingsAtStartNetSerializable playersAtGameStartNetSerializable;
+	struct PlayerSpecificSettingsAtStartNetSerializable playersAtGameStart;
 	struct String sessionGameId;
 };
 struct SetGameplaySongReady {
@@ -1656,6 +1681,28 @@ struct ScoreSyncStateDelta {
 	int32_t timeOffsetMs;
 	struct StandardScoreSyncState delta;
 };
+struct MpRequirementSet {
+	uint8_t difficulty;
+	uint8_t requirements_len;
+	struct String requirements[16];
+};
+struct MpMapColor {
+	uint8_t difficulty;
+	bool have_colorLeft;
+	bool have_colorRight;
+	bool have_envColorLeft;
+	bool have_envColorRight;
+	bool have_envColorLeftBoost;
+	bool have_envColorRightBoost;
+	bool have_obstacleColor;
+	struct ColorNoAlphaSerializable colorLeft;
+	struct ColorNoAlphaSerializable colorRight;
+	struct ColorNoAlphaSerializable envColorLeft;
+	struct ColorNoAlphaSerializable envColorRight;
+	struct ColorNoAlphaSerializable envColorLeftBoost;
+	struct ColorNoAlphaSerializable envColorRightBoost;
+	struct ColorNoAlphaSerializable obstacleColor;
+};
 struct MpBeatmapPacket {
 	struct String levelHash;
 	struct LongString songName;
@@ -1666,6 +1713,12 @@ struct MpBeatmapPacket {
 	float songDuration;
 	struct String characteristic;
 	MpBeatmapDifficulty difficulty;
+	uint8_t requirementSets_len;
+	struct MpRequirementSet requirementSets[5];
+	uint8_t contributors_len;
+	struct String contributors[24];
+	uint8_t mapColors_len;
+	struct MpMapColor mapColors[5];
 };
 struct MpPlayerData {
 	struct String platformId;
@@ -1690,7 +1743,7 @@ struct SyncTime {
 struct PlayerConnected {
 	uint8_t remoteConnectionId;
 	struct String userId;
-	struct ExString userName;
+	struct String userName;
 	bool isConnectionOwner;
 };
 struct PlayerStateHash {
@@ -1845,7 +1898,8 @@ struct ConnectToServerResponse {
 	struct String userName;
 	struct String secret;
 	struct BeatmapLevelSelectionMask selectionMask;
-	uint8_t flags;
+	bool isConnectionOwner;
+	bool isDedicatedServer;
 	struct IPEndPoint remoteEndPoint;
 	uint8_t random[32];
 	struct ByteArrayNetSerializable publicKey;
@@ -2005,7 +2059,7 @@ struct ConnectAccept {
 	uint8_t connectNum;
 	bool reusedPeer;
 	int32_t peerId;
-	struct BeatUpConnectInfo beatUp;
+	struct ServerConnectInfo beatUp;
 };
 struct Disconnect {
 	uint8_t _pad0[8];
@@ -2069,9 +2123,7 @@ static const struct PacketContext PV_LEGACY_DEFAULT = {
 };
 void _pkt_BeatUpMessage_read(struct BeatUpMessage *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 void _pkt_BeatUpMessage_write(const struct BeatUpMessage *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
-void _pkt_BeatUpConnectInfo_read(struct BeatUpConnectInfo *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
-void _pkt_BeatUpConnectHeader_read(struct BeatUpConnectHeader *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
-void _pkt_BeatUpConnectHeader_write(const struct BeatUpConnectHeader *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
+void _pkt_ServerConnectInfo_read(struct ServerConnectInfo *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 void _pkt_ModConnectHeader_read(struct ModConnectHeader *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 void _pkt_ModConnectHeader_write(const struct ModConnectHeader *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 void _pkt_InternalMessage_read(struct InternalMessage *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
@@ -2103,6 +2155,6 @@ typedef void (*PacketReadFunc)(void *restrict, const uint8_t**, const uint8_t*, 
 size_t _pkt_try_read(PacketReadFunc inner, void *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 size_t _pkt_try_write(PacketWriteFunc inner, const void *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 #define pkt_write_c(pkt, end, ctx, type, ...) _pkt_try_write((PacketWriteFunc)_pkt_##type##_write, &(struct type)__VA_ARGS__, pkt, end, ctx)
-#define pkt_read(data, ...) _pkt_try_read((PacketReadFunc)_Generic(*(data), struct BeatUpMessage: _pkt_BeatUpMessage_read, struct BeatUpConnectInfo: _pkt_BeatUpConnectInfo_read, struct BeatUpConnectHeader: _pkt_BeatUpConnectHeader_read, struct ModConnectHeader: _pkt_ModConnectHeader_read, struct InternalMessage: _pkt_InternalMessage_read, struct RoutingHeader: _pkt_RoutingHeader_read, struct MasterServerReliableRequestProxy: _pkt_MasterServerReliableRequestProxy_read, struct UserMessage: _pkt_UserMessage_read, struct HandshakeMessage: _pkt_HandshakeMessage_read, struct SerializeHeader: _pkt_SerializeHeader_read, struct FragmentedHeader: _pkt_FragmentedHeader_read, struct UnconnectedMessage: _pkt_UnconnectedMessage_read, struct MergedHeader: _pkt_MergedHeader_read, struct NetPacketHeader: _pkt_NetPacketHeader_read, struct PacketEncryptionLayer: _pkt_PacketEncryptionLayer_read), data, __VA_ARGS__)
-#define pkt_write(data, ...) _pkt_try_write((PacketWriteFunc)_Generic(*(data), struct BeatUpMessage: _pkt_BeatUpMessage_write, struct BeatUpConnectHeader: _pkt_BeatUpConnectHeader_write, struct ModConnectHeader: _pkt_ModConnectHeader_write, struct InternalMessage: _pkt_InternalMessage_write, struct RoutingHeader: _pkt_RoutingHeader_write, struct MessageReceivedAcknowledgeProxy: _pkt_MessageReceivedAcknowledgeProxy_write, struct MultipartMessageProxy: _pkt_MultipartMessageProxy_write, struct UserMessage: _pkt_UserMessage_write, struct HandshakeMessage: _pkt_HandshakeMessage_write, struct SerializeHeader: _pkt_SerializeHeader_write, struct FragmentedHeader: _pkt_FragmentedHeader_write, struct UnconnectedMessage: _pkt_UnconnectedMessage_write, struct MergedHeader: _pkt_MergedHeader_write, struct NetPacketHeader: _pkt_NetPacketHeader_write, struct PacketEncryptionLayer: _pkt_PacketEncryptionLayer_write), data, __VA_ARGS__)
+#define pkt_read(data, ...) _pkt_try_read((PacketReadFunc)_Generic(*(data), struct BeatUpMessage: _pkt_BeatUpMessage_read, struct ServerConnectInfo: _pkt_ServerConnectInfo_read, struct ModConnectHeader: _pkt_ModConnectHeader_read, struct InternalMessage: _pkt_InternalMessage_read, struct RoutingHeader: _pkt_RoutingHeader_read, struct MasterServerReliableRequestProxy: _pkt_MasterServerReliableRequestProxy_read, struct UserMessage: _pkt_UserMessage_read, struct HandshakeMessage: _pkt_HandshakeMessage_read, struct SerializeHeader: _pkt_SerializeHeader_read, struct FragmentedHeader: _pkt_FragmentedHeader_read, struct UnconnectedMessage: _pkt_UnconnectedMessage_read, struct MergedHeader: _pkt_MergedHeader_read, struct NetPacketHeader: _pkt_NetPacketHeader_read, struct PacketEncryptionLayer: _pkt_PacketEncryptionLayer_read), data, __VA_ARGS__)
+#define pkt_write(data, ...) _pkt_try_write((PacketWriteFunc)_Generic(*(data), struct BeatUpMessage: _pkt_BeatUpMessage_write, struct ModConnectHeader: _pkt_ModConnectHeader_write, struct InternalMessage: _pkt_InternalMessage_write, struct RoutingHeader: _pkt_RoutingHeader_write, struct MessageReceivedAcknowledgeProxy: _pkt_MessageReceivedAcknowledgeProxy_write, struct MultipartMessageProxy: _pkt_MultipartMessageProxy_write, struct UserMessage: _pkt_UserMessage_write, struct HandshakeMessage: _pkt_HandshakeMessage_write, struct SerializeHeader: _pkt_SerializeHeader_write, struct FragmentedHeader: _pkt_FragmentedHeader_write, struct UnconnectedMessage: _pkt_UnconnectedMessage_write, struct MergedHeader: _pkt_MergedHeader_write, struct NetPacketHeader: _pkt_NetPacketHeader_write, struct PacketEncryptionLayer: _pkt_PacketEncryptionLayer_write), data, __VA_ARGS__)
 size_t pkt_write_bytes(const uint8_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx, size_t count);

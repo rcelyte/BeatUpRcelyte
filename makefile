@@ -65,7 +65,7 @@ $(OBJDIR)/libs.mk: makefile
 	#if 0
 	CFLAGS += -fsanitize=address -fno-omit-frame-pointer
 	LDFLAGS := -no-pie -fsanitize=address \$$(LDFLAGS)
-	#elif 1
+	#elif 0
 	LDFLAGS := --static \$$(LDFLAGS)
 	#endif
 	#endif

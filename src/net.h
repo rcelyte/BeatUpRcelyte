@@ -40,7 +40,7 @@ struct SS {
 };
 
 uint8_t addrs_are_equal(const struct SS *a0, const struct SS *a1);
-void net_tostr(const struct SS *a, char *out);
+void net_tostr(const struct SS *a, char out[static INET6_ADDRSTRLEN + 8]);
 
 struct NetKeypair {
 	uint8_t NET_H_PRIVATE(random)[32];
