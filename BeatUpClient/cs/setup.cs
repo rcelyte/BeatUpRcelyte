@@ -1,5 +1,6 @@
 static partial class BeatUpClient {
-	const ulong MpCore_major = 1, MpCore_minor = 1, MpCore_patch = 0;
+	static bool SupportedMpCoreVersion(string? v) =>
+		v == null || v == "1.1.0" || v == "1.1.1";
 
 	[System.AttributeUsage(System.AttributeTargets.Method)]
 	internal class InitAttribute : System.Attribute {}
@@ -42,8 +43,8 @@ static partial class BeatUpClient {
 			return;
 		}
 		Hive.Versioning.Version? mpCoreVersion = modVersion("MultiplayerCore");
-		if(mpCoreVersion != null && (mpCoreVersion.Major != MpCore_major || mpCoreVersion.Minor != MpCore_minor || mpCoreVersion.Patch != MpCore_patch)) {
-			BeatUpClient_Error.Init("Incompatible BeatUpClient Version", $"This version of BeatUpClient only supports MultiplayerCore {MpCore_major}.{MpCore_minor}.{MpCore_patch}");
+		if(!SupportedMpCoreVersion(mpCoreVersion?.ToString())) {
+			BeatUpClient_Error.Init("Incompatible BeatUpClient Version", $"This version of BeatUpClient only supports MultiplayerCore 1.1.0 or 1.1.1");
 			return;
 		}
 		string? err = BeatUpClient_Beta.CheckVersion(version);

@@ -6,9 +6,9 @@ static partial class BeatUpClient {
 			writer.Put((uint)offset);
 			writer.Put(data.Array, data.Offset, data.Count);
 		}
-		public DataFragment(LiteNetLib.Utils.NetDataReader reader, int length) {
+		public DataFragment(LiteNetLib.Utils.NetDataReader reader, int end) {
 			offset = reader.GetUInt();
-			length -= sizeof(uint);
+			int length = end - reader.Position;
 			data = new System.ArraySegment<byte>(reader.RawData, reader.Position, length);
 			reader.SkipBytes(length);
 		}

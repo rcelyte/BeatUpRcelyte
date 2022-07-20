@@ -67,7 +67,6 @@ static partial class BeatUpClient {
 			int end = reader.Position + length;
 			try {
 				MessageType type = (MessageType)reader.GetByte();
-				--length;
 				if(type != MessageType.ConnectInfo && !beatUpPlayers.Keys.Contains(player))
 					return;
 				switch(type) {
@@ -75,7 +74,7 @@ static partial class BeatUpClient {
 					case MessageType.RecommendPreview: playerData.previews[PlayerIndex(player)] = new RecommendPreview(reader); break;
 					case MessageType.ShareInfo: onShareInfo?.Invoke(new ShareInfo(reader), player); break;
 					case MessageType.DataFragmentRequest: onDataFragmentRequest?.Invoke(new DataFragmentRequest(reader), player); break;
-					case MessageType.DataFragment: onDataFragment?.Invoke(new DataFragment(reader, length), player); break;
+					case MessageType.DataFragment: onDataFragment?.Invoke(new DataFragment(reader, end), player); break;
 					case MessageType.LoadProgress: playerData.UpdateLoadProgress(new LoadProgress(reader), player); break;
 					default: break;
 				}
@@ -97,7 +96,7 @@ static partial class BeatUpClient {
 			int end = reader.Position + length;
 			try {
 				if(reader.GetString() == "MpBeatmapPacket")
-					ProcessMpPreview(new MpBeatmapPacket(reader), player);
+					ProcessMpPreview(new MpBeatmapPacket(reader, end), player);
 			} catch(System.Exception ex) {
 				Log.Critical($"Error processing MultiplayerCore packet: {ex}");
 			}

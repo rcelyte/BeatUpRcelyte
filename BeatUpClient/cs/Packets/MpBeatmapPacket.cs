@@ -20,9 +20,13 @@ static partial class BeatUpClient {
 			writer.Put((byte)0);
 			writer.Put((byte)0);
 		}
-		public MpBeatmapPacket(LiteNetLib.Utils.NetDataReader reader) : base(reader, true) {
+		public MpBeatmapPacket(LiteNetLib.Utils.NetDataReader reader, int end) : base(reader, true) {
 			characteristic = reader.GetString();
 			difficulty = (BeatmapDifficulty)reader.GetUInt();
+			if(reader.Position == end) {
+				requirements = System.Linq.Enumerable.Empty<BeatmapDifficulty>().ToLookup(d => d, d => string.Empty);
+				return;
+			}
 			System.Collections.Generic.HashSet<string> requirementSet = new System.Collections.Generic.HashSet<string>();
 			requirements = System.Linq.Enumerable.Range(0, reader.GetByte())
 				.SelectMany(i => System.Linq.Enumerable.Repeat((BeatmapDifficulty)reader.GetByte(), reader.GetByte()))
