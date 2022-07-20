@@ -4,6 +4,7 @@
 
 #include "instance.h"
 #include "common.h"
+#include "counter.h"
 #include "../thread.h"
 #include "../pool.h"
 #include <mbedtls/error.h>
@@ -33,121 +34,6 @@ typedef uint32_t playerid_t;
 	struct Counter16 COUNTER_VAR = (ctx)->blockAlloc; for(uint8_t group; Counter16_set_next(&COUNTER_VAR, &group, 0);) \
 		for(struct Room **(room) = (ctx)->rooms[group]; (room) < &(ctx)->rooms[group][lengthof(*(ctx)->rooms)]; ++(room)) \
 			if(*room)
-
-struct Counter16 {
-	uint16_t bits;
-};
-
-struct Counter128 {
-	uint32_t bits[4];
-};
-
-#define COUNTER16_CLEAR (struct Counter16){0};
-#define COUNTER128_CLEAR (struct Counter128){{0, 0, 0, 0}};
-
-bool Counter16_set(struct Counter16 *set, uint8_t bit, bool state) {
-	bool prev = (set->bits >> bit) & 1;
-	if(state)
-		set->bits |= 1 << bit;
-	else
-		set->bits &= ~(1 << bit);
-	return prev;
-}
-
-bool Counter128_get(struct Counter128 set, uint32_t bit) {
-	return (set.bits[bit / 32] >> (bit % 32)) & 1;
-}
-
-bool Counter128_set(struct Counter128 *set, uint32_t bit, bool state) {
-	uint32_t i = bit / 32;
-	bit %= 32;
-	bool prev = (set->bits[i] >> bit) & 1;
-	if(state)
-		set->bits[i] |= 1 << bit;
-	else
-		set->bits[i] &= ~(1 << bit);
-	return prev;
-}
-
-bool Counter16_set_next(struct Counter16 *set, uint8_t *bit, bool state) {
-	uint16_t v = state ? ~set->bits : set->bits;
-	if(v == 0)
-		return 0;
-	*bit = __builtin_ctz(v);
-	if(state)
-		set->bits |= set->bits + 1;
-	else
-		set->bits &= set->bits - 1;
-	return 1;
-}
-
-bool Counter128_set_next_0(struct Counter128 *set, uint32_t *bit) {
-	for(uint32_t i = *bit / 32; i < lengthof(set->bits); ++i) {
-		if(set->bits[i]) {
-			*bit = i * 32 + __builtin_ctz(set->bits[i]);
-			set->bits[i] &= set->bits[i] - 1;
-			return 1;
-		}
-	}
-	return 0;
-}
-
-bool Counter128_set_next_1(struct Counter128 *set, uint32_t *bit) {
-	for(uint32_t i = *bit / 32; i < lengthof(set->bits); ++i) {
-		if(~set->bits[i]) {
-			*bit = i * 32 + __builtin_ctz(~set->bits[i]);
-			set->bits[i] |= set->bits[i] + 1;
-			return 1;
-		}
-	}
-	return 0;
-}
-
-#define Counter128_set_next(set, bit, state) Counter128_set_next_##state(set, bit)
-
-bool Counter128_eq(struct Counter128 a, struct Counter128 b) {
-	for(uint32_t i = 0; i < lengthof(a.bits); ++i)
-		if(a.bits[i] != b.bits[i])
-			return 0;
-	return 1;
-}
-
-bool Counter128_contains(struct Counter128 set, struct Counter128 subset) {
-	for(uint32_t i = 0; i < lengthof(set.bits); ++i)
-		if((set.bits[i] & subset.bits[i]) != subset.bits[i])
-			return 0;
-	return 1;
-}
-
-bool Counter128_containsNone(struct Counter128 set, struct Counter128 subset) {
-	for(uint32_t i = 0; i < lengthof(set.bits); ++i)
-		if(set.bits[i] & subset.bits[i])
-			return 0;
-	return 1;
-}
-
-bool Counter16_isEmpty(struct Counter16 set) {
-	return set.bits == 0;
-}
-
-bool Counter128_isEmpty(struct Counter128 set) {
-	for(uint32_t i = 0; i < lengthof(set.bits); ++i)
-		if(set.bits[i])
-			return 0;
-	return 1;
-}
-
-struct Counter128 Counter128_and(struct Counter128 a, struct Counter128 b) {
-	for(uint32_t i = 0; i < lengthof(a.bits); ++i)
-		a.bits[i] &= b.bits[i];
-	return a;
-}
-
-struct Counter128 Counter128_or(struct Counter128 a, struct Counter128 b) {
-	for(uint32_t i = 0; i < lengthof(a.bits); ++i)
-		a.bits[i] |= b.bits[i];
-	return a;
-}
 
 struct InstanceSession {
 	struct NetSession net;
@@ -1442,14 +1328,12 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 }
 
 static void log_players(const struct Room *room, struct InstanceSession *session, const char *prefix) {
-	char addrstr[INET6_ADDRSTRLEN + 8];
+	char addrstr[INET6_ADDRSTRLEN + 8], bitText[sizeof(room->playerSort) * 8];
 	net_tostr(NetSession_get_addr(&session->net), addrstr);
-	uprintf("%sconnect %s\n", prefix, addrstr);
-	uprintf("player bits: ");
-	for(uint32_t i = 0; i < lengthof(room->playerSort.bits); ++i)
-		for(uint32_t b = 0; b < sizeof(*room->playerSort.bits) * 8; ++b)
-			uprintf("%u", (room->playerSort.bits[i] >> b) & 1);
-	uprintf("\n");
+	memset(bitText, '0', sizeof(bitText));
+	FOR_SOME_PLAYERS(id, room->playerSort,)
+		bitText[id] = '1';
+	uprintf("%sconnect %s\nplayer bits: %.*s\n", prefix, addrstr, lengthof(bitText), bitText);
 }
 
 enum DisconnectMode {
