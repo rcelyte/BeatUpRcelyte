@@ -29,7 +29,7 @@ static partial class BeatUpClient {
 		if(customNetworkConfig == null)
 			return false;
 		int port = officialNetworkConfig.masterServerEndPoint.port;
-		bool forceGameLift = officialNetworkConfig.forceGameLift;
+		bool forceGameLift = true;
 		string? multiplayerStatusUrl = officialNetworkConfig.multiplayerStatusUrl;
 		if(NullableStringHelper.IsNullOrEmpty(hostname)) {
 			hostname = officialNetworkConfig.masterServerEndPoint.hostName;

@@ -11,7 +11,7 @@
 		<LocalRefsDir Condition="Exists('..\Refs')">..\Refs</LocalRefsDir>
 		<BeatSaberDir>$(LocalRefsDir)</BeatSaberDir>
 		<DebugType>full</DebugType>
-		<ModVersion>0.4.1</ModVersion>
+		<ModVersion>0.4.2</ModVersion>
 	</PropertyGroup>
 	<ItemGroup>
 		<Reference Include="Mono.Cecil">
