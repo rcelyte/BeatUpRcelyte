@@ -103,3 +103,9 @@ static struct Counter128 Counter128_and(struct Counter128 a, struct Counter128 b
 		a.bits[i] &= b.bits[i];
 	return a;
 }
+
+static struct Counter128 Counter128_or(struct Counter128 a, struct Counter128 b) {
+	for(uint32_t i = 0; i < lengthof(a.bits); ++i)
+		a.bits[i] |= b.bits[i];
+	return a;
+}
