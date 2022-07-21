@@ -135,7 +135,7 @@ bool config_load(struct Config *out, const char *path) {
 	out->status_tls = 0;
 
 	const char *key, *it = config_json;
-	uint32_t key_len;
+	uint32_t key_len = 0;
 	while(json_iter_object(&it, &key, &key_len)) {
 		/*if(key_len == 6 && memcmp(key, "master", 6) == 0)
 			it = json_config_host(it, &master);
@@ -171,7 +171,7 @@ bool config_load(struct Config *out, const char *path) {
 			it = json_skip_value(it);
 		} else IFEQ("StatusUri") {
 			const char *uri;
-			uint32_t uri_len;
+			uint32_t uri_len = 0;
 			it = json_get_string(it, &uri, &uri_len);
 			if(uri_len >= lengthof(out->status_domain)) {
 				uprintf("Error parsing config value \"StatusUri\": URI too long\n");

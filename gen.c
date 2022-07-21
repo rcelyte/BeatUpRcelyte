@@ -622,11 +622,11 @@ static void gen_source_rdwr(char **out, struct Token *token, bool wr, bool stati
 						write_fmt_indent(out, indent, "_pkt_%s_read(&bitfield%u, pkt, end, ctx);\n", bitType, bitName);
 				}
 				if(wr) {
-					write_fmt_indent(out, indent, "bitfield%u |= (data->%s & %uu) << %u;\n", bitName, token->field.name, ~0llu >> (64 - token->field.bitWidth), bitOffset);
+					write_fmt_indent(out, indent, "bitfield%u |= (data->%s & %lluu) << %u;\n", bitName, token->field.name, ~0llu >> (64 - token->field.bitWidth), bitOffset);
 					if(token[1].type != TType_Field || token[1].field.bitWidth == 0)
 						write_fmt_indent(out, indent, "_pkt_%s_write(&bitfield%u, pkt, end, ctx);\n", bitType, bitName);
 				} else {
-					write_fmt_indent(out, indent, "data->%s = bitfield%u >> %u & %u;\n", token->field.name, bitName, bitOffset, ~0llu >> (64 - token->field.bitWidth));
+					write_fmt_indent(out, indent, "data->%s = bitfield%u >> %u & %llu;\n", token->field.name, bitName, bitOffset, ~0llu >> (64 - token->field.bitWidth));
 				}
 				bitOffset += token->field.bitWidth;
 			} else {
