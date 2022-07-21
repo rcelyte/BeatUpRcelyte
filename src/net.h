@@ -1,6 +1,7 @@
 #pragma once
 #include "packets.h"
 #include "encryption.h"
+#include "perf.h"
 #include <mbedtls/x509_crt.h>
 #include <mbedtls/pk.h>
 #include <mbedtls/ctr_drbg.h>
@@ -77,6 +78,7 @@ struct NetContext {
 	struct NetSession *(*onResolve)(struct Context *ctx, struct SS addr, void **userdata_out);
 	void (*onResend)(struct Context *ctx, uint32_t currentTime, uint32_t *nextTick);
 	const uint8_t *NET_H_PRIVATE(dirt);
+	struct Performance NET_H_PRIVATE(perf);
 };
 
 void net_keypair_init(struct NetKeypair *keys);

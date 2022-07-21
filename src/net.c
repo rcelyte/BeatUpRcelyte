@@ -13,7 +13,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include <time.h>
 
 #define ENCRYPTION_LAYER_SIZE 63
 
@@ -136,11 +135,16 @@ static void net_cookie(mbedtls_ctr_drbg_context *ctr_drbg, uint8_t *out) {
 	mbedtls_ctr_drbg_random(ctr_drbg, out, 32);
 }
 
-uint32_t net_time() {
+static struct timespec GetTime() {
 	struct timespec now;
 	if(clock_gettime(CLOCK_MONOTONIC, &now))
-		return 0;
-	return now.tv_sec * 1000 + now.tv_nsec / 1000000;
+		return (struct timespec){0, 0};
+	return now;
+}
+
+uint32_t net_time() {
+	struct timespec now = GetTime();
+	return (uint64_t)now.tv_sec * 1000llu + (uint64_t)now.tv_nsec / 1000000llu;
 }
 
 void net_send_internal(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint32_t len, bool encrypt) {
@@ -249,6 +253,7 @@ bool net_init(struct NetContext *ctx, uint16_t port) {
 	ctx->run = 1;
 	ctx->sessionList = NULL;
 	ctx->dirt = NULL;
+	ctx->perf = perf_init();
 	return 0;
 }
 
@@ -353,17 +358,19 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct
 	FD_ZERO(&fds);
 	FD_SET(ctx->sockfd, &fds);
 	net_unlock(ctx);
-	if(select(ctx->sockfd+1, &fds, NULL, NULL, &timeout) == 0) {
-		net_lock(ctx);
+	struct timespec sleepStart = GetTime();
+	bool noData = (select(ctx->sockfd+1, &fds, NULL, NULL, &timeout) == 0);
+	struct timespec sleepEnd = GetTime();
+	net_lock(ctx);
+	perf_tick(&ctx->perf, sleepStart, sleepEnd);
+	if(noData)
 		goto retry;
-	}
 	struct SS addr = {sizeof(struct sockaddr_storage)};
 	#ifdef WINSOCK_VERSION
 	ssize_t size = recvfrom(ctx->sockfd, (char*)buf, buf_len, 0, &addr.sa, &addr.len);
 	#else
 	ssize_t size = recvfrom(ctx->sockfd, buf, buf_len, 0, &addr.sa, &addr.len);
 	#endif
-	net_lock(ctx);
 	if(size <= 0) {
 		if(ctx->run)
 			goto retry;

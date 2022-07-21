@@ -283,9 +283,10 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 	return;
 }
 
-uint64_t get_time() {
+static uint64_t get_time() {
 	struct timespec now;
-	clock_gettime(CLOCK_MONOTONIC, &now);
+	if(clock_gettime(CLOCK_MONOTONIC, &now))
+		return 0;
 	return (uint64_t)now.tv_sec * 10000000LLU + (uint64_t)now.tv_nsec / 100LLU;
 }
 

@@ -38,8 +38,7 @@ typedef uint32_t playerid_t;
 struct InstanceSession {
 	struct NetSession net;
 	struct String secret;
-	struct String userName;
-	struct PlayerLobbyPermissionConfigurationNetSerializable permissions;
+	struct String userName, userId;
 	struct PingPong tableTennis;
 	struct Channels channels;
 	struct PlayerStateHash stateHash;
@@ -58,7 +57,7 @@ struct Room {
 	struct NetKeypair keys;
 	struct String managerId;
 	struct GameplayServerConfiguration configuration;
-	float syncBase, countdownDuration;
+	float syncBase, shortCountdown, longCountdown;
 	bool skipResults, perPlayerDifficulty, perPlayerModifiers;
 
 	ServerState state;
@@ -166,6 +165,22 @@ static bool GameplayModifiers_eq(const struct GameplayModifiers *a, const struct
 	return speedOnly || (a->energyType == b->energyType && a->demoNoFail == b->demoNoFail && a->instaFail == b->instaFail && a->failOnSaberClash == b->failOnSaberClash && a->enabledObstacleType == b->enabledObstacleType && a->demoNoObstacles == b->demoNoObstacles && a->noBombs == b->noBombs && a->fastNotes == b->fastNotes && a->strictAngles == b->strictAngles && a->disappearingArrows == b->disappearingArrows && a->ghostNotes == b->ghostNotes && a->noArrows == b->noArrows && a->noFailOn0Energy == b->noFailOn0Energy && a->proMode == b->proMode && a->zenMode == b->zenMode && a->smallCubes == b->smallCubes);
 }
 
+static inline bool session_get_isServerOwner(const struct Room *room, const struct InstanceSession *session) {
+	return String_eq(session->userId, room->managerId); // TODO: host switching/passing (use a playerid_t instead of `managerId` String)
+}
+
+static inline struct PlayerLobbyPermissionConfigurationNetSerializable session_get_permissions(const struct Room *room, const struct InstanceSession *session) {
+	bool isServerOwner = session_get_isServerOwner(room, session);
+	return (struct PlayerLobbyPermissionConfigurationNetSerializable){
+		.userId = session->userId,
+		.isServerOwner = isServerOwner,
+		.hasRecommendBeatmapsPermission = (room->configuration.songSelectionMode != SongSelectionMode_Random) && (isServerOwner || room->configuration.songSelectionMode != SongSelectionMode_OwnerPicks),
+		.hasRecommendGameplayModifiersPermission = (room->configuration.gameplayServerControlSettings == GameplayServerControlSettings_AllowModifierSelection || room->configuration.gameplayServerControlSettings == GameplayServerControlSettings_All),
+		.hasKickVotePermission = isServerOwner,
+		.hasInvitePermission = (room->configuration.invitePolicy == InvitePolicy_AnyoneCanInvite) || (isServerOwner && room->configuration.invitePolicy == InvitePolicy_OnlyConnectionOwnerCanInvite),
+	};
+}
+
 static struct BeatmapIdentifierNetSerializable session_get_beatmap(const struct Room *room, const struct InstanceSession *session) {
 	if(room->perPlayerDifficulty && BeatmapIdentifierNetSerializable_eq(&session->recommendedBeatmap, &room->global.selectedBeatmap, 1))
 		return session->recommendedBeatmap;
@@ -186,6 +201,15 @@ static playerid_t roundRobin_next(playerid_t prev, struct Counter128 players) {
 	if(!Counter128_get(players, 0))
 		Counter128_set_next(&players, &id, 0);
 	return id;
+}
+
+static float room_get_countdownEnd(const struct Room *room, float defaultTime) {
+	switch(room->state) {
+		case ServerState_Lobby_LongCountdown: return room->global.timeout + room->shortCountdown;
+		case ServerState_Lobby_ShortCountdown: return room->global.timeout;
+		default: return defaultTime;
+	}
+	
 }
 
 #define STATE_EDGE(from, to, mask) ((to & (mask)) && !(from & (mask)))
@@ -237,7 +261,7 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 					.lobbyState = MultiplayerGameState_Lobby,
 				},
 			});
-		} else if(STATE_EDGE(state, session->state, ServerState_Lobby_Countdown | ServerState_Lobby_Downloading)) {
+		} else if(STATE_EDGE(state, session->state, ServerState_Countdown | ServerState_Lobby_Downloading)) {
 			SERIALIZE_MENURPC(&resp_end, endof(resp), session->net.version, {
 				.type = MenuRpcType_CancelCountdown,
 				.cancelCountdown = {base},
@@ -257,7 +281,7 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 				},
 			});
 		}
-		if(STATE_EDGE(session->state, state, ServerState_Lobby_Countdown | ServerState_Lobby_Downloading)) {
+		if(STATE_EDGE(session->state, state, ServerState_Countdown | ServerState_Lobby_Downloading)) {
 			SERIALIZE_MENURPC(&resp_end, endof(resp), session->net.version, {
 				.type = MenuRpcType_StartLevel,
 				.startLevel = {
@@ -268,12 +292,25 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 					.startTime = room->global.timeout + 1048576,
 				},
 			});
+			SERIALIZE_MENURPC(&resp_end, endof(resp), session->net.version, { // TODO: this does nothing if `newTime` is within 1.5 seconds of the client's `predictedCountdownEndTime`
+				.type = MenuRpcType_SetCountdownEndTime,
+				.setCountdownEndTime = {
+					.base = base,
+					.flags = {true, false, false, false},
+					.newTime = room_get_countdownEnd(room, base.syncTime),
+				},
+			});
+		} else if(state & ServerState_Countdown) { // TODO: less copy+paste
+			SERIALIZE_MENURPC(&resp_end, endof(resp), session->net.version, {
+				.type = MenuRpcType_CancelCountdown,
+				.cancelCountdown = {base},
+			});
 			SERIALIZE_MENURPC(&resp_end, endof(resp), session->net.version, {
 				.type = MenuRpcType_SetCountdownEndTime,
 				.setCountdownEndTime = {
 					.base = base,
 					.flags = {true, false, false, false},
-					.newTime = room->global.timeout,
+					.newTime = room_get_countdownEnd(room, base.syncTime),
 				},
 			});
 		}
@@ -323,7 +360,8 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 			});
 			break;
 		}
-		case ServerState_Lobby_Countdown: break;
+		case ServerState_Lobby_LongCountdown: break;
+		case ServerState_Lobby_ShortCountdown: break;
 		case ServerState_Lobby_Downloading: break;
 		case ServerState_Game_LoadingScene: {
 			SERIALIZE_MENURPC(&resp_end, endof(resp), session->net.version, {
@@ -362,7 +400,7 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 					.setActivePlayerFailedToConnect = {
 						.base = base,
 						.flags = {true, true, true, false},
-						.failedUserId = session->permissions.userId,
+						.failedUserId = session->userId,
 						.playersAtGameStart.count = 0,
 					},
 				};
@@ -407,7 +445,8 @@ static const char *ServerState_toString(ServerState state) {
 		case ServerState_Lobby_Idle: return "Lobby.Idle";
 		case ServerState_Lobby_Entitlement: return "Lobby.Entitlement";
 		case ServerState_Lobby_Ready: return "Lobby.Ready";
-		case ServerState_Lobby_Countdown: return "Lobby.Countdown";
+		case ServerState_Lobby_LongCountdown: return "Lobby.LongCountdown";
+		case ServerState_Lobby_ShortCountdown: return "Lobby.ShortCountdown";
 		case ServerState_Lobby_Downloading: return "Lobby.Downloading";
 		case ServerState_Game_LoadingScene: return "Game.LoadingScene";
 		case ServerState_Game_LoadingSong: return "Game.LoadingSong";
@@ -439,7 +478,7 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 					struct Counter128 mask = COUNTER128_CLEAR;
 					FOR_SOME_PLAYERS(id, room->connected,) {
 						votes[id] = 0;
-						if(!(room->players[id].permissions.hasRecommendBeatmapsPermission && room->players[id].recommendedBeatmap.beatmapCharacteristicSerializedName.length))
+						if(!room->players[id].recommendedBeatmap.beatmapCharacteristicSerializedName.length)
 							continue;
 						Counter128_set(&mask, id, 1);
 						FOR_SOME_PLAYERS(cmp, mask,) {
@@ -457,7 +496,7 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 				NOT_IMPLEMENTED(SongSelectionMode_Random);
 				case SongSelectionMode_OwnerPicks: {
 					FOR_SOME_PLAYERS(id, room->connected,) {
-						if(room->players[id].permissions.isServerOwner) {
+						if(session_get_isServerOwner(room, &room->players[id])) {
 							select = id;
 							break;
 						}
@@ -504,20 +543,36 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 			if(Counter128_containsNone(room->global.inLobby, room->connected)) {
 				room->lobby.reason = CannotStartGameReason_AllPlayersNotInLobby;
 				break;
-			} else if(Counter128_contains(room->global.isSpectating, room->connected)) {
+			}
+			if(Counter128_contains(room->global.isSpectating, room->connected)) {
 				room->lobby.reason = CannotStartGameReason_AllPlayersSpectating;
 				break;
-			} else if(!Counter128_contains(Counter128_or(room->lobby.isReady, room->global.isSpectating), room->connected)) {
-				break;
-			} else if(room->state & (ServerState_Lobby_Countdown | ServerState_Lobby_Downloading)) {
-				return;
 			}
-			FOR_SOME_PLAYERS(id, room->connected,)
-				session_set_state(ctx, room, &room->players[id], state);
-			room_set_state(ctx, room, ServerState_Lobby_Countdown);
+			bool shouldCountdown = Counter128_contains(Counter128_or(room->lobby.isReady, room->global.isSpectating), room->connected);
+			FOR_SOME_PLAYERS(id, room->connected,) // TODO: this can be made much cleaner once host switching/passing is implemented
+				if(session_get_isServerOwner(room, &room->players[id]))
+					shouldCountdown |= Counter128_get(room->lobby.isReady, id);
+			if(!shouldCountdown)
+				break;
+			room_set_state(ctx, room, ServerState_Lobby_LongCountdown);
 			return;
 		}
-		case ServerState_Lobby_Countdown: room->global.timeout = room_get_syncTime(room) + room->countdownDuration; break;
+		case ServerState_Lobby_LongCountdown: {
+			if(Counter128_contains(Counter128_or(room->lobby.isReady, room->global.isSpectating), room->connected)) {
+				room_set_state(ctx, room, ServerState_Lobby_ShortCountdown);
+				return;
+			} else if((room->state & ServerState_Selected) >= ServerState_Lobby_LongCountdown) {
+				return;
+			}
+			room->global.timeout = room_get_syncTime(room) + room->longCountdown;
+			break;
+		}
+		case ServerState_Lobby_ShortCountdown: {
+			if((room->state & ServerState_Selected) >= ServerState_Lobby_ShortCountdown)
+				return;
+			room->global.timeout = room_get_syncTime(room) + room->shortCountdown;
+			break;
+		}
 		case ServerState_Lobby_Downloading: {
 			if(Counter128_contains(room->lobby.isDownloaded, room->connected)) {
 				room_set_state(ctx, room, ServerState_Game_LoadingScene);
@@ -584,7 +639,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 				},
 			};
 			FOR_SOME_PLAYERS(id, room->lobby.entitlement.missing,)
-				r_missing.setPlayersMissingEntitlementsToLevel.playersMissingEntitlements.playersWithoutEntitlements[r_missing.setPlayersMissingEntitlementsToLevel.playersMissingEntitlements.count++] = room->players[id].permissions.userId;
+				r_missing.setPlayersMissingEntitlementsToLevel.playersMissingEntitlements.playersWithoutEntitlements[r_missing.setPlayersMissingEntitlementsToLevel.playersMissingEntitlements.count++] = room->players[id].userId;
 			FOR_SOME_PLAYERS(id, room->connected,) {
 				uint8_t resp[65536], *resp_end = resp;
 				pkt_write_c(&resp_end, endof(resp), room->players[id].net.version, RoutingHeader, {0, 127, false});
@@ -621,7 +676,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 				case MenuRpcType_ClearRecommendedBeatmap:
 				beatmap.identifier = CLEAR_BEATMAP;
 			}
-			if(!((room->state & ServerState_Lobby) && session->permissions.hasRecommendBeatmapsPermission))
+			if(!((room->state & ServerState_Lobby) && session_get_permissions(room, session).hasRecommendBeatmapsPermission))
 				break;
 			if(!BeatmapIdentifierNetSerializable_eq(&session->recommendedBeatmap, &beatmap.identifier, room->perPlayerDifficulty))
 				session->recommendTime = room_get_syncTime(room);
@@ -652,7 +707,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 				case MenuRpcType_ClearRecommendedGameplayModifiers:
 				modifiers.gameplayModifiers = CLEAR_MODIFIERS;
 			}
-			if(!((room->state & ServerState_Lobby) && session->permissions.hasRecommendGameplayModifiersPermission))
+			if(!((room->state & ServerState_Lobby) && session_get_permissions(room, session).hasRecommendGameplayModifiersPermission))
 				break;
 			session->recommendedModifiers = modifiers.gameplayModifiers;
 			playerid_t select = ~0u;
@@ -662,7 +717,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 					struct Counter128 mask = COUNTER128_CLEAR;
 					FOR_SOME_PLAYERS(id, room->connected,) {
 						votes[id] = 0;
-						if(!room->players[id].permissions.hasRecommendGameplayModifiersPermission)
+						if(!session_get_permissions(room, &room->players[id]).hasRecommendGameplayModifiersPermission)
 							continue;
 						Counter128_set(&mask, id, 1);
 						FOR_SOME_PLAYERS(cmp, mask,) {
@@ -680,7 +735,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 				NOT_IMPLEMENTED(SongSelectionMode_Random);
 				case SongSelectionMode_OwnerPicks: {
 					FOR_SOME_PLAYERS(id, room->connected,) {
-						if(room->players[id].permissions.isServerOwner) {
+						if(session_get_isServerOwner(room, &room->players[id])) {
 							select = id;
 							break;
 						}
@@ -690,7 +745,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 					break;
 				}
 				case SongSelectionMode_RandomPlayerPicks: {
-					if(!room->players[room->global.roundRobin].permissions.hasRecommendGameplayModifiersPermission)
+					if(!session_get_permissions(room, &room->players[room->global.roundRobin]).hasRecommendGameplayModifiersPermission)
 						goto vote_modifiers;
 					select = room->global.roundRobin;
 					break;
@@ -790,13 +845,13 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 					.reason = room->lobby.reason,
 				},
 			});
-			if(room->state & (ServerState_Lobby_Countdown | ServerState_Lobby_Downloading)) {
+			if(room->state & (ServerState_Countdown | ServerState_Lobby_Downloading)) {
 				SERIALIZE_MENURPC(&resp_end, endof(resp), session->net.version, {
 					.type = MenuRpcType_SetCountdownEndTime,
 					.setCountdownEndTime = {
 						.base = base,
 						.flags = {true, false, false, false},
-						.newTime = room->global.timeout,
+						.newTime = room_get_countdownEnd(room, base.syncTime),
 					},
 				});
 			}
@@ -808,12 +863,12 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 		NOT_IMPLEMENTED(MenuRpcType_GetOwnedSongPacks);
 		case MenuRpcType_SetOwnedSongPacks: break;
 		case MenuRpcType_RequestKickPlayer: {
-			if(!(session->permissions.hasKickVotePermission && rpc->requestKickPlayer.flags.hasValue0))
+			if(!(session_get_permissions(room, session).hasKickVotePermission && rpc->requestKickPlayer.flags.hasValue0))
 				break;
 			struct Counter128 players = room->playerSort;
 			Counter128_set(&players, indexof(room->players, session), 0);
 			FOR_SOME_PLAYERS(id, players,) {
-				if(!String_eq(room->players[id].permissions.userId, rpc->requestKickPlayer.kickedPlayerId))
+				if(!String_eq(room->players[id].userId, rpc->requestKickPlayer.kickedPlayerId))
 					continue;
 				uint8_t resp[65536], *resp_end = resp;
 				struct InternalMessage r_kick = {
@@ -841,7 +896,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 				},
 			};
 			FOR_SOME_PLAYERS(id, room->connected,)
-				r_permission.setPermissionConfiguration.playersPermissionConfiguration.playersPermission[r_permission.setPermissionConfiguration.playersPermissionConfiguration.count++] = room->players[id].permissions;
+				r_permission.setPermissionConfiguration.playersPermissionConfiguration.playersPermission[r_permission.setPermissionConfiguration.playersPermissionConfiguration.count++] = session_get_permissions(room, &room->players[id]);
 			pkt_write_c(&resp_end, endof(resp), session->net.version, RoutingHeader, {0, 0, false});
 			SERIALIZE_MENURPC(&resp_end, endof(resp), session->net.version, r_permission);
 			instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
@@ -928,7 +983,7 @@ static void handle_GameplayRpc(struct Context *ctx, struct Room *room, struct In
 		}
 		NOT_IMPLEMENTED(GameplayRpcType_ReturnToMenu);
 		case GameplayRpcType_RequestReturnToMenu: {
-			if((room->state & ServerState_Game) && String_eq(session->permissions.userId, room->managerId))
+			if((room->state & ServerState_Game) && session_get_isServerOwner(room, session))
 				room_set_state(ctx, room, ServerState_Lobby_Idle);
 			break;
 		}
@@ -978,10 +1033,8 @@ static bool handle_MultiplayerSession(struct Context *ctx, struct Room *room, st
 
 static void session_refresh_stateHash(struct Context *ctx, struct Room *room, struct InstanceSession *session) {
 	bool isSpectating = !PlayerStateHash_contains(session->stateHash, "wants_to_play_next_level");
-	bool allPlayersSpectating = Counter128_contains(room->global.isSpectating, room->connected);
-	if(Counter128_set(&room->global.isSpectating, indexof(room->players, session), isSpectating) != isSpectating)
-		if(Counter128_contains(room->global.isSpectating, room->connected) != allPlayersSpectating && (room->state & ServerState_Selected))
-			room_set_state(ctx, room, ServerState_Lobby_Ready);
+	if(Counter128_set(&room->global.isSpectating, indexof(room->players, session), isSpectating) != isSpectating && (room->state & ServerState_Selected))
+		room_set_state(ctx, room, ServerState_Lobby_Ready);
 }
 
 static void handle_PlayerIdentity(struct Context *ctx, struct Room *room, struct InstanceSession *session, const struct PlayerIdentity *identity) {
@@ -1002,7 +1055,7 @@ static void handle_PlayerIdentity(struct Context *ctx, struct Room *room, struct
 			.type = InternalMessageType_PlayerConnected,
 			.playerConnected = {
 				.remoteConnectionId = indexof(room->players, session) + 1,
-				.userId = session->permissions.userId,
+				.userId = session->userId,
 				.userName = session->userName,
 				.isConnectionOwner = 0,
 			},
@@ -1017,7 +1070,7 @@ static void handle_PlayerIdentity(struct Context *ctx, struct Room *room, struct
 		struct InternalMessage r_sort = {
 			.type = InternalMessageType_PlayerSortOrderUpdate,
 			.playerSortOrderUpdate = {
-				.userId = session->permissions.userId,
+				.userId = session->userId,
 				.sortIndex = indexof(room->players, session),
 			},
 		};
@@ -1174,7 +1227,7 @@ static void process_Channeled(struct Context *ctx, struct Room *room, struct Ins
 
 static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct InstanceSession *session, const struct ConnectRequest *req, const uint8_t **data, const uint8_t *end) {
 	session->net.version.netVersion = req->protocolId;
-	if(!(String_eq(req->secret, session->secret) && String_eq(req->userId, session->permissions.userId))) {
+	if(!(String_eq(req->secret, session->secret) && String_eq(req->userId, session->userId))) {
 		*data = end;
 		return;
 	}
@@ -1207,8 +1260,8 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 		if(session->net.version.windowSize < 32)
 			session->net.version.windowSize = 32;
 		session->directDownloads = info.directDownloads;
-		if(String_eq(req->userId, room->managerId)) {
-			room->countdownDuration = info.countdownDuration / 4.f;
+		if(session_get_isServerOwner(room, session)) {
+			room->shortCountdown = info.countdownDuration / 4.f;
 			room->skipResults = info.skipResults;
 			room->perPlayerDifficulty = info.perPlayerDifficulty;
 			room->perPlayerModifiers = info.perPlayerModifiers;
@@ -1231,7 +1284,7 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 					.blockSize = 398,
 				},
 				.windowSize = session->net.version.windowSize,
-				.countdownDuration = room->countdownDuration * 4,
+				.countdownDuration = room->shortCountdown * 4,
 				.directDownloads = session->directDownloads,
 				.skipResults = room->skipResults,
 				.perPlayerDifficulty = room->perPlayerDifficulty,
@@ -1254,7 +1307,7 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 	if(pkt_serialize(&r_sync, &resp_end, endof(resp), session->net.version))
 		instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 
-	uprintf("connect[%zu]: %.*s (%.*s)\n", indexof(room->players, session), session->userName.length, session->userName.data, session->permissions.userId.length, session->permissions.userId.data);
+	uprintf("connect[%zu]: %.*s (%.*s)\n", indexof(room->players, session), session->userName.length, session->userName.data, session->userId.length, session->userId.data);
 
 	FOR_SOME_PLAYERS(id, room->connected,) {
 		resp_end = resp;
@@ -1262,7 +1315,7 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 			.type = InternalMessageType_PlayerConnected,
 			.playerConnected = {
 				.remoteConnectionId = id + 1,
-				.userId = room->players[id].permissions.userId,
+				.userId = room->players[id].userId,
 				.userName = room->players[id].userName,
 				.isConnectionOwner = 0,
 			},
@@ -1275,7 +1328,7 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 		struct InternalMessage r_sort = {
 			.type = InternalMessageType_PlayerSortOrderUpdate,
 			.playerSortOrderUpdate = {
-				.userId = room->players[id].permissions.userId,
+				.userId = room->players[id].userId,
 				.sortIndex = id,
 			},
 		};
@@ -1510,8 +1563,8 @@ static void instance_onResend(struct Context *ctx, uint32_t currentTime, uint32_
 					ms = 10;
 				if(*nextTick - currentTime > ms)
 					*nextTick = currentTime + ms;
-			} else if((*room)->state & ServerState_Lobby_Countdown) {
-				room_set_state(ctx, *room, ServerState_Lobby_Downloading);
+			} else if((*room)->state & ServerState_Countdown) {
+				room_set_state(ctx, *room, (*room)->state << 1);
 			} else {
 				room_set_state(ctx, *room, ServerState_Lobby_Idle);
 			}
@@ -1630,9 +1683,11 @@ bool instance_room_open(uint16_t thread, uint16_t group, uint8_t sub, struct Str
 	room->configuration = configuration;
 	room->syncBase = 0;
 	room->syncBase = room_get_syncTime(room);
-	room->countdownDuration = 5;
-	room->perPlayerDifficulty = 0;
-	room->perPlayerModifiers = 0;
+	room->shortCountdown = 5;
+	room->longCountdown = 15;
+	room->skipResults = false;
+	room->perPlayerDifficulty = false;
+	room->perPlayerModifiers = false;
 	room->connected = COUNTER128_CLEAR;
 	room->playerSort = COUNTER128_CLEAR;
 	room->state = 0;
@@ -1713,12 +1768,7 @@ struct NetSession *instance_room_resolve_session(uint16_t thread, uint16_t group
 	}
 	session->secret = secret;
 	session->userName = userName;
-	session->permissions.userId = userId;
-	session->permissions.isServerOwner = String_eq(userId, room->managerId);
-	session->permissions.hasRecommendBeatmapsPermission = (room->configuration.songSelectionMode != SongSelectionMode_Random) && (session->permissions.isServerOwner || room->configuration.songSelectionMode != SongSelectionMode_OwnerPicks);
-	session->permissions.hasRecommendGameplayModifiersPermission = (room->configuration.gameplayServerControlSettings == GameplayServerControlSettings_AllowModifierSelection || room->configuration.gameplayServerControlSettings == GameplayServerControlSettings_All);
-	session->permissions.hasKickVotePermission = session->permissions.isServerOwner;
-	session->permissions.hasInvitePermission = (room->configuration.invitePolicy == InvitePolicy_AnyoneCanInvite) || (session->permissions.isServerOwner && room->configuration.invitePolicy == InvitePolicy_OnlyConnectionOwnerCanInvite);
+	session->userId = userId;
 	session->publicEncryptionKey.length = 0;
 	session->sentIdentity = false;
 	session->directDownloads = false;
