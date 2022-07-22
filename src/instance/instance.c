@@ -586,6 +586,8 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 			break;
 		}
 		case ServerState_Game_LoadingSong: {
+			if(room->state & ServerState_Game_LoadingScene)
+				room->game.activePlayers = Counter128_and(room->game.activePlayers, room->game.loadingScene.isLoaded);
 			#ifdef USE_RANDOM_GUIDS
 			mbedtls_ctr_drbg_random(&ctx->net.ctr_drbg, (uint8_t*)room->global.sessionId, sizeof(room->global.sessionId));
 			#else
@@ -596,7 +598,12 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 			room->global.timeout = room_get_syncTime(room) + LOAD_TIMEOUT;
 			break;
 		}
-		case ServerState_Game_Gameplay: room->game.startTime = room_get_syncTime(room) + .25; break;
+		case ServerState_Game_Gameplay: {
+			if(room->state & ServerState_Game_LoadingSong)
+				room->game.activePlayers = Counter128_and(room->game.activePlayers, room->game.loadingSong.isLoaded);
+			room->game.startTime = room_get_syncTime(room) + .25;
+			break;
+		}
 		case ServerState_Game_Results: room->global.timeout = room_get_syncTime(room) + (room->game.showResults ? 20 : 1); break;
 	}
 	room->state = state;
@@ -1563,10 +1570,10 @@ static void instance_onResend(struct Context *ctx, uint32_t currentTime, uint32_
 					ms = 10;
 				if(*nextTick - currentTime > ms)
 					*nextTick = currentTime + ms;
-			} else if((*room)->state & ServerState_Countdown) {
-				room_set_state(ctx, *room, (*room)->state << 1);
-			} else {
+			} else if((*room)->state & ServerState_Game_Results) { // TODO: ServerState_Lobby_Results = ServerState_Lobby_Idle >> 1
 				room_set_state(ctx, *room, ServerState_Lobby_Idle);
+			} else {
+				room_set_state(ctx, *room, (*room)->state << 1);
 			}
 		}
 
