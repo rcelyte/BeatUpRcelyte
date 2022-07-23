@@ -46,6 +46,7 @@ struct InstanceSession {
 	uint8_t random[32];
 	struct ByteArrayNetSerializable publicEncryptionKey;
 	bool sentIdentity, directDownloads;
+	uint32_t joinOrder;
 
 	ServerState state;
 	float recommendTime;
@@ -55,10 +56,11 @@ struct InstanceSession {
 };
 struct Room {
 	struct NetKeypair keys;
-	struct String managerId;
+	playerid_t serverOwner;
 	struct GameplayServerConfiguration configuration;
 	float syncBase, shortCountdown, longCountdown;
 	bool skipResults, perPlayerDifficulty, perPlayerModifiers;
+	uint32_t joinCount;
 
 	ServerState state;
 	struct {
@@ -165,12 +167,8 @@ static bool GameplayModifiers_eq(const struct GameplayModifiers *a, const struct
 	return speedOnly || (a->energyType == b->energyType && a->demoNoFail == b->demoNoFail && a->instaFail == b->instaFail && a->failOnSaberClash == b->failOnSaberClash && a->enabledObstacleType == b->enabledObstacleType && a->demoNoObstacles == b->demoNoObstacles && a->noBombs == b->noBombs && a->fastNotes == b->fastNotes && a->strictAngles == b->strictAngles && a->disappearingArrows == b->disappearingArrows && a->ghostNotes == b->ghostNotes && a->noArrows == b->noArrows && a->noFailOn0Energy == b->noFailOn0Energy && a->proMode == b->proMode && a->zenMode == b->zenMode && a->smallCubes == b->smallCubes);
 }
 
-static inline bool session_get_isServerOwner(const struct Room *room, const struct InstanceSession *session) {
-	return String_eq(session->userId, room->managerId); // TODO: host switching/passing (use a playerid_t instead of `managerId` String)
-}
-
 static inline struct PlayerLobbyPermissionConfigurationNetSerializable session_get_permissions(const struct Room *room, const struct InstanceSession *session) {
-	bool isServerOwner = session_get_isServerOwner(room, session);
+	bool isServerOwner = (indexof(room->players, session) == room->serverOwner);
 	return (struct PlayerLobbyPermissionConfigurationNetSerializable){
 		.userId = session->userId,
 		.isServerOwner = isServerOwner,
@@ -473,8 +471,8 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 		case ServerState_Lobby_Entitlement: {
 			playerid_t select = ~0u;
 			switch(room->configuration.songSelectionMode) {
-				case SongSelectionMode_Vote: vote_beatmap: {
-					uint8_t votes[126], max = 0;
+				case SongSelectionMode_Vote: vote_beatmap: { // TODO: use `room->global.roundRobin` as tiebreaker
+					uint8_t votes[128], max = 0;
 					struct Counter128 mask = COUNTER128_CLEAR;
 					FOR_SOME_PLAYERS(id, room->connected,) {
 						votes[id] = 0;
@@ -495,14 +493,9 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 				}
 				NOT_IMPLEMENTED(SongSelectionMode_Random);
 				case SongSelectionMode_OwnerPicks: {
-					FOR_SOME_PLAYERS(id, room->connected,) {
-						if(session_get_isServerOwner(room, &room->players[id])) {
-							select = id;
-							break;
-						}
-					}
-					if(select == (playerid_t)~0u)
+					if(!Counter128_get(room->connected, room->serverOwner))
 						goto vote_beatmap;
+					select = room->serverOwner;
 					break;
 				}
 				case SongSelectionMode_RandomPlayerPicks: {
@@ -549,9 +542,7 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 				break;
 			}
 			bool shouldCountdown = Counter128_contains(Counter128_or(room->lobby.isReady, room->global.isSpectating), room->connected);
-			FOR_SOME_PLAYERS(id, room->connected,) // TODO: this can be made much cleaner once host switching/passing is implemented
-				if(session_get_isServerOwner(room, &room->players[id]))
-					shouldCountdown |= Counter128_get(room->lobby.isReady, id);
+			shouldCountdown |= Counter128_get(room->lobby.isReady, room->serverOwner);
 			if(!shouldCountdown)
 				break;
 			room_set_state(ctx, room, ServerState_Lobby_LongCountdown);
@@ -609,6 +600,15 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 	room->state = state;
 	FOR_SOME_PLAYERS(id, room->connected,)
 		session_set_state(ctx, room, &room->players[id], state);
+}
+
+static struct PlayersLobbyPermissionConfigurationNetSerializable room_get_permissions(const struct Room *room) {
+	struct PlayersLobbyPermissionConfigurationNetSerializable out = {
+		.count = 0,
+	};
+	FOR_SOME_PLAYERS(id, room->connected,)
+		out.playersPermission[out.count++] = session_get_permissions(room, &room->players[id]);
+	return out;
 }
 
 static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct InstanceSession *session, const struct MenuRpc *rpc) {
@@ -720,7 +720,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 			playerid_t select = ~0u;
 			switch(room->configuration.songSelectionMode) {
 				case SongSelectionMode_Vote: vote_modifiers: {
-					uint8_t votes[126], max = 0;
+					uint8_t votes[128], max = 0;
 					struct Counter128 mask = COUNTER128_CLEAR;
 					FOR_SOME_PLAYERS(id, room->connected,) {
 						votes[id] = 0;
@@ -741,14 +741,9 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 				}
 				NOT_IMPLEMENTED(SongSelectionMode_Random);
 				case SongSelectionMode_OwnerPicks: {
-					FOR_SOME_PLAYERS(id, room->connected,) {
-						if(session_get_isServerOwner(room, &room->players[id])) {
-							select = id;
-							break;
-						}
-					}
-					if(select == (playerid_t)~0u)
+					if(!Counter128_get(room->connected, room->serverOwner))
 						goto vote_modifiers;
+					select = room->serverOwner;
 					break;
 				}
 				case SongSelectionMode_RandomPlayerPicks: {
@@ -899,11 +894,9 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 				.setPermissionConfiguration = {
 					.base.syncTime = room_get_syncTime(room),
 					.flags = {true, false, false, false},
-					.playersPermissionConfiguration.count = 0,
+					.playersPermissionConfiguration = room_get_permissions(room),
 				},
 			};
-			FOR_SOME_PLAYERS(id, room->connected,)
-				r_permission.setPermissionConfiguration.playersPermissionConfiguration.playersPermission[r_permission.setPermissionConfiguration.playersPermissionConfiguration.count++] = session_get_permissions(room, &room->players[id]);
 			pkt_write_c(&resp_end, endof(resp), session->net.version, RoutingHeader, {0, 0, false});
 			SERIALIZE_MENURPC(&resp_end, endof(resp), session->net.version, r_permission);
 			instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
@@ -990,7 +983,7 @@ static void handle_GameplayRpc(struct Context *ctx, struct Room *room, struct In
 		}
 		NOT_IMPLEMENTED(GameplayRpcType_ReturnToMenu);
 		case GameplayRpcType_RequestReturnToMenu: {
-			if((room->state & ServerState_Game) && session_get_isServerOwner(room, session))
+			if((room->state & ServerState_Game) && indexof(room->players, session) == room->serverOwner)
 				room_set_state(ctx, room, ServerState_Lobby_Idle);
 			break;
 		}
@@ -1267,7 +1260,7 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 		if(session->net.version.windowSize < 32)
 			session->net.version.windowSize = 32;
 		session->directDownloads = info.directDownloads;
-		if(session_get_isServerOwner(room, session)) {
+		if(indexof(room->players, session) == room->serverOwner) {
 			room->shortCountdown = info.countdownDuration / 4.f;
 			room->skipResults = info.skipResults;
 			room->perPlayerDifficulty = info.perPlayerDifficulty;
@@ -1401,7 +1394,7 @@ enum DisconnectMode {
 	DC_NOTIFY = 2,
 };
 static void room_disconnect(struct Context *ctx, struct Room **room, struct InstanceSession *session, enum DisconnectMode mode) {
-	uint32_t id = indexof((*room)->players, session);
+	playerid_t id = indexof((*room)->players, session);
 	Counter128_set(&(*room)->playerSort, id, 0);
 	log_players(*room, session, (mode & DC_RESET) ? "re" : "dis");
 	instance_channels_free(&session->channels);
@@ -1409,6 +1402,30 @@ static void room_disconnect(struct Context *ctx, struct Room **room, struct Inst
 		net_session_reset(&ctx->net, &session->net);
 	else
 		net_session_free(&session->net);
+
+	if(id == (*room)->serverOwner) {
+		(*room)->serverOwner = 0;
+		uint32_t ownerOrder = ~0u;
+		FOR_SOME_PLAYERS(id, (*room)->playerSort,)
+			if((*room)->players[id].joinOrder < ownerOrder)
+				(ownerOrder = (*room)->players[id].joinOrder, (*room)->serverOwner = id);
+		if(mode & DC_NOTIFY) {
+			uint8_t resp[65536], *resp_end = resp;
+			struct MenuRpc r_permission = {
+				.type = MenuRpcType_SetPermissionConfiguration,
+				.setPermissionConfiguration = {
+					.base.syncTime = room_get_syncTime(*room),
+					.flags = {true, false, false, false},
+					.playersPermissionConfiguration = room_get_permissions(*room),
+				},
+			};
+			FOR_SOME_PLAYERS(id, (*room)->connected,) {
+				pkt_write_c(&resp_end, endof(resp), (*room)->players[id].net.version, RoutingHeader, {0, 0, false});
+				SERIALIZE_MENURPC(&resp_end, endof(resp), (*room)->players[id].net.version, r_permission);
+				instance_send_channeled(&(*room)->players[id].net, &(*room)->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
+			}
+		}
+	}
 
 	if(!Counter128_isEmpty((*room)->playerSort)) {
 		if(mode & DC_NOTIFY) {
@@ -1671,11 +1688,15 @@ void instance_block_release(uint16_t thread, uint16_t group) {
 	net_unlock(&contexts[thread].net);
 }
 
-bool instance_room_open(uint16_t thread, uint16_t group, uint8_t sub, struct String managerId, struct GameplayServerConfiguration configuration, ServerCode code) {
+static inline struct Room **instance_get_room(uint16_t thread, uint16_t group, uint8_t sub) {
+	return &contexts[thread].rooms[group][sub];
+}
+
+bool instance_room_open(uint16_t thread, uint16_t group, uint8_t sub, struct GameplayServerConfiguration configuration, ServerCode code) {
 	bool res = true;
 	net_lock(&contexts[thread].net);
 	uprintf("opening room (%hu,%hu,%hhu)\n", thread, group, sub);
-	if(contexts[thread].rooms[group][sub]) {
+	if(*instance_get_room(thread, group, sub)) {
 		uprintf("Room already open!\n");
 		goto fail;
 	}
@@ -1686,7 +1707,7 @@ bool instance_room_open(uint16_t thread, uint16_t group, uint8_t sub, struct Str
 	}
 	net_keypair_init(&room->keys);
 	net_keypair_gen(&contexts[0].net, &room->keys);
-	room->managerId = managerId;
+	room->serverOwner = 0;
 	room->configuration = configuration;
 	room->syncBase = 0;
 	room->syncBase = room_get_syncTime(room);
@@ -1695,6 +1716,7 @@ bool instance_room_open(uint16_t thread, uint16_t group, uint8_t sub, struct Str
 	room->skipResults = false;
 	room->perPlayerDifficulty = false;
 	room->perPlayerModifiers = false;
+	room->joinCount = 0;
 	room->connected = COUNTER128_CLEAR;
 	room->playerSort = COUNTER128_CLEAR;
 	room->state = 0;
@@ -1706,7 +1728,7 @@ bool instance_room_open(uint16_t thread, uint16_t group, uint8_t sub, struct Str
 	room->global.selectedModifiers = CLEAR_MODIFIERS;
 	room->global.roundRobin = 0;
 	room_set_state(&contexts[thread], room, ServerState_Lobby_Idle);
-	contexts[thread].rooms[group][sub] = room;
+	*instance_get_room(thread, group, sub) = room;
 	res = false;
 	fail:
 	net_unlock(&contexts[thread].net);
@@ -1715,31 +1737,34 @@ bool instance_room_open(uint16_t thread, uint16_t group, uint8_t sub, struct Str
 
 void instance_room_close(uint16_t thread, uint16_t group, uint8_t sub) {
 	net_lock(&contexts[thread].net);
-	room_close(&contexts[thread], &contexts[thread].rooms[group][sub]);
+	room_close(&contexts[thread], instance_get_room(thread, group, sub));
 	net_unlock(&contexts[thread].net);
 }
 
 struct String instance_room_get_managerId(uint16_t thread, uint16_t group, uint8_t sub) {
 	net_lock(&contexts[thread].net);
-	struct String out = contexts[thread].rooms[group][sub]->managerId;
+	struct Room *room = *instance_get_room(thread, group, sub);
+	struct String managerId = room->players[room->serverOwner].userId;
 	net_unlock(&contexts[thread].net);
-	return out;
+	return managerId;
 }
 
 struct GameplayServerConfiguration instance_room_get_configuration(uint16_t thread, uint16_t group, uint8_t sub) {
 	net_lock(&contexts[thread].net);
-	struct GameplayServerConfiguration out = contexts[thread].rooms[group][sub]->configuration;
+	struct Room *room = *instance_get_room(thread, group, sub);
+	struct GameplayServerConfiguration conf = room->configuration;
 	net_unlock(&contexts[thread].net);
-	return out;
+	return conf;
 }
 
 struct PacketContext instance_room_get_protocol(uint16_t thread, uint16_t group, uint8_t sub) {
 	struct PacketContext version = PV_LEGACY_DEFAULT;
 	net_lock(&contexts[thread].net);
-	struct Counter128 ct = contexts[thread].rooms[group][sub]->playerSort;
+	struct Room *room = *instance_get_room(thread, group, sub);
+	struct Counter128 ct = room->playerSort;
 	uint32_t id = 0;
 	if(Counter128_set_next(&ct, &id, 0))
-		version = contexts[thread].rooms[group][sub]->players[id].net.version;
+		version = room->players[id].net.version;
 	net_unlock(&contexts[thread].net);
 	return version;
 }
@@ -1779,6 +1804,7 @@ struct NetSession *instance_room_resolve_session(uint16_t thread, uint16_t group
 	session->publicEncryptionKey.length = 0;
 	session->sentIdentity = false;
 	session->directDownloads = false;
+	session->joinOrder = ++room->joinCount;
 	session->state = 0;
 	session->recommendTime = 0;
 	session->recommendedBeatmap = CLEAR_BEATMAP;

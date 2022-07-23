@@ -74,7 +74,7 @@ void pool_free() {
 
 static uint32_t roomCount = 0;
 
-bool pool_request_room(struct RoomHandle *room_out, struct WireRoomHandle *handle_out, struct String managerId, struct GameplayServerConfiguration configuration) {
+bool pool_request_room(struct RoomHandle *room_out, struct WireRoomHandle *handle_out, struct GameplayServerConfiguration configuration) {
 	pthread_mutex_lock(&pool_mutex);
 	uint16_t block = alloc[count];
 	if(rooms[block].idle == 0xffff)
@@ -88,7 +88,7 @@ bool pool_request_room(struct RoomHandle *room_out, struct WireRoomHandle *handl
 	count += (rooms[room_out->block].idle == 0);
 	++roomCount, uprintf("%u room%s open\n", roomCount, (roomCount == 1) ? "" : "s");
 	pthread_mutex_unlock(&pool_mutex);
-	return wire_room_open(*handle_out, managerId, configuration, pool_room_code(*room_out));
+	return wire_room_open(*handle_out, configuration, pool_room_code(*room_out));
 }
 
 void pool_room_close_notify(struct RoomHandle room) {

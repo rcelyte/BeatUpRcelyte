@@ -452,7 +452,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		r_conn.connectToServerResponse.configuration.maxPlayerCount = 126;
 		r_conn.connectToServerResponse.configuration.songSelectionMode = SongSelectionMode_Vote;
 		#endif
-		if(pool_request_room(&room, &handle, managerId, r_conn.connectToServerResponse.configuration)) {
+		if(pool_request_room(&room, &handle, r_conn.connectToServerResponse.configuration)) {
 			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers;
 			goto send;
 		}
