@@ -211,7 +211,7 @@ static float room_get_countdownEnd(const struct Room *room, float defaultTime) {
 }
 
 #define STATE_EDGE(from, to, mask) ((to & (mask)) && !(from & (mask)))
-static void room_try_finish(struct Context *ctx, struct Room *room);
+static bool room_try_finish(struct Context *ctx, struct Room *room);
 static void session_set_state(struct Context *ctx, struct Room *room, struct InstanceSession *session, ServerState state) {
 	struct RemoteProcedureCall base = {
 		.syncTime = room_get_syncTime(room),
@@ -237,8 +237,10 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 			if(pkt_serialize(&r_disconnect, &resp_end, endof(resp), room->players[id].net.version))
 				instance_send_channeled(&room->players[id].net, &room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 		}
-		if(room->state & ServerState_Game)
+		if(room->state & ServerState_Game) {
+			Counter128_set(&room->game.activePlayers, indexof(room->players, session), 0);
 			room_try_finish(ctx, room);
+		}
 	}
 	if(state & ServerState_Lobby) {
 		bool needSetSelectedBeatmap = (state & ServerState_Lobby_Entitlement) != 0;
@@ -577,8 +579,11 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 			break;
 		}
 		case ServerState_Game_LoadingSong: {
-			if(room->state & ServerState_Game_LoadingScene)
+			if(room->state & ServerState_Game_LoadingScene) {
 				room->game.activePlayers = Counter128_and(room->game.activePlayers, room->game.loadingScene.isLoaded);
+				if(room_try_finish(ctx, room))
+					return;
+			}
 			#ifdef USE_RANDOM_GUIDS
 			mbedtls_ctr_drbg_random(&ctx->net.ctr_drbg, (uint8_t*)room->global.sessionId, sizeof(room->global.sessionId));
 			#else
@@ -590,8 +595,11 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 			break;
 		}
 		case ServerState_Game_Gameplay: {
-			if(room->state & ServerState_Game_LoadingSong)
+			if(room->state & ServerState_Game_LoadingSong) {
 				room->game.activePlayers = Counter128_and(room->game.activePlayers, room->game.loadingSong.isLoaded);
+				if(room_try_finish(ctx, room))
+					return;
+			}
 			room->game.startTime = room_get_syncTime(room) + .25;
 			break;
 		}
@@ -926,11 +934,12 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 	}
 }
 
-static void room_try_finish(struct Context *ctx, struct Room *room) {
+static bool room_try_finish(struct Context *ctx, struct Room *room) {
 	if(!Counter128_isEmpty(room->game.activePlayers))
-		return;
+		return false;
 	room->global.roundRobin = roundRobin_next(room->global.roundRobin, room->connected);
 	room_set_state(ctx, room, ServerState_Game_Results);
+	return true;
 }
 
 static void handle_GameplayRpc(struct Context *ctx, struct Room *room, struct InstanceSession *session, const struct GameplayRpc *rpc) {
@@ -946,7 +955,7 @@ static void handle_GameplayRpc(struct Context *ctx, struct Room *room, struct In
 			}
 			session->settings = rpc->setGameplaySceneReady.flags.hasValue0 ? rpc->setGameplaySceneReady.playerSpecificSettingsNetSerializable : CLEAR_SETTINGS;
 			if(Counter128_set(&room->game.loadingScene.isLoaded, indexof(room->players, session), 1) == 0)
-				if(Counter128_contains(room->game.loadingScene.isLoaded, room->connected))
+				if(Counter128_contains(room->game.loadingScene.isLoaded, room->game.activePlayers))
 					room_set_state(ctx, room, ServerState_Game_LoadingSong);
 			break;
 		}
@@ -959,7 +968,7 @@ static void handle_GameplayRpc(struct Context *ctx, struct Room *room, struct In
 				break;
 			}
 			if(Counter128_set(&room->game.loadingSong.isLoaded, indexof(room->players, session), 1) == 0)
-				if(Counter128_contains(room->game.loadingSong.isLoaded, room->connected))
+				if(Counter128_contains(room->game.loadingSong.isLoaded, room->game.activePlayers))
 					room_set_state(ctx, room, ServerState_Game_Gameplay);
 			break;
 		}
