@@ -102,7 +102,7 @@ u8 SongSpeed
 	Faster
 	Slower
 	SuperFast
-n GameplayModifiers
+// n GameplayModifiers
 	EnergyType energyType:4
 	b _pad0:1
 	b demoNoFail:1
@@ -121,6 +121,8 @@ n GameplayModifiers
 	b proMode:1
 	b zenMode:1
 	b smallCubes:1
+n GameplayModifiers
+	u32 raw
 n SetSelectedGameplayModifiers
 	RemoteProcedureCall base
 	RemoteProcedureCallFlags flags

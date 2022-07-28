@@ -193,7 +193,7 @@ void _pkt_ServerConnectInfo_read(struct ServerConnectInfo *restrict data, const 
 	data->perPlayerDifficulty = bitfield0 >> 2 & 1;
 	data->perPlayerModifiers = bitfield0 >> 3 & 1;
 }
-static void _pkt_ServerConnectInfo_write(const struct ServerConnectInfo *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+void _pkt_ServerConnectInfo_write(const struct ServerConnectInfo *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_ConnectInfo_write(&data->base, pkt, end, ctx);
 	_pkt_u32_write(&data->windowSize, pkt, end, ctx);
 	_pkt_u8_write(&data->countdownDuration, pkt, end, ctx);
@@ -377,48 +377,10 @@ static void _pkt_GetRecommendedBeatmap_write(const struct GetRecommendedBeatmap 
 	_pkt_RemoteProcedureCall_write(&data->base, pkt, end, ctx);
 }
 static void _pkt_GameplayModifiers_read(struct GameplayModifiers *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	uint32_t bitfield0;
-	_pkt_u32_read(&bitfield0, pkt, end, ctx);
-	data->energyType = bitfield0 >> 0 & 15;
-	data->_pad0 = bitfield0 >> 4 & 1;
-	data->demoNoFail = bitfield0 >> 5 & 1;
-	data->instaFail = bitfield0 >> 6 & 1;
-	data->failOnSaberClash = bitfield0 >> 7 & 1;
-	data->enabledObstacleType = bitfield0 >> 8 & 15;
-	data->demoNoObstacles = bitfield0 >> 12 & 1;
-	data->noBombs = bitfield0 >> 13 & 1;
-	data->fastNotes = bitfield0 >> 14 & 1;
-	data->strictAngles = bitfield0 >> 15 & 1;
-	data->disappearingArrows = bitfield0 >> 16 & 1;
-	data->ghostNotes = bitfield0 >> 17 & 1;
-	data->songSpeed = bitfield0 >> 18 & 15;
-	data->noArrows = bitfield0 >> 22 & 1;
-	data->noFailOn0Energy = bitfield0 >> 23 & 1;
-	data->proMode = bitfield0 >> 24 & 1;
-	data->zenMode = bitfield0 >> 25 & 1;
-	data->smallCubes = bitfield0 >> 26 & 1;
+	_pkt_u32_read(&data->raw, pkt, end, ctx);
 }
 static void _pkt_GameplayModifiers_write(const struct GameplayModifiers *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	uint32_t bitfield0 = 0;
-	bitfield0 |= (data->energyType & 15u) << 0;
-	bitfield0 |= (data->_pad0 & 1u) << 4;
-	bitfield0 |= (data->demoNoFail & 1u) << 5;
-	bitfield0 |= (data->instaFail & 1u) << 6;
-	bitfield0 |= (data->failOnSaberClash & 1u) << 7;
-	bitfield0 |= (data->enabledObstacleType & 15u) << 8;
-	bitfield0 |= (data->demoNoObstacles & 1u) << 12;
-	bitfield0 |= (data->noBombs & 1u) << 13;
-	bitfield0 |= (data->fastNotes & 1u) << 14;
-	bitfield0 |= (data->strictAngles & 1u) << 15;
-	bitfield0 |= (data->disappearingArrows & 1u) << 16;
-	bitfield0 |= (data->ghostNotes & 1u) << 17;
-	bitfield0 |= (data->songSpeed & 15u) << 18;
-	bitfield0 |= (data->noArrows & 1u) << 22;
-	bitfield0 |= (data->noFailOn0Energy & 1u) << 23;
-	bitfield0 |= (data->proMode & 1u) << 24;
-	bitfield0 |= (data->zenMode & 1u) << 25;
-	bitfield0 |= (data->smallCubes & 1u) << 26;
-	_pkt_u32_write(&bitfield0, pkt, end, ctx);
+	_pkt_u32_write(&data->raw, pkt, end, ctx);
 }
 static void _pkt_SetSelectedGameplayModifiers_read(struct SetSelectedGameplayModifiers *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_RemoteProcedureCall_read(&data->base, pkt, end, ctx);

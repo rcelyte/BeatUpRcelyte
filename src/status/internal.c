@@ -187,7 +187,7 @@ static uint32_t status_status(char *buf, bool isGame) {
 		PUT(",\"maintenanceEndTime\":%" PRIu64, TEST_maintenanceEndTime);
 		PUT(",\"userMessage\":{\"localizations\":[{\"language\":0,\"message\":\"%s\"}]}", TEST_maintenanceMessage);
 	}
-	PUT(",\"requiredMods\": [{\"id\": \"BeatUpClient\",\"version\": \"0.4.0\"},{\"id\": \"MultiplayerCore\",\"version\": \"1.1.1\"},{\"id\":\"BeatTogether\",\"version\":\"2.0.1\"},{\"id\": \"BeatSaberPlus_SongOverlay\",\"version\": \"4.6.1\"}]}");
+	PUT(",\"requiredMods\": [{\"id\": \"BeatUpClient\",\"version\": \"0.4.0\"},{\"id\": \"MultiplayerCore\",\"version\": \"1.1.1\"},{\"id\":\"BeatTogether\",\"version\":\"2.0.1\"},{\"id\": \"BeatSaberPlus_SongOverlay\",\"version\": \"4.6.1\"},{\"id\": \"_Heck\",\"version\": \"1.4.1\"},{\"id\": \"NoodleExtensions\",\"version\": \"1.5.1\"},{\"id\": \"Chroma\",\"version\": \"2.6.1\"}]}");
 	if(msg_end >= endof(msg))
 		return status_text(buf, "500 Internal Server Error", "text/plain", "");
 	return status_bin(buf, "200 OK", "application/json", (const uint8_t*)msg, msg_end - msg);

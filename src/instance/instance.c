@@ -27,8 +27,8 @@ typedef uint32_t playerid_t;
 #define FOR_SOME_PLAYERS(id, counter, ...) \
 	struct Counter128 COUNTER_VAR = (counter); __VA_ARGS__; for(playerid_t (id) = 0; Counter128_set_next(&COUNTER_VAR, &(id), 0); ++(id))
 
-#define FOR_EXCLUDING_PLAYER(room, session, id, counter) \
-	FOR_SOME_PLAYERS(id, counter, Counter128_set(&COUNTER_VAR, indexof((room)->players, session), 0))
+#define FOR_EXCLUDING_PLAYER(id, counter, exc) \
+	FOR_SOME_PLAYERS(id, counter, Counter128_set(&COUNTER_VAR, exc, 0))
 
 #define FOR_ALL_ROOMS(ctx, room) \
 	struct Counter16 COUNTER_VAR = (ctx)->blockAlloc; for(uint8_t group; Counter16_set_next(&COUNTER_VAR, &group, 0);) \
@@ -49,7 +49,6 @@ struct InstanceSession {
 	uint32_t joinOrder;
 
 	ServerState state;
-	float recommendTime;
 	struct BeatmapIdentifierNetSerializable recommendedBeatmap;
 	struct GameplayModifiers recommendedModifiers;
 	struct PlayerSpecificSettingsNetSerializable settings;
@@ -79,9 +78,9 @@ struct Room {
 			struct Counter128 isDownloaded;
 			struct Counter128 isReady;
 			CannotStartGameReason reason;
+			playerid_t requester;
 			struct {
 				struct Counter128 missing;
-				playerid_t requester;
 			} entitlement;
 		} lobby;
 		struct {
@@ -157,14 +156,15 @@ static bool PlayerStateHash_contains(struct PlayerStateHash state, const char *k
 
 static bool BeatmapIdentifierNetSerializable_eq(const struct BeatmapIdentifierNetSerializable *a, const struct BeatmapIdentifierNetSerializable *b, bool ignoreDifficulty) {
 	if(!String_eq(a->levelID, b->levelID))
-		return 0;
+		return false;
 	return ignoreDifficulty || (String_eq(a->beatmapCharacteristicSerializedName, b->beatmapCharacteristicSerializedName) && a->difficulty == b->difficulty);
 }
 
-static bool GameplayModifiers_eq(const struct GameplayModifiers *a, const struct GameplayModifiers *b, bool speedOnly) {
-	if(a->songSpeed != b->songSpeed)
-		return 0;
-	return speedOnly || (a->energyType == b->energyType && a->demoNoFail == b->demoNoFail && a->instaFail == b->instaFail && a->failOnSaberClash == b->failOnSaberClash && a->enabledObstacleType == b->enabledObstacleType && a->demoNoObstacles == b->demoNoObstacles && a->noBombs == b->noBombs && a->fastNotes == b->fastNotes && a->strictAngles == b->strictAngles && a->disappearingArrows == b->disappearingArrows && a->ghostNotes == b->ghostNotes && a->noArrows == b->noArrows && a->noFailOn0Energy == b->noFailOn0Energy && a->proMode == b->proMode && a->zenMode == b->zenMode && a->smallCubes == b->smallCubes);
+static bool GameplayModifiers_eq(const struct GameplayModifiers *a, const struct GameplayModifiers *b, bool optional) {
+	struct GameplayModifiers delta = {a->raw ^ b->raw};
+	struct GameplayModifiers mask = {REQUIRED_MODIFIER_MASK};
+	mask.raw |= optional * ~0u;
+	return (delta.raw & mask.raw) == 0;
 }
 
 static inline struct PlayerLobbyPermissionConfigurationNetSerializable session_get_permissions(const struct Room *room, const struct InstanceSession *session) {
@@ -186,7 +186,7 @@ static struct BeatmapIdentifierNetSerializable session_get_beatmap(const struct 
 }
 
 static struct GameplayModifiers session_get_modifiers(const struct Room *room, const struct InstanceSession *session) {
-	if(room->perPlayerModifiers && GameplayModifiers_eq(&session->recommendedModifiers, &room->global.selectedModifiers, 1))
+	if(room->perPlayerModifiers && GameplayModifiers_eq(&session->recommendedModifiers, &room->global.selectedModifiers, false))
 		return session->recommendedModifiers;
 	return room->global.selectedModifiers;
 }
@@ -245,7 +245,7 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 	if(state & ServerState_Lobby) {
 		bool needSetSelectedBeatmap = (state & ServerState_Lobby_Entitlement) != 0;
 		if(!(session->state & ServerState_Lobby)) {
-			needSetSelectedBeatmap = 1;
+			needSetSelectedBeatmap = true;
 			session->recommendedBeatmap = CLEAR_BEATMAP;
 			SERIALIZE_GAMEPLAYRPC(&resp_end, endof(resp), session->net.version, {
 				.type = GameplayRpcType_ReturnToMenu,
@@ -278,6 +278,14 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 					.base = base,
 					.flags = {true, false, false, false},
 					.identifier = session_get_beatmap(room, session),
+				},
+			});
+			SERIALIZE_MENURPC(&resp_end, endof(resp), session->net.version, {
+				.type = MenuRpcType_SetSelectedGameplayModifiers,
+				.setSelectedGameplayModifiers = {
+					.base = base,
+					.flags = {true, false, false, false},
+					.gameplayModifiers = session_get_modifiers(room, session),
 				},
 			});
 		}
@@ -461,10 +469,12 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 	uprintf("state %s -> %s\n", ServerState_toString(room->state), ServerState_toString(state));
 	if(STATE_EDGE(room->state, state, ServerState_Lobby)) {
 		room->global.selectedBeatmap = CLEAR_BEATMAP;
+		room->global.selectedModifiers = CLEAR_MODIFIERS;
 		room->lobby.isEntitled = COUNTER128_CLEAR;
 		room->lobby.isDownloaded = COUNTER128_CLEAR;
 		room->lobby.isReady = COUNTER128_CLEAR;
 		room->lobby.reason = CannotStartGameReason_NoSongSelected;
+		room->lobby.requester = (playerid_t)~0u;
 	} else if(STATE_EDGE(room->state, state, ServerState_Game)) {
 		room->game.activePlayers = room->connected;
 		room->game.showResults = 0;
@@ -473,23 +483,19 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 		case ServerState_Lobby_Entitlement: {
 			playerid_t select = ~0u;
 			switch(room->configuration.songSelectionMode) {
-				case SongSelectionMode_Vote: vote_beatmap: { // TODO: use `room->global.roundRobin` as tiebreaker
-					uint8_t votes[128], max = 0;
-					struct Counter128 mask = COUNTER128_CLEAR;
+				case SongSelectionMode_Vote: vote_beatmap: {
+					uint32_t max = 0;
 					FOR_SOME_PLAYERS(id, room->connected,) {
-						votes[id] = 0;
 						if(!room->players[id].recommendedBeatmap.beatmapCharacteristicSerializedName.length)
 							continue;
-						Counter128_set(&mask, id, 1);
-						FOR_SOME_PLAYERS(cmp, mask,) {
-							if(id == cmp || BeatmapIdentifierNetSerializable_eq(&room->players[id].recommendedBeatmap, &room->players[cmp].recommendedBeatmap, room->perPlayerDifficulty)) {
-								if(++votes[cmp] > max) {
-									select = cmp;
-									max = votes[cmp];
-								}
-								break;
-							}
-						}
+						uint32_t biasedVotes = (id >= room->global.roundRobin) + 1;
+						FOR_EXCLUDING_PLAYER(cmp, room->connected, id) // TODO: this scales horribly
+							if(BeatmapIdentifierNetSerializable_eq(&room->players[id].recommendedBeatmap, &room->players[cmp].recommendedBeatmap, room->perPlayerDifficulty))
+								++biasedVotes;
+						if(biasedVotes <= max)
+							continue;
+						max = biasedVotes;
+						select = id;
 					}
 					break;
 				}
@@ -506,9 +512,11 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 					break;
 				}
 			}
+			room->lobby.requester = select;
 			if(select == (playerid_t)~0u || room->players[select].recommendedBeatmap.beatmapCharacteristicSerializedName.length == 0) {
 				room->lobby.isEntitled = room->connected;
 				room->global.selectedBeatmap = CLEAR_BEATMAP;
+				room->global.selectedModifiers = CLEAR_MODIFIERS;
 				room_set_state(ctx, room, ServerState_Lobby_Idle);
 				return;
 			}
@@ -518,12 +526,8 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 			room->lobby.isEntitled = COUNTER128_CLEAR;
 			room->lobby.isDownloaded = COUNTER128_CLEAR;
 			room->global.selectedBeatmap = room->players[select].recommendedBeatmap;
+			room->global.selectedModifiers = room->players[select].recommendedModifiers;
 			room->lobby.entitlement.missing = COUNTER128_CLEAR;
-			float requestTime = room->players[select].recommendTime;
-			room->lobby.entitlement.requester = select;
-			FOR_SOME_PLAYERS(id, room->connected,)
-				if(BeatmapIdentifierNetSerializable_eq(&room->players[id].recommendedBeatmap, &room->global.selectedBeatmap, room->perPlayerDifficulty) && room->players[select].recommendTime < requestTime)
-					room->lobby.entitlement.requester = id, requestTime = room->players[select].recommendTime;
 			break;
 		}
 		case ServerState_Lobby_Idle: {
@@ -693,8 +697,6 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 			}
 			if(!((room->state & ServerState_Lobby) && session_get_permissions(room, session).hasRecommendBeatmapsPermission))
 				break;
-			if(!BeatmapIdentifierNetSerializable_eq(&session->recommendedBeatmap, &beatmap.identifier, room->perPlayerDifficulty))
-				session->recommendTime = room_get_syncTime(room);
 			session->recommendedBeatmap = beatmap.identifier;
 			room_set_state(ctx, room, ServerState_Lobby_Entitlement);
 			break;
@@ -725,45 +727,9 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 			if(!((room->state & ServerState_Lobby) && session_get_permissions(room, session).hasRecommendGameplayModifiersPermission))
 				break;
 			session->recommendedModifiers = modifiers.gameplayModifiers;
-			playerid_t select = ~0u;
-			switch(room->configuration.songSelectionMode) {
-				case SongSelectionMode_Vote: vote_modifiers: {
-					uint8_t votes[128], max = 0;
-					struct Counter128 mask = COUNTER128_CLEAR;
-					FOR_SOME_PLAYERS(id, room->connected,) {
-						votes[id] = 0;
-						if(!session_get_permissions(room, &room->players[id]).hasRecommendGameplayModifiersPermission)
-							continue;
-						Counter128_set(&mask, id, 1);
-						FOR_SOME_PLAYERS(cmp, mask,) {
-							if(id == cmp || GameplayModifiers_eq(&room->players[id].recommendedModifiers, &room->players[cmp].recommendedModifiers, room->perPlayerModifiers)) {
-								if(++votes[cmp] > max) {
-									select = cmp;
-									max = votes[cmp];
-								}
-								break;
-							}
-						}
-					}
-					break;
-				}
-				NOT_IMPLEMENTED(SongSelectionMode_Random);
-				case SongSelectionMode_OwnerPicks: {
-					if(!Counter128_get(room->connected, room->serverOwner))
-						goto vote_modifiers;
-					select = room->serverOwner;
-					break;
-				}
-				case SongSelectionMode_RandomPlayerPicks: {
-					if(!session_get_permissions(room, &room->players[room->global.roundRobin]).hasRecommendGameplayModifiersPermission)
-						goto vote_modifiers;
-					select = room->global.roundRobin;
-					break;
-				}
-			}
-			if(select == (playerid_t)~0u || GameplayModifiers_eq(&room->players[select].recommendedModifiers, &room->global.selectedModifiers, 0))
+			if(indexof(room->players, session) != room->lobby.requester)
 				break;
-			room->global.selectedModifiers = room->players[select].recommendedModifiers;
+			room->global.selectedModifiers = modifiers.gameplayModifiers;
 			struct RemoteProcedureCall base = {room_get_syncTime(room)};
 			FOR_SOME_PLAYERS(id, room->connected,) {
 				uint8_t resp[65536], *resp_end = resp;
@@ -1069,7 +1035,7 @@ static void handle_PlayerIdentity(struct Context *ctx, struct Room *room, struct
 				.isConnectionOwner = 0,
 			},
 		};
-		FOR_EXCLUDING_PLAYER(room, session, id, room->connected) {
+		FOR_EXCLUDING_PLAYER(id, room->connected, indexof(room->players, session)) {
 			uint8_t resp[65536], *resp_end = resp;
 			pkt_write_c(&resp_end, endof(resp), room->players[id].net.version, RoutingHeader, {0, 0, false});
 			if(pkt_serialize(&r_connected, &resp_end, endof(resp), room->players[id].net.version))
@@ -1510,7 +1476,7 @@ static inline void handle_packet(struct Context *ctx, struct Room **room, struct
 					},
 				};
 				if(r_latency.playerLatencyUpdate.latency != 0 && session->net.version.protocolVersion < 7) {
-					FOR_EXCLUDING_PLAYER(*room, session, id, (*room)->connected) {
+					FOR_EXCLUDING_PLAYER(id, (*room)->connected, indexof((*room)->players, session)) {
 						uint8_t resp[65536], *resp_end = resp;
 						pkt_write_c(&resp_end, endof(resp), (*room)->players[id].net.version, RoutingHeader, {
 							.remoteConnectionId = indexof((*room)->players, session) + 1,
@@ -1815,7 +1781,6 @@ struct NetSession *instance_room_resolve_session(uint16_t thread, uint16_t group
 	session->directDownloads = false;
 	session->joinOrder = ++room->joinCount;
 	session->state = 0;
-	session->recommendTime = 0;
 	session->recommendedBeatmap = CLEAR_BEATMAP;
 	session->recommendedModifiers = CLEAR_MODIFIERS;
 
