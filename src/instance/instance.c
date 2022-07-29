@@ -49,6 +49,7 @@ struct InstanceSession {
 	uint32_t joinOrder;
 
 	ServerState state;
+	float recommendTime;
 	struct BeatmapIdentifierNetSerializable recommendedBeatmap;
 	struct GameplayModifiers recommendedModifiers;
 	struct PlayerSpecificSettingsNetSerializable settings;
@@ -489,13 +490,21 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 						if(!room->players[id].recommendedBeatmap.beatmapCharacteristicSerializedName.length)
 							continue;
 						uint32_t biasedVotes = (id >= room->global.roundRobin) + 1;
-						FOR_EXCLUDING_PLAYER(cmp, room->connected, id) // TODO: this scales horribly
-							if(BeatmapIdentifierNetSerializable_eq(&room->players[id].recommendedBeatmap, &room->players[cmp].recommendedBeatmap, room->perPlayerDifficulty))
-								++biasedVotes;
+						float requestTime = room->players[id].recommendTime;
+						playerid_t firstRequest = id;
+						FOR_EXCLUDING_PLAYER(cmp, room->connected, id) { // TODO: this scales horribly
+							if(!BeatmapIdentifierNetSerializable_eq(&room->players[id].recommendedBeatmap, &room->players[cmp].recommendedBeatmap, room->perPlayerDifficulty))
+								continue;
+							++biasedVotes;
+							if(room->players[cmp].recommendTime >= requestTime)
+								continue;
+							requestTime = room->players[cmp].recommendTime;
+							firstRequest = cmp;
+						}
 						if(biasedVotes <= max)
 							continue;
 						max = biasedVotes;
-						select = id;
+						select = firstRequest;
 					}
 					break;
 				}
@@ -697,6 +706,8 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 			}
 			if(!((room->state & ServerState_Lobby) && session_get_permissions(room, session).hasRecommendBeatmapsPermission))
 				break;
+			if(!BeatmapIdentifierNetSerializable_eq(&session->recommendedBeatmap, &beatmap.identifier, room->perPlayerDifficulty))
+				session->recommendTime = room_get_syncTime(room);
 			session->recommendedBeatmap = beatmap.identifier;
 			room_set_state(ctx, room, ServerState_Lobby_Entitlement);
 			break;
@@ -1781,6 +1792,7 @@ struct NetSession *instance_room_resolve_session(uint16_t thread, uint16_t group
 	session->directDownloads = false;
 	session->joinOrder = ++room->joinCount;
 	session->state = 0;
+	session->recommendTime = 0;
 	session->recommendedBeatmap = CLEAR_BEATMAP;
 	session->recommendedModifiers = CLEAR_MODIFIERS;
 
