@@ -19,7 +19,7 @@ public class BeatUpClient_BSIPA {
 			logger.Critical(message);
 	}
 
-	static Hive.Versioning.Version? GetVersion(string id) =>
+	internal static Hive.Versioning.Version? GetVersion(string id) =>
 		IPA.Loader.PluginManager.GetPluginFromId(id)?.HVersion;
 
 	[IPA.Init]

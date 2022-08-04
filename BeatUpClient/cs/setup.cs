@@ -28,6 +28,7 @@ static partial class BeatUpClient {
 		}
 		return patchCount;
 	}
+
 	static void OnSceneLoaded(UnityEngine.SceneManagement.Scene scene, UnityEngine.SceneManagement.LoadSceneMode mode) {
 		if(scene.name != "MainMenu")
 			return;
@@ -36,6 +37,7 @@ static partial class BeatUpClient {
 			SelectorSetup();
 		LobbyUISetup();
 	}
+
 	internal static void Enable(Hive.Versioning.Version version, System.Func<string, Hive.Versioning.Version?> modVersion) {
 		uint protocolVersion = (uint)HarmonyLib.AccessTools.Field(typeof(NetworkConstants), nameof(NetworkConstants.kProtocolVersion)).GetValue(null);
 		if(protocolVersion != 8u) {
@@ -70,7 +72,6 @@ static partial class BeatUpClient {
 			"BEATUP_MAY_IMPROVE_PERFORMANCE\t\tMay improve performance\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
 			$"BEATUP_INFO\t\tBeatUpClient {version} <color=red>| BETA</color> is active.<br>If any issues arise, please contact rcelyte#5372 <b>immediately</b>.\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
 			"BEATUP_SELECTED_MODIFIERS\t\tSelected Modifiers\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
-			"BEATUP_VOTE_MODIFIERS\t\tSuggested Modifiers (Vote)\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
 			"BEATUP_SWITCH\t\tSwitch\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n" +
 			"BEATUP_LARGE_LOBBY_AUTOKICK\t\tMultiplayerCore is required to play in lobbies with more than 5 players\t"+/*French*/"\t"+/*Spanish*/"\t"+/*German*/"\t\t\t\t\t\t\t\t\t\t\t\t\t"+/*Japanese*/"\t"+/*Simplified Chinese*/"\t\t"+/*Korean*/"\t\t\t\t\t\t\t\t\n";
 		Polyglot.LocalizationImporter.Import(localization, Polyglot.GoogleDriveDownloadFormat.TSV);
@@ -87,6 +88,8 @@ static partial class BeatUpClient {
 		try {
 			System.Collections.Generic.List<System.Type> sections = new System.Collections.Generic.List<System.Type>();
 			sections.Add(typeof(BeatUpClient));
+			if(haveSongCore)
+				sections.Add(typeof(BeatUpClient_SongCore));
 			if(haveMpCore)
 				sections.Add(typeof(BeatUpClient_MpCore));
 			Log.Debug("Gathering patches");
@@ -113,6 +116,7 @@ static partial class BeatUpClient {
 			Disable();
 		}
 	}
+
 	internal static void Disable() {
 		try {
 			UnityEngine.SceneManagement.SceneManager.sceneLoaded -= OnSceneLoaded;
@@ -123,4 +127,9 @@ static partial class BeatUpClient {
 			Log.Error($"Error removing patches: {ex}");
 		}
 	}
+
+	private static void NativeEnable(string version) =>
+		Enable(new Hive.Versioning.Version(version), name => null);
+	private static void NativeEnable_BSIPA(string version) =>
+		Enable(new Hive.Versioning.Version(version), BeatUpClient_BSIPA.GetVersion);
 }

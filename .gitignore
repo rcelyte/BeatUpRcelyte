@@ -5,7 +5,7 @@
 /BeatUpClient/.obj
 /BeatUpClient/.tmp
 /BeatUpClient/BeatUpClient.csproj.user
-/BeatUpClient/BeatUpClient.dll
+/BeatUpClient/*.dll
 /BeatUpClient/BeatUpClient.qmod
 /BeatUpClient/bin
 /BeatUpClient/extern

@@ -1,8 +1,4 @@
 static partial class BeatUpClient {
-	[Patch(PatchType.Postfix, typeof(MainSettingsModelSO), nameof(MainSettingsModelSO.Load))]
-	public static void MainSettingsModelSO_Load(ref MainSettingsModelSO __instance) =>
-		customServerHostName = __instance.customServerHostName;
-
 	static readonly BoolSO customServerEnvironmentOverride = UnityEngine.ScriptableObject.CreateInstance<BoolSO>();
 	[Patch(PatchType.Transpiler, typeof(MainSystemInit), nameof(MainSystemInit.InstallBindings))]
 	public static System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> MainSystemInit_InstallBindings(System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> instructions) {
@@ -20,7 +16,8 @@ static partial class BeatUpClient {
 	}
 
 	[Patch(PatchType.Postfix, typeof(MainSystemInit), nameof(MainSystemInit.InstallBindings))]
-	public static void MainSystemInit_InstallBindings_post(MainSystemInit __instance, Zenject.DiContainer container) {
+	public static void MainSystemInit_InstallBindings_post(MainSystemInit __instance, Zenject.DiContainer container, MainSettingsModelSO ____mainSettingsModel) {
+		customServerHostName = ____mainSettingsModel.customServerHostName;
 		NetworkConfigSetup(__instance._networkConfig);
 		Injected<BeatmapCharacteristicCollectionSO>.Resolve<BeatmapCharacteristicCollectionSO>(container);
 		Injected<BeatmapLevelsModel>.Resolve<BeatmapLevelsModel>(container);

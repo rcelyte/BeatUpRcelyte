@@ -27,11 +27,7 @@ static partial class BeatUpClient {
 		Polyglot.LocalizedTextMeshProUGUI? SuggestedModifiers = UnityEngine.Resources.FindObjectsOfTypeAll<GameServerPlayersTableView>()[0].transform.Find("ServerPlayersTableHeader/Labels/SuggestedModifiers")?.GetComponent<Polyglot.LocalizedTextMeshProUGUI>();
 		if(SuggestedModifiers == null)
 			return;
-		SuggestedModifiers.Key = connectInfo?.perPlayerModifiers switch {
-			true => "BEATUP_SELECTED_MODIFIERS",
-			false => "BEATUP_VOTE_MODIFIERS",
-			null => "SUGGESTED_MODIFIERS",
-		};
+		SuggestedModifiers.Key = (connectInfo?.perPlayerModifiers == true) ? "BEATUP_SELECTED_MODIFIERS" : "SUGGESTED_MODIFIERS";
 	}
 
 	[Patch(PatchType.Postfix, typeof(ConnectedPlayerManager.ConnectedPlayer), nameof(ConnectedPlayerManager.ConnectedPlayer.CreateDirectlyConnectedPlayer))]

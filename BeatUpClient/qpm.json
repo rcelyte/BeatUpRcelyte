@@ -4,14 +4,14 @@
 	"info": {
 		"name": "BeatUpClient",
 		"id": "BeatUpClient",
-		"version": "0.4.2",
+		"version": "0.4.3",
 		"url": null,
 		"additionalData": {}
 	},
 	"dependencies": [
 		{
 			"id": "beatsaber-hook",
-			"versionRange": "3.8.5",
+			"versionRange": "3.10.0",
 			"additionalData": {
 				"extraFiles": [
 					"src/inline-hook"
@@ -20,7 +20,7 @@
 		},
 		{
 			"id": "custom-types",
-			"versionRange": "*",
+			"versionRange": "0.15.14",
 			"additionalData": {}
 		},
 		{

@@ -1,7 +1,7 @@
 using static System.Linq.Enumerable;
 
 static partial class BeatUpClient {
-	class HashedCustomBeatmapLevel : CustomBeatmapLevel {
+	internal class HashedCustomBeatmapLevel : CustomBeatmapLevel {
 		public string hash = string.Empty;
 		public HashedCustomBeatmapLevel(CustomPreviewBeatmapLevel preview) : base(preview) {}
 	}

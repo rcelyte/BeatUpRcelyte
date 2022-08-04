@@ -1,5 +1,5 @@
 #!/bin/make
-VERSION := 0.4.2
+VERSION := 0.4.3
 
 .SILENT:
 
@@ -11,7 +11,7 @@ CC := $(NDK)/toolchains/llvm/prebuilt/linux-x86_64/bin/clang --target=aarch64-li
 CXX := $(NDK)/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-linux-android26
 CFLAGS := -g -std=c2x -fPIC -fvisibility=hidden -Wall -Werror -pedantic-errors
 CXXFLAGS := -g -std=c++20 -fPIC -fvisibility=hidden -Wall -Wno-dollar-in-identifier-extension -Wno-zero-length-array -Wno-gnu-statement-expression -Wno-format-pedantic -Wno-vla-extension -Wno-unused-function -Werror -pedantic-errors -Iextern/includes/libil2cpp/il2cpp/libil2cpp -Iextern/includes/codegen/include -Iextern/includes -DVERSION=\"$(VERSION)\" -DDISABLE_POOLABLE -DDISABLE_DOWNLOADER -DDISABLE_SELECTORS -DDISABLE_LOCALIZATION -DDISABLE_360
-LDFLAGS := -static-libstdc++ -shared -Wl,--no-undefined,--gc-sections,--fatal-warnings -Lextern/libs -lbeatsaber-hook_3_8_5 -lcodegen -lcustom-types
+LDFLAGS := -static-libstdc++ -shared -Wl,--no-undefined,--gc-sections,--fatal-warnings -Lextern/libs -lbeatsaber-hook_3_10_0 -lcodegen -lcustom-types
 ifdef NDK
 OBJDIR := .obj/$(shell $(CXX) -dumpmachine)
 else
@@ -19,7 +19,7 @@ OBJDIR := .obj/unknown
 ndk:
 	$(error Android NDK path not set)
 endif
-FILES := $(wildcard src/*.c src/*.cpp)
+FILES := $(wildcard src/*.c src/*.cpp src/*/*.cpp)
 OBJS := $(FILES:%=$(OBJDIR)/%.o)
 
 CSFILES := $(wildcard cs/*.cs cs/*/*.cs)
@@ -41,9 +41,9 @@ $(OBJDIR)/%.cpp.o: %.cpp src/packets.h extern makefile | ndk
 	@mkdir -p "$(@D)"
 	$(CXX) $(CXXFLAGS) -c "$<" -o "$@" -MMD -MP
 
-src/packets.c: src/packets.txt common/packets.txt ../.obj/gen.$(HOST) makefile
+src/packets.h: src/packets.txt ../.obj/gen.$(HOST) makefile
 	@echo "[gen $(notdir $@)]"
-	../.obj/gen.$(HOST) "$<" src/packets.h "$@"
+	../.obj/gen.$(HOST) "$<" "$@" src/packets.c
 
 ../.obj/gen.$(HOST): ../gen.c
 	$(MAKE) -C .. .obj/gen.$(HOST)
@@ -51,7 +51,7 @@ src/packets.c: src/packets.txt common/packets.txt ../.obj/gen.$(HOST) makefile
 .obj/mod.json:
 	@echo "[printf $(notdir $@)]"
 	@mkdir -p "$(@D)"
-	printf "{\"\$$schema\":\"https://raw.githubusercontent.com/Lauriethefish/QuestPatcher.QMod/main/QuestPatcher.QMod/Resources/qmod.schema.json\",\"_QPVersion\":\"0.1.1\",\"name\":\"BeatUpClient\",\"id\":\"BeatUpClient\",\"author\":\"rcelyte\",\"version\":\"$(VERSION)\",\"packageId\":\"com.beatgames.beatsaber\",\"packageVersion\":\"1.21.0\",\"description\":\"Tweaks and enhancements for enabling modded multiplayer\",\"coverImage\":\"cover.png\",\"dependencies\":[],\"modFiles\":[\"libBeatUpClient.so\"],\"libraryFiles\":[\"libbeatsaber-hook_3_8_5.so\"],\"fileCopies\":[],\"copyExtensions\":[]}" > .obj/mod.json
+	printf "{\"\$$schema\":\"https://raw.githubusercontent.com/Lauriethefish/QuestPatcher.QMod/main/QuestPatcher.QMod/Resources/qmod.schema.json\",\"_QPVersion\":\"0.1.1\",\"name\":\"BeatUpClient\",\"id\":\"BeatUpClient\",\"author\":\"rcelyte\",\"version\":\"$(VERSION)\",\"packageId\":\"com.beatgames.beatsaber\",\"packageVersion\":\"1.21.0\",\"description\":\"Tweaks and enhancements for enabling modded multiplayer\",\"coverImage\":\"cover.png\",\"dependencies\":[],\"modFiles\":[\"libBeatUpClient.so\"],\"libraryFiles\":[\"libbeatsaber-hook_3_10_0.so\"],\"fileCopies\":[],\"copyExtensions\":[]}" > .obj/mod.json
 
 BeatUpClient.qmod: libBeatUpClient.so .obj/mod.json
 	@echo "[zip $@]"
@@ -85,6 +85,12 @@ BeatUpClient.dll: $(CSFILES) $(PUBREFS) makefile
 	@mkdir -p .obj/
 	printf "{\"\$$schema\":\"https://raw.githubusercontent.com/bsmg/BSIPA-MetadataFileSchema/master/Schema.json\",\"author\":\"rcelyte\",\"description\":\"Tweaks and enhancements for enabling modded multiplayer\",\"gameVersion\":\"1.20.0\",\"dependsOn\":{\"BSIPA\":\"*\"},\"conflictsWith\":{\"BeatTogether\":\"*\"},\"loadBefore\":[\"MultiplayerCore\"],\"id\":\"BeatUpClient\",\"name\":\"BeatUpClient\",\"version\":\"$(VERSION)\",\"links\":{\"project-source\":\"https://github.com/rcelyte/BeatUpRcelyte\"}}" > .obj/manifest.json
 	csc -nologo -t:library -nostdlib -o+ -debug- -nullable+ -unsafe+ -w:4 -warnaserror+ -langversion:8 -define:MPCORE_SUPPORT $(CSFILES) -res:.obj/manifest.json,.manifest.json -res:data.bundle,BeatUpClient.data -out:"$@" $(PUBREFS:%=-r:%)
+
+AudioPluginMsHRTF.dll: cs/loader.c BeatUpClient.dll
+	@echo "[cc $@]"
+	@mkdir -p .obj/
+	printf "\t.global BeatUpClient_dll\nBeatUpClient_dll:\n\t.incbin \"BeatUpClient.dll\"\n\t.global BeatUpClient_dll_end\nBeatUpClient_dll_end:\n" > .obj/BeatUpClient.dll.S
+	$(CC) -mwindows -m64 -static -static-libgcc -shared -s -Wl,--gc-sections,--no-undefined -L$(BSINSTALL)/MonoBleedingEdge/EmbedRuntime -l:mono-2.0-bdwgc.dll "$<" .obj/BeatUpClient.dll.S -o "$@"
 
 clean:
 	@echo "[cleaning]"

@@ -1,10 +1,5 @@
 using static System.Linq.Enumerable;
 
-static class BeatUpClient_SongCore {
-	internal static bool MissingRequirements(BeatUpClient.RecommendPreview preview) =>
-		!preview.requirements.Where(req => !string.IsNullOrEmpty(req)).All(req => SongCore.Collections.capabilities.Contains(req!));
-}
-
 static partial class BeatUpClient {
 	static System.Threading.Tasks.Task announceTask = System.Threading.Tasks.Task.FromResult<(Hash256, System.ArraySegment<byte>)>((default, default));
 	static async System.Threading.Tasks.Task<EntitlementsStatus> AnnounceWrapper(EntitlementsStatus status, string levelId) {

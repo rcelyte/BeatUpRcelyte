@@ -1,5 +1,5 @@
 @include ../../common/packets.txt
 
-s BeatUpConnectHeaderFull
+s ServerConnectInfo_Prefixed
 	String name
-	BeatUpConnectHeader base
+	ServerConnectInfo base
