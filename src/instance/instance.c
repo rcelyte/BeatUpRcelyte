@@ -109,7 +109,8 @@ struct Context {
 	struct Counter16 blockAlloc;
 	struct Room *rooms[16][16];
 	uint16_t notifyHandle[16];
-} static contexts[THREAD_COUNT];
+};
+static struct Context contexts[THREAD_COUNT];
 
 static float room_get_syncTime(struct Room *room) {
 	struct timespec now;
@@ -134,12 +135,12 @@ static bool PlayerStateHash_contains(struct PlayerStateHash state, const char *k
 	}
 	switch(len) {
 		case 3:
-			hash ^= key[num3 + 2] << 16;
+			hash ^= key[num3 + 2] << 16; [[fallthrough]];
 		case 2:
-			hash ^= key[num3 + 1] << 8;
+			hash ^= key[num3 + 1] << 8; [[fallthrough]];
 		case 1:
 			hash ^= key[num3];
-			hash *= 1540483477;
+			hash *= 1540483477; [[fallthrough]];
 		case 0:
 			break;
 	}
@@ -356,7 +357,7 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 					},
 				});
 			}
-		} // fallthrough
+		} [[fallthrough]];
 		case ServerState_Lobby_Idle:
 		case ServerState_Lobby_Ready: {
 			SERIALIZE_MENURPC(&resp_end, endof(resp), session->net.version, {
@@ -429,7 +430,7 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 			if(active)
 				break;
 			state = ServerState_Game_Gameplay;
-		} // fallthrough
+		} [[fallthrough]];
 		case ServerState_Game_Gameplay: {
 			SERIALIZE_GAMEPLAYRPC(&resp_end, endof(resp), session->net.version, {
 				.type = GameplayRpcType_SetSongStartTime,
@@ -980,16 +981,16 @@ static void handle_GameplayRpc(struct Context *ctx, struct Room *room, struct In
 	}
 }
 
-static void handle_MpCore(struct Context *ctx, struct Room *room, struct InstanceSession *session, const struct MpCore *mpCore) {
+/*static void handle_MpCore(struct Context *ctx, struct Room *room, struct InstanceSession *session, const struct MpCore *mpCore) {
 	switch(MpCoreType_From(&mpCore->type)) {
 		case MpCoreType_MpBeatmapPacket: break;
 		case MpCoreType_MpPlayerData: break;
 		case MpCoreType_CustomAvatarPacket: break;
 		default: uprintf("BAD MPCORE MESSAGE TYPE: '%.*s'\n", mpCore->type.length, mpCore->type.data);
 	}
-}
+}*/
 
-static bool handle_BeatUpMessage(struct Context *ctx, struct Room *room, struct InstanceSession *session, const struct BeatUpMessage *message) {
+static bool handle_BeatUpMessage(const struct BeatUpMessage *message) {
 	switch(message->type) {
 		case BeatUpMessageType_ConnectInfo: break;
 		case BeatUpMessageType_RecommendPreview: break;
@@ -1010,8 +1011,8 @@ static bool handle_MultiplayerSession(struct Context *ctx, struct Room *room, st
 		case MultiplayerSessionMessageType_ScoreSyncState: break;
 		case MultiplayerSessionMessageType_NodePoseSyncStateDelta: break;
 		case MultiplayerSessionMessageType_ScoreSyncStateDelta: break;
-		case MultiplayerSessionMessageType_MpCore: handle_MpCore(ctx, room, session, &message->mpCore); break;
-		case MultiplayerSessionMessageType_BeatUpMessage: return handle_BeatUpMessage(ctx, room, session, &message->beatUpMessage);
+		case MultiplayerSessionMessageType_MpCore: /*handle_MpCore(ctx, room, session, &message->mpCore);*/ break;
+		case MultiplayerSessionMessageType_BeatUpMessage: return handle_BeatUpMessage(&message->beatUpMessage);
 		default: uprintf("BAD MULTIPLAYER SESSION MESSAGE TYPE\n");
 	}
 	return true;
@@ -1126,7 +1127,7 @@ static bool handle_RoutingHeader(struct Context *ctx, struct Room *room, struct 
 		FOR_SOME_PLAYERS(id, mask,) {
 			uint8_t resp[65536], *resp_end = resp;
 			if(!reliable)
-				pkt_write_c(&resp_end, endof(resp), room->players[id].net.version, NetPacketHeader, {PacketProperty_Unreliable, 0, 0});
+				pkt_write_c(&resp_end, endof(resp), room->players[id].net.version, NetPacketHeader, {PacketProperty_Unreliable, 0, 0, {{0}}});
 			pkt_write_c(&resp_end, endof(resp), room->players[id].net.version, RoutingHeader, {indexof(room->players, session) + 1, routing.connectionId == 127 ? 127 : 0, routing.encrypted});
 			pkt_write_bytes(*data, &resp_end, endof(resp), room->players[id].net.version, end - *data);
 			if(reliable)
@@ -1642,7 +1643,7 @@ struct IPEndPoint instance_get_endpoint(bool ipv4) {
 	else
 		out.address.length = sprintf(out.address.data, "%s", instance_domain);
 
-	struct SS addr = {sizeof(struct sockaddr_storage)};
+	struct SS addr = {.len = sizeof(struct sockaddr_storage)};
 	getsockname(net_get_sockfd(&contexts[0].net), &addr.sa, &addr.len);
 	switch(addr.ss.ss_family) {
 		case AF_INET: out.port = htons(addr.in.sin_port); break;
@@ -1774,7 +1775,7 @@ struct NetSession *instance_room_resolve_session(uint16_t thread, uint16_t group
 	if(!session) {
 		struct Counter128 tmp = room->playerSort;
 		uint32_t id = 0;
-		if((!Counter128_set_next(&tmp, &id, 1)) || id >= room->configuration.maxPlayerCount) {
+		if((!Counter128_set_next(&tmp, &id, 1)) || (int32_t)id >= room->configuration.maxPlayerCount) {
 			net_unlock(&ctx->net);
 			uprintf("ROOM FULL\n");
 			return NULL;

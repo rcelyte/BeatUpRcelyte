@@ -8,23 +8,24 @@
 struct Context {
 	int32_t listenfd;
 	const char *path;
-} static ctx;
+};
+static struct Context ctx = {-1, NULL};
 
-static thread_return_t handle_client(intptr_t fd) {
+static thread_return_t handle_client(void *fd) {
 	char buf[65536];
-	ssize_t size = recv(fd, buf, sizeof(buf), 0);
+	ssize_t size = recv((intptr_t)fd, buf, sizeof(buf), 0);
 	if(size >= 0) {
 		size = status_resp("HTTP", ctx.path, buf, size);
 		if(size)
-			send(fd, buf, size, 0);
+			send((intptr_t)fd, buf, size, 0);
 	}
-	close(fd);
+	close((intptr_t)fd);
 	return 0;
 }
 
-static thread_return_t status_handler(void *userptr) {
+static thread_return_t status_handler(void*) {
 	uprintf("Started HTTP\n");
-	struct SS addr = {sizeof(struct sockaddr_storage)};
+	struct SS addr = {.len = sizeof(struct sockaddr_storage)};
 	for(intptr_t clientfd; (clientfd = accept(ctx.listenfd, &addr.sa, &addr.len)) != -1;)
 		thread_create((thread_t[]){0}, handle_client, (void*)clientfd);
 	return 0;
@@ -59,14 +60,14 @@ bool status_init(const char *path, uint16_t port) {
 	return thread_create(&status_thread, status_handler, NULL);
 }
 void status_cleanup() {
-	if(ctx.listenfd != -1) {
-		uprintf("Stopping HTTP\n");
-		shutdown(ctx.listenfd, SHUT_RD);
-		close(ctx.listenfd);
-		ctx.listenfd = -1;
-		if(status_thread) {
-			thread_join(status_thread);
-			status_thread = 0;
-		}
+	if(ctx.listenfd == -1)
+		return;
+	uprintf("Stopping HTTP\n");
+	shutdown(ctx.listenfd, SHUT_RD);
+	close(ctx.listenfd);
+	ctx.listenfd = -1;
+	if(status_thread) {
+		thread_join(status_thread);
+		status_thread = 0;
 	}
 }

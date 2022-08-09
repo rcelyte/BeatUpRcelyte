@@ -6,7 +6,7 @@
 #define KICK_TIMEOUT_MS 3000
 
 #define bitsize(e) (sizeof(e) * 8)
-#define indexof(a, e) ((e) - (a))
+#define indexof(a, e) ((uintptr_t)((e) - (a)))
 
 #define SERIALIZE_SESSION(mtype, mfield, pkt, end, ctx, ...) { \
 	struct InternalMessage _msg = { \
@@ -24,8 +24,8 @@
 #define SERIALIZE_GAMEPLAYRPC(pkt, end, ctx, ...) SERIALIZE_SESSION(GameplayRpc, gameplayRpc, pkt, end, ctx, __VA_ARGS__)
 #define SERIALIZE_BEATUP(pkt, end, ctx, ...) SERIALIZE_SESSION(BeatUpMessage, beatUpMessage, pkt, end, ctx, __VA_ARGS__)
 
-#define CLEAR_STRING (struct String){0, false}
-#define CLEAR_LONGSTRING (struct LongString){0, false}
+#define CLEAR_STRING (struct String){.length = 0, .isNull = false}
+#define CLEAR_LONGSTRING (struct LongString){.length = 0, .isNull = false}
 #define CLEAR_BEATMAP (struct BeatmapIdentifierNetSerializable){CLEAR_LONGSTRING, CLEAR_STRING, 0}
 #define CLEAR_MODIFIERS (struct GameplayModifiers){0}
 #define CLEAR_COLORSCHEME (struct ColorSchemeNetSerializable){{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}}

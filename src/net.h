@@ -67,7 +67,7 @@ struct NetSession {
 
 struct Context;
 struct NetContext {
-	int32_t NET_H_PRIVATE(sockfd);
+	int32_t sockfd;
 	atomic_bool NET_H_PRIVATE(run);
 	pthread_mutex_t NET_H_PRIVATE(mutex);
 	mbedtls_ctr_drbg_context ctr_drbg;

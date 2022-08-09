@@ -2,8 +2,8 @@
 #include <setjmp.h>
 #include <assert.h>
 
-size_t pkt_write_bytes(const uint8_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx, size_t count) {
-	if(end - *pkt < count)
+size_t pkt_write_bytes(const uint8_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext, size_t count) {
+	if(end - *pkt < (ssize_t)count)
 		return 0;
 	memcpy(*pkt, data, count);
 	*pkt += count;
@@ -35,7 +35,7 @@ static void range_fail() {
 	longjmp(fail, 1);
 }
 #define RANGE_CHECK(size) \
-	if(end - *pkt < (size)) \
+	if(end - *pkt < (ssize_t)(size)) \
 		range_fail()
 static uint32_t check_overflow(uint32_t count, uint32_t limit, const char *context) {
 	if(count <= limit)
@@ -46,27 +46,27 @@ static uint32_t check_overflow(uint32_t count, uint32_t limit, const char *conte
 static_assert(sizeof(uint8_t) == 1, "");
 #define _pkt_b_read(data, pkt, end, ctx) _pkt_u8_read((uint8_t*)(data), pkt, end, ctx)
 #define _pkt_i8_read(data, pkt, end, ctx) _pkt_u8_read((uint8_t*)(data), pkt, end, ctx)
-static void _pkt_u8_read(uint8_t *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+static void _pkt_u8_read(uint8_t *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext) {
 	RANGE_CHECK(sizeof(*data));
 	*data = *(*pkt)++;
 }
 static_assert(sizeof(uint16_t) == 2, "");
 #define _pkt_i16_read(data, pkt, end, ctx) _pkt_u16_read((uint16_t*)(data), pkt, end, ctx)
-[[maybe_unused]] static void _pkt_u16_read(uint16_t *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+[[maybe_unused]] static void _pkt_u16_read(uint16_t *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext) {
 	RANGE_CHECK(sizeof(*data));
 	*data = (*pkt)[0] | (*pkt)[1] << 8;
 	*pkt += sizeof(*data);
 }
 static_assert(sizeof(uint32_t) == 4, "");
 #define _pkt_i32_read(data, pkt, end, ctx) _pkt_u32_read((uint32_t*)(data), pkt, end, ctx)
-[[maybe_unused]] static void _pkt_u32_read(uint32_t *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+[[maybe_unused]] static void _pkt_u32_read(uint32_t *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext) {
 	RANGE_CHECK(sizeof(*data));
 	*data = (*pkt)[0] | (*pkt)[1] << 8 | (*pkt)[2] << 16 | (*pkt)[3] << 24;
 	*pkt += sizeof(*data);
 }
 static_assert(sizeof(uint64_t) == 8, "");
 #define _pkt_i64_read(data, pkt, end, ctx) _pkt_u64_read((uint64_t*)(data), pkt, end, ctx)
-[[maybe_unused]] static void _pkt_u64_read(uint64_t *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+[[maybe_unused]] static void _pkt_u64_read(uint64_t *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext) {
 	RANGE_CHECK(sizeof(*data));
 	*data = (uint64_t)(*pkt)[0] | (uint64_t)(*pkt)[1] << 8 | (uint64_t)(*pkt)[2] << 16 | (uint64_t)(*pkt)[3] << 24 | (uint64_t)(*pkt)[4] << 32 | (uint64_t)(*pkt)[5] << 40 | (uint64_t)(*pkt)[6] << 48 | (uint64_t)(*pkt)[7] << 56;
 	*pkt += sizeof(*data);
@@ -98,7 +98,7 @@ static void _pkt_vi64_read(int64_t *restrict data, const uint8_t **pkt, const ui
 	_pkt_vi64_read(&tmp, pkt, end, ctx);
 	*data = (int32_t)tmp;
 }
-[[maybe_unused]] static void _pkt_raw_read(uint8_t *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx, size_t count) {
+[[maybe_unused]] static void _pkt_raw_read(uint8_t *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext, size_t count) {
 	RANGE_CHECK(count);
 	memcpy(data, *pkt, count);
 	*pkt += count;
@@ -110,18 +110,18 @@ static_assert(sizeof(double) == 8, "");
 
 #define _pkt_b_write(data, pkt, end, ctx) _pkt_u8_write((const uint8_t*)(data), pkt, end, ctx)
 #define _pkt_i8_write(data, pkt, end, ctx) _pkt_u8_write((const uint8_t*)(data), pkt, end, ctx)
-static void _pkt_u8_write(const uint8_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+static void _pkt_u8_write(const uint8_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext) {
 	RANGE_CHECK(sizeof(*data));
 	*(*pkt)++ = *data;
 }
 #define _pkt_i16_write(data, pkt, end, ctx) _pkt_u16_write((const uint16_t*)(data), pkt, end, ctx)
-[[maybe_unused]] static void _pkt_u16_write(const uint16_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+[[maybe_unused]] static void _pkt_u16_write(const uint16_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext) {
 	RANGE_CHECK(sizeof(*data));
 	*(*pkt)++ = *data & 255;
 	*(*pkt)++ = *data >> 8 & 255;
 }
 #define _pkt_i32_write(data, pkt, end, ctx) _pkt_u32_write((const uint32_t*)(data), pkt, end, ctx)
-[[maybe_unused]] static void _pkt_u32_write(const uint32_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+[[maybe_unused]] static void _pkt_u32_write(const uint32_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext) {
 	RANGE_CHECK(sizeof(*data));
 	*(*pkt)++ = *data & 255;
 	*(*pkt)++ = *data >> 8 & 255;
@@ -129,7 +129,7 @@ static void _pkt_u8_write(const uint8_t *restrict data, uint8_t **pkt, const uin
 	*(*pkt)++ = *data >> 24 & 255;
 }
 #define _pkt_i64_write(data, pkt, end, ctx) _pkt_u64_write((const uint64_t*)(data), pkt, end, ctx)
-[[maybe_unused]] static void _pkt_u64_write(const uint64_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+[[maybe_unused]] static void _pkt_u64_write(const uint64_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext) {
 	RANGE_CHECK(sizeof(*data));
 	*(*pkt)++ = *data & 255;
 	*(*pkt)++ = *data >> 8 & 255;
@@ -156,7 +156,7 @@ static void _pkt_vi64_write(const int64_t *restrict data, uint8_t **pkt, const u
 [[maybe_unused]] static void _pkt_vi32_write(const int32_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_vi64_write((int64_t[]){*data}, pkt, end, ctx);
 }
-[[maybe_unused]] static inline void _pkt_raw_write(const uint8_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx, size_t count) {
+[[maybe_unused]] static inline void _pkt_raw_write(const uint8_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext, size_t count) {
 	RANGE_CHECK(count);
 	memcpy(*pkt, data, count);
 	*pkt += count;

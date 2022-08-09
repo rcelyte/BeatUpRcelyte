@@ -67,7 +67,7 @@ static void instance_send_backlog(struct PacketContext version, struct Channels 
 		abort();
 	}
 	struct ReliableChannel *channel = &channels->ro.base;
-	if(RelativeSequenceNumber(channel->outboundSequence, channel->outboundWindowStart) >= version.windowSize) {
+	if(RelativeSequenceNumber(channel->outboundSequence, channel->outboundWindowStart) >= (int32_t)version.windowSize) {
 		*channels->ro.base.backlogEnd = malloc(sizeof(struct InstancePacketList));
 		if(!*channels->ro.base.backlogEnd) {
 			uprintf("alloc error\n");
@@ -118,7 +118,7 @@ void handle_Ack(struct NetSession *session, struct Channels *channels, const str
 		return;
 	}
 	for(uint16_t sequence = channel->outboundWindowStart, end = channel->outboundSequence; sequence != end; sequence = (sequence + 1) % NET_MAX_SEQUENCE) {
-		if(RelativeSequenceNumber(sequence, ack->sequence) >= session->version.windowSize)
+		if(RelativeSequenceNumber(sequence, ack->sequence) >= (int32_t)session->version.windowSize)
 			break;
 		uint16_t pendingIdx = sequence % session->version.windowSize;
 		if((ack->data[pendingIdx / bitsize(*ack->data)] >> (pendingIdx % bitsize(*ack->data))) & 1)
@@ -204,14 +204,14 @@ void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct N
 		return;
 	struct ReliableChannel *channel = &channels->ro.base;
 	switch(channeled.channelId) {
-		case DeliveryMethod_ReliableUnordered: channel = &channels->ru.base;
+		case DeliveryMethod_ReliableUnordered: channel = &channels->ru.base; [[fallthrough]];
 		case DeliveryMethod_ReliableOrdered: {
-			if(RelativeSequenceNumber(channeled.sequence, channel->inboundSequence) > session->version.windowSize)
+			if(RelativeSequenceNumber(channeled.sequence, channel->inboundSequence) > (int32_t)session->version.windowSize)
 				break;
 			int32_t delta = RelativeSequenceNumber(channeled.sequence, channel->ack.sequence);
-			if(delta < 0 || delta >= session->version.windowSize * 2)
+			if(delta < 0 || delta >= (int32_t)session->version.windowSize * 2)
 				break;
-			if(delta >= session->version.windowSize) {
+			if(delta >= (int32_t)session->version.windowSize) {
 				uint16_t newWindowStart = (channel->ack.sequence + delta - session->version.windowSize + 1) % NET_MAX_SEQUENCE;
 				while(channel->ack.sequence != newWindowStart) {
 					uint16_t ackIdx = channel->ack.sequence % session->version.windowSize;
@@ -319,7 +319,7 @@ void handle_Ping(struct NetContext *net, struct NetSession *session, struct Ping
 	}
 }
 
-float handle_Pong(struct NetContext *net, struct NetSession *session, struct PingPong *pingpong, struct Pong pong) {
+float handle_Pong(struct NetContext*, struct NetSession*, struct PingPong *pingpong, struct Pong pong) {
 	if(pong.sequence != pingpong->ping.sequence)
 		return 0;
 	pingpong->waiting = 0;

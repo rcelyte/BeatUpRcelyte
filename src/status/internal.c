@@ -137,7 +137,7 @@ static uint32_t status_web(char *buf, ServerCode code) {
 	return status_bin(buf, "200 OK", "text/html", (const uint8_t*)page, len);
 }
 
-#define startsWithBytes(start, end, str, len) ((end) - (start) >= (len) && memcmp((start), (str), (len)) == 0)
+#define startsWithBytes(start, end, str, len) ((uintptr_t)((end) - (start)) >= (len) && memcmp((start), (str), (len)) == 0)
 #define startsWith(start, end, str) startsWithBytes(start, end, str, sizeof(str) - sizeof(""))
 
 static const char *nextLine(const char *start, const char *end) {

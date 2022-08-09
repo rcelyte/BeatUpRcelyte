@@ -19,7 +19,10 @@ struct Context {
 	mbedtls_pk_context *keys;
 	const char *domain;
 	const char *path;
-} static ctx = {-1};
+};
+static struct Context ctx = {
+	.listenfd = -1
+};
 
 #define STATUS_ERR_RESET -2
 #define STATUS_ERR_INTR -3
@@ -56,7 +59,7 @@ static int status_recv(void *fd, unsigned char *buf, size_t len) {
 	return -1;
 }
 
-static thread_return_t handle_client(intptr_t fd) {
+static thread_return_t handle_client(void *fd) {
 	mbedtls_ssl_context ssl;
 	mbedtls_ssl_init(&ssl);
 	int ret = mbedtls_ssl_setup(&ssl, &ctx.conf);
@@ -64,7 +67,7 @@ static thread_return_t handle_client(intptr_t fd) {
 		uprintf("mbedtls_ssl_setup() failed: %s\n", mbedtls_high_level_strerr(ret));
 		goto reset;
 	}
-	mbedtls_ssl_set_bio(&ssl, &fd, status_send, status_recv, NULL);
+	mbedtls_ssl_set_bio(&ssl, (intptr_t*)&fd, status_send, status_recv, NULL);
 	while((ret = mbedtls_ssl_handshake(&ssl)) != 0) {
 		if(ret == STATUS_ERR_INTR)
 			continue;
@@ -95,13 +98,13 @@ static thread_return_t handle_client(intptr_t fd) {
 			break;
 	reset:;
 	mbedtls_ssl_free(&ssl);
-	close(fd);
+	close((intptr_t)fd);
 	return 0;
 }
 
-static thread_return_t status_ssl_handler(void *userptr) {
+static thread_return_t status_ssl_handler(void*) {
 	uprintf("Started HTTPS\n");
-	struct SS addr = {sizeof(struct sockaddr_storage)};
+	struct SS addr = {.len = sizeof(struct sockaddr_storage)};
 	for(intptr_t clientfd; (clientfd = accept(ctx.listenfd, &addr.sa, &addr.len)) != -1;)
 		thread_create((thread_t[]){0}, handle_client, (void*)clientfd);
 	return 0;

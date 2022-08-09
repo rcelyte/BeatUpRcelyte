@@ -41,3 +41,5 @@ MpCoreType MpCoreType_From(const struct String *type) {
 		return MpCoreType_CustomAvatarPacket;
 	return ~0;
 }
+
+#pragma GCC diagnostic ignored "-Wunused-parameter"

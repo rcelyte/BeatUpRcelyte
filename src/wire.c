@@ -35,7 +35,7 @@ struct PacketContext wire_room_get_protocol(struct WireRoomHandle handle) {
 	return instance_room_get_protocol(handle.block.thread, handle.block.group, handle.sub);
 }
 
-struct IPEndPoint wire_block_get_endpoint(struct WireBlockHandle block, bool ipv4) {
+struct IPEndPoint wire_block_get_endpoint(struct WireBlockHandle, bool ipv4) {
 	return instance_get_endpoint(ipv4);
 }
 

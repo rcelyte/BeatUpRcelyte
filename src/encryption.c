@@ -121,7 +121,7 @@ bool EncryptionState_decrypt(struct EncryptionState *state, struct PacketEncrypt
 	mbedtls_aes_crypt_cbc(&state->aes, MBEDTLS_AES_DECRYPT, *length, header.iv, data, decrypted);
 	
 	uint8_t pad = decrypted[*length - 1];
-	if(pad + 10 + 1 > *length)
+	if(pad + 10u + 1 > *length)
 		return 1;
 	*length -= pad + 10 + 1;
 	uint8_t ref[10];

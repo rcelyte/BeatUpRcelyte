@@ -12,7 +12,7 @@
 	uprintf("%s [netVersion=%hhu, protocolVersion=%hhu, beatUpVersion=%hhu, windowSize=%u] (expected %u, read %zu)\n    ", errorMessage, ctx.netVersion, ctx.protocolVersion, ctx.beatUpVersion, ctx.windowSize, expect, head - start);
 	for(const uint8_t *it = start; it < end; ++it)
 		uprintf("%02hhx", *it);
-	if(head - start < expect) {
+	if((uintptr_t)(head - start) < expect) {
 		uprintf("\n    ");
 		for(const uint8_t *it = start; it < head; ++it)
 			uprintf("  ");

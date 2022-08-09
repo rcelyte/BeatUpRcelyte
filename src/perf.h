@@ -18,7 +18,6 @@ struct Performance {
 }
 
 [[maybe_unused]] static void perf_tick(struct Performance *perf, struct timespec sleepStart, struct timespec sleepEnd) {
-	#ifdef PERFTEST
 	perf->frameSleep += DeltaNs(sleepStart, sleepEnd);
 	uint64_t frameTotal = DeltaNs(perf->frameStart, sleepEnd);
 	if(frameTotal >= 1000000000llu) {
@@ -28,5 +27,4 @@ struct Performance {
 		perf->load = (perf->load + load) / 2;
 		uprintf("load: %f (norm %f)\n", load, perf->load);
 	}
-	#endif
 }

@@ -43,7 +43,7 @@ bool NetKeypair_write_key(const struct NetKeypair *keys, struct NetContext *ctx,
 const uint8_t *NetSession_get_cookie(const struct NetSession *session) {
 	return session->cookie;
 }
-bool NetSession_signature(const struct NetSession *session, struct NetContext *ctx, const mbedtls_pk_context *key, const uint8_t *in, uint32_t in_len, struct ByteArrayNetSerializable *out) {
+bool NetSession_signature(const struct NetSession*, struct NetContext *ctx, const mbedtls_pk_context *key, const uint8_t *in, uint32_t in_len, struct ByteArrayNetSerializable *out) {
 	out->length = 0;
 	if(mbedtls_pk_get_type(key) != MBEDTLS_PK_RSA) {
 		uprintf("Key should be RSA\n");
@@ -233,7 +233,7 @@ bool net_init(struct NetContext *ctx, uint16_t port) {
 		uprintf("Socket binding failed\n");
 		return 1;
 	}
-	struct SS realAddr = {sizeof(struct sockaddr_storage)};
+	struct SS realAddr = {.len = sizeof(struct sockaddr_storage)};
 	getsockname(ctx->sockfd, &realAddr.sa, &realAddr.len);
 	char namestr[INET6_ADDRSTRLEN + 8];
 	net_tostr(&realAddr, namestr);
@@ -358,14 +358,16 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct
 	FD_ZERO(&fds);
 	FD_SET(ctx->sockfd, &fds);
 	net_unlock(ctx);
-	struct timespec sleepStart = GetTime();
+	[[maybe_unused]] struct timespec sleepStart = GetTime();
 	bool noData = (select(ctx->sockfd+1, &fds, NULL, NULL, &timeout) == 0);
-	struct timespec sleepEnd = GetTime();
+	[[maybe_unused]] struct timespec sleepEnd = GetTime();
 	net_lock(ctx);
+	#ifdef PERFTEST
 	perf_tick(&ctx->perf, sleepStart, sleepEnd);
+	#endif
 	if(noData)
 		goto retry;
-	struct SS addr = {sizeof(struct sockaddr_storage)};
+	struct SS addr = {.len = sizeof(struct sockaddr_storage)};
 	#ifdef WINSOCK_VERSION
 	ssize_t size = recvfrom(ctx->sockfd, (char*)buf, buf_len, 0, &addr.sa, &addr.len);
 	#else

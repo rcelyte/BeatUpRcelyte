@@ -53,7 +53,7 @@ struct Context {
 	struct MasterSession *sessionList;
 };
 
-static struct NetSession *master_onResolve(struct Context *ctx, struct SS addr, void **userdata_out) {
+static struct NetSession *master_onResolve(struct Context *ctx, struct SS addr, void**) {
 	struct MasterSession *session = ctx->sessionList;
 	for(; session; session = session->next)
 		if(addrs_are_equal(&addr, NetSession_get_addr(&session->net)))
@@ -157,7 +157,7 @@ static void master_net_send_reliable(struct NetContext *ctx, struct MasterSessio
 }
 
 static struct MasterServerReliableRequestProxy get_request_info(const uint8_t *data, const uint8_t *data_end, struct PacketContext version) {
-	struct MasterServerReliableRequestProxy out = {~0};
+	struct MasterServerReliableRequestProxy out = {.type = ~0};
 	pkt_read(&(struct SerializeHeader){0}, &data, data_end, version);
 	pkt_read(&out, &data, data_end, version);
 	return out;
@@ -207,7 +207,7 @@ static void master_send(struct NetContext *ctx, struct MasterSession *session, M
 	do {
 		mpp.value.base.requestId = master_getNextRequestId(session);
 		mpp.value.offset = buf_it - buf;
-		if(buf_end - buf_it < mpp.value.length)
+		if((uintptr_t)(buf_end - buf_it) < mpp.value.length)
 			mpp.value.length = buf_end - buf_it;
 		uint8_t mpbuf[512], *mpbuf_end = mpbuf;
 		memcpy(mpp.value.data, buf_it, mpp.value.length);
@@ -574,7 +574,7 @@ static void handle_packet(struct Context *ctx, struct MasterSession *session, st
 		if(header.type == MessageType_UserMessage) {
 			if(header.protocolVersion > session->net.version.protocolVersion)
 				session->net.version.protocolVersion = header.protocolVersion;
-			struct UserMessage message = {~0};
+			struct UserMessage message = {.type = ~0};
 			pkt_read(&message, &sub, &sub[serial.length], session->net.version);
 			if(check_length("BAD USER MESSAGE LENGTH", sub, data, serial.length, session->net.version))
 				continue;
@@ -593,7 +593,7 @@ static void handle_packet(struct Context *ctx, struct MasterSession *session, st
 		} else if(header.type == MessageType_HandshakeMessage) {
 			if(header.protocolVersion > session->net.version.protocolVersion)
 				session->net.version.protocolVersion = header.protocolVersion;
-			struct HandshakeMessage message = {~0};
+			struct HandshakeMessage message = {.type = ~0};
 			pkt_read(&message, &sub, &sub[serial.length], session->net.version);
 			if(check_length("BAD HANDSHAKE MESSAGE LENGTH", sub, data, serial.length, session->net.version))
 				continue;
@@ -646,7 +646,7 @@ thread_return_t master_handler(struct Context *ctx) {
 }
 
 static thread_t master_thread = 0;
-static struct Context ctx = {{-1}, NULL, NULL, NULL};
+static struct Context ctx = {{.sockfd = -1}, NULL, NULL, NULL};
 bool master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_context *key, uint16_t port) {
 	{
 		uint_fast8_t count = 0;
