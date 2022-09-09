@@ -6,7 +6,7 @@
 #include <Polyglot/Localization.hpp>
 
 static PatchFunc ApplyPatches = []() {
-	logger->info("BeatUpClient_Error::ApplyPatches()");
+	BeatUpClient::logger->info("BeatUpClient_Error::ApplyPatches()");
 	return false;
 };
 

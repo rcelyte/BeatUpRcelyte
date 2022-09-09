@@ -417,7 +417,7 @@ static void handle_AuthenticateUserRequest(struct Context *ctx, struct MasterSes
 
 static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSession *session, const struct ConnectToServerRequest *req) {
 	master_send_ack(ctx, session, MessageType_UserMessage, req->base.base.requestId);
-	// TODO: deduplicate this request
+	// TODO: do we need to deduplicate this request?
 	struct UserMessage r_conn = {
 		.type = UserMessageType_ConnectToServerResponse,
 		.connectToServerResponse = {
@@ -429,6 +429,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		},
 	};
 	if(req->configuration.maxPlayerCount >= 127) { // connection IDs are 7 bits, with ID `127` reserved for broadcast packets and `0` for local
+		uprintf("Connect to Server Error: Invalid maxPlayerCount %u >= 127\n", req->configuration.maxPlayerCount);
 		r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_InvalidCode;
 		goto send;
 	}
@@ -439,11 +440,13 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 	struct RoomHandle room;
 	struct WireRoomHandle handle;
 	if(req->code == StringToServerCode(NULL, 0)) {
-		if(req->configuration.gameplayServerMode == GameplayServerMode_Countdown) {
+		if(!req->secret.length) {
+			uprintf("Connect to Server Error: Quickplay not supported\n");
 			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers; // Quick Play not yet available
 			goto send;
 		}
 		if(session->net.version.protocolVersion >= 9) {
+			uprintf("Connect to Server Error: Game version too new\n");
 			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_VersionMismatch;
 			goto send;
 		}
@@ -453,12 +456,14 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		r_conn.connectToServerResponse.configuration.songSelectionMode = SongSelectionMode_Vote;
 		#endif
 		if(pool_request_room(&room, &handle, r_conn.connectToServerResponse.configuration)) {
+			uprintf("Connect to Server Error: Room allocation failed\n");
 			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers;
 			goto send;
 		}
 		r_conn.connectToServerResponse.code = pool_room_code(room);
 	} else {
 		if(pool_find_room(req->code, &room, &handle)) {
+			uprintf("Connect to Server Error: Room code does not exist\n");
 			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_InvalidCode;
 			goto send;
 		}
@@ -466,6 +471,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		r_conn.connectToServerResponse.configuration = wire_room_get_configuration(handle);
 
 		if(wire_room_get_protocol(handle).protocolVersion != session->net.version.protocolVersion) {
+			uprintf("Connect to Server Error: Version mismatch\n");
 			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_VersionMismatch;
 			goto send;
 		}
@@ -477,6 +483,7 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 	{
 		isession = TEMPwire_room_resolve_session(handle, addr, req->secret, req->base.userId, req->base.userName, session->net.version);
 		if(!isession) { // TODO: the room should close implicitly if the first user to connect fails
+			uprintf("Connect to Server Error: Session allocation failed\n");
 			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_UnknownError;
 			goto send;
 		}
@@ -487,11 +494,13 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		r_conn.connectToServerResponse.publicKey.length = sizeof(r_conn.connectToServerResponse.publicKey.data);
 		if(NetKeypair_write_key(&isession->keys, net, r_conn.connectToServerResponse.publicKey.data, &r_conn.connectToServerResponse.publicKey.length)) {
 			net_unlock(net);
+			uprintf("Connect to Server Error: NetKeypair_write_key() failed\n");
 			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_UnknownError;
 			goto send;
 		}
 		if(NetSession_set_clientPublicKey(isession, net, &req->base.publicKey)) {
 			net_unlock(net);
+			uprintf("Connect to Server Error: NetSession_set_clientPublicKey() failed\n");
 			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_UnknownError;
 			goto send;
 		}

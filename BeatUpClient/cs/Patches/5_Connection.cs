@@ -4,28 +4,29 @@ static partial class BeatUpClient {
 	[Patch(PatchType.Prefix, typeof(GameLiftConnectionManager), "HandleConnectToServerSuccess")]
 	public static void ConnectionManager_HandleConnectToServerSuccess(object __1, BeatmapLevelSelectionMask selectionMask, GameplayServerConfiguration configuration) {
 		Log.Debug("ConnectionManager_HandleConnectToServerSuccess()");
-		enableCustomLevels = selectionMask.songPacks.Contains("custom_levelpack_CustomLevels") && __1 is string;
+		enableCustomLevels = (__1 is string) && selectionMask.songPacks.Contains("custom_levelpack_CustomLevels");
 		playerData = new PlayerData(configuration.maxPlayerCount);
 		lobbyDifficultyPanel.Clear();
-		connectInfo = null;
+		connectInfo = ServerConnectInfo.Default;
 		infoText.SetActive(false);
 		Log.Debug("ConnectionManager_HandleConnectToServerSuccess() end");
 	}
 
-	[Patch(PatchType.Postfix, typeof(MultiplayerLevelSelectionFlowCoordinator), "get_enableCustomLevels")]
-	public static void MultiplayerLevelSelectionFlowCoordinator_enableCustomLevels(ref bool __result) =>
-		__result |= enableCustomLevels;
-
-	[Patch(PatchType.Postfix, typeof(MultiplayerLevelSelectionFlowCoordinator), "get_notAllowedCharacteristics")]
-	public static void MultiplayerLevelSelectionFlowCoordinator_notAllowedCharacteristics(ref BeatmapCharacteristicSO[] __result) =>
-		__result = new BeatmapCharacteristicSO[0];
+	[Patch(PatchType.Prefix, typeof(LevelSelectionNavigationController), nameof(LevelSelectionNavigationController.Setup))]
+	public static void LevelSelectionNavigationController_Setup(ref BeatmapCharacteristicSO[] notAllowedCharacteristics, string actionButtonText, ref bool enableCustomLevels) {
+		if(actionButtonText != Polyglot.Localization.Get("BUTTON_SELECT"))
+			return;
+		enableCustomLevels |= BeatUpClient.enableCustomLevels;
+		notAllowedCharacteristics = new BeatmapCharacteristicSO[0];
+	}
 
 	[Patch(PatchType.Postfix, typeof(LiteNetLib.ReliableChannel), ".ctor")]
 	public static void ReliableChannel_ctor(LiteNetLib.NetPacket ____outgoingAcks, ref LiteNetLib.ReliableChannel.PendingPacket[] ____pendingPackets, ref LiteNetLib.NetPacket[] ____receivedPackets, ref bool[] ____earlyReceived, ref int ____windowSize) {
-		int windowSize = (int?)connectInfo?.windowSize ?? ____windowSize;
-		Log.Debug("ReliableChannel_ctor()");
-		if(windowSize == ____windowSize)
+		int windowSize = (int)connectInfo.windowSize;
+		if(connectInfo.@base.protocolId == 0 || windowSize == ____windowSize) {
+			Log.Debug("ReliableChannel_ctor(default)");
 			return;
+		}
 		Log.Debug($"ReliableChannel_ctor({windowSize})");
 		____windowSize = windowSize;
 		System.Array.Resize(ref ____pendingPackets, windowSize);

@@ -12,7 +12,6 @@ static partial class BeatUpClient {
 	static bool haveSiraUtil = false, haveSongCore = false, haveMpCore = false, haveMpEx = false;
 	static UnityEngine.Sprite defaultPackCover = null!;
 
-	static ServerConnectInfo? connectInfo = null;
 	static UnityEngine.GameObject infoText = null!;
 	static StringSO customServerHostName = null!;
 	static MainFlowCoordinator? mainFlowCoordinator = null;

@@ -12,8 +12,4 @@ static partial class BeatUpClient {
 		if(Resolve<CustomNetworkConfig>() != null)
 			__result = AuthWrapper(__result, ____platform, ____userId, ____userName);
 	}
-
-	[Patch(PatchType.Prefix, typeof(ClientCertificateValidator), "ValidateCertificateChainInternal")]
-	public static bool ClientCertificateValidator_ValidateCertificateChainInternal() =>
-		Resolve<CustomNetworkConfig>()?.masterServerEndPoint.hostName == officialNetworkConfig.masterServerEndPoint.hostName;
 }

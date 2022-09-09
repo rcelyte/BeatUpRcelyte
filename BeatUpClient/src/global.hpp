@@ -1,3 +1,5 @@
+#pragma once
+#include "setup.hpp"
 #include "beatsaber-hook/shared/utils/hooking.hpp"
 #include "custom-types/shared/delegate.hpp"
 #include "custom-types/shared/macros.hpp"
@@ -9,10 +11,10 @@
 #include <UnityEngine/Events/UnityAction.hpp>
 #include <UnityEngine/Events/UnityAction_1.hpp>
 #include <UnityEngine/Events/UnityAction_2.hpp>
+#include <UnityEngine/GameObject.hpp>
+#include <UnityEngine/Transform.hpp>
 #define CONCAT_(x, y) x##y
 #define CONCAT(x, y) CONCAT_(x, y)
-
-extern Logger *logger;
 
 typedef bool (*PatchFunc)(); // TODO: think of a better name for this
 
@@ -45,7 +47,7 @@ struct BSCHook<mPtr, retval(Args...)> {
 		constexpr static const char *name() {return mName;} \
 	}; \
 	INJECT_CALLBACK(ApplyPatches, { \
-		Hooking::InstallHook<CONCAT(Hook_, __LINE__)>(*logger); \
+		Hooking::InstallHook<CONCAT(Hook_, __LINE__)>(*BeatUpClient::logger); \
 		return false; \
 	}) \
 	template<> retval ::BSCHook<mPtr, retval(__VA_ARGS__)>::body(__VA_ARGS__)
@@ -54,15 +56,6 @@ struct BSCHook<mPtr, retval(Args...)> {
 	BSC_MAKE_HOOK_INTERNAL(&mPtr, #mPtr, retval, __VA_ARGS__)
 #define BSC_MAKE_HOOK_OVERLOAD(mClass, mPtr, retval, thisarg, ...) \
 	BSC_MAKE_HOOK_INTERNAL(static_cast<retval (mClass::*)(__VA_ARGS__)>(&mClass::mPtr), #mClass "::" #mPtr, retval, thisarg, __VA_ARGS__)
-
-#define BSC_ICALL(name, iname, retval, ...) \
-	static retval (*name)(__VA_ARGS__) = NULL; \
-	INJECT_CALLBACK(ApplyPatches, { \
-		name = (retval (*)(__VA_ARGS__))il2cpp_functions::resolve_icall(iname); \
-		if(!name) \
-			logger->critical("Failed to resolve `" iname "`"); \
-		return !name; \
-	})
 
 namespace BeatUpClient {
 	extern PatchFunc ApplyPatches;
@@ -100,3 +93,33 @@ template<class L> static inline auto Delegate_Action(L &&ptr) {
 template<class L> static inline auto Delegate_Unity(L &&ptr) {
 	return MakeDelegate_Unity(std::function(ptr));
 }
+
+#ifndef BSC_ICALL
+#define BSC_ICALL(name, iname, retval, ...) extern retval (*name)(__VA_ARGS__);
+#endif
+
+BSC_ICALL(GameObject_SetActive, "UnityEngine.GameObject::SetActive", void, UnityEngine::GameObject *self, bool value)
+BSC_ICALL(Object_Destroy, "UnityEngine.Object::Destroy", void, UnityEngine::Object *obj, float t)
+BSC_ICALL(Object_SetName, "UnityEngine.Object::SetName", void, UnityEngine::Object *obj, Il2CppString *name)
+
+BSC_ICALL(Object_Internal_CloneSingleWithParent, "UnityEngine.Object::Internal_CloneSingleWithParent", UnityEngine::Object*, UnityEngine::Object *data, UnityEngine::Transform *parent, bool worldPositionStays)
+static inline UnityEngine::GameObject *Instantiate(UnityEngine::GameObject *object, UnityEngine::Transform *parent) {
+	return il2cpp_utils::cast<UnityEngine::GameObject>(Object_Internal_CloneSingleWithParent(object, parent, false));
+}
+
+BSC_ICALL(GameObject_GetComponent, "UnityEngine.GameObject::GetComponent", UnityEngine::Component*, UnityEngine::GameObject *self, System::Type *type)
+template<typename T> static inline T *GetComponent(UnityEngine::GameObject *gameObject) {
+	return il2cpp_utils::cast<T>(GameObject_GetComponent(gameObject, csTypeOf(T*)));
+}
+
+BSC_ICALL(Resources_FindObjectsOfTypeAll, "UnityEngine.Resources::FindObjectsOfTypeAll", Array<UnityEngine::Object*>*, System::Type *type);
+template<typename T> static inline ArrayW<T*> FindResourcesOfType() {
+	return Resources_FindObjectsOfTypeAll(csTypeOf(T*));
+}
+
+template<typename T> static inline std::optional<T*> FindResourceOfType() {
+	ArrayW<T*> array = FindResourcesOfType<T>();
+	return (array.Length() < 1) ? std::nullopt : std::optional<T*>(array[0]);
+}
+
+#undef BSC_ICALL

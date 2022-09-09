@@ -8,7 +8,6 @@ static partial class BeatUpClient_MpCore {
 		typeof(MultiplayerCore.Patchers.CustomLevelsPatcher),
 		typeof(MultiplayerCore.Patchers.ModeSelectionPatcher),
 		typeof(MultiplayerCore.Patchers.NetworkConfigPatcher),
-		typeof(MultiplayerCore.Patches.MultiplayerStatusModelPatch), // TODO: remove if https://github.com/Goobwabber/MultiplayerCore/pull/19 gets merged
 	};
 
 	[Patch(PatchType.Prefix, typeof(SiraUtil.Affinity.Harmony.HarmonyAffinityPatcher), nameof(SiraUtil.Affinity.Harmony.HarmonyAffinityPatcher.Patch))]

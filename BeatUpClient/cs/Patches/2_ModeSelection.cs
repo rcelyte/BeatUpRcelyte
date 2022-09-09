@@ -13,7 +13,9 @@ static partial class BeatUpClient {
 
 	[Patch(PatchType.Prefix, typeof(HMUI.FlowCoordinator), "ProvideInitialViewControllers")]
 	public static void FlowCoordinator_ProvideInitialViewControllers(HMUI.FlowCoordinator __instance, ref HMUI.ViewController mainViewController) {
-		if(mainViewController is JoiningLobbyViewController originalView && __instance is MultiplayerModeSelectionFlowCoordinator flowCoordinator) {
+		JoiningLobbyViewController? originalView = mainViewController as JoiningLobbyViewController;
+		MultiplayerModeSelectionFlowCoordinator? flowCoordinator = __instance as MultiplayerModeSelectionFlowCoordinator;
+		if(originalView != null && flowCoordinator != null) {
 			mainViewController = flowCoordinator._multiplayerModeSelectionViewController;
 			flowCoordinator._multiplayerModeSelectionViewController.transform.Find("Buttons")?.gameObject.SetActive(false);
 			flowCoordinator._multiplayerModeSelectionViewController._maintenanceMessageText.gameObject.SetActive(false);
@@ -56,7 +58,7 @@ static partial class BeatUpClient {
 		return false;
 	}
 
-	static UnityEngine.GameObject[] BeatUpServerUI = new UnityEngine.GameObject[0];
+	static UnityEngine.GameObject[]? BeatUpServerUI = null;
 	static UnityEngine.Sprite[] altCreateButtonSprites = new UnityEngine.Sprite[4];
 	static bool createButtonSpriteState = false;
 	[Patch(PatchType.Prefix, typeof(MultiplayerModeSelectionViewController), nameof(MultiplayerModeSelectionViewController.SetData))]
@@ -65,18 +67,21 @@ static partial class BeatUpClient {
 		____maintenanceMessageText.richText = false;
 		____maintenanceMessageText.transform.localPosition = new UnityEngine.Vector3(0, -5, 0);
 		bool isBeatUp = multiplayerStatusData?.minimumAppVersion?.EndsWith("b2147483647") == true;
-		foreach(UnityEngine.GameObject element in BeatUpServerUI)
-			element.SetActive(isBeatUp);
+		if(BeatUpServerUI != null)
+			foreach(UnityEngine.GameObject element in BeatUpServerUI)
+				element.SetActive(isBeatUp);
 		UnityEngine.Transform? buttons = __instance.transform.Find("Buttons");
 		if(buttons == null)
 			return;
-		HMUI.ButtonSpriteSwap? sprites = buttons.Find("CreateServerButton")?.GetComponent<HMUI.ButtonSpriteSwap>();
-		if(sprites != null && createButtonSpriteState != isBeatUp) {
-			(sprites._normalStateSprite, altCreateButtonSprites[0]) = (altCreateButtonSprites[0], sprites._normalStateSprite);
-			(sprites._highlightStateSprite, altCreateButtonSprites[1]) = (altCreateButtonSprites[1], sprites._highlightStateSprite);
-			(sprites._pressedStateSprite, altCreateButtonSprites[2]) = (altCreateButtonSprites[2], sprites._pressedStateSprite);
-			(sprites._disabledStateSprite, altCreateButtonSprites[3]) = (altCreateButtonSprites[3], sprites._disabledStateSprite);
-			createButtonSpriteState = isBeatUp;
+		if(createButtonSpriteState != isBeatUp) {
+			HMUI.ButtonSpriteSwap? sprites = buttons.Find("CreateServerButton")?.GetComponent<HMUI.ButtonSpriteSwap>();
+			if(sprites != null) {
+				(sprites._normalStateSprite, altCreateButtonSprites[0]) = (altCreateButtonSprites[0], sprites._normalStateSprite);
+				(sprites._highlightStateSprite, altCreateButtonSprites[1]) = (altCreateButtonSprites[1], sprites._highlightStateSprite);
+				(sprites._pressedStateSprite, altCreateButtonSprites[2]) = (altCreateButtonSprites[2], sprites._pressedStateSprite);
+				(sprites._disabledStateSprite, altCreateButtonSprites[3]) = (altCreateButtonSprites[3], sprites._disabledStateSprite);
+				createButtonSpriteState = isBeatUp;
+			}
 		}
 		buttons.gameObject.SetActive(true);
 	}

@@ -31,6 +31,9 @@ static partial class BeatUpClient {
 			requirements = System.Linq.Enumerable.Range(0, reader.GetByte())
 				.SelectMany(i => System.Linq.Enumerable.Repeat((BeatmapDifficulty)reader.GetByte(), reader.GetByte()))
 				.ToLookup(diff => diff, diff => reader.GetString() ?? string.Empty);
+			previewDifficultyBeatmapSets = new[] {
+				new PreviewDifficultyBeatmapSet(SerializedCharacteristic(characteristic), requirements.Select(diff => diff.Key).ToArray()),
+			}; // Fill in data for difficulty selector
 			for(uint i = reader.GetByte() * 3u; i > 0; --i)
 				reader.GetString();
 			for(byte i = reader.GetByte(); i > 0; --i) {

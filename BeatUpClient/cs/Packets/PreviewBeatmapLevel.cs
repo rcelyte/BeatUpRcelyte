@@ -20,7 +20,7 @@ static partial class BeatUpClient {
 		public float previewStartTime {get;}
 		public float previewDuration {get;}
 		public float songDuration {get;}
-		public System.Collections.Generic.IReadOnlyList<PreviewDifficultyBeatmapSet>? previewDifficultyBeatmapSets {get;} = null;
+		public System.Collections.Generic.IReadOnlyList<PreviewDifficultyBeatmapSet>? previewDifficultyBeatmapSets {get; protected set;} = null;
 		public EnvironmentInfoSO? environmentInfo {get;} = null;
 		public EnvironmentInfoSO? allDirectionsEnvironmentInfo {get;} = null;
 		public readonly ByteArrayNetSerializable cover = new ByteArrayNetSerializable("cover", 0, 8192);
@@ -100,9 +100,8 @@ static partial class BeatUpClient {
 			allDirectionsEnvironmentInfo = Resolve<CustomLevelLoader>()!._environmentSceneInfoCollection.GetEnvironmentInfoBySerializedName(reader.GetString());
 			uint count = UpperBound(reader.GetByte(), 8);
 			previewDifficultyBeatmapSets = (count < 1) ? null : CreateArray(count, i => {
-				BeatmapCharacteristicSO? characteristic = Resolve<BeatmapCharacteristicCollectionSO>()!.GetBeatmapCharacteristicBySerializedName(reader.GetString());
-				// TODO: need a better solution for handling `lawless`, `lightshow`, etc when SongCore isn't available
-				characteristic ??= Resolve<BeatmapCharacteristicCollectionSO>()!.GetBeatmapCharacteristicBySerializedName("Standard");
+				// TODO: need a good solution for handling `lawless`, `lightshow`, etc when SongCore isn't available
+				BeatmapCharacteristicSO? characteristic = SerializedCharacteristic(reader.GetString());
 				BeatmapDifficulty[] difficulties = CreateArray(UpperBound(reader.GetByte(), 5), i => (BeatmapDifficulty)reader.GetVarUInt());
 				return new PreviewDifficultyBeatmapSet(characteristic, difficulties);
 			});

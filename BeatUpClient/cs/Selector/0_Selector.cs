@@ -34,7 +34,6 @@ static partial class BeatUpClient {
 			CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.ContentSizeFitter>().enabled = true;
 		}
 
-		mainFlowCoordinator = UnityEngine.Resources.FindObjectsOfTypeAll<MainFlowCoordinator>()[0];
 		MultiplayerModeSelectionViewController multiplayerModeSelectionViewController = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerModeSelectionViewController>()[0];
 		TMPro.TextMeshProUGUI customServerEndPointText = multiplayerModeSelectionViewController._customServerEndPointText;
 		UnityEngine.GameObject colorSchemeButton = UnityEngine.Resources.FindObjectsOfTypeAll<ColorsOverrideSettingsPanelController>()[0]._editColorSchemeButton.gameObject;
@@ -58,10 +57,10 @@ static partial class BeatUpClient {
 			return btn;
 		}
 		UnityEngine.RectTransform addButton = CreateButtonAt(-40, colorSchemeButton, "AddServer", () =>
-			editServerViewController.TryPresent(mainFlowCoordinator.childFlowCoordinator, false));
+			editServerViewController.TryPresent(mainFlowCoordinator!.childFlowCoordinator, false));
 		addButton.Find("Icon").GetComponent<HMUI.ImageView>().sprite = sprites.FirstOrDefault(sprite => sprite.name == "AddIcon");
 		UnityEngine.RectTransform editButton = CreateButtonAt(52, colorSchemeButton, "EditServer", () =>
-			editServerViewController.TryPresent(mainFlowCoordinator.childFlowCoordinator, true));
+			editServerViewController.TryPresent(mainFlowCoordinator!.childFlowCoordinator, true));
 		editServerButton = editButton.GetComponent<UnityEngine.UI.Button>();
 		(serverDropdown.addButton, serverDropdown.editButton) = (addButton.gameObject, editButton.gameObject);
 

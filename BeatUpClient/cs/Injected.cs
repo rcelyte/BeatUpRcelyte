@@ -5,6 +5,6 @@ static partial class BeatUpClient {
 			(Instance = container.TryResolve<U>() as T);
 	}
 	[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-	static T? Resolve<T>() where T : class =>
+	internal static T? Resolve<T>() where T : class =>
 		Injected<T>.Instance;
 }

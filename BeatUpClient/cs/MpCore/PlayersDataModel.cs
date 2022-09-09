@@ -21,8 +21,15 @@ static partial class BeatUpClient_MpCore {
 			base.Deactivate();
 		}
 
-		void HandleMpexBeatmapPacket(MultiplayerCore.Beatmaps.Packets.MpBeatmapPacket packet, IConnectedPlayer player) =>
-			Net.ProcessMpPreview(beatmapLevelProvider.GetBeatmapFromPacket(packet), player, packet.requirements.Values.SelectMany(set => set).ToHashSet().ToArray());
+		void HandleMpexBeatmapPacket(MultiplayerCore.Beatmaps.Packets.MpBeatmapPacket packet, IConnectedPlayer player) {
+			IPreviewBeatmapLevel preview = beatmapLevelProvider.GetBeatmapFromPacket(packet);
+			if(preview is MultiplayerCore.Beatmaps.Abstractions.MpBeatmapLevel mpPreview) {
+				mpPreview.previewDifficultyBeatmapSets ??= mpPreview.requirements
+					.Select(set => new PreviewDifficultyBeatmapSet(SerializedCharacteristic(set.Key), set.Value.Select(diff => diff.Key).ToArray()))
+					.ToArray(); // Fill in data for difficulty selector
+			}
+			Net.ProcessMpPreview(preview, player, packet.requirements.Values.SelectMany(set => set).ToHashSet().ToArray());
+		}
 	}
 }
 #endif

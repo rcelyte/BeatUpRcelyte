@@ -2019,7 +2019,7 @@ static void _pkt_IPEndPoint_write(const struct IPEndPoint *restrict data, uint8_
 	_pkt_u32_write(&data->port, pkt, end, ctx);
 }
 static void _pkt_GameplayServerConfiguration_read(struct GameplayServerConfiguration *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_vu32_read(&data->maxPlayerCount, pkt, end, ctx);
+	_pkt_vi32_read(&data->maxPlayerCount, pkt, end, ctx);
 	_pkt_vi32_read(&data->discoveryPolicy, pkt, end, ctx);
 	_pkt_vi32_read(&data->invitePolicy, pkt, end, ctx);
 	_pkt_vi32_read(&data->gameplayServerMode, pkt, end, ctx);
@@ -2027,7 +2027,7 @@ static void _pkt_GameplayServerConfiguration_read(struct GameplayServerConfigura
 	_pkt_vi32_read(&data->gameplayServerControlSettings, pkt, end, ctx);
 }
 static void _pkt_GameplayServerConfiguration_write(const struct GameplayServerConfiguration *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_vu32_write(&data->maxPlayerCount, pkt, end, ctx);
+	_pkt_vi32_write(&data->maxPlayerCount, pkt, end, ctx);
 	_pkt_vi32_write(&data->discoveryPolicy, pkt, end, ctx);
 	_pkt_vi32_write(&data->invitePolicy, pkt, end, ctx);
 	_pkt_vi32_write(&data->gameplayServerMode, pkt, end, ctx);

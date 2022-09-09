@@ -9,12 +9,6 @@ static partial class BeatUpClient_MpCore {
 		return false;
 	}
 
-	[Patch.Overload(PatchType.Prefix, typeof(Newtonsoft.Json.JsonConvert), nameof(Newtonsoft.Json.JsonConvert.DeserializeObject), new[] {typeof(string), typeof(System.Type), typeof(Newtonsoft.Json.JsonSerializerSettings)})]
-	public static void JsonConvert_DeserializeObject(ref System.Type type) { // TODO: remove if https://github.com/Goobwabber/MultiplayerCore/pull/19 gets merged
-		if(type == typeof(MultiplayerStatusData))
-			type = typeof(MultiplayerCore.Models.MpStatusData);
-	}
-
 	/*public static async System.Threading.Tasks.Task<EntitlementsStatus> MpShareWrapper(System.Threading.Tasks.Task<EntitlementsStatus> status, string levelId, NetworkPlayerEntitlementChecker checker) {
 		switch(await status) {
 			case EntitlementsStatus.Ok: return await ShareTask(levelId);
@@ -55,10 +49,16 @@ static partial class BeatUpClient_MpCore {
 	public static void NetworkConfigPatcher_UseOfficialServer() =>
 		UpdateNetworkConfig(string.Empty, null);
 
+	public static System.Exception? MultiplayerStatusModel_MoveNext() => null;
+
+	[Init]
 	public static void Patch() {
 		MultiplayerCore.Patches.DataModelBinderPatch._playersDataModelMethod = HarmonyLib.AccessTools.DeclaredMethod(typeof(BeatUpClient_MpCore), nameof(BeatUpClient_MpCore.Patch)); // Suppress transpiler
 		DiJack.Register(typeof(PlayersDataModel));
 		DiJack.Patch();
+
+		System.Reflection.MethodBase? original = HarmonyLib.AccessTools.FirstInner(typeof(MultiplayerStatusModel), t => t.Name.StartsWith("<GetMultiplayerStatusAsyncInternal"))?.GetMethod("MoveNext", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+		harmony.Patch(original, finalizer: new HarmonyLib.HarmonyMethod(HarmonyLib.AccessTools.DeclaredMethod(typeof(BeatUpClient_MpCore), nameof(MultiplayerStatusModel_MoveNext))));
 	}
 	public static void Unpatch() =>
 		DiJack.UnregisterAll();

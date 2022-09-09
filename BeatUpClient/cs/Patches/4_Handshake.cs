@@ -1,4 +1,6 @@
 static partial class BeatUpClient {
+	static ServerConnectInfo connectInfo = ServerConnectInfo.Default;
+
 	[Patch(PatchType.Postfix, typeof(BasicConnectionRequestHandler), nameof(BasicConnectionRequestHandler.GetConnectionMessage))]
 	public static void BasicConnectionRequestHandler_GetConnectionMessage(LiteNetLib.Utils.NetDataWriter writer) {
 		Log.Debug("BasicConnectionRequestHandler_GetConnectionMessage()");
@@ -27,13 +29,13 @@ static partial class BeatUpClient {
 		Polyglot.LocalizedTextMeshProUGUI? SuggestedModifiers = UnityEngine.Resources.FindObjectsOfTypeAll<GameServerPlayersTableView>()[0].transform.Find("ServerPlayersTableHeader/Labels/SuggestedModifiers")?.GetComponent<Polyglot.LocalizedTextMeshProUGUI>();
 		if(SuggestedModifiers == null)
 			return;
-		SuggestedModifiers.Key = (connectInfo?.perPlayerModifiers == true) ? "BEATUP_SELECTED_MODIFIERS" : "SUGGESTED_MODIFIERS";
+		SuggestedModifiers.Key = connectInfo.perPlayerModifiers ? "BEATUP_SELECTED_MODIFIERS" : "SUGGESTED_MODIFIERS";
 	}
 
 	[Patch(PatchType.Postfix, typeof(ConnectedPlayerManager.ConnectedPlayer), nameof(ConnectedPlayerManager.ConnectedPlayer.CreateDirectlyConnectedPlayer))]
 	public static void ConnectedPlayer_CreateDirectlyConnectedPlayer(IConnectedPlayer __result) {
-		if(connectInfo != null)
-			Net.HandleConnectInfo(((ServerConnectInfo)connectInfo).@base, __result);
+		if(connectInfo.@base.protocolId != 0)
+			Net.HandleConnectInfo(connectInfo.@base, __result);
 	}
 
 	[Patch(PatchType.Prefix, typeof(ConnectedPlayerManager), "RemovePlayer")]

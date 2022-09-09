@@ -2,7 +2,7 @@ static partial class BeatUpClient {
 	[Patch(PatchType.Postfix, typeof(MultiplayerLocalActivePlayerInGameMenuViewController), nameof(MultiplayerLocalActivePlayerInGameMenuViewController.Start))]
 	public static void MultiplayerLocalActivePlayerInGameMenuViewController_Start(MultiplayerLocalActivePlayerInGameMenuViewController __instance) {
 		MultiplayerPlayersManager multiplayerPlayersManager = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerPlayersManager>()[0];
-		if(connectInfo?.perPlayerDifficulty == true && multiplayerPlayersManager.localPlayerStartSeekSongController is MultiplayerLocalActivePlayerFacade) {
+		if(connectInfo.perPlayerDifficulty && multiplayerPlayersManager.localPlayerStartSeekSongController is MultiplayerLocalActivePlayerFacade) {
 			MenuTransitionsHelper menuTransitionsHelper = UnityEngine.Resources.FindObjectsOfTypeAll<MenuTransitionsHelper>()[0];
 			MultiplayerConnectedPlayerSongTimeSyncController audioTimeSyncController = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerConnectedPlayerSongTimeSyncController>()[0];
 			PreviewDifficultyBeatmap original = new PreviewDifficultyBeatmap(__instance._localPlayerInGameMenuInitData.previewBeatmapLevel, __instance._localPlayerInGameMenuInitData.beatmapCharacteristic, __instance._localPlayerInGameMenuInitData.beatmapDifficulty);
@@ -41,7 +41,7 @@ static partial class BeatUpClient {
 	[Patch(PatchType.Prefix, typeof(MultiplayerConnectedPlayerInstaller), nameof(MultiplayerConnectedPlayerInstaller.InstallBindings))]
 	public static void MultiplayerConnectedPlayerInstaller_InstallBindings(GameplayCoreSceneSetupData ____sceneSetupData, IConnectedPlayer ____connectedPlayer) {
 		bool zenMode = ____sceneSetupData.gameplayModifiers.zenMode || (BeatUpClient_Config.Instance.HideOtherLevels && !haveMpEx);
-		if(connectInfo?.perPlayerModifiers == true && PlayerIndex(____connectedPlayer) < 128) {
+		if(connectInfo.perPlayerModifiers && PlayerIndex(____connectedPlayer) < 128) {
 			PlayerData.ModifiersWeCareAbout mods = playerData.lockedModifiers[PlayerIndex(____connectedPlayer)];
 			____sceneSetupData.gameplayModifiers = ____sceneSetupData.gameplayModifiers.CopyWith(disappearingArrows: mods.disappearingArrows, ghostNotes: mods.ghostNotes, zenMode: zenMode, smallCubes: mods.smallCubes);
 		} else {
@@ -69,5 +69,5 @@ static partial class BeatUpClient {
 
 	[Patch(PatchType.Prefix, typeof(MultiplayerOutroAnimationController), nameof(MultiplayerOutroAnimationController.AnimateOutro))]
 	public static bool MultiplayerOutroAnimationController_AnimateOutro(System.Action onCompleted) =>
-		(connectInfo?.skipResults != true).Or(() => onCompleted.Invoke());
+		(!connectInfo.skipResults).Or(() => onCompleted.Invoke());
 }

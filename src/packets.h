@@ -1867,7 +1867,7 @@ struct IPEndPoint {
 	uint32_t port;
 };
 struct GameplayServerConfiguration {
-	uint32_t maxPlayerCount;
+	int32_t maxPlayerCount;
 	DiscoveryPolicy discoveryPolicy;
 	InvitePolicy invitePolicy;
 	GameplayServerMode gameplayServerMode;

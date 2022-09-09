@@ -29,5 +29,9 @@ static partial class BeatUpClient {
 		public ServerConnectInfo(ushort maxBlockSize, BeatUpClient_Config config) =>
 			(@base, windowSize, countdownDuration, directDownloads, skipResults, perPlayerDifficulty, perPlayerModifiers) =
 				(new ConnectInfo(maxBlockSize), config.WindowSize, (byte)(config.CountdownDuration * 4), config.DirectDownloads, config.SkipResults, config.PerPlayerDifficulty, config.PerPlayerModifiers);
+		public static ServerConnectInfo Default => new ServerConnectInfo {
+			windowSize = LiteNetLib.NetConstants.DefaultWindowSize,
+			countdownDuration = (byte)(LobbyGameStateController.kShortTimerSeconds * 4),
+		};
 	}
 }
