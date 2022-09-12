@@ -29,7 +29,7 @@ PUBREFS := $(CSREFS:%=.obj/Refs/%)
 
 libBeatUpClient.so: $(OBJS) | ndk
 	@echo "[cxx $@]"
-	$(CXX) $(LDFLAGS) $(OBJS) -o "$@"
+	$(CXX) $(LDFLAGS) $^ -o $@
 
 $(OBJDIR)/%.c.o: %.c src/packets.h makefile | ndk
 	@echo "[cc $(notdir $@)]"

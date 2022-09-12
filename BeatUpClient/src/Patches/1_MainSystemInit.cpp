@@ -12,23 +12,24 @@
 #include <GlobalNamespace/QuickPlaySetupModel.hpp>
 using namespace BeatUpClient;
 
-static bool restoreDefault = false;
+static bool old_useCustomServerEnvironment = false;
 BSC_MAKE_HOOK_MATCH(GlobalNamespace::MainSettingsModelSO::Load, void, GlobalNamespace::MainSettingsModelSO *self, bool forced) {
 	base(self, forced);
-	restoreDefault |= !self->useCustomServerEnvironment->value;
+	old_useCustomServerEnvironment = self->useCustomServerEnvironment->value;
 	self->useCustomServerEnvironment->set_value(true);
 	logger->info("GlobalNamespace::MainSettingsModelSO::Load()");
 }
 
 BSC_MAKE_HOOK_MATCH(GlobalNamespace::MainSettingsModelSO::Save, void, GlobalNamespace::MainSettingsModelSO *self) {
 	logger->info("GlobalNamespace::MainSettingsModelSO::Save()");
-	self->useCustomServerEnvironment->value = !restoreDefault;
+	self->useCustomServerEnvironment->value = old_useCustomServerEnvironment;
 	base(self);
 	self->useCustomServerEnvironment->value = true;
 }
 
 BSC_MAKE_HOOK_MATCH(GlobalNamespace::MainSystemInit::InstallBindings, void, GlobalNamespace::MainSystemInit *self, Zenject::DiContainer *container) {
 	base(self, container);
+	logger->info("GlobalNamespace::MainSystemInit::InstallBindings()");
 	// customServerHostName = ____mainSettingsModel.customServerHostName; // TODO: stub
 	// NetworkConfigSetup(__instance._networkConfig); // TODO: stub
 	Injected<GlobalNamespace::BeatmapCharacteristicCollectionSO>::Resolve<GlobalNamespace::BeatmapCharacteristicCollectionSO>(container);

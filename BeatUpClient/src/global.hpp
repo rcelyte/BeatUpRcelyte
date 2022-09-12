@@ -18,21 +18,23 @@
 
 typedef bool (*PatchFunc)(); // TODO: think of a better name for this
 
-template<PatchFunc *list> static bool InjectCallback(PatchFunc in) {
-	static PatchFunc next = *list, body = in;
-	*list = []() {
-		return next() || body();
-	};
-	return false;
-};
+#define INJECT_CALLBACK(list, ...) \
+	static void __attribute__((constructor)) CONCAT(_inject_ctor, __LINE__)() { \
+		static PatchFunc next = NULL; \
+		next = (list); \
+		(list) = []() -> bool { \
+			if(next()) \
+				return true; \
+			__VA_ARGS__; \
+			return false; \
+		}; \
+	}
 
-#define INJECT_CALLBACK(list, ...) static bool CONCAT(_void, __LINE__) = InjectCallback<&(list)>([]() __VA_ARGS__);
-
-template<auto mPtr, typename funcType>
+template<auto mPtr, const char *mName, typename funcType>
 struct BSCHook;
 
-template<auto mPtr, typename retval, typename ...Args>
-struct BSCHook<mPtr, retval(Args...)> {
+template<auto mPtr, const char *mName, typename retval, typename ...Args>
+struct BSCHook<mPtr, mName, retval(Args...)> {
 	using funcType = retval (*)(Args...);
 	static_assert(std::is_same_v<funcType, typename ::Hooking::InternalMethodCheck<decltype(mPtr)>::funcType>, "Hook method signature does not match!");
 	static const MethodInfo *getInfo() {return ::il2cpp_utils::il2cpp_type_check::MetadataGetter<mPtr>::get();}
@@ -40,17 +42,16 @@ struct BSCHook<mPtr, retval(Args...)> {
 	static inline funcType base = nullptr;
 	static funcType hook() {return &::Hooking::HookCatchWrapper<&body, funcType>::wrapper;}
 	static retval body(Args...);
+	constexpr static const char *name() {return mName;}
 };
 
 #define BSC_MAKE_HOOK_INTERNAL(mPtr, mName, retval, ...) \
-	struct CONCAT(Hook_, __LINE__) : BSCHook<mPtr, retval(__VA_ARGS__)> { \
-		constexpr static const char *name() {return mName;} \
-	}; \
+	static const char CONCAT(_name, __LINE__)[] = mName; \
 	INJECT_CALLBACK(ApplyPatches, { \
-		Hooking::InstallHook<CONCAT(Hook_, __LINE__)>(*BeatUpClient::logger); \
+		Hooking::InstallHook<BSCHook<mPtr, CONCAT(_name, __LINE__), retval(__VA_ARGS__)>>(*BeatUpClient::logger); \
 		return false; \
 	}) \
-	template<> retval ::BSCHook<mPtr, retval(__VA_ARGS__)>::body(__VA_ARGS__)
+	template<> retval ::BSCHook<mPtr, CONCAT(_name, __LINE__), retval(__VA_ARGS__)>::body(__VA_ARGS__)
 
 #define BSC_MAKE_HOOK_MATCH(mPtr, retval, ...) \
 	BSC_MAKE_HOOK_INTERNAL(&mPtr, #mPtr, retval, __VA_ARGS__)
