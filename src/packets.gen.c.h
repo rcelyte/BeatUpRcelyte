@@ -1,5 +1,15 @@
-#include "packets.h"
-#include "packets.c.h"
+static void _pkt_PacketContext_read(struct PacketContext *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u8_read(&data->netVersion, pkt, end, ctx);
+	_pkt_u8_read(&data->protocolVersion, pkt, end, ctx);
+	_pkt_u8_read(&data->beatUpVersion, pkt, end, ctx);
+	_pkt_u32_read(&data->windowSize, pkt, end, ctx);
+}
+static void _pkt_PacketContext_write(const struct PacketContext *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u8_write(&data->netVersion, pkt, end, ctx);
+	_pkt_u8_write(&data->protocolVersion, pkt, end, ctx);
+	_pkt_u8_write(&data->beatUpVersion, pkt, end, ctx);
+	_pkt_u32_write(&data->windowSize, pkt, end, ctx);
+}
 static void _pkt_ByteArrayNetSerializable_read(struct ByteArrayNetSerializable *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_vu32_read(&data->length, pkt, end, ctx);
 	_pkt_raw_read(data->data, pkt, end, ctx, check_overflow(data->length, 8192, "ByteArrayNetSerializable.data"));
@@ -2504,5 +2514,115 @@ void _pkt_PacketEncryptionLayer_write(const struct PacketEncryptionLayer *restri
 	if(data->encrypted == 1) {
 		_pkt_u32_write(&data->sequenceId, pkt, end, ctx);
 		_pkt_raw_write(data->iv, pkt, end, ctx, 16);
+	}
+}
+static void _pkt_WireAddress_read(struct WireAddress *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_vu32_read(&data->length, pkt, end, ctx);
+	_pkt_raw_read(data->data, pkt, end, ctx, check_overflow(data->length, 128, "WireAddress.data"));
+}
+static void _pkt_WireAddress_write(const struct WireAddress *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_vu32_write(&data->length, pkt, end, ctx);
+	_pkt_raw_write(data->data, pkt, end, ctx, check_overflow(data->length, 128, "WireAddress.data"));
+}
+static void _pkt_WireSetAttribs_read(struct WireSetAttribs *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u32_read(&data->capacity, pkt, end, ctx);
+}
+static void _pkt_WireSetAttribs_write(const struct WireSetAttribs *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u32_write(&data->capacity, pkt, end, ctx);
+}
+static void _pkt_WireConnect_read(struct WireConnect *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u32_read(&data->protocol, pkt, end, ctx);
+	if(data->protocol == 0) {
+		_pkt_WireSetAttribs_read(&data->attribs, pkt, end, ctx);
+	}
+}
+static void _pkt_WireConnect_write(const struct WireConnect *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u32_write(&data->protocol, pkt, end, ctx);
+	if(data->protocol == 0) {
+		_pkt_WireSetAttribs_write(&data->attribs, pkt, end, ctx);
+	}
+}
+static void _pkt_WireSessionAlloc_read(struct WireSessionAlloc *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u32_read(&data->cookie, pkt, end, ctx);
+	_pkt_u32_read(&data->room, pkt, end, ctx);
+	_pkt_WireAddress_read(&data->address, pkt, end, ctx);
+	_pkt_String_read(&data->secret, pkt, end, ctx);
+	_pkt_String_read(&data->userId, pkt, end, ctx);
+	_pkt_String_read(&data->userName, pkt, end, ctx);
+	_pkt_raw_read(data->random, pkt, end, ctx, 32);
+	_pkt_ByteArrayNetSerializable_read(&data->publicKey, pkt, end, ctx);
+	_pkt_PacketContext_read(&data->version, pkt, end, ctx);
+}
+static void _pkt_WireSessionAlloc_write(const struct WireSessionAlloc *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u32_write(&data->cookie, pkt, end, ctx);
+	_pkt_u32_write(&data->room, pkt, end, ctx);
+	_pkt_WireAddress_write(&data->address, pkt, end, ctx);
+	_pkt_String_write(&data->secret, pkt, end, ctx);
+	_pkt_String_write(&data->userId, pkt, end, ctx);
+	_pkt_String_write(&data->userName, pkt, end, ctx);
+	_pkt_raw_write(data->random, pkt, end, ctx, 32);
+	_pkt_ByteArrayNetSerializable_write(&data->publicKey, pkt, end, ctx);
+	_pkt_PacketContext_write(&data->version, pkt, end, ctx);
+}
+static void _pkt_WireSessionAllocResp_read(struct WireSessionAllocResp *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u32_read(&data->requestCookie, pkt, end, ctx);
+	_pkt_u8_read(&data->result, pkt, end, ctx);
+	_pkt_raw_read(data->random, pkt, end, ctx, 32);
+	_pkt_ByteArrayNetSerializable_read(&data->publicKey, pkt, end, ctx);
+	_pkt_GameplayServerConfiguration_read(&data->configuration, pkt, end, ctx);
+	_pkt_String_read(&data->managerId, pkt, end, ctx);
+	_pkt_IPEndPoint_read(&data->endPoint, pkt, end, ctx);
+}
+static void _pkt_WireSessionAllocResp_write(const struct WireSessionAllocResp *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u32_write(&data->requestCookie, pkt, end, ctx);
+	_pkt_u8_write(&data->result, pkt, end, ctx);
+	_pkt_raw_write(data->random, pkt, end, ctx, 32);
+	_pkt_ByteArrayNetSerializable_write(&data->publicKey, pkt, end, ctx);
+	_pkt_GameplayServerConfiguration_write(&data->configuration, pkt, end, ctx);
+	_pkt_String_write(&data->managerId, pkt, end, ctx);
+	_pkt_IPEndPoint_write(&data->endPoint, pkt, end, ctx);
+}
+static void _pkt_WireRoomSpawn_read(struct WireRoomSpawn *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_WireSessionAlloc_read(&data->base, pkt, end, ctx);
+	_pkt_GameplayServerConfiguration_read(&data->configuration, pkt, end, ctx);
+}
+static void _pkt_WireRoomSpawn_write(const struct WireRoomSpawn *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_WireSessionAlloc_write(&data->base, pkt, end, ctx);
+	_pkt_GameplayServerConfiguration_write(&data->configuration, pkt, end, ctx);
+}
+static void _pkt_WireRoomJoin_read(struct WireRoomJoin *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_WireSessionAlloc_read(&data->base, pkt, end, ctx);
+}
+static void _pkt_WireRoomJoin_write(const struct WireRoomJoin *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_WireSessionAlloc_write(&data->base, pkt, end, ctx);
+}
+static void _pkt_WireRoomCloseNotify_read(struct WireRoomCloseNotify *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u32_read(&data->room, pkt, end, ctx);
+}
+static void _pkt_WireRoomCloseNotify_write(const struct WireRoomCloseNotify *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u32_write(&data->room, pkt, end, ctx);
+}
+void _pkt_WireMessage_read(struct WireMessage *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u8_read(&data->type, pkt, end, ctx);
+	switch(data->type) {
+		case WireMessageType_WireConnect: _pkt_WireConnect_read(&data->wireConnect, pkt, end, ctx); break;
+		case WireMessageType_WireSetAttribs: _pkt_WireSetAttribs_read(&data->wireSetAttribs, pkt, end, ctx); break;
+		case WireMessageType_WireRoomSpawn: _pkt_WireRoomSpawn_read(&data->wireRoomSpawn, pkt, end, ctx); break;
+		case WireMessageType_WireRoomJoin: _pkt_WireRoomJoin_read(&data->wireRoomJoin, pkt, end, ctx); break;
+		case WireMessageType_WireSessionAllocResp: _pkt_WireSessionAllocResp_read(&data->wireSessionAllocResp, pkt, end, ctx); break;
+		case WireMessageType_WireRoomCloseNotify: _pkt_WireRoomCloseNotify_read(&data->wireRoomCloseNotify, pkt, end, ctx); break;
+		default: uprintf("Invalid value for enum `WireMessageType`\n"); longjmp(fail, 1);
+	}
+}
+void _pkt_WireMessage_write(const struct WireMessage *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u8_write(&data->type, pkt, end, ctx);
+	switch(data->type) {
+		case WireMessageType_WireConnect: _pkt_WireConnect_write(&data->wireConnect, pkt, end, ctx); break;
+		case WireMessageType_WireSetAttribs: _pkt_WireSetAttribs_write(&data->wireSetAttribs, pkt, end, ctx); break;
+		case WireMessageType_WireRoomSpawn: _pkt_WireRoomSpawn_write(&data->wireRoomSpawn, pkt, end, ctx); break;
+		case WireMessageType_WireRoomJoin: _pkt_WireRoomJoin_write(&data->wireRoomJoin, pkt, end, ctx); break;
+		case WireMessageType_WireSessionAllocResp: _pkt_WireSessionAllocResp_write(&data->wireSessionAllocResp, pkt, end, ctx); break;
+		case WireMessageType_WireRoomCloseNotify: _pkt_WireRoomCloseNotify_write(&data->wireRoomCloseNotify, pkt, end, ctx); break;
+		default: uprintf("Invalid value for enum `WireMessageType`\n"); longjmp(fail, 1);
 	}
 }

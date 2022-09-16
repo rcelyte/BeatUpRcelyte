@@ -15,7 +15,7 @@ OBJS := $(FILES:%=$(OBJDIR)/%.o) $(HTMLS:%=$(OBJDIR)/%.s) $(LIBS:%=$(OBJDIR)/%)
 DEPS := $(FILES:%=$(OBJDIR)/%.d)
 
 CFLAGS := -g -std=gnu2x -Imbedtls/include -Wall -Wextra -Werror -pedantic-errors -DFORCE_MASSIVE_LOBBIES
-LDFLAGS := -O2 -Wl,--gc-sections,--fatal-warnings
+LDFLAGS := -O2 -Wl,--gc-sections,--fatal-warnings -z noexecstack
 
 sinclude makefile.user
 
@@ -33,7 +33,7 @@ beatupserver.%: $(OBJS)
 	@echo "[cc $@]"
 	$(CC) $(OBJS) $(LDFLAGS) -o "$@"
 
-$(OBJDIR)/%.c.o: %.c src/packets.h $(OBJDIR)/libs.mk mbedtls/.git makefile
+$(OBJDIR)/%.c.o: %.c src/packets.gen.h $(OBJDIR)/libs.mk mbedtls/.git makefile
 	@echo "[cc $(notdir $@)]"
 	@mkdir -p "$(@D)"
 	$(CC) $(CFLAGS) -c "$<" -o "$@" -MMD -MP
@@ -71,9 +71,9 @@ $(OBJDIR)/libs.mk: makefile
 	#endif
 	EOF
 
-src/packets.h: src/packets.txt .obj/gen.$(HOST) makefile
+src/packets.gen.h: src/packets.txt src/instance/wire.txt .obj/gen.$(HOST) makefile
 	@echo "[gen $(notdir $@)]"
-	./.obj/gen.$(HOST) "$<" "$@" src/packets.c
+	./.obj/gen.$(HOST) "$<" "$@" src/packets.gen.c.h
 
 .obj/gen.$(HOST): gen.c
 	@echo "[cc $(notdir $@)]"

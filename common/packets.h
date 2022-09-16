@@ -1,3 +1,5 @@
+#pragma once
+
 #define pkt_serialize(data, pkt, end, version) ( \
 	pkt_write_c(pkt, end, version, SerializeHeader, { \
 		.length = pkt_write(data, &(uint8_t*){*(pkt)}, end, version), \

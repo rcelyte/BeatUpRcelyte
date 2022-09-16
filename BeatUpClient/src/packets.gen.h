@@ -2,7 +2,6 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include "packets.h.h"
 typedef uint32_t BeatmapDifficulty;
 enum {
 	BeatmapDifficulty_Easy,
@@ -79,6 +78,12 @@ enum {
 		default: return "???";
 	}
 }
+struct PacketContext {
+	uint8_t netVersion;
+	uint8_t protocolVersion;
+	uint8_t beatUpVersion;
+	uint32_t windowSize;
+};
 struct ByteArrayNetSerializable {
 	uint32_t length;
 	uint8_t data[8192];
@@ -177,12 +182,6 @@ struct ModConnectHeader {
 struct ServerConnectInfo_Prefixed {
 	struct String name;
 	struct ServerConnectInfo base;
-};
-struct PacketContext {
-	uint8_t netVersion;
-	uint8_t protocolVersion;
-	uint8_t beatUpVersion;
-	uint32_t windowSize;
 };
 static const struct PacketContext PV_LEGACY_DEFAULT = {
 	.netVersion = 11,

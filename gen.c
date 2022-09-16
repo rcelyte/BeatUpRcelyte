@@ -490,8 +490,8 @@ static void gen_header_reflect(char **out, struct Token *token) {
 	fail("invalid token sequence");
 }
 
-static void gen_header(char **out, const char *headerName) {
-	write_fmt(out, "#pragma once\n#include <stddef.h>\n#include <stdint.h>\n#include <stdbool.h>\n#include \"%s.h\"\n", headerName);
+static void gen_header(char **out) {
+	write_fmt(out, "#pragma once\n#include <stddef.h>\n#include <stdint.h>\n#include <stdbool.h>\n");
 	TOKEN_LOOP(token) {
 		case TType_Enum_start: {
 			gen_header_enum(out, token);
@@ -651,9 +651,7 @@ static void gen_source_rdwr(char **out, struct Token *token, bool wr, bool stati
 	fail("invalid token sequence");
 }
 
-static void gen_source(char **out, const char *headerName, const char *sourceName) {
-	write_fmt(out, "#include \"%s\"\n", headerName);
-	write_fmt(out, "#include \"%s.h\"\n", sourceName);
+static void gen_source(char **out) {
 	TOKEN_LOOP(token) {
 		case TType_Struct_start: {
 			if(token->struct_.recvIntern)
@@ -675,8 +673,8 @@ int32_t main(int32_t argc, const char *argv[]) {
 		uprintf("Usage: %s <definition.txt> <output.h> <output.c> [-l]", argv[0]);
 		return -1;
 	}
-	parse_file(argv[1]);
 	parse("n PacketContext\n\tu8 netVersion\n\tu8 protocolVersion\n\tu8 beatUpVersion\n\tu32 windowSize\n", NULL, 0);
+	parse_file(argv[1]);
 	resolve();
 	const char *headerName = argv[2], *sourceName = argv[3];
 	for(const char *it = headerName; *it;)
@@ -686,9 +684,9 @@ int32_t main(int32_t argc, const char *argv[]) {
 		if(*it++ == '/')
 			sourceName = it;
 	char output_h[524288], *output_h_end = output_h;
-	gen_header(&output_h_end, headerName);
+	gen_header(&output_h_end);
 	char output_c[524288], *output_c_end = output_c;
-	gen_source(&output_c_end, headerName, sourceName);
+	gen_source(&output_c_end);
 
 	filename = argv[2];
 	FILE *outfile = fopen(argv[2], "wb");

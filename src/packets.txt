@@ -1120,3 +1120,5 @@ d PacketEncryptionLayer
 	if(.encrypted == 1)
 		u32 sequenceId
 		u8 iv[16]
+
+@include instance/wire.txt

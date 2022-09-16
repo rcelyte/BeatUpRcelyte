@@ -2,7 +2,6 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include "packets.h.h"
 typedef uint32_t BeatmapDifficulty;
 enum {
 	BeatmapDifficulty_Easy,
@@ -1014,6 +1013,32 @@ enum {
 		default: return "???";
 	}
 }
+typedef uint8_t WireMessageType;
+enum {
+	WireMessageType_WireConnect,
+	WireMessageType_WireSetAttribs,
+	WireMessageType_WireRoomSpawn,
+	WireMessageType_WireRoomJoin,
+	WireMessageType_WireSessionAllocResp,
+	WireMessageType_WireRoomCloseNotify,
+};
+[[maybe_unused]] static const char *_reflect_WireMessageType(WireMessageType value) {
+	switch(value) {
+		case WireMessageType_WireConnect: return "WireConnect";
+		case WireMessageType_WireSetAttribs: return "WireSetAttribs";
+		case WireMessageType_WireRoomSpawn: return "WireRoomSpawn";
+		case WireMessageType_WireRoomJoin: return "WireRoomJoin";
+		case WireMessageType_WireSessionAllocResp: return "WireSessionAllocResp";
+		case WireMessageType_WireRoomCloseNotify: return "WireRoomCloseNotify";
+		default: return "???";
+	}
+}
+struct PacketContext {
+	uint8_t netVersion;
+	uint8_t protocolVersion;
+	uint8_t beatUpVersion;
+	uint32_t windowSize;
+};
 struct ByteArrayNetSerializable {
 	uint32_t length;
 	uint8_t data[8192];
@@ -2092,11 +2117,57 @@ struct PacketEncryptionLayer {
 	uint32_t sequenceId;
 	uint8_t iv[16];
 };
-struct PacketContext {
-	uint8_t netVersion;
-	uint8_t protocolVersion;
-	uint8_t beatUpVersion;
-	uint32_t windowSize;
+struct WireAddress {
+	uint32_t length;
+	uint8_t data[128];
+};
+struct WireSetAttribs {
+	uint32_t capacity;
+};
+struct WireConnect {
+	uint32_t protocol;
+	struct WireSetAttribs attribs;
+};
+struct WireSessionAlloc {
+	uint32_t cookie;
+	uint32_t room;
+	struct WireAddress address;
+	struct String secret;
+	struct String userId;
+	struct String userName;
+	uint8_t random[32];
+	struct ByteArrayNetSerializable publicKey;
+	struct PacketContext version;
+};
+struct WireSessionAllocResp {
+	uint32_t requestCookie;
+	ConnectToServerResponse_Result result;
+	uint8_t random[32];
+	struct ByteArrayNetSerializable publicKey;
+	struct GameplayServerConfiguration configuration;
+	struct String managerId;
+	struct IPEndPoint endPoint;
+};
+struct WireRoomSpawn {
+	struct WireSessionAlloc base;
+	struct GameplayServerConfiguration configuration;
+};
+struct WireRoomJoin {
+	struct WireSessionAlloc base;
+};
+struct WireRoomCloseNotify {
+	uint32_t room;
+};
+struct WireMessage {
+	WireMessageType type;
+	union {
+		struct WireConnect wireConnect;
+		struct WireSetAttribs wireSetAttribs;
+		struct WireRoomSpawn wireRoomSpawn;
+		struct WireRoomJoin wireRoomJoin;
+		struct WireSessionAllocResp wireSessionAllocResp;
+		struct WireRoomCloseNotify wireRoomCloseNotify;
+	};
 };
 static const struct PacketContext PV_LEGACY_DEFAULT = {
 	.netVersion = 11,
@@ -2133,12 +2204,14 @@ void _pkt_NetPacketHeader_read(struct NetPacketHeader *restrict data, const uint
 void _pkt_NetPacketHeader_write(const struct NetPacketHeader *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 void _pkt_PacketEncryptionLayer_read(struct PacketEncryptionLayer *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 void _pkt_PacketEncryptionLayer_write(const struct PacketEncryptionLayer *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
+void _pkt_WireMessage_read(struct WireMessage *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
+void _pkt_WireMessage_write(const struct WireMessage *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 #define reflect(type, value) _reflect_##type(value)
 typedef void (*PacketWriteFunc)(const void *restrict, uint8_t**, const uint8_t*, struct PacketContext);
 typedef void (*PacketReadFunc)(void *restrict, const uint8_t**, const uint8_t*, struct PacketContext);
 size_t _pkt_try_read(PacketReadFunc inner, void *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 size_t _pkt_try_write(PacketWriteFunc inner, const void *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 #define pkt_write_c(pkt, end, ctx, type, ...) _pkt_try_write((PacketWriteFunc)_pkt_##type##_write, &(struct type)__VA_ARGS__, pkt, end, ctx)
-#define pkt_read(data, ...) _pkt_try_read((PacketReadFunc)_Generic(*(data), struct BeatUpMessage: _pkt_BeatUpMessage_read, struct ServerConnectInfo: _pkt_ServerConnectInfo_read, struct ModConnectHeader: _pkt_ModConnectHeader_read, struct InternalMessage: _pkt_InternalMessage_read, struct RoutingHeader: _pkt_RoutingHeader_read, struct MasterServerReliableRequestProxy: _pkt_MasterServerReliableRequestProxy_read, struct UserMessage: _pkt_UserMessage_read, struct HandshakeMessage: _pkt_HandshakeMessage_read, struct SerializeHeader: _pkt_SerializeHeader_read, struct FragmentedHeader: _pkt_FragmentedHeader_read, struct UnconnectedMessage: _pkt_UnconnectedMessage_read, struct MergedHeader: _pkt_MergedHeader_read, struct NetPacketHeader: _pkt_NetPacketHeader_read, struct PacketEncryptionLayer: _pkt_PacketEncryptionLayer_read), data, __VA_ARGS__)
-#define pkt_write(data, ...) _pkt_try_write((PacketWriteFunc)_Generic(*(data), struct BeatUpMessage: _pkt_BeatUpMessage_write, struct ServerConnectInfo: _pkt_ServerConnectInfo_write, struct ModConnectHeader: _pkt_ModConnectHeader_write, struct InternalMessage: _pkt_InternalMessage_write, struct RoutingHeader: _pkt_RoutingHeader_write, struct MessageReceivedAcknowledgeProxy: _pkt_MessageReceivedAcknowledgeProxy_write, struct MultipartMessageProxy: _pkt_MultipartMessageProxy_write, struct UserMessage: _pkt_UserMessage_write, struct HandshakeMessage: _pkt_HandshakeMessage_write, struct SerializeHeader: _pkt_SerializeHeader_write, struct FragmentedHeader: _pkt_FragmentedHeader_write, struct UnconnectedMessage: _pkt_UnconnectedMessage_write, struct MergedHeader: _pkt_MergedHeader_write, struct NetPacketHeader: _pkt_NetPacketHeader_write, struct PacketEncryptionLayer: _pkt_PacketEncryptionLayer_write), data, __VA_ARGS__)
+#define pkt_read(data, ...) _pkt_try_read((PacketReadFunc)_Generic(*(data), struct BeatUpMessage: _pkt_BeatUpMessage_read, struct ServerConnectInfo: _pkt_ServerConnectInfo_read, struct ModConnectHeader: _pkt_ModConnectHeader_read, struct InternalMessage: _pkt_InternalMessage_read, struct RoutingHeader: _pkt_RoutingHeader_read, struct MasterServerReliableRequestProxy: _pkt_MasterServerReliableRequestProxy_read, struct UserMessage: _pkt_UserMessage_read, struct HandshakeMessage: _pkt_HandshakeMessage_read, struct SerializeHeader: _pkt_SerializeHeader_read, struct FragmentedHeader: _pkt_FragmentedHeader_read, struct UnconnectedMessage: _pkt_UnconnectedMessage_read, struct MergedHeader: _pkt_MergedHeader_read, struct NetPacketHeader: _pkt_NetPacketHeader_read, struct PacketEncryptionLayer: _pkt_PacketEncryptionLayer_read, struct WireMessage: _pkt_WireMessage_read), data, __VA_ARGS__)
+#define pkt_write(data, ...) _pkt_try_write((PacketWriteFunc)_Generic(*(data), struct BeatUpMessage: _pkt_BeatUpMessage_write, struct ServerConnectInfo: _pkt_ServerConnectInfo_write, struct ModConnectHeader: _pkt_ModConnectHeader_write, struct InternalMessage: _pkt_InternalMessage_write, struct RoutingHeader: _pkt_RoutingHeader_write, struct MessageReceivedAcknowledgeProxy: _pkt_MessageReceivedAcknowledgeProxy_write, struct MultipartMessageProxy: _pkt_MultipartMessageProxy_write, struct UserMessage: _pkt_UserMessage_write, struct HandshakeMessage: _pkt_HandshakeMessage_write, struct SerializeHeader: _pkt_SerializeHeader_write, struct FragmentedHeader: _pkt_FragmentedHeader_write, struct UnconnectedMessage: _pkt_UnconnectedMessage_write, struct MergedHeader: _pkt_MergedHeader_write, struct NetPacketHeader: _pkt_NetPacketHeader_write, struct PacketEncryptionLayer: _pkt_PacketEncryptionLayer_write, struct WireMessage: _pkt_WireMessage_write), data, __VA_ARGS__)
 size_t pkt_write_bytes(const uint8_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx, size_t count);

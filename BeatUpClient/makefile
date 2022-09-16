@@ -31,19 +31,19 @@ libBeatUpClient.so: $(OBJS) | ndk
 	@echo "[cxx $@]"
 	$(CXX) $(LDFLAGS) $^ -o $@
 
-$(OBJDIR)/%.c.o: %.c src/packets.h makefile | ndk
+$(OBJDIR)/%.c.o: %.c src/packets.gen.h makefile | ndk
 	@echo "[cc $(notdir $@)]"
 	@mkdir -p "$(@D)"
 	$(CC) $(CFLAGS) -c "$<" -o "$@" -MMD -MP
 
-$(OBJDIR)/%.cpp.o: %.cpp src/packets.h extern makefile | ndk
+$(OBJDIR)/%.cpp.o: %.cpp src/packets.gen.h extern makefile | ndk
 	@echo "[cxx $(notdir $@)]"
 	@mkdir -p "$(@D)"
 	$(CXX) $(CXXFLAGS) -c "$<" -o "$@" -MMD -MP
 
-src/packets.h: src/packets.txt ../.obj/gen.$(HOST) makefile
+src/packets.gen.h: src/packets.txt ../.obj/gen.$(HOST) makefile
 	@echo "[gen $(notdir $@)]"
-	../.obj/gen.$(HOST) "$<" "$@" src/packets.c
+	../.obj/gen.$(HOST) "$<" "$@" src/packets.gen.c.h
 
 ../.obj/gen.$(HOST): ../gen.c
 	$(MAKE) -C .. .obj/gen.$(HOST)
