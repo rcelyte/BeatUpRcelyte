@@ -842,6 +842,9 @@ d RoutingHeader
 	u8 remoteConnectionId
 	u8 connectionId:7
 	b encrypted:1
+r BTRoutingHeader
+	u8 remoteConnectionId
+	u8 connectionId
 n BaseMasterServerReliableRequest
 	u32 requestId
 r MasterServerReliableRequestProxy
@@ -1121,4 +1124,4 @@ d PacketEncryptionLayer
 		u32 sequenceId
 		u8 iv[16]
 
-@include instance/wire.txt
+@include wire.txt

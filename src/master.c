@@ -1,8 +1,6 @@
 #include "global.h"
 #include "instance/instance.h"
-#include "thread.h"
 #include "pool.h"
-#include "scramble.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -53,10 +51,16 @@ struct Context {
 	struct MasterSession *sessionList;
 };
 
-static struct NetSession *master_onResolve(struct Context *ctx, struct SS addr, void**) {
-	struct MasterSession *session = ctx->sessionList;
-	for(; session; session = session->next)
+static struct MasterSession *master_lookup_session(struct Context *ctx, struct SS addr) {
+	for(struct MasterSession *session = ctx->sessionList; session; session = session->next)
 		if(addrs_are_equal(&addr, NetSession_get_addr(&session->net)))
+			return session;
+	return NULL;
+}
+
+static struct NetSession *master_onResolve(struct Context *ctx, struct SS addr, void**) {
+	struct MasterSession *session = master_lookup_session(ctx, addr);
+	if(session)
 			return &session->net;
 	session = malloc(sizeof(struct MasterSession));
 	if(!session) {
@@ -415,114 +419,192 @@ static void handle_AuthenticateUserRequest(struct Context *ctx, struct MasterSes
 	return out;
 }*/
 
-static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSession *session, const struct ConnectToServerRequest *req) {
-	master_send_ack(ctx, session, MessageType_UserMessage, req->base.base.requestId);
-	// TODO: do we need to deduplicate this request?
+typedef uint8_t MasterCookieType;
+enum {
+	MasterCookieType_INVALID,
+	MasterCookieType_ConnectToServer,
+};
+
+struct ConnectToServerCookie {
+	MasterCookieType cookieType;
+	struct SS addr;
+	struct BaseMasterServerReliableRequest request;
+	uint32_t room;
+	struct String secret;
+	struct BeatmapLevelSelectionMask selectionMask;
+};
+
+static void handle_WireSessionAllocResp(struct Context *ctx, struct PoolHost *host, uint32_t cookie, const struct WireSessionAllocResp *sessionAlloc, bool spawn) {
+	const struct ConnectToServerCookie *state = wire_getCookie(&ctx->net, cookie);
+	if(state == NULL || state->cookieType != MasterCookieType_ConnectToServer) {
+		uprintf("Connect to Server Error: Malformed wire cookie\n");
+		return;
+	}
+
+	struct MasterSession *session = master_lookup_session(ctx, state->addr);
+	struct UserMessage r_conn = {
+		.type = UserMessageType_ConnectToServerResponse,
+		.connectToServerResponse = {
+			.base = {
+				.requestId = session ? master_getNextRequestId(session) : 0,
+				.responseId = state->request.requestId,
+			},
+			.result = sessionAlloc ? sessionAlloc->result : ConnectToServerResponse_Result_UnknownError,
+		},
+	};
+
+	if(r_conn.connectToServerResponse.result == ConnectToServerResponse_Result_Success) {
+		r_conn.connectToServerResponse.code = pool_handle_code(host, state->room);
+		r_conn.connectToServerResponse.userId.isNull = false;
+		r_conn.connectToServerResponse.userId.length = sprintf(r_conn.connectToServerResponse.userId.data, "beatupserver:%08x", rand()); // TODO: use meaningful id here
+		r_conn.connectToServerResponse.userName.length = 0;
+		r_conn.connectToServerResponse.secret = state->secret;
+		r_conn.connectToServerResponse.selectionMask = state->selectionMask;
+		r_conn.connectToServerResponse.isConnectionOwner = true;
+		r_conn.connectToServerResponse.isDedicatedServer = true;
+		r_conn.connectToServerResponse.remoteEndPoint = sessionAlloc->endPoint;
+		memcpy(r_conn.connectToServerResponse.random, sessionAlloc->random, sizeof(sessionAlloc->random));
+		r_conn.connectToServerResponse.publicKey = sessionAlloc->publicKey;
+		r_conn.connectToServerResponse.configuration = sessionAlloc->configuration;
+		r_conn.connectToServerResponse.managerId = sessionAlloc->managerId;
+		char scode[8];
+		uprintf("Sending player to room `%s`\n", ServerCodeToString(scode, r_conn.connectToServerResponse.code));
+	} else if(spawn) {
+		pool_handle_free(host, state->room);
+	}
+
+	uint8_t resp[65536], *resp_end = resp;
+	if(session && MASTER_SERIALIZE(&r_conn, &resp_end, endof(resp)))
+		master_send(&ctx->net, session, MessageType_UserMessage, resp, resp_end, true);
+}
+
+static void master_onWireMessage(struct Context *ctx, union WireLink *link, const struct WireMessage *message) {
+	struct PoolHost *host = pool_host_lookup(link);
+	if(!host) {
+		uprintf("pool_host_lookup() failed\n"); // If we hit this, something went horribly wrong
+		if(message) {
+			wire_disconnect(&ctx->net, link);
+		} else {
+			for(uint32_t cookie = 0; (cookie = wire_nextCookie(&ctx->net, cookie));)
+				wire_releaseCookie(&ctx->net, cookie);
+		}
+		return;
+	}
+	if(!message) {
+		for(uint32_t cookie = 0; (cookie = wire_nextCookie(&ctx->net, cookie));) {
+			if(cookie == MasterCookieType_ConnectToServer) // TODO: retry with a different instance if any are still alive
+				handle_WireSessionAllocResp(ctx, host, cookie, NULL, false);
+			wire_releaseCookie(&ctx->net, cookie);
+		}
+		pool_host_detach(host);
+		return;
+	}
+	switch(message->type) {
+		case WireMessageType_WireSetAttribs: TEMPpool_host_setAttribs(host, message->setAttribs.capacity, message->setAttribs.discover); break;
+		case WireMessageType_WireRoomSpawnResp: handle_WireSessionAllocResp(ctx, host, message->cookie, &message->roomSpawnResp.base, true); break;
+		case WireMessageType_WireRoomJoinResp: handle_WireSessionAllocResp(ctx, host, message->cookie, &message->roomJoinResp.base, false); break;
+		case WireMessageType_WireRoomCloseNotify: pool_handle_free(host, message->roomCloseNotify.room); break;
+		default: uprintf("UNHANDLED WIRE MESSAGE [%s]\n", reflect(WireMessageType, message->type));
+	}
+	wire_releaseCookie(&ctx->net, message->cookie);
+}
+
+// TODO: more consistent naming
+static void SendConnectError(struct Context *ctx, struct MasterSession *session, struct BaseMasterServerReliableRequest request, ConnectToServerResponse_Result result) {
 	struct UserMessage r_conn = {
 		.type = UserMessageType_ConnectToServerResponse,
 		.connectToServerResponse = {
 			.base = {
 				.requestId = master_getNextRequestId(session),
-				.responseId = req->base.base.requestId,
+				.responseId = request.requestId,
 			},
-			.result = ConnectToServerResponse_Result_UnknownError,
+			.result = result,
 		},
 	};
-	if(req->configuration.maxPlayerCount >= 127) { // connection IDs are 7 bits, with ID `127` reserved for broadcast packets and `0` for local
-		uprintf("Connect to Server Error: Invalid maxPlayerCount %u >= 127\n", req->configuration.maxPlayerCount);
-		r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_InvalidCode;
-		goto send;
-	}
-	struct String managerId = req->base.userId;
-	struct SS addr = *NetSession_get_addr(&session->net);
-	struct NetSession *isession;
 
-	struct RoomHandle room;
-	struct WireRoomHandle handle;
-	if(req->code == StringToServerCode(NULL, 0)) {
-		if(!req->secret.length) {
-			uprintf("Connect to Server Error: Quickplay not supported\n");
-			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers; // Quick Play not yet available
-			goto send;
-		}
-		if(session->net.version.protocolVersion >= 9) {
-			uprintf("Connect to Server Error: Game version too new\n");
-			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_VersionMismatch;
-			goto send;
-		}
-		r_conn.connectToServerResponse.configuration = req->configuration;
-		#ifdef FORCE_MASSIVE_LOBBIES
-		r_conn.connectToServerResponse.configuration.maxPlayerCount = 126;
-		r_conn.connectToServerResponse.configuration.songSelectionMode = SongSelectionMode_Vote;
-		#endif
-		if(pool_request_room(&room, &handle, r_conn.connectToServerResponse.configuration)) {
-			uprintf("Connect to Server Error: Room allocation failed\n");
-			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers;
-			goto send;
-		}
-		r_conn.connectToServerResponse.code = pool_room_code(room);
-	} else {
-		if(pool_find_room(req->code, &room, &handle)) {
-			uprintf("Connect to Server Error: Room code does not exist\n");
-			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_InvalidCode;
-			goto send;
-		}
-		managerId = wire_room_get_managerId(handle);
-		r_conn.connectToServerResponse.configuration = wire_room_get_configuration(handle);
-
-		if(wire_room_get_protocol(handle).protocolVersion != session->net.version.protocolVersion) {
-			uprintf("Connect to Server Error: Version mismatch\n");
-			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_VersionMismatch;
-			goto send;
-		}
-		r_conn.connectToServerResponse.code = req->code;
-	}
-	/*struct BitMask128 customs = get_mask("custom_levelpack_CustomLevels");
-	req->selectionMask.songPacks.bloomFilter.d0 |= customs.d0;
-	req->selectionMask.songPacks.bloomFilter.d1 |= customs.d1;*/
-	{
-		isession = TEMPwire_room_resolve_session(handle, addr, req->secret, req->base.userId, req->base.userName, session->net.version);
-		if(!isession) { // TODO: the room should close implicitly if the first user to connect fails
-			uprintf("Connect to Server Error: Session allocation failed\n");
-			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_UnknownError;
-			goto send;
-		}
-		struct NetContext *net = TEMPwire_block_get_net(handle.block);
-		net_lock(net);
-		memcpy(isession->clientRandom, req->base.random, 32);
-		memcpy(r_conn.connectToServerResponse.random, NetKeypair_get_random(&isession->keys), 32);
-		r_conn.connectToServerResponse.publicKey.length = sizeof(r_conn.connectToServerResponse.publicKey.data);
-		if(NetKeypair_write_key(&isession->keys, net, r_conn.connectToServerResponse.publicKey.data, &r_conn.connectToServerResponse.publicKey.length)) {
-			net_unlock(net);
-			uprintf("Connect to Server Error: NetKeypair_write_key() failed\n");
-			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_UnknownError;
-			goto send;
-		}
-		if(NetSession_set_clientPublicKey(isession, net, &req->base.publicKey)) {
-			net_unlock(net);
-			uprintf("Connect to Server Error: NetSession_set_clientPublicKey() failed\n");
-			r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_UnknownError;
-			goto send;
-		}
-		net_unlock(net);
-		r_conn.connectToServerResponse.userId.isNull = false;
-		r_conn.connectToServerResponse.userId.length = sprintf(r_conn.connectToServerResponse.userId.data, "beatupserver:%08x", rand()); // TODO: use meaningful id here once wire instances are implemented
-		r_conn.connectToServerResponse.userName.length = 0;
-		r_conn.connectToServerResponse.secret = req->secret;
-		r_conn.connectToServerResponse.selectionMask = req->selectionMask;
-		r_conn.connectToServerResponse.isConnectionOwner = true;
-		r_conn.connectToServerResponse.isDedicatedServer = true;
-		r_conn.connectToServerResponse.remoteEndPoint = wire_block_get_endpoint(handle.block, addr.ss.ss_family != AF_INET6 || memcmp(addr.in6.sin6_addr.s6_addr, (const uint8_t[]){0,0,0,0,0,0,0,0,0,0,255,255}, 12) == 0);
-		r_conn.connectToServerResponse.managerId = managerId;
-		r_conn.connectToServerResponse.result = ConnectToServerResponse_Result_Success;
-		char scode[8];
-		uprintf("Sending player to room `%s`\n", ServerCodeToString(scode, r_conn.connectToServerResponse.code));
-	}
-	send:;
 	uint8_t resp[65536], *resp_end = resp;
 	if(!MASTER_SERIALIZE(&r_conn, &resp_end, endof(resp)))
 		return;
 	master_send(&ctx->net, session, MessageType_UserMessage, resp, resp_end, true);
+}
+
+static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSession *session, const struct ConnectToServerRequest *req) {
+	master_send_ack(ctx, session, MessageType_UserMessage, req->base.base.requestId);
+	// TODO: do we need to deduplicate this request?
+	struct ConnectToServerCookie state = {
+		.cookieType = MasterCookieType_ConnectToServer,
+		.addr = *NetSession_get_addr(&session->net),
+		.request = req->base.base,
+		.room = ~0u,
+		.secret = req->secret,
+		.selectionMask = req->selectionMask,
+	};
+	if(session->net.version.protocolVersion >= 9) {
+		uprintf("Connect to Server Error: Game version too new\n");
+		SendConnectError(ctx, session, state.request, ConnectToServerResponse_Result_VersionMismatch);
+		return;
+	}
+	if(req->configuration.maxPlayerCount >= 254) { // connection IDs are 8 bits (7 if passthrough encryption is used), with ID `127` reserved for broadcast packets and `0` for local
+		uprintf("Connect to Server Error: Invalid maxPlayerCount %u >= 254\n", req->configuration.maxPlayerCount);
+		SendConnectError(ctx, session, state.request, ConnectToServerResponse_Result_InvalidCode);
+		return;
+	}
+	struct WireSessionAlloc sessionAllocData = {
+		.address.length = state.addr.len,
+		.secret = req->secret,
+		.userId = req->base.userId,
+		.userName = req->base.userName,
+		.publicKey = req->base.publicKey,
+		.version = session->net.version,
+	};
+	memcpy(sessionAllocData.address.data, &state.addr.ss, state.addr.len);
+	memcpy(sessionAllocData.random, req->base.random, sizeof(sessionAllocData.random));
+	uint32_t cookie;
+	bool failed;
+	if(req->code == ServerCode_NONE) {
+		if(!req->secret.length) {
+			uprintf("Connect to Server Error: Quickplay not supported\n");
+			SendConnectError(ctx, session, state.request, ConnectToServerResponse_Result_NoAvailableDedicatedServers); // Quick Play not yet available
+			return;
+		}
+		struct PoolHost *host = pool_handle_new(&state.room, false);
+		if(!host) {
+			uprintf("Connect to Server Error: pool_handle_new() failed\n");
+			SendConnectError(ctx, session, state.request, ConnectToServerResponse_Result_NoAvailableDedicatedServers);
+			return;
+		}
+		sessionAllocData.room = state.room;
+		cookie = wire_reserveCookie(&ctx->net, &state, sizeof(state));
+		failed = wire_send(&ctx->net, pool_host_wire(host), &(struct WireMessage){
+			.type = WireMessageType_WireRoomSpawn,
+			.cookie = cookie,
+			.roomSpawn = {
+				.base = sessionAllocData,
+				.configuration = req->configuration,
+			},
+		});
+	} else {
+		struct PoolHost *host = pool_handle_lookup(&state.room, req->code);
+		if(!host) {
+			uprintf("Connect to Server Error: Room code does not exist\n");
+			SendConnectError(ctx, session, state.request, ConnectToServerResponse_Result_InvalidCode);
+			return;
+		}
+		sessionAllocData.room = state.room;
+		cookie = wire_reserveCookie(&ctx->net, &state, sizeof(state));
+		failed = wire_send(&ctx->net, pool_host_wire(host), &(struct WireMessage){
+			.type = WireMessageType_WireRoomJoin,
+			.cookie = cookie,
+			.roomJoin.base = sessionAllocData,
+		});
+	}
+	if(failed) {
+		wire_releaseCookie(&ctx->net, cookie);
+		SendConnectError(ctx, session, state.request, ConnectToServerResponse_Result_UnknownError);
+	}
+	/*struct BitMask128 customs = get_mask("custom_levelpack_CustomLevels");
+	req->selectionMask.songPacks.bloomFilter.d0 |= customs.d0;
+	req->selectionMask.songPacks.bloomFilter.d1 |= customs.d1;*/
 }
 
 static void handle_packet(struct Context *ctx, struct MasterSession *session, struct UnconnectedMessage message, const uint8_t *data, const uint8_t *end);
@@ -632,7 +714,7 @@ static void handle_packet(struct Context *ctx, struct MasterSession *session, st
 	}
 }
 
-thread_return_t master_handler(struct Context *ctx) {
+static void *master_handler(struct Context *ctx) {
 	net_lock(&ctx->net);
 	uprintf("Started\n");
 	uint8_t buf[262144];
@@ -654,42 +736,53 @@ thread_return_t master_handler(struct Context *ctx) {
 	return 0;
 }
 
-static thread_t master_thread = 0;
-static struct Context ctx = {{.sockfd = -1}, NULL, NULL, NULL};
-bool master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_context *key, uint16_t port) {
-	{
-		uint_fast8_t count = 0;
-		for(const mbedtls_x509_crt *it = cert; it; it = it->MBEDTLS_PRIVATE(next), ++count) {
-			if(it->MBEDTLS_PRIVATE(raw).MBEDTLS_PRIVATE(len) > 4096) {
-				uprintf("Host certificate too large\n");
-				return 1;
-			}
+static void master_onWireLink(struct Context*, union WireLink *link) {
+	struct PoolHost *host = pool_host_attach((union WireLink*)link);
+	if(!host)
+		uprintf("TEMPwire_attach_local() failed\n");
+}
+
+static pthread_t master_thread = NET_THREAD_INVALID;
+static struct Context ctx = {CLEAR_NETCONTEXT, NULL, NULL, NULL}; // TODO: This "singleton" can't actually scale up due to the pool API no longer being threadsafe
+struct NetContext *master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_context *key, uint16_t port) {
+	if(net_init(&ctx.net, port)) {
+		uprintf("net_init() failed\n");
+		return NULL;
+	}
+	uint_fast8_t count = 0;
+	for(const mbedtls_x509_crt *it = cert; it; it = it->MBEDTLS_PRIVATE(next), ++count) {
+		if(it->MBEDTLS_PRIVATE(raw).MBEDTLS_PRIVATE(len) > 4096) {
+			uprintf("Host certificate too large\n");
+			return NULL;
 		}
-		if(count > lengthof(((struct ServerCertificateRequest*)NULL)->certificateList)) {
-			uprintf("Host certificate chain too long\n");
-			return 1;
-		}
+	}
+	if(count > lengthof(((struct ServerCertificateRequest*)NULL)->certificateList)) {
+		uprintf("Host certificate chain too long\n");
+		return NULL;
 	}
 	ctx.cert = cert;
 	ctx.key = key;
-	if(net_init(&ctx.net, port)) {
-		uprintf("net_init() failed\n");
-		return 1;
+	ctx.net.userptr = &ctx;
+	ctx.net.onResolve = (struct NetSession *(*)(void*, struct SS, void**))master_onResolve;
+	ctx.net.onResend = (void (*)(void*, uint32_t, uint32_t*))master_onResend;
+	ctx.net.onWireLink = (void (*)(void*, union WireLink*))master_onWireLink;
+	ctx.net.onWireMessage = (void (*)(void*, union WireLink*, const struct WireMessage*))master_onWireMessage;
+	if(pthread_create(&master_thread, NULL, (void *(*)(void*))master_handler, &ctx)) {
+		master_thread = NET_THREAD_INVALID;
+		return NULL;
 	}
-	ctx.net.user = &ctx;
-	ctx.net.onResolve = master_onResolve;
-	ctx.net.onResend = master_onResend;
-	return thread_create(&master_thread, master_handler, &ctx);
+	return &ctx.net;
 }
 
 void master_cleanup() {
-	if(master_thread) {
+	if(master_thread != NET_THREAD_INVALID) {
 		net_stop(&ctx.net);
 		uprintf("Stopping\n");
-		thread_join(master_thread);
-		master_thread = 0;
+		pthread_join(master_thread, NULL);
+		master_thread = NET_THREAD_INVALID;
+		while(ctx.sessionList)
+			ctx.sessionList = master_disconnect(ctx.sessionList);
 	}
-	while(ctx.sessionList)
-		ctx.sessionList = master_disconnect(ctx.sessionList);
+	pool_reset(&ctx.net);
 	net_cleanup(&ctx.net);
 }

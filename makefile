@@ -15,7 +15,7 @@ OBJS := $(FILES:%=$(OBJDIR)/%.o) $(HTMLS:%=$(OBJDIR)/%.s) $(LIBS:%=$(OBJDIR)/%)
 DEPS := $(FILES:%=$(OBJDIR)/%.d)
 
 CFLAGS := -g -std=gnu2x -Imbedtls/include -Wall -Wextra -Werror -pedantic-errors -DFORCE_MASSIVE_LOBBIES
-LDFLAGS := -O2 -Wl,--gc-sections,--fatal-warnings -z noexecstack
+LDFLAGS := -O2 -Wl,--gc-sections,--fatal-warnings
 
 sinclude makefile.user
 
@@ -38,10 +38,10 @@ $(OBJDIR)/%.c.o: %.c src/packets.gen.h $(OBJDIR)/libs.mk mbedtls/.git makefile
 	@mkdir -p "$(@D)"
 	$(CC) $(CFLAGS) -c "$<" -o "$@" -MMD -MP
 
-$(OBJDIR)/%.html.s: %.html makefile
+$(OBJDIR)/%.html.s: %.html makefile # waiting for `#embed`...
 	@mkdir -p "$(@D)"
 	tr -d '\r\n\t' < "$<" > "$(basename $@)"
-	printf "\t.global $(basename $(notdir $<))_html\n$(basename $(notdir $<))_html:\n\t.incbin \"$(basename $@)\"\n\t.global $(basename $(notdir $<))_html_end\n$(basename $(notdir $<))_html_end:\n" > "$@"
+	printf "\t.global $(basename $(notdir $<))_html\n$(basename $(notdir $<))_html:\n\t.incbin \"$(basename $@)\"\n\t.global $(basename $(notdir $<))_html_end\n$(basename $(notdir $<))_html_end:\n.section \".note.GNU-stack\"\n" > "$@"
 
 $(OBJDIR)/libmbed%.a: mbedtls/.git
 	@echo "[make $(notdir $@)]"
@@ -64,14 +64,14 @@ $(OBJDIR)/libs.mk: makefile
 	LDFLAGS += -pthread
 	#if 0
 	CFLAGS += -fsanitize=address -fno-omit-frame-pointer
-	LDFLAGS := -no-pie -fsanitize=address \$$(LDFLAGS)
+	LDFLAGS := -fsanitize=address -static-libsan \$$(LDFLAGS)
 	#elif 1
 	LDFLAGS := --static \$$(LDFLAGS)
 	#endif
 	#endif
 	EOF
 
-src/packets.gen.h: src/packets.txt src/instance/wire.txt .obj/gen.$(HOST) makefile
+src/packets.gen.h: src/packets.txt src/wire.txt .obj/gen.$(HOST) makefile
 	@echo "[gen $(notdir $@)]"
 	./.obj/gen.$(HOST) "$<" "$@" src/packets.gen.c.h
 

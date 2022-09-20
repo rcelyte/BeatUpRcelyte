@@ -1,124 +1,159 @@
 #include "global.h"
 #include "pool.h"
-#include "scramble.h"
+#include "instance/counter.h"
 #include <stddef.h>
+#include <stdlib.h>
 #include <pthread.h>
 
 #define MAX_SERVER_CODE 62193780
 #define POOL_BLOCK_COUNT ((MAX_SERVER_CODE+256*16) / (256*16))
 
-struct RoomBlockPtr {
-	struct WireBlockHandle handle;
-	uint16_t idle;
-	uint8_t high[16];
+struct PoolHost {
+	union WireLink *link;
+	bool discover;
+	uint16_t capacity;
+	struct Counter64 blocks;
+	ServerCode *codes;
 };
-static struct RoomBlockPtr rooms[POOL_BLOCK_COUNT];
-static uint16_t count = 0, alloc[POOL_BLOCK_COUNT];
-static pthread_mutex_t pool_mutex;
 
-/*static struct RoomHandle RoomHandle_code(ServerCode code) {
-	struct RoomHandle h;
-	h.sub = code & 15;
-	code >>= 4;
-	h.high = code / POOL_BLOCK_COUNT;
-	h.block = code - h.high * POOL_BLOCK_COUNT;
-	return h;
-}*/
+#define CLEAR_POOLHOST (struct PoolHost){NULL, false, 0, {0}, NULL}
 
-static bool pool_reserve_room(ServerCode code) { // DO NOT RESERVE MORE THAN 15 ROOMS
-	struct RoomHandle room;
-	struct WireRoomHandle handle;
-	pool_find_room(code, &room, &handle);
-	if(rooms[room.block].idle == 0xffff)
-		if(wire_request_block(&rooms[room.block].handle, room.block))
-			return 1;
-	rooms[room.block].idle &= ~(1 << room.sub);
-	return 0;
+static uint32_t hosts_len = 0, nextSlot = 0;
+static struct PoolHost *hosts = NULL;
+
+static bool pool_grow(uint32_t newLength) {
+	struct PoolHost *newHosts = realloc(hosts, newLength * sizeof(*hosts));
+	if(!newHosts) {
+		uprintf("realloc error\n");
+		return true;
+	}
+	hosts = newHosts;
+	while(hosts_len < newLength)
+		hosts[hosts_len++] = CLEAR_POOLHOST;
+	return false;
 }
 
-bool pool_init() {
-	if(pthread_mutex_init(&pool_mutex, NULL)) {
-		uprintf("pthread_mutex_init() failed\n");
-		return 1;
-	}
-	for(uint32_t i = 0; i < lengthof(rooms); ++i)
-		rooms[i] = (struct RoomBlockPtr){{0,0,0},0xffff,{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-	for(uint32_t i = 0; i < lengthof(alloc); ++i)
-		alloc[i] = i;
-	reshuffle:
-	scramble_init();
-	ServerCode codes[] = {
-		StringToServerCode(NULL, 0),
-		// StringToServerCode("INDEX", 5),
+void pool_reset(struct NetContext *self) {
+	for(uint32_t i = 0; i < hosts_len; ++i)
+		if(hosts[i].link)
+			wire_disconnect(self, hosts[i].link);
+	free(hosts);
+	hosts_len = 0, nextSlot = 0, hosts = NULL;
+}
+
+struct PoolHost *pool_host_attach(union WireLink *link) {
+	if(nextSlot >= hosts_len)
+		if(pool_grow(hosts_len ? (hosts_len * 2) : 8))
+			return NULL;
+	struct PoolHost *host = &hosts[nextSlot];
+	*host = (struct PoolHost){
+		.link = link,
+		.discover = false,
+		.capacity = 0,
+		.blocks = {0},
+		.codes = NULL,
 	};
-	for(uint32_t a = 1; a < lengthof(codes); ++a) {
-		for(uint32_t b = a; b < lengthof(codes); ++b) {
-			struct RoomHandle roomA, roomB;
-			struct WireRoomHandle handle;
-			pool_find_room(codes[a-1], &roomA, &handle);
-			pool_find_room(codes[b], &roomB, &handle);
-			if(roomA.block == roomB.block && roomA.sub == roomB.sub)
-				goto reshuffle;
+	while(++nextSlot < hosts_len)
+		if(hosts[nextSlot].link == NULL)
+			break;
+	uprintf("pool_host_attach(): nextSlot %zd -> %u\n", host - hosts, nextSlot);
+	return host;
+}
+
+void pool_host_detach(struct PoolHost *host) {
+	if(host >= &hosts[hosts_len] || host->link == NULL)
+		return;
+	free(host->codes);
+	*host = CLEAR_POOLHOST;
+	if((uint32_t)(host - hosts) < nextSlot)
+		nextSlot = (uint32_t)(host - hosts);
+}
+
+void TEMPpool_host_setAttribs(struct PoolHost *host, uint32_t capacity, bool discover) { // TODO: `TEMP` since calling multiple times for the same host will break things
+	capacity &= ~1u; // round down to power of 2 for alignment
+	host->codes = malloc(capacity * sizeof(*hosts->codes));
+	if(!host->codes) {
+		*host = CLEAR_POOLHOST;
+		uprintf("alloc error\n");
+		return;
+	}
+	host->discover = discover;
+	host->capacity = capacity;
+	host->blocks.bits = ~0llu;
+	for(ServerCode *it = host->codes, *end = &host->codes[capacity]; it < end; ++it)
+		*it = ServerCode_NONE;
+}
+
+union WireLink *pool_host_wire(struct PoolHost *host) {
+	return host->link;
+}
+
+struct PoolHost *pool_host_lookup(union WireLink *link) {
+	for(struct PoolHost *host = hosts; host < &hosts[hosts_len]; ++host)
+		if(host->link == link)
+			return host;
+	return NULL;
+}
+
+static uint32_t globalRoomCount = 0;
+
+static struct PoolHost *_pool_handle_new(uint32_t *room_out, ServerCode code) {
+	struct PoolHost *host = &hosts[0]; // TODO: multiple hosts + load balancing
+	if(!host->discover || Counter64_isEmpty(host->blocks)) {
+		uprintf("Error: instance not available\n");
+		return NULL;
+	}
+	uint32_t block = __builtin_ctzll(host->blocks.bits), freeCount = 0;
+	for(uint32_t start = host->capacity * block / 64, i = host->capacity * (block + 1) / 64; i > start;)
+		if(host->codes[--i] == ServerCode_NONE)
+			*room_out = i, ++freeCount;
+	if(freeCount < 2)
+		Counter64_clear(&host->blocks, block);
+	host->codes[*room_out] = code;
+	++globalRoomCount, uprintf("%u room%s open\n", globalRoomCount, (globalRoomCount == 1) ? "" : "s");
+	return host;
+}
+
+struct PoolHost *pool_handle_new(uint32_t *room_out, bool random) { // TODO: fix performance here utilizing hash lookups
+	if(random) {
+		uprintf("TODO: randomized room codes\n");
+		return NULL;
+	}
+	for(ServerCode code = 0; code < 16; ++code) {
+		if(code == ServerCode_NONE) // `ServerCode_NONE` is an assumed opaque value
+			continue;
+		if(!pool_handle_lookup((uint32_t[]){0}, code))
+			return _pool_handle_new(room_out, code);
+	}
+	return NULL;
+}
+
+struct PoolHost *pool_handle_new_named(uint32_t *room_out, ServerCode code) {
+	if(code == ServerCode_NONE || pool_handle_lookup((uint32_t[]){0}, code))
+		return NULL;
+	return _pool_handle_new(room_out, code);
+}
+
+void pool_handle_free(struct PoolHost *host, uint16_t room) {
+	Counter64_set(&host->blocks, room * 64 / host->capacity);
+	if(pool_handle_code(host, room) == ServerCode_NONE)
+		return;
+	host->codes[room] = ServerCode_NONE;
+	--globalRoomCount, uprintf("%u room%s open\n", globalRoomCount, (globalRoomCount == 1) ? "" : "s");
+}
+
+ServerCode pool_handle_code(struct PoolHost *host, uint32_t room) {
+	return host->codes[room];
+}
+
+struct PoolHost *pool_handle_lookup(uint32_t *room_out, ServerCode code) { // TODO: use a hash table for this
+	for(struct PoolHost *host = hosts; host < &hosts[hosts_len]; ++host) {
+		for(ServerCode *room = host->codes, *codes_end = &host->codes[host->capacity]; room < codes_end; ++room) {
+			if(*room != code)
+				continue;
+			*room_out = room - host->codes;
+			return host;
 		}
 	}
-	for(uint32_t i = 0; i < lengthof(codes); ++i)
-		if(pool_reserve_room(codes[i]))
-			return 1;
-	return 0;
-}
-
-void pool_free() {
-	if(pthread_mutex_destroy(&pool_mutex))
-		uprintf("pthread_mutex_destroy() failed\n");
-}
-
-static uint32_t roomCount = 0;
-
-bool pool_request_room(struct RoomHandle *room_out, struct WireRoomHandle *handle_out, struct GameplayServerConfiguration configuration) {
-	pthread_mutex_lock(&pool_mutex);
-	uint16_t block = alloc[count];
-	if(rooms[block].idle == 0xffff)
-		if(wire_request_block(&rooms[block].handle, block))
-			return 1;
-	room_out->block = block;
-	handle_out->block = rooms[block].handle;
-	handle_out->sub = room_out->sub = __builtin_ctz(rooms[room_out->block].idle);
-	room_out->high = rooms[room_out->block].high[room_out->sub];
-	rooms[room_out->block].idle &= rooms[room_out->block].idle - 1;
-	count += (rooms[room_out->block].idle == 0);
-	++roomCount, uprintf("%u room%s open\n", roomCount, (roomCount == 1) ? "" : "s");
-	pthread_mutex_unlock(&pool_mutex);
-	return wire_room_open(*handle_out, configuration, pool_room_code(*room_out));
-}
-
-void pool_room_close_notify(struct RoomHandle room) {
-	pthread_mutex_lock(&pool_mutex);
-	#ifdef SCRAMBLE_CODES
-	++rooms[room.block].high[room.sub];
-	if(pool_room_code(room) > MAX_SERVER_CODE)
-		rooms[room.block].high[room.sub] = 0;
-	#endif
-	if(rooms[room.block].idle == 0)
-		alloc[--count] = room.block;
-	rooms[room.block].idle |= 1 << room.sub;
-	if(rooms[room.block].idle == 0xffff)
-		wire_block_release(rooms[room.block].handle);
-	--roomCount, uprintf("%u room%s open\n", roomCount, (roomCount == 1) ? "" : "s");
-	pthread_mutex_unlock(&pool_mutex);
-}
-
-ServerCode pool_room_code(struct RoomHandle room) {
-	return ((room.high * POOL_BLOCK_COUNT + room.block) << 4) | room.sub;
-}
-
-bool pool_find_room(ServerCode code, struct RoomHandle *room_out, struct WireRoomHandle *handle_out) {
-	handle_out->sub = room_out->sub = code & 15;
-	code >>= 4;
-	room_out->high = code / POOL_BLOCK_COUNT;
-	room_out->block = code - room_out->high * POOL_BLOCK_COUNT;
-	pthread_mutex_lock(&pool_mutex);
-	handle_out->block = rooms[room_out->block].handle;
-	bool notFound = ((rooms[room_out->block].idle >> room_out->sub) & 1) || room_out->high != rooms[room_out->block].high[room_out->sub];
-	pthread_mutex_unlock(&pool_mutex);
-	return notFound;
+	return NULL;
 }

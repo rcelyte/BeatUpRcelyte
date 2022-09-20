@@ -1,4 +1,6 @@
 #pragma once
+#include <stdint.h>
+#include <stdbool.h>
 
 #define pkt_serialize(data, pkt, end, version) ( \
 	pkt_write_c(pkt, end, version, SerializeHeader, { \

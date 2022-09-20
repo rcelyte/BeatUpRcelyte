@@ -1,12 +1,6 @@
-// #define THREAD_COUNT 256
-#define THREAD_COUNT 1
-#define USE_RANDOM_GUIDS
-
 #include "instance.h"
 #include "common.h"
 #include "counter.h"
-#include "../thread.h"
-#include "../pool.h"
 #include <mbedtls/error.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,14 +19,17 @@ typedef uint32_t playerid_t;
 #define COUNTER_VAR CONCAT(_i_,__LINE__)
 
 #define FOR_SOME_PLAYERS(id, counter, ...) \
-	struct Counter128 COUNTER_VAR = (counter); __VA_ARGS__; for(playerid_t (id) = 0; Counter128_set_next(&COUNTER_VAR, &(id), 0); ++(id))
+	struct Counter128 COUNTER_VAR = (counter); \
+	__VA_ARGS__; \
+	for(playerid_t (id) = 0; Counter128_clear_next(&COUNTER_VAR, &(id)); ++(id))
 
 #define FOR_EXCLUDING_PLAYER(id, counter, exc) \
-	FOR_SOME_PLAYERS(id, counter, Counter128_set(&COUNTER_VAR, exc, 0))
+	FOR_SOME_PLAYERS(id, counter, Counter128_clear(&COUNTER_VAR, exc))
 
 #define FOR_ALL_ROOMS(ctx, room) \
-	struct Counter16 COUNTER_VAR = (ctx)->blockAlloc; for(uint8_t group; Counter16_set_next(&COUNTER_VAR, &group, 0);) \
-		for(struct Room **(room) = (ctx)->rooms[group]; (room) < &(ctx)->rooms[group][lengthof(*(ctx)->rooms)]; ++(room)) \
+	struct Counter64 COUNTER_VAR = (ctx)->roomMask; \
+	for(uint32_t group; Counter64_clear_next(&COUNTER_VAR, &group);) \
+		for(struct Room **(room) = (ctx)->rooms[group]; (room) < endof((ctx)->rooms[group]); ++(room)) \
 			if(*room)
 
 struct InstanceSession {
@@ -104,13 +101,13 @@ struct Room {
 	struct InstanceSession players[];
 };
 
-struct Context {
+struct InstanceContext {
 	struct NetContext net;
-	struct Counter16 blockAlloc;
-	struct Room *rooms[16][16];
-	uint16_t notifyHandle[16];
+	union WireLink *master;
+	struct Counter64 roomMask;
+	struct Room *rooms[64][8];
 };
-static struct Context contexts[THREAD_COUNT];
+static struct InstanceContext *contexts = NULL;
 
 static float room_get_syncTime(struct Room *room) {
 	struct timespec now;
@@ -156,6 +153,15 @@ static bool PlayerStateHash_contains(struct PlayerStateHash state, const char *k
 	return 1;
 }
 
+static uint8_t InstanceSession_connectionId(const struct InstanceSession *list, const struct InstanceSession *session) {
+	uint8_t index = indexof(list, session);
+	return index + 1 + (index >= 126);
+}
+
+static uint8_t ConnectionId_index(uint8_t connectionId) {
+	return connectionId - 1 - (connectionId >= 128);
+}
+
 static bool BeatmapIdentifierNetSerializable_eq(const struct BeatmapIdentifierNetSerializable *a, const struct BeatmapIdentifierNetSerializable *b, bool ignoreDifficulty) {
 	if(!String_eq(a->levelID, b->levelID))
 		return false;
@@ -199,7 +205,7 @@ static playerid_t roundRobin_next(playerid_t prev, struct Counter128 players) {
 			return id;
 	playerid_t id = 0;
 	if(!Counter128_get(players, 0))
-		Counter128_set_next(&players, &id, 0);
+		Counter128_clear_next(&players, &id);
 	return id;
 }
 
@@ -213,8 +219,8 @@ static float room_get_countdownEnd(const struct Room *room, float defaultTime) {
 }
 
 #define STATE_EDGE(from, to, mask) ((to & (mask)) && !(from & (mask)))
-static bool room_try_finish(struct Context *ctx, struct Room *room);
-static void session_set_state(struct Context *ctx, struct Room *room, struct InstanceSession *session, ServerState state) {
+static bool room_try_finish(struct InstanceContext *ctx, struct Room *room);
+static void session_set_state(struct InstanceContext *ctx, struct Room *room, struct InstanceSession *session, ServerState state) {
 	struct RemoteProcedureCall base = {
 		.syncTime = room_get_syncTime(room),
 	};
@@ -222,9 +228,9 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 	pkt_write_c(&resp_end, endof(resp), session->net.version, RoutingHeader, {0, 0, false});
 	uint8_t *start = resp_end;
 	if(STATE_EDGE(session->state, state, ServerState_Connected)) {
-		Counter128_set(&room->connected, indexof(room->players, session), 1);
+		Counter128_set(&room->connected, indexof(room->players, session));
 	} else if(STATE_EDGE(state, session->state, ServerState_Connected)) {
-		Counter128_set(&room->connected, indexof(room->players, session), 0);
+		Counter128_clear(&room->connected, indexof(room->players, session));
 		if(room->global.roundRobin == indexof(room->players, session))
 			room->global.roundRobin = roundRobin_next(room->global.roundRobin, room->connected);
 		struct InternalMessage r_disconnect = {
@@ -235,12 +241,12 @@ static void session_set_state(struct Context *ctx, struct Room *room, struct Ins
 		};
 		FOR_SOME_PLAYERS(id, room->connected,) {
 			uint8_t resp[65536], *resp_end = resp;
-			pkt_write_c(&resp_end, endof(resp), room->players[id].net.version, RoutingHeader, {indexof(room->players, session) + 1, 0, 0});
+			pkt_write_c(&resp_end, endof(resp), room->players[id].net.version, RoutingHeader, {InstanceSession_connectionId(room->players, session), 0, false});
 			if(pkt_serialize(&r_disconnect, &resp_end, endof(resp), room->players[id].net.version))
 				instance_send_channeled(&room->players[id].net, &room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 		}
 		if(room->state & ServerState_Game) {
-			Counter128_set(&room->game.activePlayers, indexof(room->players, session), 0);
+			Counter128_clear(&room->game.activePlayers, indexof(room->players, session));
 			room_try_finish(ctx, room);
 		}
 	}
@@ -467,7 +473,7 @@ static const char *ServerState_toString(ServerState state) {
 	return "???";
 }
 
-static void room_set_state(struct Context *ctx, struct Room *room, ServerState state) {
+static void room_set_state(struct InstanceContext *ctx, struct Room *room, ServerState state) {
 	uprintf("state %s -> %s\n", ServerState_toString(room->state), ServerState_toString(state));
 	if(STATE_EDGE(room->state, state, ServerState_Lobby)) {
 		room->global.selectedBeatmap = CLEAR_BEATMAP;
@@ -598,12 +604,7 @@ static void room_set_state(struct Context *ctx, struct Room *room, ServerState s
 				if(room_try_finish(ctx, room))
 					return;
 			}
-			#ifdef USE_RANDOM_GUIDS
 			mbedtls_ctr_drbg_random(&ctx->net.ctr_drbg, (uint8_t*)room->global.sessionId, sizeof(room->global.sessionId));
-			#else
-			room->global.sessionId[0] = time(NULL);
-			++room->global.sessionId[1];
-			#endif
 			room->game.loadingSong.isLoaded = COUNTER128_CLEAR;
 			room->global.timeout = room_get_syncTime(room) + LOAD_TIMEOUT;
 			break;
@@ -633,7 +634,7 @@ static struct PlayersLobbyPermissionConfigurationNetSerializable room_get_permis
 	return out;
 }
 
-static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct InstanceSession *session, const struct MenuRpc *rpc) {
+static void handle_MenuRpc(struct InstanceContext *ctx, struct Room *room, struct InstanceSession *session, const struct MenuRpc *rpc) {
 	switch(rpc->type) {
 		case MenuRpcType_SetPlayersMissingEntitlementsToLevel: uprintf("BAD TYPE: MenuRpcType_SetPlayersMissingEntitlementsToLevel\n"); break;
 		case MenuRpcType_GetIsEntitledToLevel: uprintf("BAD TYPE: MenuRpcType_GetIsEntitledToLevel\n"); break;
@@ -646,16 +647,16 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 			} else if(entitlement.entitlementStatus == EntitlementsStatus_Ok) {
 				if(!PlayerStateHash_contains(session->stateHash, "modded") && entitlement.levelId.length >= 13 && memcmp(entitlement.levelId.data, "custom_level_", 13) == 0)
 					entitlement.entitlementStatus = EntitlementsStatus_NotOwned; // Vanilla clients will misreport all custom IDs as owned
-				else if(Counter128_set(&room->lobby.isDownloaded, indexof(room->players, session), 1) == 0)
+				else if(Counter128_set(&room->lobby.isDownloaded, indexof(room->players, session)) == 0)
 					if((room->state & ServerState_Lobby_Downloading) && Counter128_contains(room->lobby.isDownloaded, room->connected))
 						room_set_state(ctx, room, ServerState_Game_LoadingScene);
 			}
 			if(!(room->state & ServerState_Lobby_Entitlement))
 				break;
-			if(Counter128_set(&room->lobby.isEntitled, indexof(room->players, session), 1))
+			if(Counter128_set(&room->lobby.isEntitled, indexof(room->players, session)))
 				break;
 			if(entitlement.entitlementStatus != EntitlementsStatus_Ok && entitlement.entitlementStatus != EntitlementsStatus_NotDownloaded)
-				Counter128_set(&room->lobby.entitlement.missing, indexof(room->players, session), 1);
+				Counter128_set(&room->lobby.entitlement.missing, indexof(room->players, session));
 			uprintf("entitlement[%.*s]: %s\n", session->userName.length, session->userName.data, reflect(EntitlementsStatus, entitlement.entitlementStatus));
 			if(!Counter128_contains(room->lobby.isEntitled, room->connected))
 				break;
@@ -806,7 +807,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 		case MenuRpcType_SetIsReady: {
 			bool isReady = rpc->setIsReady.flags.hasValue0 && rpc->setIsReady.isReady;
 			if(room->state & ServerState_Lobby)
-				if(Counter128_set(&room->lobby.isReady, indexof(room->players, session), isReady) != isReady && (room->state & ServerState_Selected))
+				if(Counter128_overwrite(&room->lobby.isReady, indexof(room->players, session), isReady) != isReady && (room->state & ServerState_Selected))
 					room_set_state(ctx, room, ServerState_Lobby_Ready);
 			break;
 		}
@@ -815,7 +816,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 		case MenuRpcType_GetIsInLobby: break;
 		case MenuRpcType_SetIsInLobby: {
 			bool inLobby = rpc->setIsInLobby.flags.hasValue0 && rpc->setIsInLobby.isBack;
-			if(Counter128_set(&room->global.inLobby, indexof(room->players, session), inLobby) != inLobby && (room->state & ServerState_Selected))
+			if(Counter128_overwrite(&room->global.inLobby, indexof(room->players, session), inLobby) != inLobby && (room->state & ServerState_Selected))
 				room_set_state(ctx, room, ServerState_Lobby_Ready);
 			break;
 		}
@@ -854,7 +855,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 			if(!(session_get_permissions(room, session).hasKickVotePermission && rpc->requestKickPlayer.flags.hasValue0))
 				break;
 			struct Counter128 players = room->playerSort;
-			Counter128_set(&players, indexof(room->players, session), 0);
+			Counter128_clear(&players, indexof(room->players, session));
 			FOR_SOME_PLAYERS(id, players,) {
 				if(!String_eq(room->players[id].userId, rpc->requestKickPlayer.kickedPlayerId))
 					continue;
@@ -912,7 +913,7 @@ static void handle_MenuRpc(struct Context *ctx, struct Room *room, struct Instan
 	}
 }
 
-static bool room_try_finish(struct Context *ctx, struct Room *room) {
+static bool room_try_finish(struct InstanceContext *ctx, struct Room *room) {
 	if(!Counter128_isEmpty(room->game.activePlayers))
 		return false;
 	room->global.roundRobin = roundRobin_next(room->global.roundRobin, room->connected);
@@ -920,7 +921,7 @@ static bool room_try_finish(struct Context *ctx, struct Room *room) {
 	return true;
 }
 
-static void handle_GameplayRpc(struct Context *ctx, struct Room *room, struct InstanceSession *session, const struct GameplayRpc *rpc) {
+static void handle_GameplayRpc(struct InstanceContext *ctx, struct Room *room, struct InstanceSession *session, const struct GameplayRpc *rpc) {
 	switch(rpc->type) {
 		case GameplayRpcType_SetGameplaySceneSyncFinish: uprintf("BAD TYPE: GameplayRpcType_SetGameplaySceneSyncFinish\n"); break;
 		case GameplayRpcType_SetGameplaySceneReady: {
@@ -932,7 +933,7 @@ static void handle_GameplayRpc(struct Context *ctx, struct Room *room, struct In
 				break;
 			}
 			session->settings = rpc->setGameplaySceneReady.flags.hasValue0 ? rpc->setGameplaySceneReady.playerSpecificSettingsNetSerializable : CLEAR_SETTINGS;
-			if(Counter128_set(&room->game.loadingScene.isLoaded, indexof(room->players, session), 1) == 0)
+			if(Counter128_set(&room->game.loadingScene.isLoaded, indexof(room->players, session)) == 0)
 				if(Counter128_contains(room->game.loadingScene.isLoaded, room->game.activePlayers))
 					room_set_state(ctx, room, ServerState_Game_LoadingSong);
 			break;
@@ -945,7 +946,7 @@ static void handle_GameplayRpc(struct Context *ctx, struct Room *room, struct In
 					session_set_state(ctx, room, session, ServerState_Game_Gameplay);
 				break;
 			}
-			if(Counter128_set(&room->game.loadingSong.isLoaded, indexof(room->players, session), 1) == 0)
+			if(Counter128_set(&room->game.loadingSong.isLoaded, indexof(room->players, session)) == 0)
 				if(Counter128_contains(room->game.loadingSong.isLoaded, room->game.activePlayers))
 					room_set_state(ctx, room, ServerState_Game_Gameplay);
 			break;
@@ -957,7 +958,7 @@ static void handle_GameplayRpc(struct Context *ctx, struct Room *room, struct In
 		case GameplayRpcType_LevelFinished: {
 			if(!(room->state & ServerState_Game))
 				break;
-			if(!Counter128_set(&room->game.activePlayers, indexof(room->players, session), 0))
+			if(!Counter128_clear(&room->game.activePlayers, indexof(room->players, session)))
 				break;
 			if(!room->skipResults) {
 				if(session->net.version.protocolVersion < 7)
@@ -981,7 +982,7 @@ static void handle_GameplayRpc(struct Context *ctx, struct Room *room, struct In
 	}
 }
 
-/*static void handle_MpCore(struct Context *ctx, struct Room *room, struct InstanceSession *session, const struct MpCore *mpCore) {
+/*static void handle_MpCore(struct InstanceContext *ctx, struct Room *room, struct InstanceSession *session, const struct MpCore *mpCore) {
 	switch(MpCoreType_From(&mpCore->type)) {
 		case MpCoreType_MpBeatmapPacket: break;
 		case MpCoreType_MpPlayerData: break;
@@ -1003,7 +1004,7 @@ static bool handle_BeatUpMessage(const struct BeatUpMessage *message) {
 	return true;
 }
 
-static bool handle_MultiplayerSession(struct Context *ctx, struct Room *room, struct InstanceSession *session, const struct MultiplayerSession *message) {
+static bool handle_MultiplayerSession(struct InstanceContext *ctx, struct Room *room, struct InstanceSession *session, const struct MultiplayerSession *message) {
 	switch(message->type) {
 		case MultiplayerSessionMessageType_MenuRpc: handle_MenuRpc(ctx, room, session, &message->menuRpc); break;
 		case MultiplayerSessionMessageType_GameplayRpc: handle_GameplayRpc(ctx, room, session, &message->gameplayRpc); break;
@@ -1018,13 +1019,13 @@ static bool handle_MultiplayerSession(struct Context *ctx, struct Room *room, st
 	return true;
 }
 
-static void session_refresh_stateHash(struct Context *ctx, struct Room *room, struct InstanceSession *session) {
+static void session_refresh_stateHash(struct InstanceContext *ctx, struct Room *room, struct InstanceSession *session) {
 	bool isSpectating = !PlayerStateHash_contains(session->stateHash, "wants_to_play_next_level");
-	if(Counter128_set(&room->global.isSpectating, indexof(room->players, session), isSpectating) != isSpectating && (room->state & ServerState_Selected))
+	if(Counter128_overwrite(&room->global.isSpectating, indexof(room->players, session), isSpectating) != isSpectating && (room->state & ServerState_Selected))
 		room_set_state(ctx, room, ServerState_Lobby_Ready);
 }
 
-static void handle_PlayerIdentity(struct Context *ctx, struct Room *room, struct InstanceSession *session, const struct PlayerIdentity *identity) {
+static void handle_PlayerIdentity(struct InstanceContext *ctx, struct Room *room, struct InstanceSession *session, const struct PlayerIdentity *identity) {
 	session->stateHash = identity->playerState;
 	session_refresh_stateHash(ctx, room, session);
 	session->avatar = identity->playerAvatar;
@@ -1041,7 +1042,7 @@ static void handle_PlayerIdentity(struct Context *ctx, struct Room *room, struct
 		struct InternalMessage r_connected = {
 			.type = InternalMessageType_PlayerConnected,
 			.playerConnected = {
-				.remoteConnectionId = indexof(room->players, session) + 1,
+				.remoteConnectionId = InstanceSession_connectionId(room->players, session),
 				.userId = session->userId,
 				.userName = session->userName,
 				.isConnectionOwner = 0,
@@ -1074,7 +1075,7 @@ static void handle_PlayerIdentity(struct Context *ctx, struct Room *room, struct
 		};
 		FOR_SOME_PLAYERS(id, room->connected,) {
 			uint8_t resp[65536], *resp_end = resp;
-			pkt_write_c(&resp_end, endof(resp), room->players[id].net.version, RoutingHeader, {indexof(room->players, session) + 1, 0, false});
+			pkt_write_c(&resp_end, endof(resp), room->players[id].net.version, RoutingHeader, {InstanceSession_connectionId(room->players, session), 0, false});
 			if(pkt_serialize(&r_identity, &resp_end, endof(resp), room->players[id].net.version))
 				instance_send_channeled(&room->players[id].net, &room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 		}
@@ -1110,17 +1111,24 @@ static void handle_PlayerIdentity(struct Context *ctx, struct Room *room, struct
 	}
 }
 
-static bool handle_RoutingHeader(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data, const uint8_t *end, bool reliable, DeliveryMethod channelId) {
+static bool handle_RoutingHeader(struct InstanceContext *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data, const uint8_t *end, bool reliable, DeliveryMethod channelId) {
 	struct RoutingHeader routing;
-	if(!pkt_read(&routing, data, end, session->net.version))
+	if(room->configuration.maxPlayerCount >= 127) {
+		struct BTRoutingHeader extendedRouting;
+		if(!pkt_read(&extendedRouting, data, end, session->net.version))
+			return true;
+		routing = (struct RoutingHeader){extendedRouting.remoteConnectionId, extendedRouting.connectionId, false};
+	} else if(!pkt_read(&routing, data, end, session->net.version)) {
 		return true;
+	}
 	if(routing.connectionId) {
 		struct Counter128 mask = room->connected;
-		Counter128_set(&mask, indexof(room->players, session), 0);
+		Counter128_clear(&mask, indexof(room->players, session));
 		if(routing.connectionId != 127) {
 			struct Counter128 single = COUNTER128_CLEAR;
-			Counter128_set(&single, routing.connectionId - 1, 1);
-			mask = Counter128_and(mask, single);
+			if(routing.connectionId < 127) // TODO: `Counter256`
+				Counter128_set(&single, ConnectionId_index(routing.connectionId));
+			mask = Counter128_and(mask, single); // Mask out invalid IDs
 			if(Counter128_isEmpty(mask))
 				uprintf("connectionId %hhu points to nonexistent player!\n", routing.connectionId);
 		}
@@ -1128,7 +1136,7 @@ static bool handle_RoutingHeader(struct Context *ctx, struct Room *room, struct 
 			uint8_t resp[65536], *resp_end = resp;
 			if(!reliable)
 				pkt_write_c(&resp_end, endof(resp), room->players[id].net.version, NetPacketHeader, {PacketProperty_Unreliable, 0, 0, {{0}}});
-			pkt_write_c(&resp_end, endof(resp), room->players[id].net.version, RoutingHeader, {indexof(room->players, session) + 1, routing.connectionId == 127 ? 127 : 0, routing.encrypted});
+			pkt_write_c(&resp_end, endof(resp), room->players[id].net.version, RoutingHeader, {InstanceSession_connectionId(room->players, session), routing.connectionId == 127 ? 127 : 0, routing.encrypted});
 			pkt_write_bytes(*data, &resp_end, endof(resp), room->players[id].net.version, end - *data);
 			if(reliable)
 				instance_send_channeled(&room->players[id].net, &room->players[id].channels, resp, resp_end - resp, channelId);
@@ -1140,7 +1148,7 @@ static bool handle_RoutingHeader(struct Context *ctx, struct Room *room, struct 
 	return false;
 }
 
-static void process_message(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data, const uint8_t *end, bool reliable, DeliveryMethod channelId) {
+static void process_message(struct InstanceContext *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data, const uint8_t *end, bool reliable, DeliveryMethod channelId) {
 	if(!session->net.alive)
 		return;
 	if(handle_RoutingHeader(ctx, room, session, data, end, reliable, channelId)) {
@@ -1158,7 +1166,7 @@ static void process_message(struct Context *ctx, struct Room *room, struct Insta
 			return;
 		}
 		struct InternalMessage message;
-		if(!pkt_read(&message, &sub, *data, session->net.version))
+		if(!pkt_read(&message, &sub, *data, session->net.version)) // TODO: experiment with packet dropping and reserialization for better bandwidth usage
 			return;
 		/*{
 			uprintf("    type=%s\n", reflect(InternalMessageType, message.type));
@@ -1208,11 +1216,11 @@ static void process_message(struct Context *ctx, struct Room *room, struct Insta
 	}
 }
 
-static void process_Channeled(struct Context *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data, const uint8_t *end, DeliveryMethod channelId) {
+static void process_Channeled(struct InstanceContext *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data, const uint8_t *end, DeliveryMethod channelId) {
 	process_message(ctx, room, session, data, end, 1, channelId);
 }
 
-static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct InstanceSession *session, const struct ConnectRequest *req, const uint8_t **data, const uint8_t *end) {
+static void handle_ConnectRequest(struct InstanceContext *ctx, struct Room *room, struct InstanceSession *session, const struct ConnectRequest *req, const uint8_t **data, const uint8_t *end) {
 	session->net.version.netVersion = req->protocolId;
 	if(!(String_eq(req->secret, session->secret) && String_eq(req->userId, session->userId))) {
 		*data = end;
@@ -1301,7 +1309,7 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 		struct InternalMessage r_connected = {
 			.type = InternalMessageType_PlayerConnected,
 			.playerConnected = {
-				.remoteConnectionId = id + 1,
+				.remoteConnectionId = InstanceSession_connectionId(room->players, &room->players[id]),
 				.userId = room->players[id].userId,
 				.userName = room->players[id].userName,
 				.isConnectionOwner = 0,
@@ -1335,7 +1343,7 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 		};
 		memcpy(r_identity.playerIdentity.random.data, room->players[id].random, sizeof(room->players->random));
 		uprintf("TODO: do we need to include the encrytion key?\n");
-		pkt_write_c(&resp_end, endof(resp), session->net.version, RoutingHeader, {id + 1, 0, false});
+		pkt_write_c(&resp_end, endof(resp), session->net.version, RoutingHeader, {InstanceSession_connectionId(room->players, &room->players[id]), 0, false});
 		if(pkt_serialize(&r_identity, &resp_end, endof(resp), session->net.version))
 			instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 	}
@@ -1364,7 +1372,7 @@ static void handle_ConnectRequest(struct Context *ctx, struct Room *room, struct
 	if(room->state & ServerState_Game)
 		session_set_state(ctx, room, session, ServerState_Synchronizing);
 	else
-		session_set_state(ctx, room, session, room->state); // TODO: potential for desync since `StartListeningToGameStart()` hasn't been called at this point
+		session_set_state(ctx, room, session, room->state); // TODO: potential for desync since `StartListeningToGameStart()` hasn't(?) been called at this point
 }
 
 static void log_players(const struct Room *room, struct InstanceSession *session, const char *prefix) {
@@ -1373,17 +1381,35 @@ static void log_players(const struct Room *room, struct InstanceSession *session
 	memset(bitText, '0', sizeof(bitText));
 	FOR_SOME_PLAYERS(id, room->playerSort,)
 		bitText[id] = '1';
-	uprintf("%sconnect %s\nplayer bits: %.*s\n", prefix, addrstr, lengthof(bitText), bitText);
+	uprintf("%s %s\nplayer bits: %.*s\n", prefix, addrstr, lengthof(bitText), bitText);
+}
+
+static inline struct Room **instance_get_room(struct InstanceContext *ctx, uint16_t roomID) {
+	return &ctx->rooms[0][roomID];
+}
+
+static void room_free(struct InstanceContext *ctx, struct Room **room) {
+	size_t roomID = indexof(*ctx->rooms, room);
+	net_keypair_free(&(*room)->keys);
+	free(*room);
+	*room = NULL;
+	uprintf("closing room (%zu,%hu)\n", indexof(contexts, ctx), roomID);
+	uint32_t group = roomID / lengthof(*ctx->rooms);
+	for(uint32_t i = 0; i < lengthof(*ctx->rooms); ++i)
+		if(ctx->rooms[group][i])
+			return;
+	Counter64_clear(&ctx->roomMask, group);
 }
 
 enum DisconnectMode {
 	DC_RESET = 1,
 	DC_NOTIFY = 2,
 };
-static void room_disconnect(struct Context *ctx, struct Room **room, struct InstanceSession *session, enum DisconnectMode mode) {
+
+static void room_disconnect(struct InstanceContext *ctx, struct Room **room, struct InstanceSession *session, enum DisconnectMode mode) {
 	playerid_t id = indexof((*room)->players, session);
-	Counter128_set(&(*room)->playerSort, id, 0);
-	log_players(*room, session, (mode & DC_RESET) ? "re" : "dis");
+	Counter128_clear(&(*room)->playerSort, id);
+	log_players(*room, session, (mode & DC_RESET) ? "reconnect" : "disconnect");
 	instance_channels_free(&session->channels);
 	if(mode & DC_RESET)
 		net_session_reset(&ctx->net, &session->net);
@@ -1427,27 +1453,15 @@ static void room_disconnect(struct Context *ctx, struct Room **room, struct Inst
 		return;
 	}
 
-	uint16_t group = indexof(*ctx->rooms, room) / lengthof(*ctx->rooms);
-	struct RoomHandle handle = {
-		.block = ctx->notifyHandle[group],
-		.sub = indexof(ctx->rooms[group], room) % lengthof(*ctx->rooms),
-	};
-	net_unlock(&ctx->net); // avoids deadlock if pool_room_close_notify() internally calls instance_block_release()
-	pool_room_close_notify(handle);
-	net_lock(&ctx->net);
-
-	net_keypair_free(&(*room)->keys);
-	free(*room);
-	*room = NULL;
-	uprintf("closing room (%hu,%hu,%hhu)\n", indexof(contexts, ctx), handle.block, handle.sub);
+	room_free(ctx, room);
+	wire_send(&ctx->net, ctx->master, &(struct WireMessage){
+		.cookie = 0,
+		.type = WireMessageType_WireRoomCloseNotify,
+		.roomCloseNotify.room = indexof(*ctx->rooms, room),
+	});
 }
 
-static void room_close(struct Context *ctx, struct Room **room) {
-	FOR_SOME_PLAYERS(id, (*room)->playerSort,)
-		room_disconnect(ctx, room, &(*room)->players[id], 0);
-}
-
-static inline void handle_packet(struct Context *ctx, struct Room **room, struct InstanceSession *session, const uint8_t *data, const uint8_t *end) {
+static inline void handle_packet(struct InstanceContext *ctx, struct Room **room, struct InstanceSession *session, const uint8_t *data, const uint8_t *end) {
 	struct NetPacketHeader header;
 	if(!pkt_read(&header, &data, end, session->net.version))
 		return;
@@ -1491,7 +1505,7 @@ static inline void handle_packet(struct Context *ctx, struct Room **room, struct
 					FOR_EXCLUDING_PLAYER(id, (*room)->connected, indexof((*room)->players, session)) {
 						uint8_t resp[65536], *resp_end = resp;
 						pkt_write_c(&resp_end, endof(resp), (*room)->players[id].net.version, RoutingHeader, {
-							.remoteConnectionId = indexof((*room)->players, session) + 1,
+							.remoteConnectionId = InstanceSession_connectionId((*room)->players, session),
 							.connectionId = 0,
 							.encrypted = false,
 						});
@@ -1513,8 +1527,27 @@ static inline void handle_packet(struct Context *ctx, struct Room **room, struct
 	} while(data < end);
 }
 
-static thread_return_t instance_handler(struct Context *ctx) {
+static const char *instance_masterAddress = NULL;
+static void *instance_handler(struct InstanceContext *ctx) {
 	net_lock(&ctx->net);
+	if(*instance_masterAddress) {
+		ctx->master = wire_connect_remote(&ctx->net, instance_masterAddress);
+	} else if(ctx->master) {
+		struct NetContext *localMaster = WireLink_cast_local(ctx->master);
+		ctx->master = localMaster ? wire_connect_local(&ctx->net, localMaster) : NULL;
+	}
+	if(!ctx->master) {
+		uprintf("wire_connect() failed\n");
+		goto fail;
+	}
+	wire_send(&ctx->net, ctx->master, &(struct WireMessage){
+		.cookie = 0,
+		.type = WireMessageType_WireSetAttribs,
+		.setAttribs = {
+			.capacity = sizeof(ctx->rooms) / sizeof(**ctx->rooms),
+			.discover = true,
+		},
+	});
 	uprintf("Started\n");
 	uint8_t buf[262144];
 	memset(buf, 0, sizeof(buf));
@@ -1524,11 +1557,14 @@ static thread_return_t instance_handler(struct Context *ctx) {
 	const uint8_t *pkt;
 	while((len = net_recv(&ctx->net, buf, sizeof(buf), (struct NetSession**)&session, &pkt, (void**)&room)))
 		handle_packet(ctx, room, session, pkt, &pkt[len]);
+	if(ctx->master)
+		wire_disconnect(&ctx->net, ctx->master);
+	fail:
 	net_unlock(&ctx->net);
 	return 0;
 }
 
-static struct NetSession *instance_onResolve(struct Context *ctx, struct SS addr, void **userdata_out) {
+static struct NetSession *instance_onResolve(struct InstanceContext *ctx, struct SS addr, void **userdata_out) {
 	FOR_ALL_ROOMS(ctx, room) {
 		FOR_SOME_PLAYERS(id, (*room)->playerSort,) {
 			if(addrs_are_equal(&addr, NetSession_get_addr(&(*room)->players[id].net))) {
@@ -1540,7 +1576,7 @@ static struct NetSession *instance_onResolve(struct Context *ctx, struct SS addr
 	return NULL;
 }
 
-static void instance_onResend(struct Context *ctx, uint32_t currentTime, uint32_t *nextTick) {
+static void instance_onResend(struct InstanceContext *ctx, uint32_t currentTime, uint32_t *nextTick) {
 	FOR_ALL_ROOMS(ctx, room) {
 		FOR_SOME_PLAYERS(id, (*room)->playerSort,) {
 			struct InstanceSession *session = &(*room)->players[id];
@@ -1586,54 +1622,8 @@ static void instance_onResend(struct Context *ctx, uint32_t currentTime, uint32_
 	}
 }
 
-static thread_t instance_threads[THREAD_COUNT];
-static const char *instance_domain = NULL, *instance_domainIPv4 = NULL;
-bool instance_init(const char *domain, const char *domainIPv4) {
-	instance_domain = domain;
-	instance_domainIPv4 = domainIPv4;
-	memset(instance_threads, 0, sizeof(instance_threads));
-	for(uint32_t i = 0; i < lengthof(instance_threads); ++i) {
-		if(net_init(&contexts[i].net, 5000 + i)) {
-			uprintf("net_init() failed\n");
-			return 1;
-		}
-		contexts[i].net.user = &contexts[i];
-		contexts[i].net.onResolve = instance_onResolve;
-		contexts[i].net.onResend = instance_onResend;
-		contexts[i].blockAlloc = COUNTER16_CLEAR;
-		memset(contexts[i].rooms, 0, sizeof(contexts->rooms));
-
-		if(thread_create(&instance_threads[i], instance_handler, &contexts[i]))
-			instance_threads[i] = 0;
-		if(!instance_threads[i]) {
-			uprintf("Instance thread creation failed\n");
-			return 1;
-		}
-	}
-	return 0;
-}
-
-void instance_cleanup() {
-	for(uint32_t i = 0; i < lengthof(instance_threads); ++i) {
-		if(instance_threads[i]) {
-			net_stop(&contexts[i].net);
-			uprintf("Stopping #%u\n", i);
-			thread_join(instance_threads[i]);
-			instance_threads[i] = 0;
-			FOR_ALL_ROOMS(&contexts[i], room)
-				room_close(&contexts[i], room);
-			contexts[i].blockAlloc = COUNTER16_CLEAR;
-			memset(contexts[i].rooms, 0, sizeof(contexts->rooms));
-			net_cleanup(&contexts[i].net);
-		}
-	}
-}
-
-struct NetContext *instance_get_net(uint16_t thread) {
-	return &contexts[thread].net;
-}
-
-struct IPEndPoint instance_get_endpoint(bool ipv4) {
+static const char *instance_domainIPv4 = NULL, *instance_domain = NULL;
+static struct IPEndPoint instance_get_endpoint(struct NetContext *net, bool ipv4) {
 	struct IPEndPoint out;
 	out.address.length = 0;
 	out.address.isNull = false;
@@ -1644,7 +1634,7 @@ struct IPEndPoint instance_get_endpoint(bool ipv4) {
 		out.address.length = sprintf(out.address.data, "%s", instance_domain);
 
 	struct SS addr = {.len = sizeof(struct sockaddr_storage)};
-	getsockname(net_get_sockfd(&contexts[0].net), &addr.sa, &addr.len);
+	getsockname(net_get_sockfd(net), &addr.sa, &addr.len);
 	switch(addr.ss.ss_family) {
 		case AF_INET: out.port = htons(addr.in.sin_port); break;
 		case AF_INET6: out.port = htons(addr.in6.sin6_port); break;
@@ -1653,47 +1643,26 @@ struct IPEndPoint instance_get_endpoint(bool ipv4) {
 	return out;
 }
 
-bool instance_block_request(uint16_t thread, uint16_t *group_out, uint16_t notify) {
-	uint8_t group;
-	net_lock(&contexts[thread].net);
-	if(Counter16_set_next(&contexts[thread].blockAlloc, &group, 1)) {
-		*group_out = group;
-		contexts[thread].notifyHandle[group] = notify;
-		uprintf("opening block (%hu,%hu)\n", thread, group);
-		net_unlock(&contexts[thread].net);
-		return 0;
-	}
-	net_unlock(&contexts[thread].net);
-	uprintf("THREAD FULL\n");
-	return 1;
-}
-
-void instance_block_release(uint16_t thread, uint16_t group) {
-	net_lock(&contexts[thread].net);
-	uprintf("closing block (%hu,%hu)\n", thread, group);
-	Counter16_set(&contexts[thread].blockAlloc, group, 0);
-	net_unlock(&contexts[thread].net);
-}
-
-static inline struct Room **instance_get_room(uint16_t thread, uint16_t group, uint8_t sub) {
-	return &contexts[thread].rooms[group][sub];
-}
-
-bool instance_room_open(uint16_t thread, uint16_t group, uint8_t sub, struct GameplayServerConfiguration configuration, ServerCode code) {
-	bool res = true;
-	net_lock(&contexts[thread].net);
-	uprintf("opening room (%hu,%hu,%hhu)\n", thread, group, sub);
-	if(*instance_get_room(thread, group, sub)) {
+static struct Room **room_open(struct InstanceContext *ctx, uint16_t roomID, struct GameplayServerConfiguration configuration) {
+	uprintf("opening room (%zu,%hu)\n", indexof(contexts, ctx), roomID);
+	if(*instance_get_room(ctx, roomID)) {
 		uprintf("Room already open!\n");
-		goto fail;
+		return NULL;
 	}
+	#ifdef FORCE_MASSIVE_LOBBIES
+	configuration.maxPlayerCount = 126;
+	configuration.songSelectionMode = SongSelectionMode_Vote;
+	#else
+	if(configuration.maxPlayerCount > 126) // TODO: `Counter256`
+		configuration.maxPlayerCount = 126;
+	#endif
 	struct Room *room = malloc(sizeof(struct Room) + configuration.maxPlayerCount * sizeof(*room->players));
 	if(!room) {
 		uprintf("alloc error\n");
-		goto fail;
+		return NULL;
 	}
 	net_keypair_init(&room->keys);
-	net_keypair_gen(&contexts[0].net, &room->keys);
+	net_keypair_gen(&ctx->net, &room->keys);
 	room->serverOwner = 0;
 	room->configuration = configuration;
 	room->syncBase = 0;
@@ -1708,62 +1677,41 @@ bool instance_room_open(uint16_t thread, uint16_t group, uint8_t sub, struct Gam
 	room->playerSort = COUNTER128_CLEAR;
 	room->state = 0;
 	room->global.sessionId[0] = 0;
-	room->global.sessionId[1] = (uint64_t)code << 32;
+	room->global.sessionId[1] = 0;
 	room->global.inLobby = COUNTER128_CLEAR;
 	room->global.isSpectating = COUNTER128_CLEAR;
 	room->global.selectedBeatmap = CLEAR_BEATMAP;
 	room->global.selectedModifiers = CLEAR_MODIFIERS;
 	room->global.roundRobin = 0;
-	room_set_state(&contexts[thread], room, ServerState_Lobby_Idle);
-	*instance_get_room(thread, group, sub) = room;
-	res = false;
-	fail:
-	net_unlock(&contexts[thread].net);
-	return res;
+	room_set_state(ctx, room, ServerState_Lobby_Idle);
+	*instance_get_room(ctx, roomID) = room;
+	Counter64_set(&ctx->roomMask, roomID / lengthof(*ctx->rooms));
+	return instance_get_room(ctx, roomID);
 }
 
-void instance_room_close(uint16_t thread, uint16_t group, uint8_t sub) {
-	net_lock(&contexts[thread].net);
-	room_close(&contexts[thread], instance_get_room(thread, group, sub));
-	net_unlock(&contexts[thread].net);
+static struct String instance_room_get_managerId(struct Room *room) {
+	return room->players[room->serverOwner].userId;
 }
 
-struct String instance_room_get_managerId(uint16_t thread, uint16_t group, uint8_t sub) {
-	net_lock(&contexts[thread].net);
-	struct Room *room = *instance_get_room(thread, group, sub);
-	struct String managerId = room->players[room->serverOwner].userId;
-	net_unlock(&contexts[thread].net);
-	return managerId;
-}
-
-struct GameplayServerConfiguration instance_room_get_configuration(uint16_t thread, uint16_t group, uint8_t sub) {
-	net_lock(&contexts[thread].net);
-	struct Room *room = *instance_get_room(thread, group, sub);
-	struct GameplayServerConfiguration conf = room->configuration;
-	net_unlock(&contexts[thread].net);
-	return conf;
-}
-
-struct PacketContext instance_room_get_protocol(uint16_t thread, uint16_t group, uint8_t sub) {
+static struct PacketContext instance_room_get_protocol(struct InstanceContext *ctx, uint16_t roomID) {
 	struct PacketContext version = PV_LEGACY_DEFAULT;
-	net_lock(&contexts[thread].net);
-	struct Room *room = *instance_get_room(thread, group, sub);
+	struct Room *room = *instance_get_room(ctx, roomID);
 	struct Counter128 ct = room->playerSort;
 	uint32_t id = 0;
-	if(Counter128_set_next(&ct, &id, 0))
+	if(Counter128_clear_next(&ct, &id))
 		version = room->players[id].net.version;
-	net_unlock(&contexts[thread].net);
 	return version;
 }
 
-struct NetSession *instance_room_resolve_session(uint16_t thread, uint16_t group, uint8_t sub, struct SS addr, struct String secret, struct String userId, struct String userName, struct PacketContext version) {
-	struct Context *ctx = &contexts[thread];
-	net_lock(&ctx->net);
-	struct Room *room = ctx->rooms[group][sub];
-	if(!room) {
-		net_unlock(&ctx->net);
-		return NULL;
-	}
+static struct WireSessionAllocResp room_resolve_session(struct InstanceContext *ctx, const struct WireSessionAlloc *req) {
+	struct WireSessionAllocResp resp = {
+		.result = ConnectToServerResponse_Result_UnknownError,
+	};
+	struct Room *room = *instance_get_room(ctx, req->room);
+	if(!room)
+		return resp;
+	struct SS addr = {.len = req->address.length};
+	memcpy(&addr.ss, req->address.data, req->address.length);
 	struct InstanceSession *session = NULL;
 	FOR_SOME_PLAYERS(id, room->playerSort,) {
 		if(addrs_are_equal(&addr, NetSession_get_addr(&room->players[id].net))) {
@@ -1775,19 +1723,18 @@ struct NetSession *instance_room_resolve_session(uint16_t thread, uint16_t group
 	if(!session) {
 		struct Counter128 tmp = room->playerSort;
 		uint32_t id = 0;
-		if((!Counter128_set_next(&tmp, &id, 1)) || (int32_t)id >= room->configuration.maxPlayerCount) {
-			net_unlock(&ctx->net);
+		if((!Counter128_set_next(&tmp, &id)) || (int32_t)id >= room->configuration.maxPlayerCount) {
 			uprintf("ROOM FULL\n");
-			return NULL;
+			return resp;
 		}
 		session = &room->players[id];
 		net_session_init(&ctx->net, &session->net, addr);
-		session->net.version = version;
+		session->net.version = req->version;
 		room->playerSort = tmp;
 	}
-	session->secret = secret;
-	session->userName = userName;
-	session->userId = userId;
+	session->secret = req->secret;
+	session->userName = req->userName;
+	session->userId = req->userId;
 	session->publicEncryptionKey.length = 0;
 	session->sentIdentity = false;
 	session->directDownloads = false;
@@ -1802,7 +1749,128 @@ struct NetSession *instance_room_resolve_session(uint16_t thread, uint16_t group
 	session->stateHash.bloomFilter = (struct BitMask128){0, 0};
 	session->avatar = CLEAR_AVATARDATA;
 
-	log_players(room, session, "");
-	net_unlock(&ctx->net);
-	return &session->net;
+	memcpy(session->net.clientRandom, req->random, 32);
+	memcpy(resp.random, NetKeypair_get_random(&session->net.keys), 32);
+	resp.publicKey.length = sizeof(resp.publicKey.data);
+	if(NetKeypair_write_key(&session->net.keys, &ctx->net, resp.publicKey.data, &resp.publicKey.length)) {
+		uprintf("Connect to Server Error: NetKeypair_write_key() failed\n");
+		return resp; // TODO: clean up and remove session data if either of these errors is hit
+	}
+	if(NetSession_set_clientPublicKey(&session->net, &ctx->net, &req->publicKey)) {
+		uprintf("Connect to Server Error: NetSession_set_clientPublicKey() failed\n");
+		return resp;
+	}
+	resp.configuration = room->configuration;
+	resp.managerId = instance_room_get_managerId(room);
+	bool ipv4 = ((struct sockaddr_storage*)req->address.data)->ss_family != AF_INET6 ||
+	            memcmp(((struct sockaddr_in6*)req->address.data)->sin6_addr.s6_addr, (const uint8_t[]){0,0,0,0,0,0,0,0,0,0,255,255}, 12) == 0;
+	resp.endPoint = instance_get_endpoint(&ctx->net, ipv4);
+	resp.result = ConnectToServerResponse_Result_Success;
+	log_players(room, session, "connect");
+	return resp;
+}
+
+static void instance_room_spawn(struct InstanceContext *ctx, union WireLink *link, uint32_t cookie, const struct WireRoomSpawn *req) {
+	struct WireMessage r_alloc = {
+		.type = WireMessageType_WireRoomSpawnResp,
+		.cookie = cookie,
+		.roomSpawnResp.base.result = ConnectToServerResponse_Result_UnknownError,
+	};
+	struct Room **room = room_open(ctx, req->base.room, req->configuration);
+	if(room) {
+		r_alloc.roomSpawnResp.base = room_resolve_session(ctx, &req->base);
+		if(r_alloc.roomSpawnResp.base.result != ConnectToServerResponse_Result_Success)
+			room_free(ctx, room);
+	} else {
+		uprintf("room_open() failed\n");
+	}
+	wire_send(&ctx->net, link, &r_alloc);
+}
+
+static void instance_room_join(struct InstanceContext *ctx, union WireLink *link, uint32_t cookie, const struct WireRoomJoin *req) {
+	struct WireMessage r_alloc = {
+		.type = WireMessageType_WireRoomJoinResp,
+		.cookie = cookie,
+	};
+	if(instance_room_get_protocol(ctx, req->base.room).protocolVersion != req->base.version.protocolVersion) {
+		uprintf("Connect to Server Error: Version mismatch\n");
+		r_alloc.roomJoinResp.base.result = ConnectToServerResponse_Result_VersionMismatch;
+	} else {
+		r_alloc.roomJoinResp.base = room_resolve_session(ctx, &req->base);
+	}
+	wire_send(&ctx->net, link, &r_alloc);
+}
+
+static void instance_onWireMessage(struct InstanceContext *ctx, union WireLink *link, const struct WireMessage *message) {
+	if(link != ctx->master)
+		return;
+	if(!message) {
+		ctx->master = NULL;
+		return;
+	}
+	switch(message->type) {
+		case WireMessageType_WireRoomSpawn: instance_room_spawn(ctx, link, message->cookie, &message->roomSpawn); break;
+		case WireMessageType_WireRoomJoin: instance_room_join(ctx, link, message->cookie, &message->roomJoin); break;
+		default: uprintf("UNHANDLED WIRE MESSAGE [%s]\n", reflect(WireMessageType, message->type));
+	}
+}
+
+static uint32_t threads_len = 0;
+static pthread_t *threads = NULL;
+bool instance_init(const char *domainIPv4, const char *domain, const char *remoteMaster, struct NetContext *localMaster, uint32_t count) {
+	instance_domainIPv4 = domainIPv4;
+	instance_domain = domain;
+	instance_masterAddress = remoteMaster;
+	threads_len = 0;
+	contexts = malloc(count * sizeof(*contexts));
+	threads = malloc(count * sizeof(*threads));
+	if(!contexts || !threads) {
+		uprintf("alloc error\n");
+		return true;
+	}
+	for(; threads_len < count; ++threads_len) {
+		struct InstanceContext *ctx = &contexts[threads_len];
+		if(net_init(&ctx->net, 5000 + threads_len)) {
+			uprintf("net_init() failed\n");
+			return true;
+		}
+		ctx->net.userptr = &contexts[threads_len];
+		ctx->net.onResolve = (struct NetSession *(*)(void*, struct SS, void**))instance_onResolve;
+		ctx->net.onResend = (void (*)(void*, uint32_t, uint32_t*))instance_onResend;
+		ctx->net.onWireMessage = (void (*)(void*, union WireLink*, const struct WireMessage*))instance_onWireMessage;
+		ctx->roomMask = COUNTER64_CLEAR;
+		ctx->master = (union WireLink*)localMaster;
+		memset(ctx->rooms, 0, sizeof(ctx->rooms));
+
+		if(pthread_create(&threads[threads_len], NULL, (void *(*)(void*))instance_handler, ctx))
+			threads[threads_len] = 0;
+		if(!threads[threads_len]) {
+			net_cleanup(&ctx->net);
+			uprintf("Instance thread creation failed\n");
+			return true;
+		}
+	}
+	return false;
+}
+
+void instance_cleanup() {
+	for(uint32_t i = 0; i < threads_len; ++i) {
+		if(threads[i]) {
+			struct InstanceContext *ctx = &contexts[i];
+			net_stop(&ctx->net);
+			uprintf("Stopping #%u\n", i);
+			pthread_join(threads[i], NULL);
+			threads[i] = 0;
+			FOR_ALL_ROOMS(ctx, room) {
+				FOR_SOME_PLAYERS(id, (*room)->playerSort,) {
+					room_disconnect(ctx, room, &(*room)->players[id], 0);
+				}
+			}
+			ctx->roomMask = COUNTER64_CLEAR; // should be redundant, but just to be safe
+			memset(ctx->rooms, 0, sizeof(ctx->rooms));
+			net_cleanup(&ctx->net);
+		}
+	}
+	free(threads);
+	free(contexts);
 }

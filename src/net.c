@@ -97,21 +97,21 @@ mbedtls_ctr_drbg_context *net_get_ctr_drbg(struct NetContext *ctx) {
 	return &ctx->ctr_drbg;
 }
 
-void net_tostr(const struct SS *a, char out[static INET6_ADDRSTRLEN + 8]) {
+void net_tostr(const struct SS *address, char out[static INET6_ADDRSTRLEN + 8]) {
 	char ipStr[INET6_ADDRSTRLEN];
-	switch(a->ss.ss_family) {
+	switch(address->ss.ss_family) {
 		case AF_UNSPEC: {
 			sprintf(out, "AF_UNSPEC");
 			break;
 		}
 		case AF_INET: {
-			inet_ntop(AF_INET, &a->in.sin_addr, ipStr, INET_ADDRSTRLEN);
-			sprintf(out, "%s:%u", ipStr, htons(a->in.sin_port));
+			inet_ntop(AF_INET, &address->in.sin_addr, ipStr, INET_ADDRSTRLEN);
+			sprintf(out, "%s:%u", ipStr, htons(address->in.sin_port));
 			break;
 		}
 		case AF_INET6: {
-			inet_ntop(AF_INET6, &a->in6.sin6_addr, ipStr, INET6_ADDRSTRLEN);
-			sprintf(out, "[%s]:%u", ipStr, htons(a->in6.sin6_port));
+			inet_ntop(AF_INET6, &address->in6.sin6_addr, ipStr, INET6_ADDRSTRLEN);
+			sprintf(out, "[%s]:%u", ipStr, htons(address->in6.sin6_port));
 			break;
 		}
 		default:
@@ -197,64 +197,119 @@ void net_send_internal(struct NetContext *ctx, struct NetSession *session, const
 	#endif
 }
 
+static struct NetSession *onResolve_stub(void*, struct SS, void**) {return NULL;}
+static void onResend_stub(void*, uint32_t, uint32_t*) {}
+static void onWireMessage_stub(void*, union WireLink*, const struct WireMessage*) {}
+
 bool net_useIPv4 = 0;
-bool net_init(struct NetContext *ctx, uint16_t port) {
-	ctx->sockfd = socket(net_useIPv4 ? AF_INET : AF_INET6, SOCK_DGRAM, 0);
-	mbedtls_ctr_drbg_init(&ctx->ctr_drbg);
-	mbedtls_entropy_init(&ctx->entropy);
-	mbedtls_ecp_group_init(&ctx->grp);
-	if(ctx->sockfd == -1) {
-		uprintf("Socket creation failed\n");
-		return -1;
-	}
-	int res;
+static int32_t net_bind_udp(uint16_t port) {
+	int32_t sockfd = socket(net_useIPv4 ? AF_INET : AF_INET6, SOCK_DGRAM, 0);
+	struct SS addr;
 	if(net_useIPv4) {
-		const struct sockaddr_in addr = {
+		addr.len = sizeof(struct sockaddr_in);
+		addr.in = (struct sockaddr_in){
 			.sin_family = AF_INET,
 			.sin_port = htons(port),
-			.sin_addr = {
-				.s_addr = htonl(INADDR_ANY),
-			},
+			.sin_addr.s_addr = htonl(INADDR_ANY),
 		};
-		res = bind(ctx->sockfd, (const struct sockaddr*)&addr, sizeof(addr));
 	} else {
-		const struct sockaddr_in6 addr = {
+		addr.len = sizeof(struct sockaddr_in6);
+		addr.in6 = (struct sockaddr_in6){
 			.sin6_family = AF_INET6,
 			.sin6_port = htons(port),
 			.sin6_flowinfo = 0,
 			.sin6_addr = IN6ADDR_ANY_INIT,
 			.sin6_scope_id = 0,
 		};
-		res = bind(ctx->sockfd, (const struct sockaddr*)&addr, sizeof(addr));
 	}
-	if(res < 0) {
-		close(ctx->sockfd);
-		ctx->sockfd = -1;
+	if(bind(sockfd, &addr.sa, addr.len) < 0) {
 		uprintf("Socket binding failed\n");
-		return 1;
+		close(sockfd);
+		return -1;
+	}
+	return sockfd;
+}
+
+static int32_t net_bind_tcp(uint16_t port) {
+	int32_t listenfd = socket(AF_INET6, SOCK_STREAM, 0);
+	int32_t iSetOption = 1;
+	setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, (char*)&iSetOption, sizeof(iSetOption));
+	struct sockaddr_in6 addr = {
+		.sin6_family = AF_INET6,
+		.sin6_port = htons(port),
+		.sin6_flowinfo = 0,
+		.sin6_addr = IN6ADDR_ANY_INIT,
+		.sin6_scope_id = 0,
+	};
+	if(bind(listenfd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+		uprintf("Cannot bind socket to port %hu: %s\n", port, strerror(errno));
+		goto fail;
+	}
+	if(listen(listenfd, 16) < 0) {
+		uprintf("listen() failed: %s\n", strerror(errno));
+		goto fail;
+	}
+	return listenfd;
+	fail:
+	close(listenfd);
+	return -1;
+}
+
+bool net_init(struct NetContext *ctx, uint16_t port) {
+	*ctx = (struct NetContext){
+		._typeid = WireLinkType_LOCAL,
+		.sockfd = net_bind_udp(port),
+		.listenfd = net_bind_tcp(port),
+		.run = false,
+		.mutex = PTHREAD_MUTEX_INITIALIZER,
+		// .ctr_drbg = {},
+		// .entropy = {},
+		// .grp = {},
+		.remoteLinks_len = 0,
+		.cookies_len = 0,
+		.remoteLinks = {NULL},
+		.cookies = NULL,
+		.userptr = NULL,
+		.onResolve = onResolve_stub,
+		.onResend = onResend_stub,
+		.onWireLink = NULL,
+		.onWireMessage = onWireMessage_stub,
+		.dirt = NULL,
+		.perf = perf_init(),
+	};
+	mbedtls_ctr_drbg_init(&ctx->ctr_drbg);
+	mbedtls_entropy_init(&ctx->entropy);
+	mbedtls_ecp_group_init(&ctx->grp);
+	pthread_mutexattr_t mutexAttribs;
+	if(pthread_mutexattr_init(&mutexAttribs) ||
+	   pthread_mutexattr_settype(&mutexAttribs, PTHREAD_MUTEX_RECURSIVE) ||
+	   pthread_mutex_init(&ctx->mutex, &mutexAttribs)) {
+		uprintf("pthread_mutex_init() failed\n");
+		goto fail;
+	}
+	if(ctx->sockfd == -1 || ctx->listenfd == -1) {
+		uprintf("Socket creation failed\n");
+		goto fail;
 	}
 	struct SS realAddr = {.len = sizeof(struct sockaddr_storage)};
 	getsockname(ctx->sockfd, &realAddr.sa, &realAddr.len);
 	char namestr[INET6_ADDRSTRLEN + 8];
 	net_tostr(&realAddr, namestr);
 	uprintf("Bound %s\n", namestr);
+
 	if(mbedtls_ctr_drbg_seed(&ctx->ctr_drbg, mbedtls_entropy_func, &ctx->entropy, (const uint8_t*)u8"M@$73RS€RV3R", 14) != 0) {
 		uprintf("mbedtls_ctr_drbg_seed() failed\n");
-		return 1;
+		goto fail;
 	}
 	if(mbedtls_ecp_group_load(&ctx->grp, MBEDTLS_ECP_DP_SECP384R1)) {
 		uprintf("mbedtls_ecp_group_load() failed\n");
-		return 1;
+		goto fail;
 	}
-	if(pthread_mutex_init(&ctx->mutex, NULL)) {
-		uprintf("pthread_mutex_init() failed\n");
-		return 1;
-	}
-	ctx->run = 1;
-	ctx->sessionList = NULL;
-	ctx->dirt = NULL;
-	ctx->perf = perf_init();
-	return 0;
+	ctx->run = true;
+	return false;
+	fail:
+	net_cleanup(ctx);
+	return true;
 }
 
 void net_session_init(struct NetContext *ctx, struct NetSession *session, struct SS addr) {
@@ -323,13 +378,30 @@ void net_stop(struct NetContext *ctx) {
 	shutdown(ctx->sockfd, SHUT_RDWR);
 }
 
+static mbedtls_ssl_context **NetContext_remoteLinks(struct NetContext *ctx) {
+	return (ctx->remoteLinks_len == 1) ? &ctx->remoteLinks.single : ctx->remoteLinks.list;
+}
+
 void net_cleanup(struct NetContext *ctx) {
-	if(pthread_mutex_destroy(&ctx->mutex))
+	if(ctx->_typeid != WireLinkType_LOCAL)
+		return;
+	while(ctx->remoteLinks_len) {
+		union WireLink *link = (union WireLink*)*NetContext_remoteLinks(ctx);
+		if(WireLink_cast_remote(link)) {
+			wire_disconnect(ctx, link);
+		} else {
+			uprintf("WireLink_cast_remote() failed\n");
+			net_remove_remote(ctx, (mbedtls_ssl_context*)link);
+		}
+	}
+	if(pthread_mutex_destroy(&ctx->mutex)) // TODO: ensure unlock
 		uprintf("pthread_mutex_destroy() failed\n");
+	free(ctx->cookies);
 	mbedtls_entropy_free(&ctx->entropy);
 	mbedtls_ctr_drbg_free(&ctx->ctr_drbg);
+	close(ctx->listenfd);
 	close(ctx->sockfd);
-	ctx->sockfd = -1;
+	ctx->_typeid = WireLinkType_INVALID;
 }
 
 void net_lock(struct NetContext *ctx) {
@@ -340,32 +412,112 @@ void net_lock(struct NetContext *ctx) {
 	#endif
 	pthread_mutex_lock(&ctx->mutex);
 }
+
 void net_unlock(struct NetContext *ctx) {
 	pthread_mutex_unlock(&ctx->mutex);
+}
+
+bool net_add_remote(struct NetContext *ctx, mbedtls_ssl_context *link) {
+	uprintf("net_add_remote(%p) %u -> %u\n", link, ctx->remoteLinks_len, ctx->remoteLinks_len + 1);
+	mbedtls_ssl_context **list;
+	switch(ctx->remoteLinks_len) {
+		case 0: {
+			ctx->remoteLinks.single = link;
+			++ctx->remoteLinks_len;
+			return false;
+		}
+		case 1: {
+			list = malloc((ctx->remoteLinks_len + 1) * sizeof(*list));
+			if(list)
+				list[0] = ctx->remoteLinks.single;
+			break;
+		}
+		default: list = realloc(ctx->remoteLinks.list, (ctx->remoteLinks_len + 1) * sizeof(*list));
+	}
+	if(!list) {
+		uprintf("alloc error\n");
+		return true;
+	}
+	list[ctx->remoteLinks_len++] = link;
+	ctx->remoteLinks.list = list;
+	return false;
+}
+
+// TODO: Invalidating the `remoteLinks` causes pain elsewhere (see hacks at `wire_recv()` callsite)
+// Entries should be set to NULL here, and the array should be left sparse until it is safe to resize
+bool net_remove_remote(struct NetContext *ctx, mbedtls_ssl_context *link) {
+	mbedtls_ssl_context **list = NetContext_remoteLinks(ctx), **it = list;
+	for(mbedtls_ssl_context *const *end = &list[ctx->remoteLinks_len]; it < end; ++it)
+		if(*it == link)
+			goto found;
+	uprintf("net_remove_remote(): no match found\n");
+	return true;
+	found:
+	uprintf("net_remove_remote(%p) %u -> %u\n", link, ctx->remoteLinks_len, ctx->remoteLinks_len - 1);
+	*it = list[--ctx->remoteLinks_len];
+	switch(ctx->remoteLinks_len) {
+		case 0: ctx->remoteLinks.single = NULL; break;
+		case 1: {
+			ctx->remoteLinks.single = list[0];
+			free(list);
+			break;
+		}
+		default: {
+			list = realloc(ctx->remoteLinks.list, ctx->remoteLinks_len * sizeof(*list));
+			if(list)
+				ctx->remoteLinks.list = list;
+		}
+	}
+	return false;
+}
+
+static inline int32_t max32(int32_t a, int32_t b) {
+	return a > b ? a : b;
 }
 
 uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct NetSession **session, const uint8_t **pkt, void **userdata_out) {
 	retry:; // __attribute__((musttail)) not available in all compilers
 	uint32_t currentTime = net_time(), nextTick = currentTime + 180000;
-	ctx->onResend(ctx->user, currentTime, &nextTick);
+	ctx->onResend(ctx->userptr, currentTime, &nextTick);
 	nextTick -= currentTime;
 	if(nextTick < 2)
 		nextTick = 2;
 	struct timeval timeout;
 	timeout.tv_sec = nextTick / 1000; // Don't loop if there's nothing to do
 	timeout.tv_usec = (nextTick % 1000) * 1000;
-	fd_set fds;
-	FD_ZERO(&fds);
-	FD_SET(ctx->sockfd, &fds);
+	fd_set fdSet;
+	FD_ZERO(&fdSet);
+	FD_SET(ctx->sockfd, &fdSet);
+	FD_SET(ctx->listenfd, &fdSet);
+	int32_t fdMax = max32(ctx->sockfd, ctx->listenfd);
+	for(mbedtls_ssl_context **link = NetContext_remoteLinks(ctx), **end = &link[ctx->remoteLinks_len]; link < end; ++link) {
+		int32_t remotefd = (intptr_t)(*link)->MBEDTLS_PRIVATE(p_bio);
+		FD_SET(remotefd, &fdSet);
+		fdMax = max32(fdMax, remotefd);
+	}
 	net_unlock(ctx);
 	[[maybe_unused]] struct timespec sleepStart = GetTime();
-	bool noData = (select(ctx->sockfd+1, &fds, NULL, NULL, &timeout) == 0);
+	bool noData = (select(fdMax + 1, &fdSet, NULL, NULL, &timeout) == 0);
 	[[maybe_unused]] struct timespec sleepEnd = GetTime();
 	net_lock(ctx);
 	#ifdef PERFTEST
 	perf_tick(&ctx->perf, sleepStart, sleepEnd);
 	#endif
 	if(noData)
+		goto retry;
+	for(uint32_t i = 0, len = ctx->remoteLinks_len; i < len; ++i) {
+		mbedtls_ssl_context *link = NetContext_remoteLinks(ctx)[i];
+		if(!FD_ISSET((intptr_t)link->MBEDTLS_PRIVATE(p_bio), &fdSet))
+			continue;
+		wire_recv(ctx, link); // May invalidate `link` AND `ctx->remoteLinks`
+
+		// TODO: This is a really bad hack to check for disconnects, expoliting the fact that the current link is the only one disconnected in any wire handler
+		if(ctx->remoteLinks_len < len)
+			len = ctx->remoteLinks_len, --i;
+	}
+	if(FD_ISSET(ctx->listenfd, &fdSet))
+		wire_accept(ctx, ctx->listenfd);
+	if(!FD_ISSET(ctx->sockfd, &fdSet))
 		goto retry;
 	struct SS addr = {.len = sizeof(struct sockaddr_storage)};
 	#ifdef WINSOCK_VERSION
@@ -398,7 +550,7 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct
 		// uprintf("ping[%s]: %hhu\n", namestr, buf[0]);
 		goto retry;
 	}
-	*session = ctx->onResolve(ctx->user, addr, userdata_out);
+	*session = ctx->onResolve(ctx->userptr, addr, userdata_out);
 	if(!*session)
 		goto retry;
 	// uprintf("recvfrom[%zi]\n", size);

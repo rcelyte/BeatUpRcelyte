@@ -12,4 +12,6 @@ void LogString(const char*);
 	LogString(buf);
 }
 
-#include "../../common/packets.c.h"
+#include "packets.h"
+#include "../../common/packets.c"
+#include "packets.gen.c.h"

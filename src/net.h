@@ -1,5 +1,5 @@
 #pragma once
-#include "packets.h"
+#include "wire.h"
 #include "encryption.h"
 #include "perf.h"
 #include <mbedtls/x509_crt.h>
@@ -22,13 +22,15 @@ typedef int socklen_t;
 #ifndef NET_H_PRIVATE
 #define CONCAT2(a,b) a##b
 #define CONCAT(a,b) CONCAT2(a,b)
-#define NET_H_PRIVATE(x) CONCAT(_p_,__LINE__)
+#define NET_H_PRIVATE(x) CONCAT(_p_,__COUNTER__)
 #endif
 
 #define NET_MAX_PKT_SIZE 1432
 #define NET_MAX_SEQUENCE 32768
 #define NET_MAX_WINDOW_SIZE 64
 #define NET_RESEND_DELAY 27
+
+#define NET_THREAD_INVALID 0 // TODO: this macro marks all non-portable uses of the pthreads API
 
 struct SS {
 	socklen_t len;
@@ -65,21 +67,32 @@ struct NetSession {
 	uint8_t NET_H_PRIVATE(mergeData)[NET_MAX_PKT_SIZE];
 };
 
-struct Context;
 struct NetContext {
-	int32_t sockfd;
+	WireLinkType _typeid; // used to distinguish between local (struct NetContext) and remote (mbedtls_ssl_context) connections
+	int32_t NET_H_PRIVATE(sockfd), NET_H_PRIVATE(listenfd);
 	atomic_bool NET_H_PRIVATE(run);
 	pthread_mutex_t NET_H_PRIVATE(mutex);
 	mbedtls_ctr_drbg_context ctr_drbg;
 	mbedtls_entropy_context NET_H_PRIVATE(entropy);
 	mbedtls_ecp_group NET_H_PRIVATE(grp);
-	struct NetSession *NET_H_PRIVATE(sessionList);
-	struct Context *user;
-	struct NetSession *(*onResolve)(struct Context *ctx, struct SS addr, void **userdata_out);
-	void (*onResend)(struct Context *ctx, uint32_t currentTime, uint32_t *nextTick);
+	uint32_t NET_H_PRIVATE(remoteLinks_len);
+	uint32_t NET_H_PRIVATE(cookies_len);
+	union {
+		mbedtls_ssl_context *single;
+		mbedtls_ssl_context **list;
+	} NET_H_PRIVATE(remoteLinks);
+	struct WireCookie *NET_H_PRIVATE(cookies);
+	void *userptr;
+	struct NetSession *(*onResolve)(void *userptr, struct SS addr, void **userdata_out);
+	void (*onResend)(void *userptr, uint32_t currentTime, uint32_t *nextTick);
+	void (*onWireLink)(void *userptr, union WireLink *link);
+	void (*onWireMessage)(void *userptr, union WireLink *link, const struct WireMessage *message);
 	const uint8_t *NET_H_PRIVATE(dirt);
 	struct Performance NET_H_PRIVATE(perf);
 };
+
+// Initialize memory such that calling `net_cleanup()` without a prior `net_init()` is well defined
+#define CLEAR_NETCONTEXT {._typeid = WireLinkType_INVALID}
 
 void net_keypair_init(struct NetKeypair *keys);
 void net_keypair_gen(struct NetContext *ctx, struct NetKeypair *keys);
@@ -101,6 +114,8 @@ void net_unlock(struct NetContext *ctx);
 void net_session_init(struct NetContext *ctx, struct NetSession *session, struct SS addr);
 void net_session_reset(struct NetContext *ctx, struct NetSession *session);
 void net_session_free(struct NetSession *session);
+bool net_add_remote(struct NetContext *ctx, mbedtls_ssl_context *link);
+bool net_remove_remote(struct NetContext *ctx, mbedtls_ssl_context *link);
 uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct NetSession **session, const uint8_t **pkt, void **userdata_out);
 void net_flush_merged(struct NetContext *ctx, struct NetSession *session);
 void net_queue_merged(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint16_t len);
@@ -110,7 +125,7 @@ mbedtls_ctr_drbg_context *net_get_ctr_drbg(struct NetContext *ctx);
 
 uint32_t net_time();
 
-bool master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_context *key, uint16_t port);
+struct NetContext *master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_context *key, uint16_t port); // TODO: move these
 void master_cleanup();
 
 static inline int32_t RelativeSequenceNumber(int32_t to, int32_t from) {

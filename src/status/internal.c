@@ -1,6 +1,5 @@
 #include "internal.h"
 #include "status.h"
-#include "../scramble.h"
 #include <string.h>
 #include <inttypes.h>
 #define READ_SYM(dest, sym) (memcpy(dest, sym, sym##_end - sym), (sym##_end - sym))
@@ -26,7 +25,7 @@ static uint16_t count = 0, alloc[16384];
 
 void status_internal_init() {
 	for(uint32_t i = 0; i < lengthof(alloc); ++i) {
-		list[i].code = StringToServerCode(NULL, 0);
+		list[i].code = ServerCode_NONE;
 		alloc[i] = i;
 	}
 }
@@ -52,7 +51,7 @@ void status_entry_set_level(StatusHandle index, const char *name, float nps) {
 }
 
 void status_entry_free(StatusHandle index) {
-	list[index].code = StringToServerCode(NULL, 0);
+	list[index].code = ServerCode_NONE;
 	alloc[--count] = index;
 }
 
@@ -100,7 +99,7 @@ static size_t escape(uint8_t *out, size_t limit, const uint8_t *in, size_t in_le
 }
 
 static uint32_t status_web(char *buf, ServerCode code) {
-	bool index = (code == StringToServerCode(NULL, 0));
+	bool index = (code == ServerCode_NONE);
 	list[0].code = StringToServerCode("INDEX", 5);
 	char page[65536];
 	uint32_t len = READ_SYM(page, head0_html);

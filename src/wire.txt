@@ -3,12 +3,8 @@ n WireAddress
 	u8 data[128, .length]
 n WireSetAttribs
 	u32 capacity
-n WireConnect
-	u32 protocol
-	if(.protocol == 0)
-		WireSetAttribs attribs
+	b discover
 n WireSessionAlloc
-	u32 cookie
 	u32 room
 	WireAddress address
 	String secret
@@ -18,7 +14,6 @@ n WireSessionAlloc
 	ByteArrayNetSerializable publicKey
 	PacketContext version
 n WireSessionAllocResp
-	u32 requestCookie
 	ConnectToServerResponse_Result result
 	u8 random[32]
 	ByteArrayNetSerializable publicKey
@@ -30,14 +25,19 @@ n WireRoomSpawn
 	GameplayServerConfiguration configuration
 n WireRoomJoin
 	WireSessionAlloc base
+n WireRoomSpawnResp
+	WireSessionAllocResp base
+n WireRoomJoinResp
+	WireSessionAllocResp base
 n WireRoomCloseNotify
 	u32 room
 d WireMessage
+	u32 cookie
 	WireMessageType type
 	u8 WireMessageType(.type)
-		WireConnect wireConnect
-		WireSetAttribs wireSetAttribs
-		WireRoomSpawn wireRoomSpawn
-		WireRoomJoin wireRoomJoin
-		WireSessionAllocResp wireSessionAllocResp
-		WireRoomCloseNotify wireRoomCloseNotify
+		WireSetAttribs setAttribs
+		WireRoomSpawn roomSpawn
+		WireRoomJoin roomJoin
+		WireRoomSpawnResp roomSpawnResp
+		WireRoomJoinResp roomJoinResp
+		WireRoomCloseNotify roomCloseNotify

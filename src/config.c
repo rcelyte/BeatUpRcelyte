@@ -7,87 +7,163 @@
 #include <stdlib.h>
 #include <errno.h>
 
-static bool load_cert(const char *cert, uint32_t cert_len, mbedtls_ctr_drbg_context *ctr_drbg, mbedtls_pk_context *key, mbedtls_x509_crt *out) {
-	int32_t err = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
-	char buf[4096];
-	if(cert_len == 0) {
-		mbedtls_x509write_cert cert_ctx;
-		mbedtls_x509write_crt_init(&cert_ctx);
-		mbedtls_mpi serial;
-		mbedtls_mpi_init(&serial);
-		mbedtls_mpi_read_string(&serial, 10, "1");
-		mbedtls_x509write_crt_set_serial(&cert_ctx, &serial);
-		mbedtls_mpi_free(&serial);
-		mbedtls_x509write_crt_set_validity(&cert_ctx, "20010101000000", "20301231235959");
-		mbedtls_x509write_crt_set_issuer_name(&cert_ctx, "CN=CA,O=mbed TLS,C=UK");
-		mbedtls_x509write_crt_set_subject_name(&cert_ctx, "CN=CA,O=mbed TLS,C=UK");
-		mbedtls_x509write_crt_set_subject_key(&cert_ctx, key);
-		mbedtls_x509write_crt_set_issuer_key(&cert_ctx, key);
-		mbedtls_x509write_crt_set_md_alg(&cert_ctx, MBEDTLS_MD_SHA256);
-		mbedtls_x509write_crt_set_basic_constraints(&cert_ctx, 0, -1);
-		mbedtls_x509write_crt_set_subject_key_identifier(&cert_ctx);
-		mbedtls_x509write_crt_set_authority_key_identifier(&cert_ctx);
-		int32_t len = mbedtls_x509write_crt_der(&cert_ctx, (uint8_t*)buf, sizeof(buf), mbedtls_ctr_drbg_random, ctr_drbg);
-		mbedtls_x509write_crt_free(&cert_ctx);
-		err = mbedtls_x509_crt_parse_der(out, (uint8_t*)&buf[sizeof(buf) - len], len);
-		sprintf(buf, "generated certificate");
-	} else if(cert_len > 52 && strncmp(cert, "-----BEGIN CERTIFICATE-----", 27) == 0) {
-		sprintf(buf, "inline certificate");
-		err = mbedtls_x509_crt_parse(out, (uint8_t*)cert, cert_len);
+
+#ifdef WINDOWS
+#define NEWLINE "\r\n"
+
+static uint16_t GetCoreCount() {
+	return 1; // TODO: Win32 stuff
+}
+#else
+#include <sys/sysinfo.h>
+#define NEWLINE "\n"
+
+static uint16_t GetCoreCount() {
+	return get_nprocs();
+}
+#endif
+
+static void config_read_cert(const char **it, jsonkey_t key, mbedtls_x509_crt *out) {
+	uint32_t str_len = 0;
+	const char *str = json_read_string(it, &str_len);
+
+	int res = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+	if(str_len > 52 && strncmp(str, "-----BEGIN CERTIFICATE-----", 27) == 0) {
+		res = mbedtls_x509_crt_parse(out, (const uint8_t*)str, str_len);
+	} else if(str_len < CONFIG_STRING_LENGTH) {
+		char filename[CONFIG_STRING_LENGTH];
+		sprintf(filename, "%.*s", str_len, str);
+		res = mbedtls_x509_crt_parse_file(out, filename);
 	} else {
-		if(cert_len >= sizeof(buf)) {
-			uprintf("Failed to load %.*s: Path too long\n", cert_len, cert);
-			return 1;
-		}
-		sprintf(buf, "%.*s", cert_len, cert);
-		err = mbedtls_x509_crt_parse_file(out, buf);
+		json_error(it, "Error parsing config value \"%s\": file path too long\n", JSON_KEY_TOSTRING(key));
+		return;
 	}
-	if(err) {
-		uprintf("Failed to load %s: %s\n", buf, mbedtls_high_level_strerr(err));
-		return 1;
-	}
-	return 0;
+	if(res)
+		json_error(it, "Failed to load certificate: %s\n", mbedtls_high_level_strerr(res));
 }
 
-static bool load_key(const char *key, uint32_t key_len, mbedtls_ctr_drbg_context *ctr_drbg, mbedtls_pk_context *out) {
-	bool res = 0;
-	int32_t err = 0;
-	char name[4096];
-	if(key_len == 0) {
-		mbedtls_pk_setup(out, mbedtls_pk_info_from_type(MBEDTLS_PK_RSA));
-		mbedtls_rsa_context *rsa = mbedtls_pk_rsa(*out);
-		res = mbedtls_rsa_gen_key(rsa, mbedtls_ctr_drbg_random, ctr_drbg, 2048, 65537) != 0;
-	} else if(key_len > 52 && strncmp(key, "-----BEGIN ", 11) == 0) {
-		sprintf(name, "inline certificate");
-		err = mbedtls_pk_parse_key(out, (uint8_t*)key, key_len, NULL, 0, mbedtls_ctr_drbg_random, ctr_drbg);
-	} else if(key_len < sizeof(name)) {
-		sprintf(name, "%.*s", key_len, key);
-		err = mbedtls_pk_parse_keyfile(out, name, NULL, mbedtls_ctr_drbg_random, ctr_drbg);
+static void config_read_pk(const char **it, jsonkey_t key, mbedtls_ctr_drbg_context *ctr_drbg, mbedtls_pk_context *out) {
+	uint32_t str_len = 0;
+	const char *str = json_read_string(it, &str_len);
+
+	int res = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+	if(str_len > 52 && strncmp(str, "-----BEGIN ", 11) == 0) {
+		res = mbedtls_pk_parse_key(out, (const uint8_t*)str, str_len, NULL, 0, mbedtls_ctr_drbg_random, ctr_drbg);
+	} else if(str_len < CONFIG_STRING_LENGTH) {
+		char filename[CONFIG_STRING_LENGTH];
+		sprintf(filename, "%.*s", str_len, str);
+		res = mbedtls_pk_parse_keyfile(out, filename, NULL, mbedtls_ctr_drbg_random, ctr_drbg);
 	} else {
-		uprintf("Failed to load %.*s: Path too long\n", key_len, key);
-		res = 1;
+		json_error(it, "Error parsing config value \"%s\": file path too long\n", JSON_KEY_TOSTRING(key));
+		return;
 	}
-	if(err)
-		uprintf("Failed to load %s: %s\n", name, mbedtls_high_level_strerr(err));
-	return res || err != 0;
+	if(res)
+		json_error(it, "Failed to load private key: %s\n", mbedtls_high_level_strerr(res));
+}
+
+static void config_read_url(const char **it, jsonkey_t key, char address_out[static CONFIG_STRING_LENGTH], char path_out[static CONFIG_STRING_LENGTH], uint16_t *port_out, bool *https_out) {
+	uint32_t uri_len = 0;
+	const char *uri = json_read_string(it, &uri_len);
+
+	if(uri_len >= CONFIG_STRING_LENGTH) {
+		json_error(it, "Error parsing config value \"%s\": URL too long\n", JSON_KEY_TOSTRING(key));
+		return;
+	}
+	long portNum;
+	if(uri_len > 8 && memcmp(uri, "https://", 8) == 0) {
+		*https_out = true, portNum = 443;
+		uri += 8, uri_len -= 8;
+	} else if(uri_len > 7 && memcmp(uri, "http://", 7) == 0) {
+		*https_out = false, portNum = 80;
+		uri += 7, uri_len -= 7;
+	} else {
+		json_error(it, "Error parsing config value \"%s\": URL must begin with `http://` or `https://`\n", JSON_KEY_TOSTRING(key));
+		return;
+	}
+	const char *path = memchr(uri, '/', uri_len);
+	const char *port_end = path ? path : &uri[uri_len];
+	const char *port = memchr(uri, ':', port_end - uri);
+	size_t address_len = (port ? port : port_end) - uri;
+	memcpy(address_out, uri, address_len);
+	address_out[address_len] = 0;
+	if(port) {
+		portNum = atol(&port[1]); // skip ':'
+		if(portNum < 1 || portNum > 65535) {
+			json_error(it, "Error parsing config value \"%s\": port number out of range\n", JSON_KEY_TOSTRING(key));
+			return;
+		}
+	}
+	*port_out = portNum;
+	size_t path_len = 0;
+	if(path++) {
+		path_len = &uri[uri_len] - path;
+		memcpy(path_out, path, path_len);
+		if(path_len && path_out[path_len-1] != '/')
+			path_out[path_len++] = '/';
+	}
+	path_out[path_len] = 0;
+}
+
+static void config_read_hex(const char **it, jsonkey_t key, uint8_t key_out[static 32], uint8_t *length_out) {
+	static const uint8_t table[128] = {
+		['0'] = 0, ['1'] = 1, ['2'] = 2, ['3'] = 3, ['4'] = 4, ['5'] = 5, ['6'] = 6, ['7'] = 7, ['8'] = 8, ['9'] = 9,
+		['a'] = 10, ['b'] = 11, ['c'] = 12, ['d'] = 13, ['e'] = 14, ['f'] = 15, ['A'] = 10, ['B'] = 11, ['C'] = 12, ['D'] = 13, ['E'] = 14, ['F'] = 15,
+	};
+	uint32_t str_len = 0;
+	const char *str = json_read_string(it, &str_len);
+	if(str_len != 64) {
+		json_error(it, "Error parsing config value \"%s\": bad key length\n", JSON_KEY_TOSTRING(key));
+		return;
+	}
+	*length_out = 32;
+	for(uint8_t *it = key_out; it < &key_out[32]; ++it, str += 2)
+		*it = table[str[0] & 127] << 4 | table[str[1] & 127];
+}
+
+static void config_read_string(const char **it, jsonkey_t key, char out[static CONFIG_STRING_LENGTH]) {
+	uint32_t str_len = 0;
+	const char *str = json_read_string(it, &str_len);
+	if(str_len >= CONFIG_STRING_LENGTH) {
+		json_error(it, "Error parsing config value \"%s\": name too long\n", JSON_KEY_TOSTRING(key));
+		return;
+	}
+	snprintf(out, CONFIG_STRING_LENGTH, "%.*s", str_len, str);
+}
+
+static void config_read_uint16(const char **it, jsonkey_t key, uint16_t minValue, uint16_t maxValue, uint16_t *out) {
+	int64_t value = json_read_int64(it);
+	if(value < minValue || value > maxValue) {
+		json_error(it, "Error parsing config value \"%s\": integer out of range\n", JSON_KEY_TOSTRING(key));
+		return;
+	}
+	*out = value;
 }
 
 bool config_load(struct Config *out, const char *path) {
-	bool res = 1;
-	char *master_cert = NULL, *master_key = NULL, *status_cert = NULL, *status_key = NULL;
-	uint32_t master_cert_len = 0, master_key_len = 0, status_cert_len = 0, status_key_len = 0;
+	bool enableInstance = false, enableMaster = false, enableStatus = false, statusHTTPS = false;
 
 	mbedtls_x509_crt_init(&out->certs[0]);
 	mbedtls_x509_crt_init(&out->certs[1]);
 	mbedtls_pk_init(&out->keys[0]);
 	mbedtls_pk_init(&out->keys[1]);
+	out->wireKey_len = 0;
+	out->instanceCount = GetCoreCount();
+	out->masterPort = 2328;
+	out->statusPort = 0;
+	*out->instanceAddress[0] = 0;
+	*out->instanceAddress[1] = 0;
+	*out->instanceParent = 0;
+	*out->statusAddress = 0;
+	*out->statusPath = 0;
 
 	mbedtls_ctr_drbg_context ctr_drbg;
 	mbedtls_entropy_context entropy;
 	mbedtls_ctr_drbg_init(&ctr_drbg);
 	mbedtls_entropy_init(&entropy);
-	if(mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, (const uint8_t*)"password", 8) != 0)
+	if(mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, (const uint8_t*)"password", 8) != 0) {
+		uprintf("mbedtls_ctr_drbg_seed() failed\n");
 		goto fail;
+	}
 
 	char config_json[524288];
 	FILE *f = fopen(path, "r");
@@ -97,16 +173,23 @@ bool config_load(struct Config *out, const char *path) {
 			uprintf("Failed to write default config to %s: %s\n", path, strerror(errno));
 			goto fail;
 		}
+		char publicIP[] = "[\"127.0.0.1\", \"[::]\"]"; // TODO: resolve actual public IP
 		uprintf("Writing default config to %s\n", path);
-		#ifdef WINDOWS
-		fprintf(def, "{\r\n\t\"HostName\": \"\",\r\n\t\"HostCert\": \"cert.pem\",\r\n\t\"HostKey\": \"key.pem\",\r\n\t\"StatusUri\": \"http://localhost/status\"\r\n}\r\n");
-		#else
-		fprintf(def, "{\n\t\"HostName\": \"\",\n\t\"HostCert\": \"cert.pem\",\n\t\"HostKey\": \"key.pem\",\n\t\"StatusUri\": \"http://localhost/status\"\n}\n");
-		#endif
+		fprintf(def,
+			"{" NEWLINE
+			"\t\"instance\": {" NEWLINE
+			"\t\t\"address\": %s," NEWLINE
+			"\t\t\"count\": 1" NEWLINE
+			"\t}," NEWLINE
+			"\t\"master\": {}," NEWLINE
+			"\t\"status\": {" NEWLINE
+			"\t\t\"url\": \"http://localhost\"" NEWLINE
+			"\t}" NEWLINE
+			"}" NEWLINE, publicIP);
 		fclose(def);
 		f = fopen(path, "r");
 	}
-	if(!f) {
+	if(f == NULL) {
 		uprintf("Failed to open %s: %s\n", path, strerror(errno));
 		goto fail;
 	}
@@ -126,128 +209,132 @@ bool config_load(struct Config *out, const char *path) {
 	config_json[flen] = 0;
 	fclose(f);
 
-	out->master_port = 2328;
-	out->status_port = 80;
-	*out->host_domain = 0;
-	*out->host_domainIPv4 = 0;
-	*out->status_domain = 0;
-	*out->status_path = 0;
-	out->status_tls = 0;
+	const char *it = config_json;
+	JSON_ITER_OBJECT(&it) {
+		case JSON_KEY('w','i','r','e','K','e','y',0): config_read_hex(&it, key, out->wireKey, &out->wireKey_len); break; // TODO: multiple keys
+		case JSON_KEY('i','n','s','t','a','n','c','e'): enableInstance = true; JSON_ITER_OBJECT(&it) {
+			case JSON_KEY('a','d','d','r','e','s','s',0): {
+				if(*it != '[') {
+					config_read_string(&it, key, out->instanceAddress[0]);
+					break;
+				}
+				uint8_t i = 0;
+				JSON_ITER_ARRAY(&it) {
+					if(i < lengthof(out->instanceAddress))
+						config_read_string(&it, key, out->instanceAddress[i++]);
+					else
+						json_skip_string(&it);
+				}
+				break;
+			}
+			case JSON_KEY('m','a','s','t','e','r',0,0): config_read_string(&it, key, out->instanceParent); break;
+			case JSON_KEY('c','o','u','n','t',0,0,0): config_read_uint16(&it, key, 0, 8192, &out->instanceCount); break;
+			default: json_skip_any(&it);
+		} break;
+		case JSON_KEY('m','a','s','t','e','r',0,0): enableMaster = true; JSON_ITER_OBJECT(&it) {
+			case JSON_KEY('c','e','r','t',0,0,0,0): config_read_cert(&it, key, &out->masterCert); break;
+			case JSON_KEY('k','e','y',0,0,0,0,0): config_read_pk(&it, key, &ctr_drbg, &out->masterKey); break;
+			case JSON_KEY('p','o','r','t',0,0,0,0): config_read_uint16(&it, key, 1, 65535, &out->masterPort); break;
+			default: json_skip_any(&it);
+		} break;
+		case JSON_KEY('s','t','a','t','u','s',0,0): enableStatus = true; JSON_ITER_OBJECT(&it) {
+			case JSON_KEY('u','r','l',0,0,0,0,0): config_read_url(&it, key, out->statusAddress, out->statusPath, &out->statusPort, &statusHTTPS); break;
+			case JSON_KEY('c','e','r','t',0,0,0,0): config_read_cert(&it, key, &out->statusCert); break;
+			case JSON_KEY('k','e','y',0,0,0,0,0): config_read_pk(&it, key, &ctr_drbg, &out->statusKey); break;
+			default: json_skip_any(&it);
+		} break;
+		default: json_skip_any(&it);
+	}
+	if(json_is_error(it))
+		goto fail;
 
-	const char *key, *it = config_json;
-	uint32_t key_len = 0;
-	while(json_iter_object(&it, &key, &key_len)) {
-		/*if(key_len == 6 && memcmp(key, "master", 6) == 0)
-			it = json_config_host(it, &master);
-		else if(key_len == 6 && memcmp(key, "status", 6) == 0)
-			it = json_config_host(it, &status);
-		else
-			it = json_skip_value(it);*/
-		#define IFEQ(str) if(key_len == sizeof(str) - 1 && memcmp(key, str, sizeof(str) - 1) == 0)
-		IFEQ("HostName") {
-			const char *domain;
-			uint32_t domain_len = 0;
-			it = json_get_string(it, &domain, &domain_len);
-			if(domain_len >= lengthof(out->host_domain)) {
-				uprintf("Error parsing config value \"HostName\": name too long\n");
-				continue;
+	if(!enableInstance) {
+		out->instanceCount = 0;
+	} else if(*out->instanceParent && !out->wireKey_len) {
+		uprintf("Missing required value \"wireKey\"\n");
+		goto fail;
+	}
+	if(!*out->instanceAddress[1])
+		memcpy(out->instanceAddress[1], out->instanceAddress[0], sizeof(out->instanceAddress[0]));
+
+	if(enableMaster) {
+		if(mbedtls_pk_get_type(&out->masterKey) == MBEDTLS_PK_NONE) {
+			if(out->masterCert.MBEDTLS_PRIVATE(version)) {
+				uprintf("Missing required value \"key\" for master\n");
+				goto fail;
 			}
-			sprintf(out->host_domain, "%.*s", domain_len, domain);
-		} else IFEQ("HostName_IPv4") {
-			const char *domain;
-			uint32_t domain_len = 0;
-			it = json_get_string(it, &domain, &domain_len);
-			if(domain_len >= lengthof(out->host_domainIPv4)) {
-				uprintf("Error parsing config value \"HostName\": name too long\n");
-				continue;
+			int res = mbedtls_pk_setup(&out->masterKey, mbedtls_pk_info_from_type(MBEDTLS_PK_RSA));
+			if(res) {
+				uprintf("mbedtls_pk_setup() failed: %s\n", mbedtls_high_level_strerr(res));
+				goto fail;
 			}
-			sprintf(out->host_domainIPv4, "%.*s", domain_len, domain);
-		} else IFEQ("HostCert") {
-			it = json_get_string(it, (const char**)&master_cert, &master_cert_len);
-		} else IFEQ("HostKey") {
-			it = json_get_string(it, (const char**)&master_key, &master_key_len);
-		} else IFEQ("Port") {
-			out->master_port = atoi(it);
-			it = json_skip_value(it);
-		} else IFEQ("StatusUri") {
-			const char *uri;
-			uint32_t uri_len = 0;
-			it = json_get_string(it, &uri, &uri_len);
-			if(uri_len >= lengthof(out->status_domain)) {
-				uprintf("Error parsing config value \"StatusUri\": URI too long\n");
-				continue;
+			res = mbedtls_rsa_gen_key(mbedtls_pk_rsa(out->masterKey), mbedtls_ctr_drbg_random, &ctr_drbg, 2048, 65537);
+			if(res) {
+				uprintf("mbedtls_rsa_gen_key() failed: %s\n", mbedtls_high_level_strerr(res));
+				goto fail;
 			}
-			if(uri_len > 8 && memcmp(uri, "https://", 8) == 0) {
-				out->status_tls = 1, out->status_port = 443;
-				uri += 8, uri_len -= 8;
-			} else if(uri_len > 7 && memcmp(uri, "http://", 7) == 0) {
-				out->status_tls = 0, out->status_port = 80;
-				uri += 7, uri_len -= 7;
-			} else {
-				uprintf("Error parsing config value \"StatusUri\": URI must begin with `http://` or `https://`\n");
-				continue;
-			}
-			const char *path = memchr(uri, '/', uri_len);
-			const char *port_end = path ? path : &uri[uri_len];
-			const char *port = memchr(uri, ':', port_end - uri);
-			memcpy(out->status_domain, uri, (port ? port : port_end) - uri);
-			if(port++)
-				out->status_port = atoi(port);
-			if(path++) {
-				size_t path_len = &uri[uri_len] - path;
-				memcpy(out->status_path, path, path_len);
-				if(path_len && out->status_path[path_len-1] != '/')
-					out->status_path[path_len++] = '/';
-				out->status_path[path_len] = 0;
-			}
-		} else IFEQ("StatusCert") {
-			it = json_get_string(it, (const char**)&status_cert, &status_cert_len);
-		} else IFEQ("StatusKey") {
-			it = json_get_string(it, (const char**)&status_key, &status_key_len);
-		} else {
-			it = json_skip_value(it);
 		}
-		#undef IFEQ
+		if(!out->masterCert.MBEDTLS_PRIVATE(version)) {
+			mbedtls_x509write_cert cert_ctx;
+			mbedtls_x509write_crt_init(&cert_ctx);
+			mbedtls_mpi serial;
+			mbedtls_mpi_init(&serial);
+			mbedtls_mpi_read_string(&serial, 10, "1");
+			mbedtls_x509write_crt_set_serial(&cert_ctx, &serial);
+			mbedtls_mpi_free(&serial);
+			mbedtls_x509write_crt_set_validity(&cert_ctx, "20010101000000", "20301231235959");
+			mbedtls_x509write_crt_set_issuer_name(&cert_ctx, "CN=CA,O=mbed TLS,C=UK");
+			mbedtls_x509write_crt_set_subject_name(&cert_ctx, "CN=CA,O=mbed TLS,C=UK");
+			mbedtls_x509write_crt_set_subject_key(&cert_ctx, &out->masterKey);
+			mbedtls_x509write_crt_set_issuer_key(&cert_ctx, &out->masterKey);
+			mbedtls_x509write_crt_set_md_alg(&cert_ctx, MBEDTLS_MD_SHA256);
+			mbedtls_x509write_crt_set_basic_constraints(&cert_ctx, 0, -1);
+			mbedtls_x509write_crt_set_subject_key_identifier(&cert_ctx);
+			mbedtls_x509write_crt_set_authority_key_identifier(&cert_ctx);
+			uint8_t cert[4096];
+			int res = mbedtls_x509write_crt_der(&cert_ctx, cert, sizeof(cert), mbedtls_ctr_drbg_random, &ctr_drbg);
+			mbedtls_x509write_crt_free(&cert_ctx);
+			if(res < 0) {
+				uprintf("mbedtls_x509write_crt_der() failed: %s\n", mbedtls_high_level_strerr(res));
+				goto fail;
+			}
+			res = mbedtls_x509_crt_parse_der(&out->masterCert, &cert[sizeof(cert) - res], res);
+			if(res < 0) {
+				uprintf("mbedtls_x509_crt_parse_der() failed: %s\n", mbedtls_high_level_strerr(res));
+				goto fail;
+			}
+		}
+	} else {
+		out->masterPort = 0;
 	}
 
-	if(!*out->host_domain) {
-		uprintf("Missing required value \"HostName\"\n");
-		goto fail;
-	}
-	if(!*out->host_domainIPv4)
-		sprintf(out->host_domainIPv4, "%s", out->host_domain);
-	if(master_cert_len == 0) {
-		uprintf("Using self-signined host certificate\n");
-		master_key_len = 0;
-	} else if(master_key_len == 0) {
-		uprintf("Missing required value \"HostKey\"\n");
-		goto fail;
-	}
-	if(status_cert_len == 0) {
-		status_cert = master_cert;
-		status_cert_len = master_cert_len;
-		status_key = master_key;
-		status_key_len = master_key_len;
-	} else if(status_key_len == 0) {
-		uprintf("Missing required value \"StatusKey\"\n");
-		goto fail;
+	if(statusHTTPS) {
+		if(mbedtls_pk_get_type(&out->statusKey) == MBEDTLS_PK_NONE) {
+			uprintf("Missing required value \"key\" for status\n");
+			goto fail;
+		}
+		if(!out->statusCert.MBEDTLS_PRIVATE(version)) {
+			uprintf("Missing required value \"cert\" for status\n");
+			goto fail;
+		}
+	} else if(enableStatus) {
+		if(!out->statusPort) {
+			uprintf("Missing required value \"url\" for status\n");
+			goto fail;
+		}
+		mbedtls_x509_crt_free(&out->statusCert);
+		mbedtls_pk_free(&out->statusKey);
 	}
 
-	if(load_key(master_key, master_key_len, &ctr_drbg, &out->keys[0]))
-		goto fail;
-	if(load_key(status_key, status_key_len, &ctr_drbg, &out->keys[1]))
-		goto fail;
-	if(load_cert(master_cert, master_cert_len, &ctr_drbg, &out->keys[0], &out->certs[0]))
-		goto fail;
-	if(load_cert(status_cert, status_cert_len, &ctr_drbg, &out->keys[1], &out->certs[1]))
-		goto fail;
-	res = 0;
-	fail:
-	if(res)
+	bool ret = false;
+	if(false) {
+		fail:
 		config_free(out);
+		ret = true;
+	}
 	mbedtls_entropy_free(&entropy);
 	mbedtls_ctr_drbg_free(&ctr_drbg);
-	return res;
+	return ret;
 }
 
 void config_free(struct Config *cfg) {

@@ -1,4 +1,3 @@
-#include "../thread.h"
 #include "../net.h"
 #include "internal.h"
 #include <unistd.h>
@@ -11,7 +10,7 @@ struct Context {
 };
 static struct Context ctx = {-1, NULL};
 
-static thread_return_t handle_client(void *fd) {
+static void *handle_client(void *fd) {
 	char buf[65536];
 	ssize_t size = recv((intptr_t)fd, buf, sizeof(buf), 0);
 	if(size >= 0) {
@@ -23,15 +22,15 @@ static thread_return_t handle_client(void *fd) {
 	return 0;
 }
 
-static thread_return_t status_handler(void*) {
+static void *status_handler(void*) {
 	uprintf("Started HTTP\n");
 	struct SS addr = {.len = sizeof(struct sockaddr_storage)};
 	for(intptr_t clientfd; (clientfd = accept(ctx.listenfd, &addr.sa, &addr.len)) != -1;)
-		thread_create((thread_t[]){0}, handle_client, (void*)clientfd);
+		pthread_create((pthread_t[]){NET_THREAD_INVALID}, NULL, (void *(*)(void*))handle_client, (void*)clientfd);
 	return 0;
 }
 
-static thread_t status_thread = 0;
+static pthread_t status_thread = NET_THREAD_INVALID;
 bool status_init(const char *path, uint16_t port) {
 	ctx.listenfd = socket(AF_INET6, SOCK_STREAM, 0);
 	{
@@ -48,16 +47,20 @@ bool status_init(const char *path, uint16_t port) {
 			uprintf("Cannot bind socket to port %hu: %s\n", port, strerror(errno));
 			close(ctx.listenfd);
 			ctx.listenfd = -1;
-			return 1;
+			return true;
 		}
 	}
 	if(listen(ctx.listenfd, 128) < 0) {
 		close(ctx.listenfd);
 		ctx.listenfd = -1;
-		return 1;
+		return true;
 	}
 	ctx.path = path;
-	return thread_create(&status_thread, status_handler, NULL);
+	if(pthread_create(&status_thread, NULL, (void *(*)(void*))status_handler, NULL)) {
+		status_thread = NET_THREAD_INVALID;
+		return true;
+	}
+	return false;
 }
 void status_cleanup() {
 	if(ctx.listenfd == -1)
@@ -66,8 +69,8 @@ void status_cleanup() {
 	shutdown(ctx.listenfd, SHUT_RD);
 	close(ctx.listenfd);
 	ctx.listenfd = -1;
-	if(status_thread) {
-		thread_join(status_thread);
-		status_thread = 0;
+	if(status_thread != NET_THREAD_INVALID) {
+		pthread_join(status_thread, NULL);
+		status_thread = NET_THREAD_INVALID;
 	}
 }

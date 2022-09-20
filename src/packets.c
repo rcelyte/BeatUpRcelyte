@@ -1,6 +1,23 @@
 #include "global.h"
-#include "../common/packets.c.h"
-#include "scramble.h"
+#include "packets.h"
+#include "../common/packets.c"
+
+ServerCode StringToServerCode(const char *in, uint32_t len) {
+	static const uint8_t readTable[128] = {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,27,28,29,30,31,32,33,34,35,36,1,1,1,1,1,1,1,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1};
+	ServerCode out = 0;
+	if(len <= 5)
+		for(uint32_t i = 0, fac = 1; i < len; ++i, fac *= 36)
+			out += readTable[in[i] & 127] * fac;
+	return out;
+}
+
+char *ServerCodeToString(char *out, ServerCode in) {
+	char *s = out;
+	for(; in; in /= 36)
+		*s++ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--in % 36];
+	*s = 0;
+	return out;
+}
 
 [[maybe_unused]] static void _pkt_ServerCode_read(ServerCode *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	struct String str;
@@ -9,7 +26,7 @@
 }
 [[maybe_unused]] static void _pkt_ServerCode_write(const ServerCode *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	struct String str = {.length = 0, .isNull = false};
-	for(ServerCode code = scramble_encode(*data); code; code /= 36)
+	for(ServerCode code = *data; code; code /= 36)
 		str.data[str.length++] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--code % 36];
 	_pkt_String_write(&str, pkt, end, ctx);
 }
@@ -43,3 +60,4 @@ MpCoreType MpCoreType_From(const struct String *type) {
 }
 
 #pragma GCC diagnostic ignored "-Wunused-parameter"
+#include "packets.gen.c.h"
