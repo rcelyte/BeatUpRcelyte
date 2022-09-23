@@ -47,7 +47,7 @@ $(OBJDIR)/libmbed%.a: mbedtls/.git
 	@echo "[make $(notdir $@)]"
 	mkdir -p "$@.build/"
 	cp -r mbedtls/3rdparty/ mbedtls/include/ mbedtls/library/ mbedtls/scripts/ "$@.build/"
-	$(MAKE) -C "$@.build/library" CC=$(CC) AR=$(AR) $(notdir $@)
+	$(MAKE) -C "$@.build/library" CC=$(CC) AR=$(AR) PYTHON=true PERL=true $(notdir $@)
 	mv "$@.build/library/$(notdir $@)" "$@"
 	rm -r "$@.build/"
 

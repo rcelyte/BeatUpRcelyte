@@ -259,7 +259,7 @@ bool config_load(struct Config *out, const char *path) {
 
 	if(enableMaster) {
 		if(mbedtls_pk_get_type(&out->masterKey) == MBEDTLS_PK_NONE) {
-			if(out->masterCert.MBEDTLS_PRIVATE(version)) {
+			if(out->masterCert.version) {
 				uprintf("Missing required value \"key\" for master\n");
 				goto fail;
 			}
@@ -274,7 +274,7 @@ bool config_load(struct Config *out, const char *path) {
 				goto fail;
 			}
 		}
-		if(!out->masterCert.MBEDTLS_PRIVATE(version)) {
+		if(!out->masterCert.version) {
 			mbedtls_x509write_cert cert_ctx;
 			mbedtls_x509write_crt_init(&cert_ctx);
 			mbedtls_mpi serial;
@@ -313,7 +313,7 @@ bool config_load(struct Config *out, const char *path) {
 			uprintf("Missing required value \"key\" for status\n");
 			goto fail;
 		}
-		if(!out->statusCert.MBEDTLS_PRIVATE(version)) {
+		if(!out->statusCert.version) {
 			uprintf("Missing required value \"cert\" for status\n");
 			goto fail;
 		}

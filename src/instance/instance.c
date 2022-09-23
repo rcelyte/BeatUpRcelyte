@@ -1,6 +1,6 @@
 #include "instance.h"
 #include "common.h"
-#include "counter.h"
+#include "../counter.h"
 #include <mbedtls/error.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1564,6 +1564,7 @@ static void *instance_handler(struct InstanceContext *ctx) {
 	return 0;
 }
 
+// TODO: clients aren't guaranteed to use the same IP address when deeplinking from the master server to instances
 static struct NetSession *instance_onResolve(struct InstanceContext *ctx, struct SS addr, void **userdata_out) {
 	FOR_ALL_ROOMS(ctx, room) {
 		FOR_SOME_PLAYERS(id, (*room)->playerSort,) {

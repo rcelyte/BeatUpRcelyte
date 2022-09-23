@@ -1,5 +1,6 @@
 #include <mbedtls/x509_crt.h>
 #include <mbedtls/pk.h>
+#include <stdbool.h>
 #define CONFIG_STRING_LENGTH 4096
 
 struct Config {

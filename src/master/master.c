@@ -1,5 +1,5 @@
-#include "global.h"
-#include "instance/instance.h"
+#include "../global.h"
+#include "master.h"
 #include "pool.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -293,9 +293,9 @@ static void handle_ClientHelloWithCookieRequest(struct Context *ctx, struct Mast
 			.certificateCount = 0,
 		},
 	};
-	for(const mbedtls_x509_crt *it = ctx->cert; it; it = it->MBEDTLS_PRIVATE(next)) {
-		r_cert.serverCertificateRequest.certificateList[r_cert.serverCertificateRequest.certificateCount].length = it->MBEDTLS_PRIVATE(raw).MBEDTLS_PRIVATE(len);
-		memcpy(r_cert.serverCertificateRequest.certificateList[r_cert.serverCertificateRequest.certificateCount].data, it->MBEDTLS_PRIVATE(raw).MBEDTLS_PRIVATE(p), r_cert.serverCertificateRequest.certificateList[r_cert.serverCertificateRequest.certificateCount].length);
+	for(const mbedtls_x509_crt *it = ctx->cert; it; it = it->next) {
+		r_cert.serverCertificateRequest.certificateList[r_cert.serverCertificateRequest.certificateCount].length = it->raw.len;
+		memcpy(r_cert.serverCertificateRequest.certificateList[r_cert.serverCertificateRequest.certificateCount].data, it->raw.p, r_cert.serverCertificateRequest.certificateList[r_cert.serverCertificateRequest.certificateCount].length);
 		++r_cert.serverCertificateRequest.certificateCount;
 	}
 	uint8_t resp[65536], *resp_end = resp;
@@ -750,8 +750,8 @@ struct NetContext *master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_co
 		return NULL;
 	}
 	uint_fast8_t count = 0;
-	for(const mbedtls_x509_crt *it = cert; it; it = it->MBEDTLS_PRIVATE(next), ++count) {
-		if(it->MBEDTLS_PRIVATE(raw).MBEDTLS_PRIVATE(len) > 4096) {
+	for(const mbedtls_x509_crt *it = cert; it; it = it->next, ++count) {
+		if(it->raw.len > 4096) {
 			uprintf("Host certificate too large\n");
 			return NULL;
 		}

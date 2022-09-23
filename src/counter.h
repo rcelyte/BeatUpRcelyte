@@ -1,5 +1,5 @@
 #pragma once
-#include "../global.h"
+#include "global.h"
 
 struct Counter64 { // Typesafe wrapper for 64-bit bitfield operations
 	uint64_t bits;

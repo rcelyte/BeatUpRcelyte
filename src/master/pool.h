@@ -1,5 +1,5 @@
-#include "packets.h"
-#include "net.h"
+#pragma once
+#include "../net.h"
 
 struct PoolHost;
 static const uint32_t POOL_HOST_INVALID = ~0u;

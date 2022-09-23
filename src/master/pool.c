@@ -1,6 +1,5 @@
-#include "global.h"
 #include "pool.h"
-#include "instance/counter.h"
+#include "../counter.h"
 #include <stddef.h>
 #include <stdlib.h>
 #include <pthread.h>

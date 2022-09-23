@@ -77,7 +77,7 @@ static void *status_ssl_handler(void*) {
 
 static int status_ssl_sni(struct Context *ctx, mbedtls_ssl_context *ssl, const unsigned char *name, size_t name_len) {
 	uint8_t i = (name_len == strlen(ctx->domain) && memcmp(name, ctx->domain, name_len) == 0);
-	mbedtls_ssl_set_hs_ca_chain(ssl, ctx->certs[i].MBEDTLS_PRIVATE(next), NULL);
+	mbedtls_ssl_set_hs_ca_chain(ssl, ctx->certs[i].next, NULL);
 	return mbedtls_ssl_set_hs_own_cert(ssl, &ctx->certs[i], &ctx->keys[i]);
 }
 

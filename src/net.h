@@ -125,9 +125,6 @@ mbedtls_ctr_drbg_context *net_get_ctr_drbg(struct NetContext *ctx);
 
 uint32_t net_time();
 
-struct NetContext *master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_context *key, uint16_t port); // TODO: move these
-void master_cleanup();
-
 static inline int32_t RelativeSequenceNumber(int32_t to, int32_t from) {
 	return (to - from + NET_MAX_SEQUENCE + NET_MAX_SEQUENCE / 2) % NET_MAX_SEQUENCE - NET_MAX_SEQUENCE / 2;
 }

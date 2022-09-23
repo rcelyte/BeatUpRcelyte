@@ -1,7 +1,7 @@
-#include "status/status.h"
-#include "instance/instance.h"
 #include "config.h"
-#include "net.h"
+#include "instance/instance.h"
+#include "master/master.h"
+#include "status/status.h"
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
