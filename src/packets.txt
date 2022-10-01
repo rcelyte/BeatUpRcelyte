@@ -1119,7 +1119,7 @@ d NetPacketHeader
 		MtuOk mtuOk
 		Merged merged 12
 d PacketEncryptionLayer
-	b encrypted
+	u8 encrypted
 	if(.encrypted == 1)
 		u32 sequenceId
 		u8 iv[16]

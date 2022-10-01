@@ -42,7 +42,7 @@ struct SS {
 	};
 };
 
-uint8_t addrs_are_equal(const struct SS *a0, const struct SS *a1);
+bool SS_equal(const struct SS *a0, const struct SS *a1);
 void net_tostr(const struct SS *a, char out[static INET6_ADDRSTRLEN + 8]);
 
 struct NetKeypair {
@@ -71,6 +71,7 @@ struct NetContext {
 	WireLinkType _typeid; // used to distinguish between local (struct NetContext) and remote (mbedtls_ssl_context) connections
 	int32_t NET_H_PRIVATE(sockfd), NET_H_PRIVATE(listenfd);
 	atomic_bool NET_H_PRIVATE(run);
+	bool NET_H_PRIVATE(filterUnencrypted);
 	pthread_mutex_t NET_H_PRIVATE(mutex);
 	mbedtls_ctr_drbg_context ctr_drbg;
 	mbedtls_entropy_context NET_H_PRIVATE(entropy);
@@ -87,7 +88,6 @@ struct NetContext {
 	void (*onResend)(void *userptr, uint32_t currentTime, uint32_t *nextTick);
 	void (*onWireLink)(void *userptr, union WireLink *link);
 	void (*onWireMessage)(void *userptr, union WireLink *link, const struct WireMessage *message);
-	const uint8_t *NET_H_PRIVATE(dirt);
 	struct Performance NET_H_PRIVATE(perf);
 };
 
@@ -106,7 +106,7 @@ bool NetSession_set_clientPublicKey(struct NetSession *session, struct NetContex
 uint32_t NetSession_get_lastKeepAlive(struct NetSession *session);
 const struct SS *NetSession_get_addr(struct NetSession *session);
 
-bool net_init(struct NetContext *ctx, uint16_t port);
+bool net_init(struct NetContext *ctx, uint16_t port, bool filterUnencrypted);
 void net_stop(struct NetContext *ctx);
 void net_cleanup(struct NetContext *ctx);
 void net_lock(struct NetContext *ctx);
@@ -116,7 +116,7 @@ void net_session_reset(struct NetContext *ctx, struct NetSession *session);
 void net_session_free(struct NetSession *session);
 bool net_add_remote(struct NetContext *ctx, mbedtls_ssl_context *link);
 bool net_remove_remote(struct NetContext *ctx, mbedtls_ssl_context *link);
-uint32_t net_recv(struct NetContext *ctx, uint8_t *buf, uint32_t buf_len, struct NetSession **session, const uint8_t **pkt, void **userdata_out);
+uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSession **session, void **userdata_out);
 void net_flush_merged(struct NetContext *ctx, struct NetSession *session);
 void net_queue_merged(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint16_t len);
 void net_send_internal(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint32_t len, bool encrypt);

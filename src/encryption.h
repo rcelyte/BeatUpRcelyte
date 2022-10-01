@@ -9,14 +9,13 @@ struct EncryptionState {
 	uint8_t receiveKey[32];
 	uint8_t sendMacKey[64];
 	uint8_t receiveMacKey[64];
-	int32_t lastSentSequenceNum;
-	bool hasReceivedSequenceNum;
-	uint32_t lastReceivedSequenceNum;
-	bool receivedSequenceNumBuffer[64];
+	uint32_t outboundSequence;
+	uint32_t receiveWindowEnd;
+	uint64_t receiveWindow;
 	bool initialized;
 };
 
 bool EncryptionState_init(struct EncryptionState *state, const mbedtls_mpi *preMasterSecret, const uint8_t serverRandom[32], const uint8_t clientRandom[32], bool isClient);
 void EncryptionState_free(struct EncryptionState *state);
-bool EncryptionState_decrypt(struct EncryptionState *state, struct PacketEncryptionLayer header, uint8_t *data, uint32_t *length);
-bool EncryptionState_encrypt(struct EncryptionState *state, struct PacketEncryptionLayer *header, mbedtls_ctr_drbg_context *ctr_drbg, const uint8_t *buf, uint32_t buf_len, uint8_t *out, uint32_t *out_len);
+uint32_t EncryptionState_decrypt(struct EncryptionState *state, const uint8_t raw[static 1536], const uint8_t *raw_end, uint8_t out[restrict static 1536]);
+uint32_t EncryptionState_encrypt(struct EncryptionState *state, mbedtls_ctr_drbg_context *ctr_drbg, const uint8_t *restrict buf, uint32_t buf_len, uint8_t out[static 1536]);

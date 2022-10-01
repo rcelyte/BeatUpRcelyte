@@ -2507,14 +2507,14 @@ void _pkt_NetPacketHeader_write(const struct NetPacketHeader *restrict data, uin
 	}
 }
 void _pkt_PacketEncryptionLayer_read(struct PacketEncryptionLayer *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_b_read(&data->encrypted, pkt, end, ctx);
+	_pkt_u8_read(&data->encrypted, pkt, end, ctx);
 	if(data->encrypted == 1) {
 		_pkt_u32_read(&data->sequenceId, pkt, end, ctx);
 		_pkt_raw_read(data->iv, pkt, end, ctx, 16);
 	}
 }
 void _pkt_PacketEncryptionLayer_write(const struct PacketEncryptionLayer *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_b_write(&data->encrypted, pkt, end, ctx);
+	_pkt_u8_write(&data->encrypted, pkt, end, ctx);
 	if(data->encrypted == 1) {
 		_pkt_u32_write(&data->sequenceId, pkt, end, ctx);
 		_pkt_raw_write(data->iv, pkt, end, ctx, 16);

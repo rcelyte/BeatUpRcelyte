@@ -53,7 +53,7 @@ struct Context {
 
 static struct MasterSession *master_lookup_session(struct Context *ctx, struct SS addr) {
 	for(struct MasterSession *session = ctx->sessionList; session; session = session->next)
-		if(addrs_are_equal(&addr, NetSession_get_addr(&session->net)))
+		if(SS_equal(&addr, NetSession_get_addr(&session->net)))
 			return session;
 	return NULL;
 }
@@ -136,10 +136,10 @@ static bool master_handle_ack(struct MasterSession *session, MessageType *messag
 			session->resend.index[session->resend.count].data = data;
 			*messageType_out = session->resend.data[data].messageType;
 			*serialType_out = session->resend.data[data].serialType;
-			return 1;
+			return true;
 		}
 	}
-	return 0;
+	return false;
 }
 
 static void master_net_send_reliable(struct NetContext *ctx, struct MasterSession *session, const uint8_t *buf, uint32_t len, uint32_t requestId, MessageType messageType, uint8_t serialType, bool shouldSend, bool encrypt) {
@@ -717,12 +717,11 @@ static void handle_packet(struct Context *ctx, struct MasterSession *session, st
 static void *master_handler(struct Context *ctx) {
 	net_lock(&ctx->net);
 	uprintf("Started\n");
-	uint8_t buf[262144];
-	memset(buf, 0, sizeof(buf));
+	uint8_t pkt[1536];
+	memset(pkt, 0, sizeof(pkt));
 	uint32_t len;
 	struct MasterSession *session;
-	const uint8_t *pkt;
-	while((len = net_recv(&ctx->net, buf, sizeof(buf), (struct NetSession**)&session, &pkt, NULL))) {
+	while((len = net_recv(&ctx->net, pkt, (struct NetSession**)&session, NULL))) {
 		const uint8_t *data = pkt, *end = &pkt[len];
 		struct NetPacketHeader header;
 		if(!pkt_read(&header, &data, end, PV_LEGACY_DEFAULT))
@@ -745,7 +744,7 @@ static void master_onWireLink(struct Context*, union WireLink *link) {
 static pthread_t master_thread = NET_THREAD_INVALID;
 static struct Context ctx = {CLEAR_NETCONTEXT, NULL, NULL, NULL}; // TODO: This "singleton" can't actually scale up due to the pool API no longer being threadsafe
 struct NetContext *master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_context *key, uint16_t port) {
-	if(net_init(&ctx.net, port)) {
+	if(net_init(&ctx.net, port, false)) {
 		uprintf("net_init() failed\n");
 		return NULL;
 	}

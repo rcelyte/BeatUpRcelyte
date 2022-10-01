@@ -147,10 +147,10 @@ static bool PlayerStateHash_contains(struct PlayerStateHash state, const char *k
 	for(uint_fast8_t i = 0; i < 3; ++i) {
 		uint_fast8_t ind = (hash % 128);
 		if(!(((ind >= 64) ? state.bloomFilter.d0 >> (ind - 64) : state.bloomFilter.d1 >> ind) & 1))
-			return 0;
+			return false;
 		hash >>= 8;
 	}
-	return 1;
+	return true;
 }
 
 static uint8_t InstanceSession_connectionId(const struct InstanceSession *list, const struct InstanceSession *session) {
@@ -1549,13 +1549,12 @@ static void *instance_handler(struct InstanceContext *ctx) {
 		},
 	});
 	uprintf("Started\n");
-	uint8_t buf[262144];
-	memset(buf, 0, sizeof(buf));
+	uint8_t pkt[1536];
+	memset(pkt, 0, sizeof(pkt));
 	uint32_t len;
 	struct Room **room;
 	struct InstanceSession *session;
-	const uint8_t *pkt;
-	while((len = net_recv(&ctx->net, buf, sizeof(buf), (struct NetSession**)&session, &pkt, (void**)&room)))
+	while((len = net_recv(&ctx->net, pkt, (struct NetSession**)&session, (void**)&room)))
 		handle_packet(ctx, room, session, pkt, &pkt[len]);
 	if(ctx->master)
 		wire_disconnect(&ctx->net, ctx->master);
@@ -1568,7 +1567,7 @@ static void *instance_handler(struct InstanceContext *ctx) {
 static struct NetSession *instance_onResolve(struct InstanceContext *ctx, struct SS addr, void **userdata_out) {
 	FOR_ALL_ROOMS(ctx, room) {
 		FOR_SOME_PLAYERS(id, (*room)->playerSort,) {
-			if(addrs_are_equal(&addr, NetSession_get_addr(&(*room)->players[id].net))) {
+			if(SS_equal(&addr, NetSession_get_addr(&(*room)->players[id].net))) {
 				*userdata_out = room;
 				return &(*room)->players[id].net;
 			}
@@ -1715,7 +1714,7 @@ static struct WireSessionAllocResp room_resolve_session(struct InstanceContext *
 	memcpy(&addr.ss, req->address.data, req->address.length);
 	struct InstanceSession *session = NULL;
 	FOR_SOME_PLAYERS(id, room->playerSort,) {
-		if(addrs_are_equal(&addr, NetSession_get_addr(&room->players[id].net))) {
+		if(SS_equal(&addr, NetSession_get_addr(&room->players[id].net))) {
 			session = &room->players[id];
 			room_disconnect(ctx, &room, session, DC_RESET | DC_NOTIFY);
 			break;
@@ -1831,7 +1830,7 @@ bool instance_init(const char *domainIPv4, const char *domain, const char *remot
 	}
 	for(; threads_len < count; ++threads_len) {
 		struct InstanceContext *ctx = &contexts[threads_len];
-		if(net_init(&ctx->net, 5000 + threads_len)) {
+		if(net_init(&ctx->net, 5000 + threads_len, true)) {
 			uprintf("net_init() failed\n");
 			return true;
 		}

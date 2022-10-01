@@ -2117,7 +2117,7 @@ struct NetPacketHeader {
 	};
 };
 struct PacketEncryptionLayer {
-	bool encrypted;
+	uint8_t encrypted;
 	uint32_t sequenceId;
 	uint8_t iv[16];
 };
