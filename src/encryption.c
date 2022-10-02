@@ -38,6 +38,10 @@ static uint8_t MakeSeed(uint8_t *out, const char *baseSeed, const uint8_t server
 }
 
 bool EncryptionState_init(struct EncryptionState *state, const mbedtls_mpi *preMasterSecret, const uint8_t serverRandom[32], const uint8_t clientRandom[32], bool isClient) {
+	if(!mbedtls_md_info_from_type(MBEDTLS_MD_SHA256)) {
+		uprintf("mbedtls_md_info_from_type(MBEDTLS_MD_SHA256) failed\n");
+		return true;
+	}
 	uint8_t preMasterSecretBytes[mbedtls_mpi_size(preMasterSecret)];
 	int32_t res = mbedtls_mpi_write_binary(preMasterSecret, preMasterSecretBytes, sizeof(preMasterSecretBytes));
 	if(res) {
@@ -102,8 +106,11 @@ static inline void unchecked_u32_write(uint32_t data, uint8_t **pkt) {
 static bool AuthenticateMessage(struct EncryptionState *state, const uint8_t *data, uint8_t *data_end, uint8_t hash[10], uint32_t sequence) {
 	unchecked_u32_write(sequence, &data_end);
 	uint8_t expected[MBEDTLS_MD_MAX_SIZE];
-	const mbedtls_md_info_t *md_info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
-	mbedtls_md_hmac(md_info, state->receiveMacKey, sizeof(state->receiveMacKey), data, data_end - data, expected);
+	int res = mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), state->receiveMacKey, sizeof(state->receiveMacKey), data, data_end - data, expected);
+	if(res < 0) {
+		uprintf("mbedtls_md_hmac() failed: %s\n", mbedtls_high_level_strerr(res));
+		return true;
+	}
 	if(memcmp(hash, expected, 10)) {
 		uprintf("Packet hash mismatch\n");
 		return true;
@@ -138,17 +145,24 @@ uint32_t EncryptionState_decrypt(struct EncryptionState *state, const uint8_t ra
 	return length;
 }
 
-static inline void unchecked_raw_write(const uint8_t *restrict data, uint8_t **pkt, size_t count) {
-	memcpy(*pkt, data, count);
-	*pkt += count;
-}
+static int SignMessage(struct EncryptionState *state, const uint8_t *restrict data, uint32_t data_len, uint32_t sequence, uint8_t *restrict hash_out) {
+	uint8_t sequenceLE[sizeof(uint32_t)];
+	unchecked_u32_write(sequence, (uint8_t*[]){sequenceLE});
 
-static void SignMessage(struct EncryptionState *state, const uint8_t *data, uint8_t **data_end, uint32_t sequence) {
-	uint8_t *sig_end = *data_end;
-	unchecked_u32_write(sequence, &sig_end);
-	uint8_t hash[MBEDTLS_MD_MAX_SIZE];
-	mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), state->sendMacKey, sizeof(state->sendMacKey), data, sig_end - data, hash);
-	unchecked_raw_write(hash, data_end, 10);
+	mbedtls_md_context_t ctx;
+	mbedtls_md_init(&ctx);
+	int res = mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 1);
+	if(res < 0) goto cleanup;
+	res = mbedtls_md_hmac_starts(&ctx, state->sendMacKey, sizeof(state->sendMacKey));
+	if(res < 0) goto cleanup;
+	res = mbedtls_md_hmac_update(&ctx, data, data_len);
+	if(res < 0) goto cleanup;
+	res = mbedtls_md_hmac_update(&ctx, sequenceLE, sizeof(sequenceLE));
+	if(res < 0) goto cleanup;
+	res = mbedtls_md_hmac_finish(&ctx, hash_out);
+	cleanup:
+	mbedtls_md_free(&ctx);
+	return res;
 }
 
 uint32_t EncryptionState_encrypt(struct EncryptionState *state, mbedtls_ctr_drbg_context *ctr_drbg, const uint8_t *restrict buf, uint32_t buf_len, uint8_t out[static 1536]) {
@@ -160,20 +174,24 @@ uint32_t EncryptionState_encrypt(struct EncryptionState *state, mbedtls_ctr_drbg
 		};
 		mbedtls_ctr_drbg_random(ctr_drbg, header.iv, sizeof(header.iv));
 		pkt_write(&header, &out, out_end, PV_LEGACY_DEFAULT);
-		uint8_t unencrypted[1536], *unencrypted_end = unencrypted;
-		unchecked_raw_write(buf, &unencrypted_end, buf_len);
-		SignMessage(state, unencrypted, &unencrypted_end, header.sequenceId);
-		uint8_t pad = 16 - ((unencrypted_end - unencrypted) & 15);
-		memset(unencrypted_end, pad - 1, pad);
-		size_t length = &unencrypted_end[pad] - unencrypted;
+		uint8_t cap[32], cap_len = buf_len & 15, pad = 16 - ((buf_len + 10) & 15);
+		uint32_t cut_len = buf_len - cap_len;
+		memcpy(cap, &buf[cut_len], cap_len);
+		int res = SignMessage(state, buf, buf_len, header.sequenceId, &cap[cap_len]); cap_len += 10;
+		if(res < 0) {
+			uprintf("SignMessage() failed: %s\n", mbedtls_high_level_strerr(res));
+			return 0;
+		}
+		memset(&cap[cap_len], pad - 1, pad); cap_len += pad;
 		mbedtls_aes_setkey_enc(&state->aes, state->sendKey, sizeof(state->sendKey) * 8);
-		mbedtls_aes_crypt_cbc(&state->aes, MBEDTLS_AES_ENCRYPT, length, header.iv, unencrypted, out);
-		out += length;
+		mbedtls_aes_crypt_cbc(&state->aes, MBEDTLS_AES_ENCRYPT, cut_len, header.iv, buf, out); out += cut_len;
+		mbedtls_aes_crypt_cbc(&state->aes, MBEDTLS_AES_ENCRYPT, cap_len, header.iv, cap, out); out += cap_len;
 	} else {
 		pkt_write_c(&out, out_end, PV_LEGACY_DEFAULT, PacketEncryptionLayer, {
 			.encrypted = false,
 		});
-		unchecked_raw_write(buf, &out, buf_len);
+		memcpy(out, buf, buf_len);
+		out += buf_len;
 	}
 	return out - out_start;
 }

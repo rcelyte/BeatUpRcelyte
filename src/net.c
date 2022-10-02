@@ -150,40 +150,7 @@ uint32_t net_time() {
 void net_send_internal(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint32_t len, bool encrypt) {
 	uint8_t body[1536];
 	uint32_t body_len = EncryptionState_encrypt(encrypt ? &session->encryptionState : NULL, &ctx->ctr_drbg, buf, len, body);
-	#ifdef WINSOCK_VERSION
-	WSABUF iov[] = {
-		{.len = body_len, .buf = (char*)body},
-	};
-	WSAMSG msg = {
-		.name = &session->addr.sa,
-		.namelen = session->addr.len,
-		.lpBuffers = iov,
-		.dwBufferCount = lengthof(iov),
-		.Control = {
-			.len = 0,
-			.buf = NULL,
-		},
-		.dwFlags = 0,
-	};
-	DWORD size = 0;
-	WSASendMsg(ctx->sockfd, &msg, 0, &size, NULL, NULL);
-	// uprintf("sendto[%lu]\n", size);
-	#else
-	struct iovec iov[] = {
-		{.iov_base = body, .iov_len = body_len},
-	};
-	struct msghdr msg = {
-		.msg_name = &session->addr.sa,
-		.msg_namelen = session->addr.len,
-		.msg_iov = iov,
-		.msg_iovlen = lengthof(iov),
-		.msg_control = NULL,
-		.msg_controllen = 0,
-		.msg_flags = 0,
-	};
-	/*ssize_t size =*/ sendmsg(ctx->sockfd, &msg, 0);
-	// uprintf("sendto[%zd]\n", size);
-	#endif
+	sendto(ctx->sockfd, (char*)body, body_len, 0, &session->addr.sa, session->addr.len);
 }
 
 static struct NetSession *onResolve_stub(void*, struct SS, void**) {return NULL;}
