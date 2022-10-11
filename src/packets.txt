@@ -711,7 +711,7 @@ n MpMapColor
 		ColorNoAlphaSerializable envColorRightBoost
 	if(.have_obstacleColor)
 		ColorNoAlphaSerializable obstacleColor
-n MpBeatmapPacket
+r MpBeatmapPacket
 	String levelHash
 	LongString songName
 	LongString songSubName

@@ -21,6 +21,7 @@ struct Config {
 	uint16_t instanceCount, masterPort, statusPort;
 	char instanceAddress[2][CONFIG_STRING_LENGTH];
 	char instanceParent[CONFIG_STRING_LENGTH];
+	char instanceMapPool[CONFIG_STRING_LENGTH];
 	char statusAddress[CONFIG_STRING_LENGTH];
 	char statusPath[CONFIG_STRING_LENGTH];
 };

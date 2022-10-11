@@ -1660,7 +1660,7 @@ static void _pkt_MpMapColor_write(const struct MpMapColor *restrict data, uint8_
 		_pkt_ColorNoAlphaSerializable_write(&data->obstacleColor, pkt, end, ctx);
 	}
 }
-static void _pkt_MpBeatmapPacket_read(struct MpBeatmapPacket *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+void _pkt_MpBeatmapPacket_read(struct MpBeatmapPacket *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_String_read(&data->levelHash, pkt, end, ctx);
 	_pkt_LongString_read(&data->songName, pkt, end, ctx);
 	_pkt_LongString_read(&data->songSubName, pkt, end, ctx);

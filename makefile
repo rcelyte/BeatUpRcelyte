@@ -14,7 +14,7 @@ LIBS := libmbedtls.a libmbedx509.a libmbedcrypto.a
 OBJS := $(FILES:%=$(OBJDIR)/%.o) $(HTMLS:%=$(OBJDIR)/%.s) $(LIBS:%=$(OBJDIR)/%)
 DEPS := $(FILES:%=$(OBJDIR)/%.d)
 
-CFLAGS := -g -std=gnu2x -Imbedtls/include -Wall -Wextra -Werror -pedantic-errors -DFORCE_MASSIVE_LOBBIES
+CFLAGS := -g -std=gnu2x -Imbedtls/include -Wall -Wextra -Werror -pedantic-errors
 LDFLAGS := -O2 -Wl,--gc-sections,--fatal-warnings
 
 sinclude makefile.user

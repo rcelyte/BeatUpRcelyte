@@ -7,7 +7,6 @@
 #include <stdlib.h>
 #include <errno.h>
 
-
 #ifdef WINDOWS
 #define NEWLINE "\r\n"
 
@@ -153,6 +152,7 @@ bool config_load(struct Config *out, const char *path) {
 	*out->instanceAddress[0] = 0;
 	*out->instanceAddress[1] = 0;
 	*out->instanceParent = 0;
+	*out->instanceMapPool = 0;
 	*out->statusAddress = 0;
 	*out->statusPath = 0;
 
@@ -166,9 +166,9 @@ bool config_load(struct Config *out, const char *path) {
 	}
 
 	char config_json[524288];
-	FILE *f = fopen(path, "r");
+	FILE *f = fopen(path, "rb");
 	if(f == NULL && errno == ENOENT) {
-		FILE *def = fopen(path, "w");
+		FILE *def = fopen(path, "wb");
 		if(!def) {
 			uprintf("Failed to write default config to %s: %s\n", path, strerror(errno));
 			goto fail;
@@ -187,7 +187,7 @@ bool config_load(struct Config *out, const char *path) {
 			"\t}" NEWLINE
 			"}" NEWLINE, publicIP);
 		fclose(def);
-		f = fopen(path, "r");
+		f = fopen(path, "rb");
 	}
 	if(f == NULL) {
 		uprintf("Failed to open %s: %s\n", path, strerror(errno));
@@ -228,6 +228,7 @@ bool config_load(struct Config *out, const char *path) {
 				break;
 			}
 			case JSON_KEY('m','a','s','t','e','r',0,0): config_read_string(&it, key, out->instanceParent); break;
+			case JSON_KEY('m','a','p','P','o','o','l',0): config_read_string(&it, key, out->instanceMapPool); break;
 			case JSON_KEY('c','o','u','n','t',0,0,0): config_read_uint16(&it, key, 0, 8192, &out->instanceCount); break;
 			default: json_skip_any(&it);
 		} break;

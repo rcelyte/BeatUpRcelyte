@@ -22,6 +22,7 @@
 
 #define SERIALIZE_MENURPC(pkt, end, ctx, ...) SERIALIZE_SESSION(MenuRpc, menuRpc, pkt, end, ctx, __VA_ARGS__)
 #define SERIALIZE_GAMEPLAYRPC(pkt, end, ctx, ...) SERIALIZE_SESSION(GameplayRpc, gameplayRpc, pkt, end, ctx, __VA_ARGS__)
+#define SERIALIZE_MPCORE(pkt, end, ctx, ...) SERIALIZE_SESSION(MpCore, mpCore, pkt, end, ctx, __VA_ARGS__)
 #define SERIALIZE_BEATUP(pkt, end, ctx, ...) SERIALIZE_SESSION(BeatUpMessage, beatUpMessage, pkt, end, ctx, __VA_ARGS__)
 
 #define CLEAR_STRING (struct String){.length = 0, .isNull = false}
@@ -33,6 +34,30 @@
 #define CLEAR_SETTINGS (struct PlayerSpecificSettingsNetSerializable){CLEAR_STRING, CLEAR_STRING, 0, 0, 0, 0, CLEAR_COLORSCHEME}
 
 #define REQUIRED_MODIFIER_MASK (15 << 18) // SongSpeed
+
+enum GameplayModifierFlags {
+	GameplayModifierFlags_EnergyType_Bar = 0,
+	GameplayModifierFlags_EnergyType_Battery = 1,
+	GameplayModifierFlags_InstaFail = 1 << 6,
+	GameplayModifierFlags_FailOnSaberClash = 1 << 7,
+	GameplayModifierFlags_EnabledObstacleType_All = 0,
+	GameplayModifierFlags_EnabledObstacleType_FullHeightOnly = 1 << 8,
+	GameplayModifierFlags_EnabledObstacleType_NoObstacles = 2 << 8,
+	GameplayModifierFlags_NoBombs = 1 << 13,
+	GameplayModifierFlags_FastNotes = 1 << 14,
+	GameplayModifierFlags_StrictAngles = 1 << 15,
+	GameplayModifierFlags_DisappearingArrows = 1 << 16,
+	GameplayModifierFlags_GhostNotes = 1 << 17,
+	GameplayModifierFlags_SongSpeed_Normal = 0 << 18,
+	GameplayModifierFlags_SongSpeed_Faster = 1 << 18,
+	GameplayModifierFlags_SongSpeed_Slower = 2 << 18,
+	GameplayModifierFlags_SongSpeed_SuperFast = 3 << 18,
+	GameplayModifierFlags_NoArrows = 1 << 22,
+	GameplayModifierFlags_NoFailOn0Energy = 1 << 23,
+	GameplayModifierFlags_ProMode = 1 << 24,
+	GameplayModifierFlags_ZenMode = 1 << 25,
+	GameplayModifierFlags_SmallCubes = 1 << 26,
+};
 
 typedef uint16_t ServerState;
 enum ServerState {

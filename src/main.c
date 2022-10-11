@@ -55,7 +55,7 @@ int main(int argc, const char *argv[]) {
 		if(!localMaster)
 			goto fail3;
 	}
-	if(instance_init(cfg.instanceAddress[0], cfg.instanceAddress[1], cfg.instanceParent, localMaster, cfg.instanceCount))
+	if(instance_init(cfg.instanceAddress[0], cfg.instanceAddress[1], cfg.instanceParent, localMaster, cfg.instanceMapPool, cfg.instanceCount))
 		goto fail4;
 	if(headless) {
 		#ifndef WINDOWS

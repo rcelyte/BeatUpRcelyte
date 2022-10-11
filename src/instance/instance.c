@@ -7,6 +7,7 @@
 #include <string.h>
 #include <time.h>
 #include <inttypes.h>
+#include <errno.h>
 
 #ifdef DEBUG
 #define NOT_IMPLEMENTED(type) case type: uprintf(#type " not implemented\n"); abort();
@@ -66,7 +67,7 @@ struct Room {
 		struct Counter128 isSpectating;
 		struct BeatmapIdentifierNetSerializable selectedBeatmap;
 		struct GameplayModifiers selectedModifiers;
-		playerid_t roundRobin;
+		uint32_t roundRobin;
 		float timeout;
 	} global;
 
@@ -199,7 +200,78 @@ static struct GameplayModifiers session_get_modifiers(const struct Room *room, c
 	return room->global.selectedModifiers;
 }
 
-static playerid_t roundRobin_next(playerid_t prev, struct Counter128 players) {
+static uint32_t instance_mapPool_len = 0;
+static struct MpBeatmapPacket *instance_mapPool = NULL;
+static void mapPool_init(const char *filename) {
+	FILE *file = fopen(filename, "rb");
+	if(file == NULL) {
+		uprintf("Failed to open %s: %s\n", filename, strerror(errno));
+		return;
+	}
+	fseek(file, 0, SEEK_END);
+	size_t raw_len = ftell(file);
+	fseek(file, 0, SEEK_SET);
+	uint8_t raw[3145728], *raw_end = &raw[raw_len];
+	if(raw_len > sizeof(raw)) {
+		uprintf("Failed to read %s: File too large\n", filename);
+		goto fail;
+	}
+	if(fread(raw, 1, raw_len, file) != raw_len) {
+		uprintf("Failed to read %s\n", filename);
+		goto fail;
+	}
+	uint16_t formatVersion = raw[4] | raw[5] << 8;
+	if(raw_len < 7 || memcmp(raw, "BSmp", 4) || formatVersion == 0) {
+		uprintf("Failed to read %s: not a BeatUpServer map pool file\n", filename);
+		goto fail;
+	}
+	if(formatVersion != 1) {
+		uprintf("Failed to read %s: unsupported format\n", filename);
+		goto fail;
+	}
+	const uint8_t *raw_it = &raw[6];
+	for(instance_mapPool_len = 0; raw_it < raw_end; ++instance_mapPool_len)
+		if(!pkt_read(&(struct MpBeatmapPacket){.difficulty=0}, &raw_it, raw_end, (struct PacketContext){12, 6, 0, 64}))
+			break;
+	if(raw_it != raw_end) {
+		uprintf("Failed to read %s: corrupt data\n", filename);
+		goto fail;
+	}
+	instance_mapPool = calloc(instance_mapPool_len, sizeof(*instance_mapPool));
+	if(!instance_mapPool) {
+		uprintf("alloc error\n");
+		goto fail;
+	}
+	raw_it = &raw[6];
+	for(uint32_t i = 0; i < instance_mapPool_len; ++i)
+		pkt_read(&instance_mapPool[i], &raw_it, raw_end, (struct PacketContext){12, 6, 0, 64});
+	return;
+	fail:
+	fclose(file);
+}
+
+static void mapPool_update(struct Room *room) {
+	if(!instance_mapPool) {
+		uprintf("No map pool to select from!\n");
+		return;
+	}
+	room->lobby.requester = room->configuration.maxPlayerCount;
+	room->global.selectedBeatmap = (struct BeatmapIdentifierNetSerializable){
+		.levelID = LongString_from("custom_level_"),
+		.beatmapCharacteristicSerializedName = instance_mapPool[room->global.roundRobin].characteristic,
+		.difficulty = instance_mapPool[room->global.roundRobin].difficulty,
+	};
+	room->global.selectedModifiers.raw = GameplayModifierFlags_NoFailOn0Energy;
+	memcpy(&room->global.selectedBeatmap.levelID.data[13], instance_mapPool[room->global.roundRobin].levelHash.data, instance_mapPool[room->global.roundRobin].levelHash.length);
+	room->global.selectedBeatmap.levelID.length += instance_mapPool[room->global.roundRobin].levelHash.length;
+
+	room->players[room->lobby.requester].recommendedBeatmap = room->global.selectedBeatmap;
+	room->players[room->lobby.requester].recommendedModifiers = room->global.selectedModifiers;
+}
+
+static uint32_t roundRobin_next(uint32_t prev, struct Counter128 players) {
+	if(Counter128_isEmpty(players))
+		return (prev + 1) % (instance_mapPool_len ? instance_mapPool_len : 1);
 	FOR_SOME_PLAYERS(id, players,)
 		if(id > prev)
 			return id;
@@ -231,7 +303,7 @@ static void session_set_state(struct InstanceContext *ctx, struct Room *room, st
 		Counter128_set(&room->connected, indexof(room->players, session));
 	} else if(STATE_EDGE(state, session->state, ServerState_Connected)) {
 		Counter128_clear(&room->connected, indexof(room->players, session));
-		if(room->global.roundRobin == indexof(room->players, session))
+		if(room->configuration.songSelectionMode != SongSelectionMode_Random && room->global.roundRobin == indexof(room->players, session))
 			room->global.roundRobin = roundRobin_next(room->global.roundRobin, room->connected);
 		struct InternalMessage r_disconnect = {
 			.type = InternalMessageType_PlayerDisconnected,
@@ -280,6 +352,12 @@ static void session_set_state(struct InstanceContext *ctx, struct Room *room, st
 			});
 		}
 		if(needSetSelectedBeatmap) {
+			if(room->configuration.songSelectionMode == SongSelectionMode_Random && instance_mapPool) {
+				SERIALIZE_MPCORE(&resp_end, endof(resp), session->net.version, {
+					.type = String_from("MpBeatmapPacket"),
+					.mpBeatmapPacket = instance_mapPool[room->global.roundRobin],
+				});
+			}
 			SERIALIZE_MENURPC(&resp_end, endof(resp), session->net.version, {
 				.type = MenuRpcType_SetSelectedBeatmap,
 				.setSelectedBeatmap = {
@@ -483,9 +561,14 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 		room->lobby.isReady = COUNTER128_CLEAR;
 		room->lobby.reason = CannotStartGameReason_NoSongSelected;
 		room->lobby.requester = (playerid_t)~0u;
+		if(room->configuration.songSelectionMode == SongSelectionMode_Random) {
+			mapPool_update(room);
+			state = ServerState_Lobby_Entitlement;
+			uprintf("state %s -> %s\n", ServerState_toString(room->state), ServerState_toString(state));
+		}
 	} else if(STATE_EDGE(room->state, state, ServerState_Game)) {
 		room->game.activePlayers = room->connected;
-		room->game.showResults = 0;
+		room->game.showResults = false;
 	}
 	switch(state) {
 		case ServerState_Lobby_Entitlement: {
@@ -515,7 +598,7 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 					}
 					break;
 				}
-				NOT_IMPLEMENTED(SongSelectionMode_Random);
+				case SongSelectionMode_Random: select = room->configuration.maxPlayerCount; break;
 				case SongSelectionMode_OwnerPicks: {
 					if(!Counter128_get(room->connected, room->serverOwner))
 						goto vote_beatmap;
@@ -530,6 +613,7 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 			}
 			room->lobby.requester = select;
 			if(select == (playerid_t)~0u || room->players[select].recommendedBeatmap.beatmapCharacteristicSerializedName.length == 0) {
+				uprintf("No map from %u\n", select);
 				room->lobby.isEntitled = room->connected;
 				room->global.selectedBeatmap = CLEAR_BEATMAP;
 				room->global.selectedModifiers = CLEAR_MODIFIERS;
@@ -676,10 +760,15 @@ static void handle_MenuRpc(struct InstanceContext *ctx, struct Room *room, struc
 				SERIALIZE_MENURPC(&resp_end, endof(resp), room->players[id].net.version, r_missing);
 				instance_send_channeled(&room->players[id].net, &room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 			}
-			if(r_missing.setPlayersMissingEntitlementsToLevel.playersMissingEntitlements.count == 0)
+			if(r_missing.setPlayersMissingEntitlementsToLevel.playersMissingEntitlements.count == 0) {
 				room_set_state(ctx, room, ServerState_Lobby_Ready);
-			else
+			} else if(room->configuration.songSelectionMode == SongSelectionMode_Random) {
+				room->global.roundRobin = roundRobin_next(room->global.roundRobin, COUNTER128_CLEAR);
+				mapPool_update(room);
+				room_set_state(ctx, room, ServerState_Lobby_Entitlement);
+			} else {
 				room_set_state(ctx, room, ServerState_Lobby_Idle);
+			}
 			break;
 		}
 		NOT_IMPLEMENTED(MenuRpcType_InvalidateLevelEntitlementStatuses);
@@ -764,10 +853,13 @@ static void handle_MenuRpc(struct InstanceContext *ctx, struct Room *room, struc
 		NOT_IMPLEMENTED(MenuRpcType_LevelLoadSuccess);
 		case MenuRpcType_StartLevel: uprintf("BAD TYPE: MenuRpcType_StartLevel\n"); break;
 		case MenuRpcType_GetStartedLevel: {
+			uprintf("    MenuRpcType_GetStartedLevel()\n");
 			if(!(session->state & ServerState_Synchronizing)) {
 				break;
 			} else if(!(room->state & ServerState_Game)) {
 				session_set_state(ctx, room, session, room->state);
+				if(room->configuration.songSelectionMode == SongSelectionMode_Random && (room->state & ServerState_Lobby))
+					room_set_state(ctx, room, ServerState_Lobby_Entitlement);
 				break;
 			}
 			struct RemoteProcedureCall base = {room_get_syncTime(room)};
@@ -916,7 +1008,7 @@ static void handle_MenuRpc(struct InstanceContext *ctx, struct Room *room, struc
 static bool room_try_finish(struct InstanceContext *ctx, struct Room *room) {
 	if(!Counter128_isEmpty(room->game.activePlayers))
 		return false;
-	room->global.roundRobin = roundRobin_next(room->global.roundRobin, room->connected);
+	room->global.roundRobin = roundRobin_next(room->global.roundRobin, (room->configuration.songSelectionMode == SongSelectionMode_Random) ? COUNTER128_CLEAR : room->connected);
 	room_set_state(ctx, room, ServerState_Game_Results);
 	return true;
 }
@@ -1369,10 +1461,7 @@ static void handle_ConnectRequest(struct InstanceContext *ctx, struct Room *room
 	if(pkt_serialize(&r_identity, &resp_end, endof(resp), session->net.version))
 		instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 
-	if(room->state & ServerState_Game)
-		session_set_state(ctx, room, session, ServerState_Synchronizing);
-	else
-		session_set_state(ctx, room, session, room->state); // TODO: potential for desync since `StartListeningToGameStart()` hasn't(?) been called at this point
+	session_set_state(ctx, room, session, ServerState_Synchronizing);
 }
 
 static void log_players(const struct Room *room, struct InstanceSession *session, const char *prefix) {
@@ -1649,14 +1738,23 @@ static struct Room **room_open(struct InstanceContext *ctx, uint16_t roomID, str
 		uprintf("Room already open!\n");
 		return NULL;
 	}
-	#ifdef FORCE_MASSIVE_LOBBIES
-	configuration.maxPlayerCount = 126;
+	#ifdef FORCE_LOBBY_SIZE
+	configuration.maxPlayerCount = FORCE_LOBBY_SIZE;
 	configuration.songSelectionMode = SongSelectionMode_Vote;
-	#else
+	#endif
 	if(configuration.maxPlayerCount > 126) // TODO: `Counter256`
 		configuration.maxPlayerCount = 126;
-	#endif
-	struct Room *room = malloc(sizeof(struct Room) + configuration.maxPlayerCount * sizeof(*room->players));
+	if(instance_mapPool) {
+		configuration = (struct GameplayServerConfiguration){
+			.maxPlayerCount = configuration.maxPlayerCount,
+			.discoveryPolicy = DiscoveryPolicy_Public,
+			.invitePolicy = InvitePolicy_AnyoneCanInvite,
+			.gameplayServerMode = GameplayServerMode_Managed,
+			.songSelectionMode = SongSelectionMode_Random,
+			.gameplayServerControlSettings = GameplayServerControlSettings_AllowSpectate,
+		};
+	}
+	struct Room *room = malloc(sizeof(struct Room) + (configuration.maxPlayerCount + (configuration.songSelectionMode == SongSelectionMode_Random)) * sizeof(*room->players)); // Allocat extra slot for fake player in `SongSelectionMode_Random`
 	if(!room) {
 		uprintf("alloc error\n");
 		return NULL;
@@ -1683,6 +1781,10 @@ static struct Room **room_open(struct InstanceContext *ctx, uint16_t roomID, str
 	room->global.selectedBeatmap = CLEAR_BEATMAP;
 	room->global.selectedModifiers = CLEAR_MODIFIERS;
 	room->global.roundRobin = 0;
+	if(instance_mapPool) {
+		room->serverOwner = room->configuration.maxPlayerCount;
+		room->players[room->configuration.maxPlayerCount].userId = String_from("");
+	}
 	room_set_state(ctx, room, ServerState_Lobby_Idle);
 	*instance_get_room(ctx, roomID) = room;
 	Counter64_set(&ctx->roomMask, roomID / lengthof(*ctx->rooms));
@@ -1817,7 +1919,9 @@ static void instance_onWireMessage(struct InstanceContext *ctx, union WireLink *
 
 static uint32_t threads_len = 0;
 static pthread_t *threads = NULL;
-bool instance_init(const char *domainIPv4, const char *domain, const char *remoteMaster, struct NetContext *localMaster, uint32_t count) {
+bool instance_init(const char *domainIPv4, const char *domain, const char *remoteMaster, struct NetContext *localMaster, const char *mapPoolFile, uint32_t count) {
+	if(mapPoolFile && *mapPoolFile)
+		mapPool_init(mapPoolFile);
 	instance_domainIPv4 = domainIPv4;
 	instance_domain = domain;
 	instance_masterAddress = remoteMaster;
@@ -1871,6 +1975,8 @@ void instance_cleanup() {
 			net_cleanup(&ctx->net);
 		}
 	}
+	free(instance_mapPool);
 	free(threads);
 	free(contexts);
+	instance_mapPool = NULL;
 }

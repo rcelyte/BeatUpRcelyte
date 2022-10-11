@@ -23,5 +23,6 @@ struct LongString {
 #ifdef __cplusplus
 #define String_from(str) {lengthof(str) - 1, false, str}
 #else
+#define LongString_from(str) (struct LongString){lengthof(str) - 1, false, str}
 #define String_from(str) (struct String){lengthof(str) - 1, false, str}
 #endif
