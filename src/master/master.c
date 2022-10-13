@@ -544,11 +544,6 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		SendConnectError(ctx, session, state.request, ConnectToServerResponse_Result_VersionMismatch);
 		return;
 	}
-	if(req->configuration.maxPlayerCount >= 254) { // connection IDs are 8 bits (7 if passthrough encryption is used), with ID `127` reserved for broadcast packets and `0` for local
-		uprintf("Connect to Server Error: Invalid maxPlayerCount %u >= 254\n", req->configuration.maxPlayerCount);
-		SendConnectError(ctx, session, state.request, ConnectToServerResponse_Result_InvalidCode);
-		return;
-	}
 	struct WireSessionAlloc sessionAllocData = {
 		.address.length = state.addr.len,
 		.secret = req->secret,

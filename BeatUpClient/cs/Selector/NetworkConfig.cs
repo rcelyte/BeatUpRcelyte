@@ -13,7 +13,7 @@ static partial class BeatUpClient {
 		public ServiceEnvironment serviceEnvironment {get;}
 		public VanillaNetworkConfig(NetworkConfigSO from) => // Bypass all getters other mods might patch
 			(this.maxPartySize, this.discoveryPort, this.partyPort, this.multiplayerPort, this.masterServerEndPoint, this.multiplayerStatusUrl, this.quickPlaySetupUrl, this.graphUrl, this.graphAccessToken, this.forceGameLift, this.serviceEnvironment) = 
-				(from._maxPartySize, from._discoveryPort, from._partyPort, from._multiplayerPort, new DnsEndPoint(from._masterServerHostName, from._masterServerPort), from._multiplayerStatusUrl, from._quickPlaySetupUrl, from.graphUrl, from.graphAccessToken, from._forceGameLift, from._serviceEnvironment);
+				(/*from._maxPartySize*/5, from._discoveryPort, from._partyPort, from._multiplayerPort, new DnsEndPoint(from._masterServerHostName, from._masterServerPort), from._multiplayerStatusUrl, from._quickPlaySetupUrl, from.graphUrl, from.graphAccessToken, from._forceGameLift, from._serviceEnvironment);
 	}
 
 	static VanillaNetworkConfig officialNetworkConfig;
@@ -46,6 +46,8 @@ static partial class BeatUpClient {
 		string oldMultiplayerStatusUrl = customNetworkConfig.multiplayerStatusUrl;
 		Log.Debug($"CustomNetworkConfig(customServerHostName=\"{hostname}\", port={port}, forceGameLift={forceGameLift}), multiplayerStatusUrl={statusUrl}");
 		typeof(CustomNetworkConfig).GetConstructors()[0].Invoke(customNetworkConfig, new object[] {officialNetworkConfig, hostname, port, forceGameLift});
+		if(editServerButton.interactable)
+			HarmonyLib.AccessTools.Field(typeof(CustomNetworkConfig), "<maxPartySize>k__BackingField").SetValue(customNetworkConfig, (int)254);
 		if(!NullableStringHelper.IsNullOrEmpty(statusUrl))
 			HarmonyLib.AccessTools.Field(typeof(CustomNetworkConfig), "<multiplayerStatusUrl>k__BackingField").SetValue(customNetworkConfig, (string)statusUrl);
 		if(!forceGameLift)

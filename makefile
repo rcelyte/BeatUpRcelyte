@@ -14,7 +14,7 @@ LIBS := libmbedtls.a libmbedx509.a libmbedcrypto.a
 OBJS := $(FILES:%=$(OBJDIR)/%.o) $(HTMLS:%=$(OBJDIR)/%.s) $(LIBS:%=$(OBJDIR)/%)
 DEPS := $(FILES:%=$(OBJDIR)/%.d)
 
-CFLAGS := -g -std=gnu2x -Imbedtls/include -Wall -Wextra -Werror -pedantic-errors
+CFLAGS := -g -std=gnu2x -Imbedtls/include -Wall -Wextra -Werror -pedantic-errors -DMP_EXTENDED_ROUTING
 LDFLAGS := -O2 -Wl,--gc-sections,--fatal-warnings
 
 sinclude makefile.user

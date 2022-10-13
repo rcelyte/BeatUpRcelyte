@@ -20,12 +20,12 @@ typedef uint32_t playerid_t;
 #define COUNTER_VAR CONCAT(_i_,__LINE__)
 
 #define FOR_SOME_PLAYERS(id, counter, ...) \
-	struct Counter128 COUNTER_VAR = (counter); \
+	struct CounterP COUNTER_VAR = (counter); \
 	__VA_ARGS__; \
-	for(playerid_t (id) = 0; Counter128_clear_next(&COUNTER_VAR, &(id)); ++(id))
+	for(playerid_t (id) = 0; CounterP_clear_next(&COUNTER_VAR, &(id)); ++(id))
 
 #define FOR_EXCLUDING_PLAYER(id, counter, exc) \
-	FOR_SOME_PLAYERS(id, counter, Counter128_clear(&COUNTER_VAR, exc))
+	FOR_SOME_PLAYERS(id, counter, CounterP_clear(&COUNTER_VAR, exc))
 
 #define FOR_ALL_ROOMS(ctx, room) \
 	struct Counter64 COUNTER_VAR = (ctx)->roomMask; \
@@ -63,8 +63,8 @@ struct Room {
 	ServerState state;
 	struct {
 		uint64_t sessionId[2];
-		struct Counter128 inLobby;
-		struct Counter128 isSpectating;
+		struct CounterP inLobby;
+		struct CounterP isSpectating;
 		struct BeatmapIdentifierNetSerializable selectedBeatmap;
 		struct GameplayModifiers selectedModifiers;
 		uint32_t roundRobin;
@@ -73,32 +73,32 @@ struct Room {
 
 	union {
 		struct {
-			struct Counter128 isEntitled;
-			struct Counter128 isDownloaded;
-			struct Counter128 isReady;
+			struct CounterP isEntitled;
+			struct CounterP isDownloaded;
+			struct CounterP isReady;
 			CannotStartGameReason reason;
 			playerid_t requester;
 			struct {
-				struct Counter128 missing;
+				struct CounterP missing;
 			} entitlement;
 		} lobby;
 		struct {
-			struct Counter128 activePlayers;
+			struct CounterP activePlayers;
 			float startTime;
 			bool showResults;
 			union {
 				struct {
-					struct Counter128 isLoaded;
+					struct CounterP isLoaded;
 				} loadingScene;
 				struct {
-					struct Counter128 isLoaded;
+					struct CounterP isLoaded;
 				} loadingSong;
 			};
 		} game;
 	};
 
-	struct Counter128 connected;
-	struct Counter128 playerSort;
+	struct CounterP connected;
+	struct CounterP playerSort;
 	struct InstanceSession players[];
 };
 
@@ -269,15 +269,15 @@ static void mapPool_update(struct Room *room) {
 	room->players[room->lobby.requester].recommendedModifiers = room->global.selectedModifiers;
 }
 
-static uint32_t roundRobin_next(uint32_t prev, struct Counter128 players) {
-	if(Counter128_isEmpty(players))
+static uint32_t roundRobin_next(uint32_t prev, struct CounterP players) {
+	if(CounterP_isEmpty(players))
 		return (prev + 1) % (instance_mapPool_len ? instance_mapPool_len : 1);
 	FOR_SOME_PLAYERS(id, players,)
 		if(id > prev)
 			return id;
 	playerid_t id = 0;
-	if(!Counter128_get(players, 0))
-		Counter128_clear_next(&players, &id);
+	if(!CounterP_get(players, 0))
+		CounterP_clear_next(&players, &id);
 	return id;
 }
 
@@ -300,9 +300,9 @@ static void session_set_state(struct InstanceContext *ctx, struct Room *room, st
 	pkt_write_c(&resp_end, endof(resp), session->net.version, RoutingHeader, {0, 0, false});
 	uint8_t *start = resp_end;
 	if(STATE_EDGE(session->state, state, ServerState_Connected)) {
-		Counter128_set(&room->connected, indexof(room->players, session));
+		CounterP_set(&room->connected, indexof(room->players, session));
 	} else if(STATE_EDGE(state, session->state, ServerState_Connected)) {
-		Counter128_clear(&room->connected, indexof(room->players, session));
+		CounterP_clear(&room->connected, indexof(room->players, session));
 		if(room->configuration.songSelectionMode != SongSelectionMode_Random && room->global.roundRobin == indexof(room->players, session))
 			room->global.roundRobin = roundRobin_next(room->global.roundRobin, room->connected);
 		struct InternalMessage r_disconnect = {
@@ -318,7 +318,7 @@ static void session_set_state(struct InstanceContext *ctx, struct Room *room, st
 				instance_send_channeled(&room->players[id].net, &room->players[id].channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 		}
 		if(room->state & ServerState_Game) {
-			Counter128_clear(&room->game.activePlayers, indexof(room->players, session));
+			CounterP_clear(&room->game.activePlayers, indexof(room->players, session));
 			room_try_finish(ctx, room);
 		}
 	}
@@ -476,7 +476,7 @@ static void session_set_state(struct InstanceContext *ctx, struct Room *room, st
 			struct GameplayRpc r_sync;
 			struct PlayerSpecificSettingsAtStartNetSerializable *playerSettings;
 			struct String *id;
-			bool active = Counter128_get(room->game.activePlayers, indexof(room->players, session));
+			bool active = CounterP_get(room->game.activePlayers, indexof(room->players, session));
 			if(active) {
 				r_sync = (struct GameplayRpc){
 					.type = GameplayRpcType_SetGameplaySceneSyncFinish,
@@ -600,7 +600,7 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 				}
 				case SongSelectionMode_Random: select = room->configuration.maxPlayerCount; break;
 				case SongSelectionMode_OwnerPicks: {
-					if(!Counter128_get(room->connected, room->serverOwner))
+					if(!CounterP_get(room->connected, room->serverOwner))
 						goto vote_beatmap;
 					select = room->serverOwner;
 					break;
@@ -620,7 +620,7 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 				room_set_state(ctx, room, ServerState_Lobby_Idle);
 				return;
 			}
-			if((room->state & ServerState_Selected) && Counter128_eq(room->lobby.isEntitled, room->connected) && BeatmapIdentifierNetSerializable_eq(&room->players[select].recommendedBeatmap, &room->global.selectedBeatmap, 0))
+			if((room->state & ServerState_Selected) && CounterP_eq(room->lobby.isEntitled, room->connected) && BeatmapIdentifierNetSerializable_eq(&room->players[select].recommendedBeatmap, &room->global.selectedBeatmap, 0))
 				return;
 			room->lobby.reason = 0;
 			room->lobby.isEntitled = COUNTER128_CLEAR;
@@ -639,23 +639,23 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 		}
 		case ServerState_Lobby_Ready: {
 			room->lobby.reason = CannotStartGameReason_None;
-			if(Counter128_containsNone(room->global.inLobby, room->connected)) {
+			if(CounterP_containsNone(room->global.inLobby, room->connected)) {
 				room->lobby.reason = CannotStartGameReason_AllPlayersNotInLobby;
 				break;
 			}
-			if(Counter128_contains(room->global.isSpectating, room->connected)) {
+			if(CounterP_contains(room->global.isSpectating, room->connected)) {
 				room->lobby.reason = CannotStartGameReason_AllPlayersSpectating;
 				break;
 			}
-			bool shouldCountdown = Counter128_contains(Counter128_or(room->lobby.isReady, room->global.isSpectating), room->connected);
-			shouldCountdown |= Counter128_get(room->lobby.isReady, room->serverOwner);
+			bool shouldCountdown = CounterP_contains(CounterP_or(room->lobby.isReady, room->global.isSpectating), room->connected);
+			shouldCountdown |= CounterP_get(room->lobby.isReady, room->serverOwner);
 			if(!shouldCountdown)
 				break;
 			room_set_state(ctx, room, ServerState_Lobby_LongCountdown);
 			return;
 		}
 		case ServerState_Lobby_LongCountdown: {
-			if(Counter128_contains(Counter128_or(room->lobby.isReady, room->global.isSpectating), room->connected)) {
+			if(CounterP_contains(CounterP_or(room->lobby.isReady, room->global.isSpectating), room->connected)) {
 				room_set_state(ctx, room, ServerState_Lobby_ShortCountdown);
 				return;
 			} else if((room->state & ServerState_Selected) >= ServerState_Lobby_LongCountdown) {
@@ -671,7 +671,7 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 			break;
 		}
 		case ServerState_Lobby_Downloading: {
-			if(Counter128_contains(room->lobby.isDownloaded, room->connected)) {
+			if(CounterP_contains(room->lobby.isDownloaded, room->connected)) {
 				room_set_state(ctx, room, ServerState_Game_LoadingScene);
 				return;
 			}
@@ -684,7 +684,7 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 		}
 		case ServerState_Game_LoadingSong: {
 			if(room->state & ServerState_Game_LoadingScene) {
-				room->game.activePlayers = Counter128_and(room->game.activePlayers, room->game.loadingScene.isLoaded);
+				room->game.activePlayers = CounterP_and(room->game.activePlayers, room->game.loadingScene.isLoaded);
 				if(room_try_finish(ctx, room))
 					return;
 			}
@@ -695,7 +695,7 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 		}
 		case ServerState_Game_Gameplay: {
 			if(room->state & ServerState_Game_LoadingSong) {
-				room->game.activePlayers = Counter128_and(room->game.activePlayers, room->game.loadingSong.isLoaded);
+				room->game.activePlayers = CounterP_and(room->game.activePlayers, room->game.loadingSong.isLoaded);
 				if(room_try_finish(ctx, room))
 					return;
 			}
@@ -731,18 +731,18 @@ static void handle_MenuRpc(struct InstanceContext *ctx, struct Room *room, struc
 			} else if(entitlement.entitlementStatus == EntitlementsStatus_Ok) {
 				if(!PlayerStateHash_contains(session->stateHash, "modded") && entitlement.levelId.length >= 13 && memcmp(entitlement.levelId.data, "custom_level_", 13) == 0)
 					entitlement.entitlementStatus = EntitlementsStatus_NotOwned; // Vanilla clients will misreport all custom IDs as owned
-				else if(Counter128_set(&room->lobby.isDownloaded, indexof(room->players, session)) == 0)
-					if((room->state & ServerState_Lobby_Downloading) && Counter128_contains(room->lobby.isDownloaded, room->connected))
+				else if(CounterP_set(&room->lobby.isDownloaded, indexof(room->players, session)) == 0)
+					if((room->state & ServerState_Lobby_Downloading) && CounterP_contains(room->lobby.isDownloaded, room->connected))
 						room_set_state(ctx, room, ServerState_Game_LoadingScene);
 			}
 			if(!(room->state & ServerState_Lobby_Entitlement))
 				break;
-			if(Counter128_set(&room->lobby.isEntitled, indexof(room->players, session)))
+			if(CounterP_set(&room->lobby.isEntitled, indexof(room->players, session)))
 				break;
 			if(entitlement.entitlementStatus != EntitlementsStatus_Ok && entitlement.entitlementStatus != EntitlementsStatus_NotDownloaded)
-				Counter128_set(&room->lobby.entitlement.missing, indexof(room->players, session));
+				CounterP_set(&room->lobby.entitlement.missing, indexof(room->players, session));
 			uprintf("entitlement[%.*s]: %s\n", session->userName.length, session->userName.data, reflect(EntitlementsStatus, entitlement.entitlementStatus));
-			if(!Counter128_contains(room->lobby.isEntitled, room->connected))
+			if(!CounterP_contains(room->lobby.isEntitled, room->connected))
 				break;
 			struct MenuRpc r_missing = {
 				.type = MenuRpcType_SetPlayersMissingEntitlementsToLevel,
@@ -853,7 +853,6 @@ static void handle_MenuRpc(struct InstanceContext *ctx, struct Room *room, struc
 		NOT_IMPLEMENTED(MenuRpcType_LevelLoadSuccess);
 		case MenuRpcType_StartLevel: uprintf("BAD TYPE: MenuRpcType_StartLevel\n"); break;
 		case MenuRpcType_GetStartedLevel: {
-			uprintf("    MenuRpcType_GetStartedLevel()\n");
 			if(!(session->state & ServerState_Synchronizing)) {
 				break;
 			} else if(!(room->state & ServerState_Game)) {
@@ -899,7 +898,7 @@ static void handle_MenuRpc(struct InstanceContext *ctx, struct Room *room, struc
 		case MenuRpcType_SetIsReady: {
 			bool isReady = rpc->setIsReady.flags.hasValue0 && rpc->setIsReady.isReady;
 			if(room->state & ServerState_Lobby)
-				if(Counter128_overwrite(&room->lobby.isReady, indexof(room->players, session), isReady) != isReady && (room->state & ServerState_Selected))
+				if(CounterP_overwrite(&room->lobby.isReady, indexof(room->players, session), isReady) != isReady && (room->state & ServerState_Selected))
 					room_set_state(ctx, room, ServerState_Lobby_Ready);
 			break;
 		}
@@ -908,7 +907,7 @@ static void handle_MenuRpc(struct InstanceContext *ctx, struct Room *room, struc
 		case MenuRpcType_GetIsInLobby: break;
 		case MenuRpcType_SetIsInLobby: {
 			bool inLobby = rpc->setIsInLobby.flags.hasValue0 && rpc->setIsInLobby.isBack;
-			if(Counter128_overwrite(&room->global.inLobby, indexof(room->players, session), inLobby) != inLobby && (room->state & ServerState_Selected))
+			if(CounterP_overwrite(&room->global.inLobby, indexof(room->players, session), inLobby) != inLobby && (room->state & ServerState_Selected))
 				room_set_state(ctx, room, ServerState_Lobby_Ready);
 			break;
 		}
@@ -946,8 +945,8 @@ static void handle_MenuRpc(struct InstanceContext *ctx, struct Room *room, struc
 		case MenuRpcType_RequestKickPlayer: {
 			if(!(session_get_permissions(room, session).hasKickVotePermission && rpc->requestKickPlayer.flags.hasValue0))
 				break;
-			struct Counter128 players = room->playerSort;
-			Counter128_clear(&players, indexof(room->players, session));
+			struct CounterP players = room->playerSort;
+			CounterP_clear(&players, indexof(room->players, session));
 			FOR_SOME_PLAYERS(id, players,) {
 				if(!String_eq(room->players[id].userId, rpc->requestKickPlayer.kickedPlayerId))
 					continue;
@@ -1006,7 +1005,7 @@ static void handle_MenuRpc(struct InstanceContext *ctx, struct Room *room, struc
 }
 
 static bool room_try_finish(struct InstanceContext *ctx, struct Room *room) {
-	if(!Counter128_isEmpty(room->game.activePlayers))
+	if(!CounterP_isEmpty(room->game.activePlayers))
 		return false;
 	room->global.roundRobin = roundRobin_next(room->global.roundRobin, (room->configuration.songSelectionMode == SongSelectionMode_Random) ? COUNTER128_CLEAR : room->connected);
 	room_set_state(ctx, room, ServerState_Game_Results);
@@ -1025,8 +1024,8 @@ static void handle_GameplayRpc(struct InstanceContext *ctx, struct Room *room, s
 				break;
 			}
 			session->settings = rpc->setGameplaySceneReady.flags.hasValue0 ? rpc->setGameplaySceneReady.playerSpecificSettingsNetSerializable : CLEAR_SETTINGS;
-			if(Counter128_set(&room->game.loadingScene.isLoaded, indexof(room->players, session)) == 0)
-				if(Counter128_contains(room->game.loadingScene.isLoaded, room->game.activePlayers))
+			if(CounterP_set(&room->game.loadingScene.isLoaded, indexof(room->players, session)) == 0)
+				if(CounterP_contains(room->game.loadingScene.isLoaded, room->game.activePlayers))
 					room_set_state(ctx, room, ServerState_Game_LoadingSong);
 			break;
 		}
@@ -1038,8 +1037,8 @@ static void handle_GameplayRpc(struct InstanceContext *ctx, struct Room *room, s
 					session_set_state(ctx, room, session, ServerState_Game_Gameplay);
 				break;
 			}
-			if(Counter128_set(&room->game.loadingSong.isLoaded, indexof(room->players, session)) == 0)
-				if(Counter128_contains(room->game.loadingSong.isLoaded, room->game.activePlayers))
+			if(CounterP_set(&room->game.loadingSong.isLoaded, indexof(room->players, session)) == 0)
+				if(CounterP_contains(room->game.loadingSong.isLoaded, room->game.activePlayers))
 					room_set_state(ctx, room, ServerState_Game_Gameplay);
 			break;
 		}
@@ -1050,7 +1049,7 @@ static void handle_GameplayRpc(struct InstanceContext *ctx, struct Room *room, s
 		case GameplayRpcType_LevelFinished: {
 			if(!(room->state & ServerState_Game))
 				break;
-			if(!Counter128_clear(&room->game.activePlayers, indexof(room->players, session)))
+			if(!CounterP_clear(&room->game.activePlayers, indexof(room->players, session)))
 				break;
 			if(!room->skipResults) {
 				if(session->net.version.protocolVersion < 7)
@@ -1113,7 +1112,7 @@ static bool handle_MultiplayerSession(struct InstanceContext *ctx, struct Room *
 
 static void session_refresh_stateHash(struct InstanceContext *ctx, struct Room *room, struct InstanceSession *session) {
 	bool isSpectating = !PlayerStateHash_contains(session->stateHash, "wants_to_play_next_level");
-	if(Counter128_overwrite(&room->global.isSpectating, indexof(room->players, session), isSpectating) != isSpectating && (room->state & ServerState_Selected))
+	if(CounterP_overwrite(&room->global.isSpectating, indexof(room->players, session), isSpectating) != isSpectating && (room->state & ServerState_Selected))
 		room_set_state(ctx, room, ServerState_Lobby_Ready);
 }
 
@@ -1214,14 +1213,14 @@ static bool handle_RoutingHeader(struct InstanceContext *ctx, struct Room *room,
 		return true;
 	}
 	if(routing.connectionId) {
-		struct Counter128 mask = room->connected;
-		Counter128_clear(&mask, indexof(room->players, session));
+		struct CounterP mask = room->connected;
+		CounterP_clear(&mask, indexof(room->players, session));
 		if(routing.connectionId != 127) {
-			struct Counter128 single = COUNTER128_CLEAR;
-			if(routing.connectionId < 127) // TODO: `Counter256`
-				Counter128_set(&single, ConnectionId_index(routing.connectionId));
-			mask = Counter128_and(mask, single); // Mask out invalid IDs
-			if(Counter128_isEmpty(mask))
+			struct CounterP single = COUNTER128_CLEAR;
+			if(routing.connectionId / 8 < sizeof(struct CounterP))
+				CounterP_set(&single, ConnectionId_index(routing.connectionId));
+			mask = CounterP_and(mask, single); // Mask out invalid IDs
+			if(CounterP_isEmpty(mask))
 				uprintf("connectionId %hhu points to nonexistent player!\n", routing.connectionId);
 		}
 		FOR_SOME_PLAYERS(id, mask,) {
@@ -1497,7 +1496,7 @@ enum DisconnectMode {
 
 static void room_disconnect(struct InstanceContext *ctx, struct Room **room, struct InstanceSession *session, enum DisconnectMode mode) {
 	playerid_t id = indexof((*room)->players, session);
-	Counter128_clear(&(*room)->playerSort, id);
+	CounterP_clear(&(*room)->playerSort, id);
 	log_players(*room, session, (mode & DC_RESET) ? "reconnect" : "disconnect");
 	instance_channels_free(&session->channels);
 	if(mode & DC_RESET)
@@ -1529,7 +1528,7 @@ static void room_disconnect(struct InstanceContext *ctx, struct Room **room, str
 		}
 	}
 
-	if(!Counter128_isEmpty((*room)->playerSort)) {
+	if(!CounterP_isEmpty((*room)->playerSort)) {
 		if(mode & DC_NOTIFY) {
 			session_set_state(ctx, *room, session, 0);
 			if((*room)->state & ServerState_Lobby)
@@ -1742,8 +1741,10 @@ static struct Room **room_open(struct InstanceContext *ctx, uint16_t roomID, str
 	configuration.maxPlayerCount = FORCE_LOBBY_SIZE;
 	configuration.songSelectionMode = SongSelectionMode_Vote;
 	#endif
-	if(configuration.maxPlayerCount > 126) // TODO: `Counter256`
-		configuration.maxPlayerCount = 126;
+	if(configuration.maxPlayerCount < 1)
+		configuration.maxPlayerCount = 1;
+	else if((uint32_t)configuration.maxPlayerCount > sizeof(struct CounterP) * 8 - 2)
+		configuration.maxPlayerCount = sizeof(struct CounterP) * 8 - 2;
 	if(instance_mapPool) {
 		configuration = (struct GameplayServerConfiguration){
 			.maxPlayerCount = configuration.maxPlayerCount,
@@ -1798,9 +1799,9 @@ static struct String instance_room_get_managerId(struct Room *room) {
 static struct PacketContext instance_room_get_protocol(struct InstanceContext *ctx, uint16_t roomID) {
 	struct PacketContext version = PV_LEGACY_DEFAULT;
 	struct Room *room = *instance_get_room(ctx, roomID);
-	struct Counter128 ct = room->playerSort;
+	struct CounterP ct = room->playerSort;
 	uint32_t id = 0;
-	if(Counter128_clear_next(&ct, &id))
+	if(CounterP_clear_next(&ct, &id))
 		version = room->players[id].net.version;
 	return version;
 }
@@ -1823,9 +1824,9 @@ static struct WireSessionAllocResp room_resolve_session(struct InstanceContext *
 		}
 	}
 	if(!session) {
-		struct Counter128 tmp = room->playerSort;
+		struct CounterP tmp = room->playerSort;
 		uint32_t id = 0;
-		if((!Counter128_set_next(&tmp, &id)) || (int32_t)id >= room->configuration.maxPlayerCount) {
+		if((!CounterP_set_next(&tmp, &id)) || (int32_t)id >= room->configuration.maxPlayerCount) {
 			uprintf("ROOM FULL\n");
 			return resp;
 		}
