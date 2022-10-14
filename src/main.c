@@ -2,6 +2,7 @@
 #include "instance/instance.h"
 #include "master/master.h"
 #include "status/status.h"
+#include "net.h"
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,6 +36,13 @@ int main(int argc, const char *argv[]) {
 		return -1;
 	}
 	#endif
+
+	if (!sockets_init())
+	{
+		fprintf(stderr, "Couldn't initialize sockets subsystem\n");
+		return -1;
+	}
+
 	memset(&cfg, 0, sizeof(cfg));
 	if(config_load(&cfg, config_path)) // TODO: live config reloading
 		goto fail0;

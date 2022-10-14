@@ -16,6 +16,52 @@
 
 #define ENCRYPTION_LAYER_SIZE 63
 
+static char net_error_buf[2048];
+char* net_get_error_str()
+{
+#ifdef WINDOWS
+	int err = WSAGetLastError();
+#else
+	int err = errno;
+#endif
+	return net_get_error_str_from(err);
+}
+
+char* net_get_error_str_from(int err)
+{
+	sprintf(net_error_buf, "(%d) ", err);
+	int l = strlen(net_error_buf);
+
+#ifdef WINDOWS
+	FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, err, 0, &net_error_buf[l], sizeof(net_error_buf) - l, NULL);
+#else
+	strerror_s(&net_error_buf[l], sizeof(net_error_buf) - l, err);
+#endif
+
+	return net_error_buf;
+}
+
+bool sockets_init()
+{
+#ifdef WINDOWS
+	WORD version;
+	WSADATA wsaData;
+	int err;
+	
+	/* Use the MAKEWORD(lowbyte, highbyte) macro declared in Windef.h */
+	version = MAKEWORD(2, 2);
+	
+	err = WSAStartup(version, &wsaData);
+	if (err != 0) {
+		/* Tell the user that we could not find a usable */
+		/* Winsock DLL.                                  */
+		fprintf(stderr, "WSAStartup failed with error: %s\n", net_get_error_str_from(err));
+		return -1;
+	}
+#endif
+	return true;
+}
+
 static const uint32_t PossibleMtu[] = {
 	576 - ENCRYPTION_LAYER_SIZE - 68,
 	1024 - ENCRYPTION_LAYER_SIZE,
@@ -198,11 +244,11 @@ static int32_t net_bind_tcp(uint16_t port) {
 		.sin6_scope_id = 0,
 	};
 	if(bind(listenfd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-		uprintf("Cannot bind socket to port %hu: %s\n", port, strerror(errno));
+		uprintf("Cannot bind socket to port %hu: %s\n", port, net_get_error_str());
 		goto fail;
 	}
 	if(listen(listenfd, 16) < 0) {
-		uprintf("listen() failed: %s\n", strerror(errno));
+		uprintf("listen() failed: %s\n", net_get_error_str());
 		goto fail;
 	}
 	return listenfd;
@@ -486,7 +532,7 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSe
 		if(ctx->run)
 			goto retry;
 		if(raw_len == -1)
-			uprintf("recvfrom() failed: %s\n", strerror(errno));
+			uprintf("recvfrom() failed: %s\n", net_get_error_str());
 		return 0;
 	}
 	if(addr.sa.sa_family == AF_UNSPEC) {

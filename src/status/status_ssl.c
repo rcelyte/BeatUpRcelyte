@@ -8,7 +8,6 @@
 #include <unistd.h>
 #include <signal.h>
 #include <string.h>
-#include <errno.h>
 
 struct Context {
 	int32_t listenfd;
@@ -98,7 +97,7 @@ bool status_ssl_init(mbedtls_x509_crt certs[2], mbedtls_pk_context keys[2], cons
 		signal(SIGPIPE, SIG_IGN);
 		#endif
 		if(bind(ctx.listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
-			uprintf("Cannot bind socket to port %hu: %s\n", port, strerror(errno));
+			uprintf("Cannot bind socket to port %hu: %s\n", port, net_get_error_str());
 			close(ctx.listenfd);
 			ctx.listenfd = -1;
 			return true;

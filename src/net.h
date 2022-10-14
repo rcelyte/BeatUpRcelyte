@@ -12,6 +12,7 @@
 #ifdef WINDOWS
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <Windef.h>
 #define SHUT_RD SD_RECEIVE
 #define SHUT_RDWR SD_BOTH
 typedef int socklen_t;
@@ -31,6 +32,11 @@ typedef int socklen_t;
 #define NET_RESEND_DELAY 27
 
 #define NET_THREAD_INVALID 0 // TODO: this macro marks all non-portable uses of the pthreads API
+
+char* net_get_error_str();
+char* net_get_error_str_from(int);
+
+bool sockets_init();
 
 struct SS {
 	socklen_t len;
