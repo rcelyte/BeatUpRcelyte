@@ -2,7 +2,6 @@
 #include "internal.h"
 #include <unistd.h>
 #include <string.h>
-#include <errno.h>
 
 struct Context {
 	int32_t listenfd;
@@ -32,29 +31,9 @@ static void *status_handler(void*) {
 
 static pthread_t status_thread = NET_THREAD_INVALID;
 bool status_init(const char *path, uint16_t port) {
-	ctx.listenfd = socket(AF_INET6, SOCK_STREAM, 0);
-	{
-		int32_t iSetOption = 1;
-		setsockopt(ctx.listenfd, SOL_SOCKET, SO_REUSEADDR, (char*)&iSetOption, sizeof(iSetOption));
-		struct sockaddr_in6 serv_addr = {
-			.sin6_family = AF_INET6,
-			.sin6_port = htons(port),
-			.sin6_flowinfo = 0,
-			.sin6_addr = IN6ADDR_ANY_INIT,
-			.sin6_scope_id = 0,
-		};
-		if(bind(ctx.listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
-			uprintf("Cannot bind socket to port %hu: %s\n", port, strerror(errno));
-			close(ctx.listenfd);
-			ctx.listenfd = -1;
-			return true;
-		}
-	}
-	if(listen(ctx.listenfd, 128) < 0) {
-		close(ctx.listenfd);
-		ctx.listenfd = -1;
+	ctx.listenfd = net_bind_tcp(port, 128);
+	if(ctx.listenfd == -1)
 		return true;
-	}
 	ctx.path = path;
 	if(pthread_create(&status_thread, NULL, (void *(*)(void*))status_handler, NULL)) {
 		status_thread = NET_THREAD_INVALID;
@@ -67,7 +46,7 @@ void status_cleanup() {
 		return;
 	uprintf("Stopping HTTP\n");
 	shutdown(ctx.listenfd, SHUT_RD);
-	close(ctx.listenfd);
+	net_close(ctx.listenfd);
 	ctx.listenfd = -1;
 	if(status_thread != NET_THREAD_INVALID) {
 		pthread_join(status_thread, NULL);

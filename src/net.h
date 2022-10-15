@@ -44,6 +44,8 @@ struct SS {
 
 bool SS_equal(const struct SS *a0, const struct SS *a1);
 void net_tostr(const struct SS *a, char out[static INET6_ADDRSTRLEN + 8]);
+int32_t net_bind_tcp(uint16_t port, uint32_t backlog);
+void net_close(int32_t sockfd);
 
 struct NetKeypair {
 	uint8_t NET_H_PRIVATE(random)[32];

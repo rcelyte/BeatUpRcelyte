@@ -6,9 +6,7 @@
 #include <mbedtls/entropy.h>
 #include <mbedtls/error.h>
 #include <unistd.h>
-#include <signal.h>
 #include <string.h>
-#include <errno.h>
 
 struct Context {
 	int32_t listenfd;
@@ -83,32 +81,9 @@ static int status_ssl_sni(struct Context *ctx, mbedtls_ssl_context *ssl, const u
 
 static pthread_t status_thread = NET_THREAD_INVALID;
 bool status_ssl_init(mbedtls_x509_crt certs[2], mbedtls_pk_context keys[2], const char *domain, const char *path, uint16_t port) {
-	ctx.listenfd = socket(AF_INET6, SOCK_STREAM, 0);
-	{
-		int32_t iSetOption = 1;
-		setsockopt(ctx.listenfd, SOL_SOCKET, SO_REUSEADDR, (char*)&iSetOption, sizeof(iSetOption));
-		struct sockaddr_in6 serv_addr = {
-			.sin6_family = AF_INET6,
-			.sin6_port = htons(port),
-			.sin6_flowinfo = 0,
-			.sin6_addr = IN6ADDR_ANY_INIT,
-			.sin6_scope_id = 0,
-		};
-		#ifndef WINDOWS
-		signal(SIGPIPE, SIG_IGN);
-		#endif
-		if(bind(ctx.listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
-			uprintf("Cannot bind socket to port %hu: %s\n", port, strerror(errno));
-			close(ctx.listenfd);
-			ctx.listenfd = -1;
-			return true;
-		}
-	}
-	if(listen(ctx.listenfd, 128) < 0) {
-		close(ctx.listenfd);
-		ctx.listenfd = -1;
+	ctx.listenfd = net_bind_tcp(port, 128);
+	if(ctx.listenfd == -1)
 		return true;
-	}
 	mbedtls_ssl_config_init(&ctx.conf);
 	mbedtls_entropy_init(&ctx.entropy);
 	mbedtls_ctr_drbg_init(&ctx.ctr_drbg);
@@ -149,7 +124,7 @@ void status_ssl_cleanup() {
 	mbedtls_entropy_free(&ctx.entropy);
 	mbedtls_ssl_config_free(&ctx.conf);
 	shutdown(ctx.listenfd, SHUT_RD);
-	close(ctx.listenfd);
+	net_close(ctx.listenfd);
 	ctx.listenfd = -1;
 	if(status_thread != NET_THREAD_INVALID) {
 		pthread_join(status_thread, NULL);

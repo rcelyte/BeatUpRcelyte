@@ -1,18 +1,23 @@
+#define __STDC_WANT_LIB_EXT1__ 1
 #include "global.h"
 #define NET_H_PRIVATE(x) x
 #include "net.h"
 #include <mbedtls/ecdh.h>
 #include <mbedtls/error.h>
 
-#ifndef WINDOWS
+#ifdef WINDOWS
+#define net_error() WSAGetLastError()
+#else
 #include <netdb.h>
 #include <fcntl.h>
+#include <signal.h>
+#include <errno.h>
+#define net_error() (errno)
 #endif
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
 
 #define ENCRYPTION_LAYER_SIZE 63
 
@@ -157,9 +162,40 @@ static struct NetSession *onResolve_stub(void*, struct SS, void**) {return NULL;
 static void onResend_stub(void*, uint32_t, uint32_t*) {}
 static void onWireMessage_stub(void*, union WireLink*, const struct WireMessage*) {}
 
+static const char *net_strerror(int32_t err) {
+	static _Thread_local char message[1024];
+	*message = 0;
+	#if defined(WINDOWS)
+	FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, err, 0, message, sizeof(message), NULL);
+	#elif defined(__STDC_LIB_EXT1__)
+	strerror_s(message, lengthof(message), err);
+	#elif (_POSIX_C_SOURCE >= 200112L || _XOPEN_SOURCE >= 600) && !_GNU_SOURCE
+	strerror_r(err, message, lengthof(message));
+	#else
+	#error No strerror_s implementation available
+	#endif
+	if(!*message)
+		snprintf(message, lengthof(message), "%d", err);
+	return message;
+}
+
 bool net_useIPv4 = 0;
 static int32_t net_bind_udp(uint16_t port) {
+	#ifdef WINDOWS
+	int err = WSAStartup(MAKEWORD(2,0), &(WSADATA){0});
+	if(err) {
+		uprintf("WSAStartup failed: %s\n", port, net_strerror(err));
+		return -1;
+	}
+	#endif
 	int32_t sockfd = socket(net_useIPv4 ? AF_INET : AF_INET6, SOCK_DGRAM, 0);
+	if(sockfd == -1) {
+		uprintf("Failed to open UDP socket: %s\n", net_strerror(net_error()));
+		#ifdef WINDOWS
+		WSACleanup();
+		#endif
+		return -1;
+	}
 	struct SS addr;
 	if(net_useIPv4) {
 		addr.len = sizeof(struct sockaddr_in);
@@ -179,17 +215,32 @@ static int32_t net_bind_udp(uint16_t port) {
 		};
 	}
 	if(bind(sockfd, &addr.sa, addr.len) < 0) {
-		uprintf("Socket binding failed\n");
-		close(sockfd);
+		uprintf("Cannot bind socket to port %hu: %s\n", port, net_strerror(net_error()));
+		net_close(sockfd);
 		return -1;
 	}
 	return sockfd;
 }
 
-static int32_t net_bind_tcp(uint16_t port) {
+int32_t net_bind_tcp(uint16_t port, uint32_t backlog) {
+	#ifdef WINDOWS
+	int err = WSAStartup(MAKEWORD(2,0), &(WSADATA){0});
+	if(err) {
+		uprintf("WSAStartup failed: %s\n", port, net_strerror(err));
+		return -1;
+	}
+	#else
+	signal(SIGPIPE, SIG_IGN);
+	#endif
 	int32_t listenfd = socket(AF_INET6, SOCK_STREAM, 0);
-	int32_t iSetOption = 1;
-	setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, (char*)&iSetOption, sizeof(iSetOption));
+	if(listenfd == -1) {
+		uprintf("Failed to open TCP socket: %s\n", net_strerror(net_error()));
+		#ifdef WINDOWS
+		WSACleanup();
+		#endif
+		return -1;
+	}
+	setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, (char*)(int32_t[]){1}, sizeof(int32_t));
 	struct sockaddr_in6 addr = {
 		.sin6_family = AF_INET6,
 		.sin6_port = htons(port),
@@ -198,24 +249,33 @@ static int32_t net_bind_tcp(uint16_t port) {
 		.sin6_scope_id = 0,
 	};
 	if(bind(listenfd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-		uprintf("Cannot bind socket to port %hu: %s\n", port, strerror(errno));
+		uprintf("Cannot bind socket to port %hu: %s\n", port, net_strerror(net_error()));
 		goto fail;
 	}
-	if(listen(listenfd, 16) < 0) {
-		uprintf("listen() failed: %s\n", strerror(errno));
+	if(listen(listenfd, backlog) < 0) {
+		uprintf("listen() failed: %s\n", net_strerror(net_error()));
 		goto fail;
 	}
 	return listenfd;
 	fail:
-	close(listenfd);
+	net_close(listenfd);
 	return -1;
+}
+
+void net_close(int32_t sockfd) {
+	if(sockfd == -1)
+		return;
+	close(sockfd);
+	#ifdef WINDOWS
+	WSACleanup();
+	#endif
 }
 
 bool net_init(struct NetContext *ctx, uint16_t port, bool filterUnencrypted) {
 	*ctx = (struct NetContext){
 		._typeid = WireLinkType_LOCAL,
 		.sockfd = net_bind_udp(port),
-		.listenfd = net_bind_tcp(port),
+		.listenfd = net_bind_tcp(port, 16),
 		.run = false,
 		.filterUnencrypted = filterUnencrypted,
 		.mutex = PTHREAD_MUTEX_INITIALIZER,
@@ -355,8 +415,8 @@ void net_cleanup(struct NetContext *ctx) {
 	free(ctx->cookies);
 	mbedtls_entropy_free(&ctx->entropy);
 	mbedtls_ctr_drbg_free(&ctx->ctr_drbg);
-	close(ctx->listenfd);
-	close(ctx->sockfd);
+	net_close(ctx->listenfd);
+	net_close(ctx->sockfd);
 	ctx->_typeid = WireLinkType_INVALID;
 }
 
@@ -486,7 +546,7 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSe
 		if(ctx->run)
 			goto retry;
 		if(raw_len == -1)
-			uprintf("recvfrom() failed: %s\n", strerror(errno));
+			uprintf("recvfrom() failed: %s\n", net_strerror(net_error()));
 		return 0;
 	}
 	if(addr.sa.sa_family == AF_UNSPEC) {

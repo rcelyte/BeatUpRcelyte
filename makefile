@@ -14,13 +14,13 @@ LIBS := libmbedtls.a libmbedx509.a libmbedcrypto.a
 OBJS := $(FILES:%=$(OBJDIR)/%.o) $(HTMLS:%=$(OBJDIR)/%.s) $(LIBS:%=$(OBJDIR)/%)
 DEPS := $(FILES:%=$(OBJDIR)/%.d)
 
-CFLAGS := -g -std=gnu2x -Imbedtls/include -Wall -Wextra -Werror -pedantic-errors -DMP_EXTENDED_ROUTING
-LDFLAGS := -O2 -Wl,--gc-sections,--fatal-warnings
+CFLAGS := -std=gnu2x -Imbedtls/include -Wall -Wextra -Werror -pedantic-errors -DMP_EXTENDED_ROUTING
+LDFLAGS := -O2 -Wl,--gc-sections,--fatal-warnings -fno-pie -pthread
 
 sinclude makefile.user
 
 ifdef DEBUG
-CFLAGS += -DDEBUG
+CFLAGS += -g -DDEBUG
 endif
 
 default: beatupserver
@@ -57,17 +57,15 @@ mbedtls/.git:
 $(OBJDIR)/libs.mk: makefile
 	@mkdir -p "$(@D)"
 	@cat <<EOF | $(CC) -E - -o "$@"
-	#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(_WIN64) || defined(WINAPI_FAMILY) || defined(_MSC_VER) || defined(__MINGW32__) || defined(__MINGW64__) || defined(__CYGWIN32__)
-	CFLAGS += -DWINDOWS
-	LDFLAGS += -lws2_32 -lwinmm -lgdi32
-	#else
-	LDFLAGS += -pthread
-	#if 0
+	#if 1
+	LDFLAGS := --static \$$(LDFLAGS)
+	#elif 0
 	CFLAGS += -fsanitize=address -fno-omit-frame-pointer
 	LDFLAGS := -fsanitize=address -static-libsan \$$(LDFLAGS)
-	#elif 1
-	LDFLAGS := --static \$$(LDFLAGS)
 	#endif
+	#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(_WIN64) || defined(WINAPI_FAMILY) || defined(_MSC_VER) || defined(__MINGW32__) || defined(__MINGW64__) || defined(__CYGWIN32__)
+	CFLAGS += -DWINDOWS
+	LDFLAGS += -lws2_32
 	#endif
 	EOF
 
