@@ -2,11 +2,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define pkt_serialize(data, pkt, end, version) ( \
-	pkt_write_c(pkt, end, version, SerializeHeader, { \
-		.length = pkt_write(data, &(uint8_t*){*(pkt)}, end, version), \
-	}) && pkt_write(data, pkt, end, version) \
-)
 struct String {
 	uint32_t length;
 	bool isNull;

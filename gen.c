@@ -537,18 +537,20 @@ static void gen_header(char **out) {
 		"size_t _pkt_try_read(PacketReadFunc inner, void *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);\n"
 		"size_t _pkt_try_write(PacketWriteFunc inner, const void *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);\n"
 		"#define pkt_write_c(pkt, end, ctx, type, ...) _pkt_try_write((PacketWriteFunc)_pkt_##type##_write, &(struct type)__VA_ARGS__, pkt, end, ctx)\n"
-		"#define pkt_read(data, ...) _pkt_try_read((PacketReadFunc)_Generic(*(data)");
+		"#define _pkt_read_func(data) ((PacketReadFunc)_Generic(*(data)");
 	for(struct Token *token = tokens; token < tokens_end; ++token)
 		if(token->type == TType_Struct_start && token->struct_.recv)
 			write_fmt(out, ", struct %s: _pkt_%s_read", token->struct_.name, token->struct_.name);
 	write_str(out,
-		"), data, __VA_ARGS__)\n"
-		"#define pkt_write(data, ...) _pkt_try_write((PacketWriteFunc)_Generic(*(data)");
+		"))\n"
+		"#define _pkt_write_func(data) ((PacketWriteFunc)_Generic(*(data)");
 	for(struct Token *token = tokens; token < tokens_end; ++token)
 		if(token->type == TType_Struct_start && token->struct_.send)
 			write_fmt(out, ", struct %s: _pkt_%s_write", token->struct_.name, token->struct_.name);
 	write_str(out,
-		"), data, __VA_ARGS__)\n"
+		"))\n"
+		"#define pkt_read(data, ...) _pkt_try_read(_pkt_read_func(data), data, __VA_ARGS__)\n"
+		"#define pkt_write(data, ...) _pkt_try_write(_pkt_write_func(data), data, __VA_ARGS__)\n"
 		"size_t pkt_write_bytes(const uint8_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx, size_t count);\n");
 }
 

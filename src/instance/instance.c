@@ -178,13 +178,14 @@ static bool GameplayModifiers_eq(const struct GameplayModifiers *a, const struct
 
 static inline struct PlayerLobbyPermissionConfigurationNetSerializable session_get_permissions(const struct Room *room, const struct InstanceSession *session) {
 	bool isServerOwner = (indexof(room->players, session) == room->serverOwner);
+	bool canSuggest = (room->configuration.songSelectionMode != SongSelectionMode_Random);
 	return (struct PlayerLobbyPermissionConfigurationNetSerializable){
 		.userId = session->userId,
 		.isServerOwner = isServerOwner,
-		.hasRecommendBeatmapsPermission = (room->configuration.songSelectionMode != SongSelectionMode_Random) && (isServerOwner || room->configuration.songSelectionMode != SongSelectionMode_OwnerPicks),
-		.hasRecommendGameplayModifiersPermission = (room->configuration.gameplayServerControlSettings == GameplayServerControlSettings_AllowModifierSelection || room->configuration.gameplayServerControlSettings == GameplayServerControlSettings_All),
+		.hasRecommendBeatmapsPermission = canSuggest,
+		.hasRecommendGameplayModifiersPermission = canSuggest && (room->configuration.gameplayServerControlSettings & GameplayServerControlSettings_AllowModifierSelection),
 		.hasKickVotePermission = isServerOwner,
-		.hasInvitePermission = (room->configuration.invitePolicy == InvitePolicy_AnyoneCanInvite) || (isServerOwner && room->configuration.invitePolicy == InvitePolicy_OnlyConnectionOwnerCanInvite),
+		.hasInvitePermission = (bool[]){true, isServerOwner, false}[room->configuration.invitePolicy],
 	};
 }
 
@@ -1745,6 +1746,8 @@ static struct Room **room_open(struct InstanceContext *ctx, uint16_t roomID, str
 		configuration.maxPlayerCount = 1;
 	else if((uint32_t)configuration.maxPlayerCount > sizeof(struct CounterP) * 8 - 2)
 		configuration.maxPlayerCount = sizeof(struct CounterP) * 8 - 2;
+	if(configuration.invitePolicy >= 3 || configuration.invitePolicy < 0)
+		configuration.invitePolicy = InvitePolicy_NobodyCanInvite;
 	if(instance_mapPool) {
 		configuration = (struct GameplayServerConfiguration){
 			.maxPlayerCount = configuration.maxPlayerCount,

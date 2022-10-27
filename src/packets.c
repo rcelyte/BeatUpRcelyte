@@ -2,6 +2,23 @@
 #include "packets.h"
 #include "../common/packets.c"
 
+bool _pkt_serialize(PacketWriteFunc inner, const void *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	uint8_t *start = (*pkt)++;
+	struct SerializeHeader header = {
+		.length = _pkt_try_write(inner, data, pkt, end, ctx),
+	};
+	if(header.length) {
+		uint8_t *retry = start;
+		if(pkt_write(&header, &retry, end, ctx) == 1)
+			return true;
+		*pkt = retry;
+		if(_pkt_try_write(inner, data, pkt, end, ctx))
+			return true;
+	}
+	(*pkt) = start;
+	return false;
+}
+
 ServerCode StringToServerCode(const char *in, uint32_t len) {
 	static const uint8_t readTable[128] = {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,27,28,29,30,31,32,33,34,35,36,1,1,1,1,1,1,1,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1};
 	ServerCode out = 0;
