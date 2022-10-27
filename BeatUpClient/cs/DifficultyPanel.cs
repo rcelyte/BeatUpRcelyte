@@ -2,6 +2,11 @@ using static System.Linq.Enumerable;
 
 static partial class BeatUpClient {
 	class DifficultyPanel {
+		class PlaceholderDifficulty : EmptyDifficultyBeatmap, IDifficultyBeatmap {
+			public new BeatmapDifficulty difficulty {get;}
+			public PlaceholderDifficulty(BeatmapDifficulty difficulty) =>
+				this.difficulty = difficulty; // TODO: assign to EmptyDifficultyBeatmap.<difficulty>k__BackingField directly
+		}
 		static UnityEngine.GameObject characteristicTemplate = null!;
 		static UnityEngine.GameObject difficultyTemplate = null!;
 		BeatmapCharacteristicSegmentedControlController characteristicSelector;
@@ -44,32 +49,34 @@ static partial class BeatUpClient {
 			difficultySelector._difficultySegmentedControl._container = new Zenject.DiContainer();
 			this.hideHints = hideHints;
 		}
-		public bool Clear() {
+		public void Clear() =>
+			Update(null, null!);
+		public void Update(PreviewDifficultyBeatmap? beatmapLevel, System.Action<PreviewDifficultyBeatmap> onChange) {
 			characteristicSelector.transform.parent.gameObject.SetActive(false);
 			difficultySelector.transform.parent.gameObject.SetActive(false);
-			return false;
-		}
-		public bool Update(PreviewDifficultyBeatmap? beatmapLevel, System.Action<PreviewDifficultyBeatmap> onChange) {
+
 			characteristicSelector.didSelectBeatmapCharacteristicEvent = delegate {};
 			difficultySelector.didSelectDifficultyEvent = delegate {};
-			if(beatmapLevel == null)
-				return Clear();
-			System.Collections.Generic.IReadOnlyList<PreviewDifficultyBeatmapSet>? previewDifficultyBeatmapSets = beatmapLevel.beatmapLevel.previewDifficultyBeatmapSets;
-			if(previewDifficultyBeatmapSets == null)
-				return Clear();
-			BeatmapCharacteristicSO[] beatmapCharacteristics = PreviewDifficultyBeatmapSetExtensions.GetBeatmapCharacteristics(previewDifficultyBeatmapSets.ToArray());
-			for(int i = 0; i < beatmapCharacteristics.Length; ++i)
-				if(beatmapCharacteristics[i] == beatmapLevel.beatmapCharacteristic)
-					difficultySelector.SetData(previewDifficultyBeatmapSets[i].beatmapDifficulties.Select(diff => (IDifficultyBeatmap)new CustomDifficultyBeatmap(null, null, diff, 0, 0, 0, 0, null, null)).ToList(), beatmapLevel.beatmapDifficulty);
-			characteristicSelector.SetData(beatmapCharacteristics.Select(ch => (IDifficultyBeatmapSet)new CustomDifficultyBeatmapSet(ch)).ToList(), beatmapLevel.beatmapCharacteristic);
+			System.Collections.Generic.IReadOnlyList<PreviewDifficultyBeatmapSet>? previewSets = beatmapLevel?.beatmapLevel.previewDifficultyBeatmapSets;
+			if(previewSets == null)
+				return;
+			System.Collections.Generic.IReadOnlyList<IDifficultyBeatmap> diffs = (previewSets
+				.Where(set => set.beatmapCharacteristic == beatmapLevel!.beatmapCharacteristic && set.beatmapDifficulties?.Length >= 1)
+				.Select(set => set.beatmapDifficulties)
+				.FirstOrDefault()
+				?? new[] {beatmapLevel!.beatmapDifficulty})
+				.Select(diff => new PlaceholderDifficulty(diff))
+				.ToList();
+			difficultySelector.SetData(diffs, beatmapLevel!.beatmapDifficulty);
+			characteristicSelector.SetData(previewSets.Select(set => new DifficultyBeatmapSet(set.beatmapCharacteristic, null!)).ToList(), beatmapLevel.beatmapCharacteristic);
 			if(hideHints)
 				foreach(HMUI.HoverHint hint in characteristicSelector.GetComponentsInChildren<HMUI.HoverHint>())
 					hint.enabled = false;
 			characteristicSelector.didSelectBeatmapCharacteristicEvent += (controller, beatmapCharacteristic) => {
-				PreviewDifficultyBeatmapSet set = previewDifficultyBeatmapSets.First(set => set.beatmapCharacteristic == beatmapCharacteristic);
+				PreviewDifficultyBeatmapSet set = previewSets.First(set => set.beatmapCharacteristic == beatmapCharacteristic);
 				BeatmapDifficulty closestDifficulty = set.beatmapDifficulties[0];
 				foreach(BeatmapDifficulty difficulty in set.beatmapDifficulties) {
-					if(beatmapLevel.beatmapDifficulty < difficulty)
+					if(difficulty > beatmapLevel.beatmapDifficulty)
 						break;
 					closestDifficulty = difficulty;
 				}
@@ -79,7 +86,6 @@ static partial class BeatUpClient {
 				onChange(new PreviewDifficultyBeatmap(beatmapLevel.beatmapLevel, beatmapLevel.beatmapCharacteristic, difficulty));
 			characteristicSelector.transform.parent.gameObject.SetActive(true);
 			difficultySelector.transform.parent.gameObject.SetActive(true);
-			return false;
 		}
 	}
 }

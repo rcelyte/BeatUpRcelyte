@@ -8,6 +8,7 @@ static partial class BeatUpClient {
 		if(status == EntitlementsStatus.Ok) {
 			BeatmapLevelsModel.GetBeatmapLevelResult result = await Resolve<BeatmapLevelsModel>()!.GetBeatmapLevelAsync(levelId, System.Threading.CancellationToken.None);
 			if(result.isError) {
+				Log.Debug("    Announce: failed to load beatmap");
 				status = EntitlementsStatus.NotOwned;
 			} else if(result.beatmapLevel is CustomBeatmapLevel level) {
 				await announceTask;
@@ -74,13 +75,32 @@ static partial class BeatUpClient {
 			Net.onShareInfo += OnShareInfo;
 			EntitlementsStatus status = await AnnounceWrapper(await task, id.name);
 			RecommendPreview? preview = playerData.ResolvePreview(levelId);
-			if(MissingRequirements(preview))
+			if(MissingRequirements(preview)){
+				Log.Debug("    Entitlement: missing requirements");
 				return EntitlementsStatus.NotOwned;
-			if(status != EntitlementsStatus.NotOwned || !BeatUpClient_Config.Instance.DirectDownloads || preview?.requirements.All(req => SafeMods.Contains(req)) == false)
+			}
+			if(status != EntitlementsStatus.NotOwned) {
+				Log.Debug("    Entitlement: passthrough");
 				return status;
-			if(ShareCache.CheckAvailability(levelId) != ShareCache.Status.None)
+			}
+			if(!BeatUpClient_Config.Instance.DirectDownloads) {
+				Log.Debug("    Entitlement: direct downloads disabled");
+				return status;
+			}
+			if(preview?.requirements.All(req => SafeMods.Contains(req)) == false) {
+				Log.Debug("    Entitlement: untrusted requirements present");
+				return status;
+			}
+			if(ShareCache.CheckAvailability(levelId) != ShareCache.Status.None) {
+				Log.Debug("    Entitlement: download info cached");
 				return EntitlementsStatus.NotDownloaded;
-			return await canDownload.Task ? EntitlementsStatus.NotDownloaded : EntitlementsStatus.NotOwned;
+			}
+			if(await canDownload.Task) {
+				Log.Debug("    Entitlement: download available");
+				return EntitlementsStatus.NotDownloaded;
+			}
+			Log.Debug("    Entitlement: no download sources");
+			return EntitlementsStatus.NotOwned;
 		} catch(System.Exception ex) {
 			Log.Critical($"Entitlement check failed: {ex}");
 			return EntitlementsStatus.NotOwned;

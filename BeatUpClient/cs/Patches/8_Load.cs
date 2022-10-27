@@ -7,7 +7,10 @@ static partial class BeatUpClient {
 		Net.SetLocalProgress(new LoadProgress(LoadState.Loading, 0));
 		Log.Debug("Unzipping level");
 		CustomBeatmapLevel? level = await UnzipLevel(levelId, data, cancellationToken);
-		Log.Debug("Load " + ((level == null) ? "failed" : "finished"));
+		if(data.Count < 1)
+			Log.Debug("Fetch failed");
+		else
+			Log.Debug("Load " + ((level == null) ? "failed" : "finished"));
 		return new BeatmapLevelsModel.GetBeatmapLevelResult(level == null, level);
 	}
 
