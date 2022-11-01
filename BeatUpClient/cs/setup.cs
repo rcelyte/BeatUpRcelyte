@@ -2,7 +2,7 @@ using static System.Linq.Enumerable;
 
 static partial class BeatUpClient {
 	static bool SupportedMpCoreVersion(string? v) =>
-		v == null || v == "1.1.0" || v == "1.1.1";
+		v == null || v == "1.1.2";
 
 	[System.AttributeUsage(System.AttributeTargets.Method)]
 	internal class InitAttribute : System.Attribute {}
@@ -44,7 +44,7 @@ static partial class BeatUpClient {
 		}
 		Hive.Versioning.Version? mpCoreVersion = modVersion("MultiplayerCore");
 		if(!SupportedMpCoreVersion(mpCoreVersion?.ToString())) {
-			BeatUpClient_Error.Init("Incompatible BeatUpClient Version", $"This version of BeatUpClient only supports MultiplayerCore 1.1.0 or 1.1.1");
+			BeatUpClient_Error.Init("Incompatible BeatUpClient Version", $"This version of BeatUpClient only supports MultiplayerCore 1.1.2");
 			return;
 		}
 		string? err = BeatUpClient_Beta.CheckVersion(version);
