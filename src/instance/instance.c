@@ -360,7 +360,7 @@ static void session_set_state(struct InstanceContext *ctx, struct Room *room, st
 				});
 			}
 			SERIALIZE_MENURPC(&resp_end, endof(resp), session->net.version, {
-				.type = MenuRpcType_SetSelectedBeatmap,
+				.type = room->global.selectedBeatmap.levelID.length ? MenuRpcType_SetSelectedBeatmap : MenuRpcType_ClearSelectedBeatmap,
 				.setSelectedBeatmap = {
 					.base = base,
 					.flags = {true, false, false, false},
@@ -780,7 +780,7 @@ static void handle_MenuRpc(struct InstanceContext *ctx, struct Room *room, struc
 			uint8_t resp[65536], *resp_end = resp;
 			pkt_write_c(&resp_end, endof(resp), session->net.version, RoutingHeader, {0, 0, false});
 			SERIALIZE_MENURPC(&resp_end, endof(resp), session->net.version, {
-				.type = MenuRpcType_SetSelectedBeatmap,
+				.type = room->global.selectedBeatmap.levelID.length ? MenuRpcType_SetSelectedBeatmap : MenuRpcType_ClearSelectedBeatmap,
 				.setSelectedBeatmap = {
 					.base = base,
 					.flags = {true, false, false, false},
