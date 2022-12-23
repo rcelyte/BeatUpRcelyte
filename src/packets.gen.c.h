@@ -2494,6 +2494,13 @@ void _pkt_NetPacketHeader_write(const struct NetPacketHeader *restrict data, uin
 		default: uprintf("Invalid value for enum `PacketProperty`\n"); longjmp(fail, 1);
 	}
 }
+void _pkt_MultipartMessageReadbackProxy_read(struct MultipartMessageReadbackProxy *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_NetPacketHeader_read(&data->header, pkt, end, ctx);
+	_pkt_SerializeHeader_read(&data->serial, pkt, end, ctx);
+	_pkt_u8_read(&data->type, pkt, end, ctx);
+	_pkt_BaseMasterServerReliableRequest_read(&data->base, pkt, end, ctx);
+	_pkt_u32_read(&data->multipartMessageId, pkt, end, ctx);
+}
 void _pkt_PacketEncryptionLayer_read(struct PacketEncryptionLayer *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u8_read(&data->encrypted, pkt, end, ctx);
 	if(data->encrypted == 1) {

@@ -8,6 +8,12 @@
 
 #define MASTER_SERIALIZE(data, pkt, end) pkt_serialize(data, pkt, end, PV_LEGACY_DEFAULT)
 
+struct HandshakeState {
+	uint32_t certificateRequestId;
+	uint32_t helloResponseId;
+	uint32_t certificateOutboundCount;
+	HandshakeMessageType step;
+};
 struct MasterPacket {
 	uint32_t timeStamp;
 	uint16_t length;
@@ -31,9 +37,7 @@ struct MasterSession {
 	struct MasterSession *next;
 	uint32_t epoch;
 	uint32_t lastSentRequestId;
-	uint32_t certificateRequestId;
-	uint32_t helloResponseId;
-	HandshakeMessageType handshakeStep;
+	struct HandshakeState handshake;
 	struct MasterResend resend;
 	struct MasterMultipartList *multipartList;
 };
@@ -63,7 +67,7 @@ static struct NetSession *master_onResolve(struct Context *ctx, struct SS addr, 
 	}
 	net_session_init(&ctx->net, &session->net, addr);
 	session->lastSentRequestId = 0;
-	session->handshakeStep = HandshakeMessageType_ClientHelloRequest;
+	session->handshake.step = HandshakeMessageType_ClientHelloRequest;
 	session->resend.set = COUNTER64_CLEAR;
 	session->multipartList = NULL;
 	session->next = ctx->sessionList;
@@ -122,15 +126,17 @@ static uint32_t master_getNextRequestId(struct MasterSession *session) {
 	return (session->lastSentRequestId & 63) | session->epoch;
 }
 
-static void master_handle_ack(struct MasterSession *session, const struct MessageReceivedAcknowledge *ack) {
+// return is valid until the next call to `master_send()`
+static const struct MasterPacket *master_handle_ack(struct MasterSession *session, const struct MessageReceivedAcknowledge *ack) {
 	uint32_t requestId = ack->base.responseId;
 	struct Counter64 iter = session->resend.set;
 	for(uint32_t i; Counter64_clear_next(&iter, &i);) {
 		if(requestId != session->resend.requestIds[i])
 			continue;
 		Counter64_clear(&session->resend.set, i);
-		return;
+		return &session->resend.slots[i];
 	}
+	return NULL;
 }
 
 static void master_send_internal(struct NetContext *ctx, struct MasterSession *session, const uint8_t *buf, uint16_t length, uint32_t requestId, bool encrypt) {
@@ -155,7 +161,7 @@ static uint32_t read_requestId(const uint8_t *data, const uint8_t *data_end, str
 	return out.value.requestId;
 }
 
-static void master_send(struct NetContext *ctx, struct MasterSession *session, MessageType type, const uint8_t *data, const uint8_t *data_end) {
+static uint32_t master_send(struct NetContext *ctx, struct MasterSession *session, MessageType type, const uint8_t *data, const uint8_t *data_end) {
 	uint8_t buf[data_end + 64 - data], *buf_end = buf;
 	struct UnconnectedMessage header = {
 		.type = type,
@@ -168,11 +174,11 @@ static void master_send(struct NetContext *ctx, struct MasterSession *session, M
 		}) && pkt_write_bytes(data, &buf_end, endof(buf), PV_LEGACY_DEFAULT, data_end - data);
 		if(res)
 			master_send_internal(ctx, session, buf, buf_end - buf, read_requestId(data, data_end, PV_LEGACY_DEFAULT), type != MessageType_HandshakeMessage);
-		return;
+		return 1;
 	}
 	if(!(pkt_write(&header, &buf_end, endof(buf), PV_LEGACY_DEFAULT) &&
 	     pkt_write_bytes(data, &buf_end, endof(buf), PV_LEGACY_DEFAULT, data_end - data)))
-		return;
+		return 0;
 	struct MultipartMessageProxy mpp = {
 		.value = {
 			.multipartMessageId = read_requestId(data, data_end, PV_LEGACY_DEFAULT),
@@ -183,9 +189,10 @@ static void master_send(struct NetContext *ctx, struct MasterSession *session, M
 	switch(type) {
 		case MessageType_UserMessage: mpp.type = UserMessageType_MultipartMessage; break;
 		case MessageType_HandshakeMessage: mpp.type = HandshakeMessageType_MultipartMessage; break;
-		default: uprintf("Bad MessageType in master_send()\b"); return;
+		default: uprintf("Bad MessageType in master_send()\b"); return 0;
 	}
 	const uint8_t *buf_it = buf;
+	uint32_t partCount = 0;
 	do {
 		mpp.value.base.requestId = master_getNextRequestId(session);
 		mpp.value.offset = buf_it - buf;
@@ -202,8 +209,10 @@ static void master_send(struct NetContext *ctx, struct MasterSession *session, M
 		}) && MASTER_SERIALIZE(&mpp, &mpbuf_end, endof(mpbuf));
 		(void)res;
 		master_send_internal(ctx, session, mpbuf, mpbuf_end - mpbuf, mpp.value.base.requestId, type != MessageType_HandshakeMessage);
+		++partCount;
 		buf_it += mpp.value.length;
 	} while(buf_it < buf_end);
+	return partCount;
 }
 
 static void master_send_ack(struct Context *ctx, struct MasterSession *session, MessageType type, uint32_t requestId) {
@@ -226,7 +235,7 @@ static void master_send_ack(struct Context *ctx, struct MasterSession *session, 
 }
 
 static void handle_ClientHelloRequest(struct Context *ctx, struct MasterSession *session, const struct ClientHelloRequest *req) {
-	if(session->handshakeStep != HandshakeMessageType_ClientHelloRequest) {
+	if(session->handshake.step != HandshakeMessageType_ClientHelloRequest) {
 		if(net_time() - NetSession_get_lastKeepAlive(&session->net) < 5000) // 5 second timeout to prevent clients from getting "locked out" if their previous session hasn't closed or timed out yet
 			return;
 		net_session_reset(&ctx->net, &session->net); // security or something idk
@@ -243,12 +252,12 @@ static void handle_ClientHelloRequest(struct Context *ctx, struct MasterSession 
 	if(!MASTER_SERIALIZE(&r_hello, &resp_end, endof(resp)))
 		return;
 	master_send(&ctx->net, session, MessageType_HandshakeMessage, resp, resp_end);
-	session->handshakeStep = HandshakeMessageType_ClientHelloWithCookieRequest;
+	session->handshake.step = HandshakeMessageType_ClientHelloWithCookieRequest;
 }
 
 static void handle_ClientHelloWithCookieRequest(struct Context *ctx, struct MasterSession *session, const struct ClientHelloWithCookieRequest *req) {
 	master_send_ack(ctx, session, MessageType_HandshakeMessage, req->base.requestId);
-	if(session->handshakeStep != HandshakeMessageType_ClientHelloWithCookieRequest)
+	if(session->handshake.step != HandshakeMessageType_ClientHelloWithCookieRequest)
 		return;
 	if(memcmp(req->cookie, NetSession_get_cookie(&session->net), 32) != 0)
 		return;
@@ -268,25 +277,26 @@ static void handle_ClientHelloWithCookieRequest(struct Context *ctx, struct Mast
 		++r_cert.serverCertificateRequest.certificateCount;
 	}
 
-	session->certificateRequestId = r_cert.serverCertificateRequest.base.requestId;
-	session->helloResponseId = req->base.requestId;
-
 	uint8_t resp[65536], *resp_end = resp;
 	if(!MASTER_SERIALIZE(&r_cert, &resp_end, endof(resp)))
 		return;
-	master_send(&ctx->net, session, MessageType_HandshakeMessage, resp, resp_end);
-	session->handshakeStep = HandshakeMessageType_ServerCertificateRequest;
+	session->handshake = (struct HandshakeState){
+		.certificateRequestId = r_cert.serverCertificateRequest.base.requestId,
+		.helloResponseId = req->base.requestId,
+		.certificateOutboundCount = master_send(&ctx->net, session, MessageType_HandshakeMessage, resp, resp_end),
+		.step = HandshakeMessageType_ServerCertificateRequest,
+	};
 }
 
-static void handle_ServerCertificateRequest_ack(struct Context *ctx, struct MasterSession *session) {
-	if(session->handshakeStep != HandshakeMessageType_ServerCertificateRequest)
+static void handle_ServerCertificateRequest_sent(struct Context *ctx, struct MasterSession *session) {
+	if(session->handshake.step != HandshakeMessageType_ServerCertificateRequest)
 		return;
 	struct HandshakeMessage r_hello = {
 		.type = HandshakeMessageType_ServerHelloRequest,
 		.serverHelloRequest = {
 			.base = {
 				.requestId = master_getNextRequestId(session),
-				.responseId = session->helloResponseId,
+				.responseId = session->handshake.helloResponseId,
 			},
 			.publicKey = {
 				.length = sizeof(r_hello.serverHelloRequest.publicKey.data),
@@ -308,12 +318,12 @@ static void handle_ServerCertificateRequest_ack(struct Context *ctx, struct Mast
 	if(!MASTER_SERIALIZE(&r_hello, &resp_end, endof(resp)))
 		return;
 	master_send(&ctx->net, session, MessageType_HandshakeMessage, resp, resp_end);
-	session->handshakeStep = HandshakeMessageType_ClientKeyExchangeRequest;
+	session->handshake.step = HandshakeMessageType_ClientKeyExchangeRequest;
 }
 
 static void handle_ClientKeyExchangeRequest(struct Context *ctx, struct MasterSession *session, const struct ClientKeyExchangeRequest *req) {
 	master_send_ack(ctx, session, MessageType_HandshakeMessage, req->base.requestId);
-	if(session->handshakeStep != HandshakeMessageType_ClientKeyExchangeRequest)
+	if(session->handshake.step != HandshakeMessageType_ClientKeyExchangeRequest)
 		return;
 	if(NetSession_set_clientPublicKey(&session->net, &ctx->net, &req->clientPublicKey))
 		return;
@@ -330,7 +340,7 @@ static void handle_ClientKeyExchangeRequest(struct Context *ctx, struct MasterSe
 	if(!MASTER_SERIALIZE(&r_spec, &resp_end, endof(resp)))
 		return;
 	master_send(&ctx->net, session, MessageType_HandshakeMessage, resp, resp_end);
-	session->handshakeStep = HandshakeMessageType_ChangeCipherSpecRequest;
+	session->handshake.step = HandshakeMessageType_ChangeCipherSpecRequest;
 }
 
 static void handle_AuthenticateUserRequest(struct Context *ctx, struct MasterSession *session, const struct AuthenticateUserRequest *req) {
@@ -665,9 +675,18 @@ static void handle_packet(struct Context *ctx, struct MasterSession *session, st
 				case HandshakeMessageType_ClientKeyExchangeRequest: handle_ClientKeyExchangeRequest(ctx, session, &message.clientKeyExchangeRequest); break;
 				case HandshakeMessageType_ChangeCipherSpecRequest: uprintf("BAD TYPE: HandshakeMessageType_ChangeCipherSpecRequest\n"); break;
 				case HandshakeMessageType_MessageReceivedAcknowledge: {
-					master_handle_ack(session, &message.messageReceivedAcknowledge);
-					if(message.messageReceivedAcknowledge.base.responseId == session->certificateRequestId)
-						handle_ServerCertificateRequest_ack(ctx, session);
+					const struct MasterPacket *sent = master_handle_ack(session, &message.messageReceivedAcknowledge);
+					if(sent == NULL)
+						break;
+					struct MultipartMessageReadbackProxy readback;
+					if(!pkt_read(&readback, (const uint8_t*[]){sent->data}, &sent->data[sent->length], PV_LEGACY_DEFAULT))
+						break;
+					if(readback.header.unconnectedMessage.type != MessageType_HandshakeMessage ||
+					   readback.type != HandshakeMessageType_MultipartMessage ||
+					   readback.multipartMessageId != session->handshake.certificateRequestId)
+						break;
+					if(--session->handshake.certificateOutboundCount == 0)
+						handle_ServerCertificateRequest_sent(ctx, session);
 					break;
 				}
 				case HandshakeMessageType_MultipartMessage: uprintf("BAD TYPE: HandshakeMessageType_HandshakeMultipartMessage\n"); break;

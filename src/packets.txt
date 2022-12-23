@@ -1118,6 +1118,12 @@ d NetPacketHeader
 		MtuCheck mtuCheck
 		MtuOk mtuOk
 		Merged merged 12
+r MultipartMessageReadbackProxy
+	NetPacketHeader header
+	SerializeHeader serial
+	u8 type
+	BaseMasterServerReliableRequest base
+	u32 multipartMessageId
 d PacketEncryptionLayer
 	u8 encrypted
 	if(.encrypted == 1)
