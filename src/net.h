@@ -2,6 +2,7 @@
 #include "wire.h"
 #include "encryption.h"
 #include "perf.h"
+#include "../common/packets.h"
 #include <mbedtls/x509_crt.h>
 #include <mbedtls/pk.h>
 #include <mbedtls/ctr_drbg.h>
@@ -87,7 +88,7 @@ struct NetContext {
 	struct WireCookie *NET_H_PRIVATE(cookies);
 	void *userptr;
 	struct NetSession *(*onResolve)(void *userptr, struct SS addr, void **userdata_out);
-	void (*onResend)(void *userptr, uint32_t currentTime, uint32_t *nextTick);
+	uint32_t (*onResend)(void *userptr, uint32_t currentTime);
 	void (*onWireLink)(void *userptr, union WireLink *link);
 	void (*onWireMessage)(void *userptr, union WireLink *link, const struct WireMessage *message);
 	struct Performance NET_H_PRIVATE(perf);
@@ -102,13 +103,14 @@ void net_keypair_free(struct NetKeypair *keys);
 const uint8_t *NetKeypair_get_random(const struct NetKeypair *keys);
 bool NetKeypair_write_key(const struct NetKeypair *keys, struct NetContext *ctx, uint8_t *out, uint32_t *out_len);
 
+struct ByteArrayNetSerializable;
 const uint8_t *NetSession_get_cookie(const struct NetSession *session);
 bool NetSession_signature(const struct NetSession *session, struct NetContext *ctx, const mbedtls_pk_context *key, const uint8_t *in, uint32_t in_len, struct ByteArrayNetSerializable *out);
 bool NetSession_set_clientPublicKey(struct NetSession *session, struct NetContext *ctx, const struct ByteArrayNetSerializable *in);
 uint32_t NetSession_get_lastKeepAlive(struct NetSession *session);
 const struct SS *NetSession_get_addr(struct NetSession *session);
 
-bool net_init(struct NetContext *ctx, uint16_t port, bool filterUnencrypted);
+bool net_init(struct NetContext *ctx, uint16_t port, bool filterUnencrypted, uint32_t tcpBacklog);
 void net_stop(struct NetContext *ctx);
 void net_cleanup(struct NetContext *ctx);
 void net_lock(struct NetContext *ctx);

@@ -45,7 +45,7 @@ n RemoteProcedureCall
 	f32 syncTime
 n PlayersMissingEntitlementsNetSerializable
 	i32 count
-	String playersWithoutEntitlements[128,.count]
+	String playersWithoutEntitlements[254,.count]
 n SetPlayersMissingEntitlementsToLevel
 	RemoteProcedureCall base
 	RemoteProcedureCallFlags flags
@@ -226,7 +226,7 @@ n PlayerLobbyPermissionConfigurationNetSerializable
 	b hasInvitePermission:1
 n PlayersLobbyPermissionConfigurationNetSerializable
 	i32 count
-	PlayerLobbyPermissionConfigurationNetSerializable playersPermission[128,.count]
+	PlayerLobbyPermissionConfigurationNetSerializable playersPermission[254,.count]
 n SetPermissionConfiguration
 	RemoteProcedureCall base
 	RemoteProcedureCallFlags flags
@@ -314,7 +314,7 @@ n PlayerSpecificSettingsNetSerializable
 	ColorSchemeNetSerializable colorScheme
 n PlayerSpecificSettingsAtStartNetSerializable
 	i32 count
-	PlayerSpecificSettingsNetSerializable activePlayerSpecificSettingsAtGameStart[128,.count]
+	PlayerSpecificSettingsNetSerializable activePlayerSpecificSettingsAtGameStart[254,.count]
 n SetGameplaySceneSyncFinish
 	RemoteProcedureCall base
 	RemoteProcedureCallFlags flags
@@ -985,7 +985,7 @@ n GetPublicServersResponse
 	GetPublicServersResponse_Result result
 	if(.result == GetPublicServersResponse_Result_Success)
 		vu32 publicServerCount
-		PublicServerInfo publicServers[1024, .publicServerCount]
+		PublicServerInfo publicServers[20, .publicServerCount]
 d UserMessage
 	UserMessageType type
 	u8 UserMessageType(.type)

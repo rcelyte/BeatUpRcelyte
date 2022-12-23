@@ -190,7 +190,7 @@ static void process_Reliable(ChanneledHandler handler, struct NetSession *sessio
 			}
 			#endif
 			handler(p_ctx, p_room, p_session, &pkt_it, pkt_end, channelId);
-			check_length("BAD FRAGMENTED PACKET LENGTH", pkt_it, pkt_end, pkt_end - pkt, session->version);
+			pkt_debug("BAD FRAGMENTED PACKET LENGTH", pkt_it, pkt_end, pkt_end - pkt, session->version);
 			struct IncomingFragments *e = *incoming;
 			*incoming = (*incoming)->next;
 			free(e);

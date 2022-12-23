@@ -1,5 +1,6 @@
 #define NET_H_PRIVATE(x) x
 #include "net.h"
+#include "packets.h"
 #include "ssl.h"
 #include <mbedtls/error.h>
 #include <stdlib.h>

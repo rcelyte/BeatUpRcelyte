@@ -1,5 +1,6 @@
 #include "../global.h"
 #include "../net.h"
+#include "../packets.h"
 
 #define LOAD_TIMEOUT 15
 #define IDLE_TIMEOUT_MS 10000

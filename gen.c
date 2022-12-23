@@ -11,7 +11,7 @@
 #define DISABLE_LOG_PREFIX
 #include "src/log.h"
 
-static bool enableLog = false;
+static bool clientMode = false;
 
 enum TType {
 	TType_Enum_start,
@@ -229,8 +229,8 @@ static_assert(offsetof(struct Token, enum_.name) == offsetof(struct Token, field
 [[nodiscard]] static const char *parse_struct(const char *it) {
 	struct Token token;
 	token.type = TType_Struct_start;
-	token.struct_.sendIntern = token.struct_.send = (*it == 's' || *it == 'd');
-	token.struct_.recvIntern = token.struct_.recv = (*it == 'r' || *it == 'd');
+	token.struct_.sendIntern = token.struct_.send = (*it == ('s' - clientMode) || *it == 'd');
+	token.struct_.recvIntern = token.struct_.recv = (*it == ('r' + clientMode) || *it == 'd');
 	++it, skip_char(&it, ' ');
 	read_name(&it, token.struct_.name, sizeof(token.struct_.name));
 	skip_char(&it, '\n');
@@ -667,15 +667,12 @@ static void gen_source(char **out) {
 }
 
 int32_t main(int32_t argc, const char *argv[]) {
-	if(argc == 5 && strcmp(argv[4], "-l") == 0) {
-		enableLog = true;
-		uprintf("Logging functions not yet implemented\n");
-		return -1;
+	if(argc == 5 && strcmp(argv[4], "-c") == 0) {
+		clientMode = true;
 	} else if(argc != 4) {
-		uprintf("Usage: %s <definition.txt> <output.h> <output.c> [-l]", argv[0]);
+		uprintf("Usage: %s <definition.txt> <output.h> <output.c> [-c]", argv[0]);
 		return -1;
 	}
-	parse("n PacketContext\n\tu8 netVersion\n\tu8 protocolVersion\n\tu8 beatUpVersion\n\tu32 windowSize\n", NULL, 0);
 	parse_file(argv[1]);
 	resolve();
 	const char *headerName = argv[2], *sourceName = argv[3];

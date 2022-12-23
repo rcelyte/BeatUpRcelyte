@@ -32,20 +32,6 @@ static inline bool Counter64_set(struct Counter64 *set, uint32_t bit) {
 static inline bool Counter64_overwrite(struct Counter64 *set, uint32_t bit, bool state) {
 	return (state ? Counter64_set : Counter64_clear)(set, bit);
 }
-static inline bool Counter64_clear_next(struct Counter64 *set, uint32_t *bit) {
-	if(set->bits == 0)
-		return false;
-	*bit = __builtin_ctzll(set->bits);
-	Counter64_clear(set, *bit);
-	return true;
-}
-static inline bool Counter64_set_next(struct Counter64 *set, uint32_t *bit) {
-	if(~set->bits == 0)
-		return false;
-	*bit = __builtin_ctzll(~set->bits);
-	Counter64_set(set, *bit);
-	return true;
-}
 static inline bool Counter64_eq(struct Counter64 a, struct Counter64 b) {
 	return a.bits == b.bits;
 }
@@ -54,6 +40,20 @@ static inline bool Counter64_isEmpty(struct Counter64 set) {
 }
 static inline bool Counter64_isFilled(struct Counter64 set) {
 	return ~set.bits == 0;
+}
+static inline bool Counter64_clear_next(struct Counter64 *set, uint32_t *bit) {
+	if(Counter64_isEmpty(*set))
+		return false;
+	*bit = __builtin_ctzll(set->bits);
+	Counter64_clear(set, *bit);
+	return true;
+}
+static inline bool Counter64_set_next(struct Counter64 *set, uint32_t *bit) {
+	if(Counter64_isFilled(*set))
+		return false;
+	*bit = __builtin_ctzll(~set->bits);
+	Counter64_set(set, *bit);
+	return true;
 }
 static inline struct Counter64 Counter64_and(struct Counter64 a, struct Counter64 b) {
 	return (struct Counter64){a.bits & b.bits};

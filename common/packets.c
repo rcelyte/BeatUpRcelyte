@@ -3,7 +3,7 @@
 #include <assert.h>
 
 size_t pkt_write_bytes(const uint8_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext, size_t count) {
-	if(end - *pkt < (ssize_t)count)
+	if(end - *pkt < (ptrdiff_t)count)
 		return 0;
 	memcpy(*pkt, data, count);
 	*pkt += count;
@@ -35,7 +35,7 @@ static void range_fail() {
 	longjmp(fail, 1);
 }
 #define RANGE_CHECK(size) \
-	if(end - *pkt < (ssize_t)(size)) \
+	if(end - *pkt < (ptrdiff_t)(size)) \
 		range_fail()
 static uint32_t check_overflow(uint32_t count, uint32_t limit, const char *context) {
 	if(count <= limit)

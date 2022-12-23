@@ -1,15 +1,3 @@
-static void _pkt_PacketContext_read(struct PacketContext *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_u8_read(&data->netVersion, pkt, end, ctx);
-	_pkt_u8_read(&data->protocolVersion, pkt, end, ctx);
-	_pkt_u8_read(&data->beatUpVersion, pkt, end, ctx);
-	_pkt_u32_read(&data->windowSize, pkt, end, ctx);
-}
-static void _pkt_PacketContext_write(const struct PacketContext *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_u8_write(&data->netVersion, pkt, end, ctx);
-	_pkt_u8_write(&data->protocolVersion, pkt, end, ctx);
-	_pkt_u8_write(&data->beatUpVersion, pkt, end, ctx);
-	_pkt_u32_write(&data->windowSize, pkt, end, ctx);
-}
 static void _pkt_ByteArrayNetSerializable_read(struct ByteArrayNetSerializable *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_vu32_read(&data->length, pkt, end, ctx);
 	_pkt_raw_read(data->data, pkt, end, ctx, check_overflow(data->length, 8192, "ByteArrayNetSerializable.data"));
@@ -254,12 +242,12 @@ static void _pkt_RemoteProcedureCall_write(const struct RemoteProcedureCall *res
 }
 static void _pkt_PlayersMissingEntitlementsNetSerializable_read(struct PlayersMissingEntitlementsNetSerializable *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_i32_read(&data->count, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->count, 128, "PlayersMissingEntitlementsNetSerializable.playersWithoutEntitlements"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow(data->count, 254, "PlayersMissingEntitlementsNetSerializable.playersWithoutEntitlements"); i < count; ++i)
 		_pkt_String_read(&data->playersWithoutEntitlements[i], pkt, end, ctx);
 }
 static void _pkt_PlayersMissingEntitlementsNetSerializable_write(const struct PlayersMissingEntitlementsNetSerializable *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_i32_write(&data->count, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->count, 128, "PlayersMissingEntitlementsNetSerializable.playersWithoutEntitlements"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow(data->count, 254, "PlayersMissingEntitlementsNetSerializable.playersWithoutEntitlements"); i < count; ++i)
 		_pkt_String_write(&data->playersWithoutEntitlements[i], pkt, end, ctx);
 }
 static void _pkt_SetPlayersMissingEntitlementsToLevel_read(struct SetPlayersMissingEntitlementsToLevel *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -672,12 +660,12 @@ static void _pkt_PlayerLobbyPermissionConfigurationNetSerializable_write(const s
 }
 static void _pkt_PlayersLobbyPermissionConfigurationNetSerializable_read(struct PlayersLobbyPermissionConfigurationNetSerializable *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_i32_read(&data->count, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->count, 128, "PlayersLobbyPermissionConfigurationNetSerializable.playersPermission"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow(data->count, 254, "PlayersLobbyPermissionConfigurationNetSerializable.playersPermission"); i < count; ++i)
 		_pkt_PlayerLobbyPermissionConfigurationNetSerializable_read(&data->playersPermission[i], pkt, end, ctx);
 }
 static void _pkt_PlayersLobbyPermissionConfigurationNetSerializable_write(const struct PlayersLobbyPermissionConfigurationNetSerializable *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_i32_write(&data->count, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->count, 128, "PlayersLobbyPermissionConfigurationNetSerializable.playersPermission"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow(data->count, 254, "PlayersLobbyPermissionConfigurationNetSerializable.playersPermission"); i < count; ++i)
 		_pkt_PlayerLobbyPermissionConfigurationNetSerializable_write(&data->playersPermission[i], pkt, end, ctx);
 }
 static void _pkt_SetPermissionConfiguration_read(struct SetPermissionConfiguration *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -866,12 +854,12 @@ static void _pkt_PlayerSpecificSettingsNetSerializable_write(const struct Player
 }
 static void _pkt_PlayerSpecificSettingsAtStartNetSerializable_read(struct PlayerSpecificSettingsAtStartNetSerializable *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_i32_read(&data->count, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->count, 128, "PlayerSpecificSettingsAtStartNetSerializable.activePlayerSpecificSettingsAtGameStart"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow(data->count, 254, "PlayerSpecificSettingsAtStartNetSerializable.activePlayerSpecificSettingsAtGameStart"); i < count; ++i)
 		_pkt_PlayerSpecificSettingsNetSerializable_read(&data->activePlayerSpecificSettingsAtGameStart[i], pkt, end, ctx);
 }
 static void _pkt_PlayerSpecificSettingsAtStartNetSerializable_write(const struct PlayerSpecificSettingsAtStartNetSerializable *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_i32_write(&data->count, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->count, 128, "PlayerSpecificSettingsAtStartNetSerializable.activePlayerSpecificSettingsAtGameStart"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow(data->count, 254, "PlayerSpecificSettingsAtStartNetSerializable.activePlayerSpecificSettingsAtGameStart"); i < count; ++i)
 		_pkt_PlayerSpecificSettingsNetSerializable_write(&data->activePlayerSpecificSettingsAtGameStart[i], pkt, end, ctx);
 }
 static void _pkt_SetGameplaySceneSyncFinish_read(struct SetGameplaySceneSyncFinish *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -2171,7 +2159,7 @@ static void _pkt_GetPublicServersResponse_read(struct GetPublicServersResponse *
 	_pkt_u8_read(&data->result, pkt, end, ctx);
 	if(data->result == GetPublicServersResponse_Result_Success) {
 		_pkt_vu32_read(&data->publicServerCount, pkt, end, ctx);
-		for(uint32_t i = 0, count = check_overflow(data->publicServerCount, 1024, "GetPublicServersResponse.publicServers"); i < count; ++i)
+		for(uint32_t i = 0, count = check_overflow(data->publicServerCount, 20, "GetPublicServersResponse.publicServers"); i < count; ++i)
 			_pkt_PublicServerInfo_read(&data->publicServers[i], pkt, end, ctx);
 	}
 }
@@ -2180,7 +2168,7 @@ static void _pkt_GetPublicServersResponse_write(const struct GetPublicServersRes
 	_pkt_u8_write(&data->result, pkt, end, ctx);
 	if(data->result == GetPublicServersResponse_Result_Success) {
 		_pkt_vu32_write(&data->publicServerCount, pkt, end, ctx);
-		for(uint32_t i = 0, count = check_overflow(data->publicServerCount, 1024, "GetPublicServersResponse.publicServers"); i < count; ++i)
+		for(uint32_t i = 0, count = check_overflow(data->publicServerCount, 20, "GetPublicServersResponse.publicServers"); i < count; ++i)
 			_pkt_PublicServerInfo_write(&data->publicServers[i], pkt, end, ctx);
 	}
 }
@@ -2544,7 +2532,7 @@ static void _pkt_WireSessionAlloc_read(struct WireSessionAlloc *restrict data, c
 	_pkt_String_read(&data->userName, pkt, end, ctx);
 	_pkt_raw_read(data->random, pkt, end, ctx, 32);
 	_pkt_ByteArrayNetSerializable_read(&data->publicKey, pkt, end, ctx);
-	_pkt_PacketContext_read(&data->version, pkt, end, ctx);
+	_pkt_u32_read(&data->protocolVersion, pkt, end, ctx);
 }
 static void _pkt_WireSessionAlloc_write(const struct WireSessionAlloc *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_write(&data->room, pkt, end, ctx);
@@ -2554,7 +2542,7 @@ static void _pkt_WireSessionAlloc_write(const struct WireSessionAlloc *restrict 
 	_pkt_String_write(&data->userName, pkt, end, ctx);
 	_pkt_raw_write(data->random, pkt, end, ctx, 32);
 	_pkt_ByteArrayNetSerializable_write(&data->publicKey, pkt, end, ctx);
-	_pkt_PacketContext_write(&data->version, pkt, end, ctx);
+	_pkt_u32_write(&data->protocolVersion, pkt, end, ctx);
 }
 static void _pkt_WireSessionAllocResp_read(struct WireSessionAllocResp *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u8_read(&data->result, pkt, end, ctx);

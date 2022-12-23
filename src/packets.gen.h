@@ -1033,12 +1033,6 @@ enum {
 		default: return "???";
 	}
 }
-struct PacketContext {
-	uint8_t netVersion;
-	uint8_t protocolVersion;
-	uint8_t beatUpVersion;
-	uint32_t windowSize;
-};
 struct ByteArrayNetSerializable {
 	uint32_t length;
 	uint8_t data[8192];
@@ -1151,7 +1145,7 @@ struct RemoteProcedureCall {
 };
 struct PlayersMissingEntitlementsNetSerializable {
 	int32_t count;
-	struct String playersWithoutEntitlements[128];
+	struct String playersWithoutEntitlements[254];
 };
 struct SetPlayersMissingEntitlementsToLevel {
 	struct RemoteProcedureCall base;
@@ -1315,7 +1309,7 @@ struct PlayerLobbyPermissionConfigurationNetSerializable {
 };
 struct PlayersLobbyPermissionConfigurationNetSerializable {
 	int32_t count;
-	struct PlayerLobbyPermissionConfigurationNetSerializable playersPermission[128];
+	struct PlayerLobbyPermissionConfigurationNetSerializable playersPermission[254];
 };
 struct SetPermissionConfiguration {
 	struct RemoteProcedureCall base;
@@ -1406,7 +1400,7 @@ struct PlayerSpecificSettingsNetSerializable {
 };
 struct PlayerSpecificSettingsAtStartNetSerializable {
 	int32_t count;
-	struct PlayerSpecificSettingsNetSerializable activePlayerSpecificSettingsAtGameStart[128];
+	struct PlayerSpecificSettingsNetSerializable activePlayerSpecificSettingsAtGameStart[254];
 };
 struct SetGameplaySceneSyncFinish {
 	struct RemoteProcedureCall base;
@@ -1965,7 +1959,7 @@ struct GetPublicServersResponse {
 	struct BaseMasterServerReliableResponse base;
 	GetPublicServersResponse_Result result;
 	uint32_t publicServerCount;
-	struct PublicServerInfo publicServers[1024];
+	struct PublicServerInfo publicServers[20];
 };
 struct UserMessage {
 	UserMessageType type;
@@ -2137,7 +2131,7 @@ struct WireSessionAlloc {
 	struct String userName;
 	uint8_t random[32];
 	struct ByteArrayNetSerializable publicKey;
-	struct PacketContext version;
+	uint32_t protocolVersion;
 };
 struct WireSessionAllocResp {
 	ConnectToServerResponse_Result result;

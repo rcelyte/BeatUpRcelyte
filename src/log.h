@@ -5,7 +5,7 @@
 #include <string.h>
 
 static void vuprintf(const char *format, va_list vlist) {
-	static bool carry = 1;
+	static bool carry = true;
 	va_list args;
 	va_copy(args, vlist);
 	char buf[vsnprintf(NULL, 0, format, vlist) + 1];
@@ -18,9 +18,9 @@ static void vuprintf(const char *format, va_list vlist) {
 		#endif
 		end = strchr(it, '\n');
 		if(end)
-			++end, carry = 1;
+			++end, carry = true;
 		else
-			end = &buf[sizeof(buf) - 1], carry = 0;
+			end = &buf[sizeof(buf) - 1], carry = false;
 		fwrite(it, 1, end - it, stdout);
 		if(carry)
 			fflush(stdout);

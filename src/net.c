@@ -2,6 +2,7 @@
 #include "global.h"
 #define NET_H_PRIVATE(x) x
 #include "net.h"
+#include "packets.h"
 #include <mbedtls/ecdh.h>
 #include <mbedtls/error.h>
 
@@ -159,7 +160,7 @@ void net_send_internal(struct NetContext *ctx, struct NetSession *session, const
 }
 
 static struct NetSession *onResolve_stub(void*, struct SS, void**) {return NULL;}
-static void onResend_stub(void*, uint32_t, uint32_t*) {}
+static uint32_t onResend_stub(void*, uint32_t) {return 180000;}
 static void onWireMessage_stub(void*, union WireLink*, const struct WireMessage*) {}
 
 static const char *net_strerror(int32_t err) {
@@ -271,11 +272,11 @@ void net_close(int32_t sockfd) {
 	#endif
 }
 
-bool net_init(struct NetContext *ctx, uint16_t port, bool filterUnencrypted) {
+bool net_init(struct NetContext *ctx, uint16_t port, bool filterUnencrypted, uint32_t tcpBacklog) {
 	*ctx = (struct NetContext){
 		._typeid = WireLinkType_LOCAL,
 		.sockfd = net_bind_udp(port),
-		.listenfd = net_bind_tcp(port, 16),
+		.listenfd = tcpBacklog ? net_bind_tcp(port, tcpBacklog) : -1,
 		.run = false,
 		.filterUnencrypted = filterUnencrypted,
 		.mutex = PTHREAD_MUTEX_INITIALIZER,
@@ -303,7 +304,7 @@ bool net_init(struct NetContext *ctx, uint16_t port, bool filterUnencrypted) {
 		uprintf("pthread_mutex_init() failed\n");
 		goto fail;
 	}
-	if(ctx->sockfd == -1 || ctx->listenfd == -1) {
+	if(ctx->sockfd == -1 || (tcpBacklog && ctx->listenfd == -1)) {
 		uprintf("Socket creation failed\n");
 		goto fail;
 	}
@@ -493,9 +494,8 @@ static inline int32_t max32(int32_t a, int32_t b) {
 
 uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSession **session, void **userdata_out) {
 	retry:; // __attribute__((musttail)) not available in all compilers
-	uint32_t currentTime = net_time(), nextTick = currentTime + 180000;
-	ctx->onResend(ctx->userptr, currentTime, &nextTick);
-	nextTick -= currentTime;
+	uint32_t currentTime = net_time();
+	uint32_t nextTick = ctx->onResend(ctx->userptr, currentTime);
 	if(nextTick < 2)
 		nextTick = 2;
 	struct timeval timeout;
@@ -504,7 +504,8 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSe
 	fd_set fdSet;
 	FD_ZERO(&fdSet);
 	FD_SET(ctx->sockfd, &fdSet);
-	FD_SET(ctx->listenfd, &fdSet);
+	if(ctx->listenfd != -1)
+		FD_SET(ctx->listenfd, &fdSet);
 	int32_t fdMax = max32(ctx->sockfd, ctx->listenfd);
 	for(mbedtls_ssl_context **link = NetContext_remoteLinks(ctx), **end = &link[ctx->remoteLinks_len]; link < end; ++link) {
 		int32_t remotefd = (intptr_t)(*link)->MBEDTLS_PRIVATE(p_bio);
@@ -531,7 +532,7 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSe
 		if(ctx->remoteLinks_len < len)
 			len = ctx->remoteLinks_len, --i;
 	}
-	if(FD_ISSET(ctx->listenfd, &fdSet))
+	if(ctx->listenfd != -1 && FD_ISSET(ctx->listenfd, &fdSet))
 		wire_accept(ctx, ctx->listenfd);
 	if(!FD_ISSET(ctx->sockfd, &fdSet))
 		goto retry;

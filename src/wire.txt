@@ -12,7 +12,7 @@ n WireSessionAlloc
 	String userName
 	u8 random[32]
 	ByteArrayNetSerializable publicKey
-	PacketContext version
+	u32 protocolVersion
 n WireSessionAllocResp
 	ConnectToServerResponse_Result result
 	u8 random[32]

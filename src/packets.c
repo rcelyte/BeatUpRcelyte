@@ -19,6 +19,23 @@ bool _pkt_serialize(PacketWriteFunc inner, const void *restrict data, uint8_t **
 	return false;
 }
 
+bool pkt_debug(const char *errorMessage, const uint8_t *head, const uint8_t *end, size_t expect, struct PacketContext ctx) {
+	if(head == end)
+		return false;
+	const uint8_t *start = end - expect;
+	uprintf("%s [netVersion=%hhu, protocolVersion=%hhu, beatUpVersion=%hhu, windowSize=%u] (expected %zu, read %zu)\n    ", errorMessage, ctx.netVersion, ctx.protocolVersion, ctx.beatUpVersion, ctx.windowSize, expect, head - start);
+	for(const uint8_t *it = start; it < end; ++it)
+		uprintf("%02hhx", *it);
+	if((uintptr_t)(head - start) < expect) {
+		uprintf("\n    ");
+		for(const uint8_t *it = start; it < head; ++it)
+			uprintf("  ");
+		uprintf("^ extra data starts here");
+	}
+	uprintf("\n");
+	return true;
+}
+
 ServerCode StringToServerCode(const char *in, uint32_t len) {
 	static const uint8_t readTable[128] = {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,27,28,29,30,31,32,33,34,35,36,1,1,1,1,1,1,1,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1};
 	ServerCode out = 0;

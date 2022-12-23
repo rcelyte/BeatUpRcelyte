@@ -1304,7 +1304,7 @@ static void process_message(struct InstanceContext *ctx, struct Room *room, stru
 			default: uprintf("BAD INTERNAL MESSAGE TYPE\n");
 		}
 		if(validateLength)
-			check_length("BAD INTERNAL MESSAGE LENGTH", sub, *data, serial.length, session->net.version);
+			pkt_debug("BAD INTERNAL MESSAGE LENGTH", sub, *data, serial.length, session->net.version);
 	}
 }
 
@@ -1353,7 +1353,7 @@ static void handle_ConnectRequest(struct InstanceContext *ctx, struct Room *room
 			room->perPlayerDifficulty = info.perPlayerDifficulty;
 			room->perPlayerModifiers = info.perPlayerModifiers;
 		}
-		check_length("BAD MOD HEADER LENGTH", sub, *data, mod.length, session->net.version);
+		pkt_debug("BAD MOD HEADER LENGTH", sub, *data, mod.length, session->net.version);
 	}
 	uint8_t resp[65536], *resp_end = resp;
 	pkt_write_c(&resp_end, endof(resp), session->net.version, NetPacketHeader, {
@@ -1612,7 +1612,7 @@ static inline void handle_packet(struct InstanceContext *ctx, struct Room **room
 			case PacketProperty_Merged: uprintf("BAD TYPE: PacketProperty_Merged\n"); break;
 			default: uprintf("BAD PACKET PROPERTY\n");
 		}
-		check_length("BAD PACKET LENGTH", sub, data, merged.length, session->net.version);
+		pkt_debug("BAD PACKET LENGTH", sub, data, merged.length, session->net.version);
 	} while(data < end);
 }
 
@@ -1665,17 +1665,18 @@ static struct NetSession *instance_onResolve(struct InstanceContext *ctx, struct
 	return NULL;
 }
 
-static void instance_onResend(struct InstanceContext *ctx, uint32_t currentTime, uint32_t *nextTick) {
+static uint32_t instance_onResend(struct InstanceContext *ctx, uint32_t currentTime) {
+	int32_t nextTick = 180000;
 	FOR_ALL_ROOMS(ctx, room) {
 		FOR_SOME_PLAYERS(id, (*room)->playerSort,) {
 			struct InstanceSession *session = &(*room)->players[id];
-			uint32_t kickTime = NetSession_get_lastKeepAlive(&session->net) + IDLE_TIMEOUT_MS;
-			if(currentTime > kickTime) {
+			int32_t kickTime = (int32_t)(NetSession_get_lastKeepAlive(&session->net) + IDLE_TIMEOUT_MS - currentTime);
+			if(kickTime < 0) {
 				uprintf("session timeout\n");
 				room_disconnect(ctx, room, session, DC_NOTIFY);
 			} else {
-				if(kickTime < *nextTick)
-					*nextTick = kickTime;
+				if(kickTime < nextTick)
+					nextTick = kickTime;
 				for(; session->channels.ru.base.sendAck; session->channels.ru.base.sendAck = 0)
 					flush_ack(&ctx->net, &session->net, &session->channels.ru.base.ack);
 				for(; session->channels.ro.base.sendAck; session->channels.ro.base.sendAck = 0)
@@ -1685,7 +1686,7 @@ static void instance_onResend(struct InstanceContext *ctx, uint32_t currentTime,
 				for(uint_fast8_t i = 0; i < 64; ++i)
 					try_resend(&ctx->net, &session->net, &session->channels.ro.base.resend[i], currentTime);
 				try_resend(&ctx->net, &session->net, &session->channels.rs.resend, currentTime);
-				*nextTick = currentTime + 15; // TODO: proper resend timing
+				nextTick = 15; // TODO: proper resend timing
 			}
 		}
 		if(!*room)
@@ -1697,8 +1698,8 @@ static void instance_onResend(struct InstanceContext *ctx, uint32_t currentTime,
 				uint32_t ms = delta * 1000;
 				if(ms < 10)
 					ms = 10;
-				if(*nextTick - currentTime > ms)
-					*nextTick = currentTime + ms;
+				if(ms < (uint32_t)nextTick)
+					nextTick = (int32_t)ms;
 			} else if((*room)->state & ServerState_Game_Results) { // TODO: ServerState_Lobby_Results = ServerState_Lobby_Idle >> 1
 				room_set_state(ctx, *room, ServerState_Lobby_Idle);
 			} else {
@@ -1709,6 +1710,7 @@ static void instance_onResend(struct InstanceContext *ctx, uint32_t currentTime,
 		FOR_SOME_PLAYERS(id, (*room)->playerSort,)
 			net_flush_merged(&ctx->net, &(*room)->players[id].net);
 	}
+	return nextTick;
 }
 
 static const char *instance_domainIPv4 = NULL, *instance_domain = NULL;
@@ -1835,7 +1837,8 @@ static struct WireSessionAllocResp room_resolve_session(struct InstanceContext *
 		}
 		session = &room->players[id];
 		net_session_init(&ctx->net, &session->net, addr);
-		session->net.version = req->version;
+		session->net.version = PV_LEGACY_DEFAULT;
+		session->net.version.protocolVersion = req->protocolVersion;
 		room->playerSort = tmp;
 	}
 	session->secret = req->secret;
@@ -1898,7 +1901,7 @@ static void instance_room_join(struct InstanceContext *ctx, union WireLink *link
 		.type = WireMessageType_WireRoomJoinResp,
 		.cookie = cookie,
 	};
-	if(instance_room_get_protocol(ctx, req->base.room).protocolVersion != req->base.version.protocolVersion) {
+	if(instance_room_get_protocol(ctx, req->base.room).protocolVersion != req->base.protocolVersion) {
 		uprintf("Connect to Server Error: Version mismatch\n");
 		r_alloc.roomJoinResp.base.result = ConnectToServerResponse_Result_VersionMismatch;
 	} else {
@@ -1938,13 +1941,13 @@ bool instance_init(const char *domainIPv4, const char *domain, const char *remot
 	}
 	for(; threads_len < count; ++threads_len) {
 		struct InstanceContext *ctx = &contexts[threads_len];
-		if(net_init(&ctx->net, 5000 + threads_len, true)) {
+		if(net_init(&ctx->net, 5000 + threads_len, true, 16)) {
 			uprintf("net_init() failed\n");
 			return true;
 		}
 		ctx->net.userptr = &contexts[threads_len];
 		ctx->net.onResolve = (struct NetSession *(*)(void*, struct SS, void**))instance_onResolve;
-		ctx->net.onResend = (void (*)(void*, uint32_t, uint32_t*))instance_onResend;
+		ctx->net.onResend = (uint32_t (*)(void*, uint32_t))instance_onResend;
 		ctx->net.onWireMessage = (void (*)(void*, union WireLink*, const struct WireMessage*))instance_onWireMessage;
 		ctx->roomMask = COUNTER64_CLEAR;
 		ctx->master = (union WireLink*)localMaster;

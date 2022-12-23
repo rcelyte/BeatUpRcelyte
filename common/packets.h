@@ -2,6 +2,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+struct PacketContext {
+	uint8_t netVersion;
+	uint8_t protocolVersion;
+	uint8_t beatUpVersion;
+	uint32_t windowSize;
+};
 struct String {
 	uint32_t length;
 	bool isNull;

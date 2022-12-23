@@ -1,6 +1,6 @@
 #pragma once
-#include "packets.h"
 #include <mbedtls/ssl.h>
+#include <stdbool.h>
 
 typedef uintptr_t WireLinkType;
 enum { // Take advantage of the first entry in `struct mbedtls_ssl_context` being an aligned pointer
@@ -19,6 +19,7 @@ struct NetContext *WireLink_cast_local(union WireLink *link);
 mbedtls_ssl_context *WireLink_cast_remote(union WireLink *link);
 
 struct NetContext;
+struct WireMessage;
 void wire_set_key(uint8_t key[static 32], uint8_t key_len);
 union WireLink *wire_connect_local(struct NetContext *self, struct NetContext *link);
 union WireLink *wire_connect_remote(struct NetContext *self, const char *address);
