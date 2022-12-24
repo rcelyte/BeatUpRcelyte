@@ -2049,7 +2049,7 @@ static void _pkt_ConnectToServerResponse_read(struct ConnectToServerResponse *re
 		data->isConnectionOwner = bitfield0 >> 0 & 1;
 		data->isDedicatedServer = bitfield0 >> 1 & 1;
 		_pkt_IPEndPoint_read(&data->remoteEndPoint, pkt, end, ctx);
-		_pkt_raw_read(data->random, pkt, end, ctx, 32);
+		_pkt_Cookie32_read(&data->random, pkt, end, ctx);
 		_pkt_ByteArrayNetSerializable_read(&data->publicKey, pkt, end, ctx);
 		_pkt_ServerCode_read(&data->code, pkt, end, ctx);
 		_pkt_GameplayServerConfiguration_read(&data->configuration, pkt, end, ctx);
@@ -2069,7 +2069,7 @@ static void _pkt_ConnectToServerResponse_write(const struct ConnectToServerRespo
 		bitfield0 |= (data->isDedicatedServer & 1u) << 1;
 		_pkt_u8_write(&bitfield0, pkt, end, ctx);
 		_pkt_IPEndPoint_write(&data->remoteEndPoint, pkt, end, ctx);
-		_pkt_raw_write(data->random, pkt, end, ctx, 32);
+		_pkt_Cookie32_write(&data->random, pkt, end, ctx);
 		_pkt_ByteArrayNetSerializable_write(&data->publicKey, pkt, end, ctx);
 		_pkt_ServerCode_write(&data->code, pkt, end, ctx);
 		_pkt_GameplayServerConfiguration_write(&data->configuration, pkt, end, ctx);
@@ -2080,14 +2080,14 @@ static void _pkt_BaseConnectToServerRequest_read(struct BaseConnectToServerReque
 	_pkt_BaseMasterServerReliableRequest_read(&data->base, pkt, end, ctx);
 	_pkt_String_read(&data->userId, pkt, end, ctx);
 	_pkt_String_read(&data->userName, pkt, end, ctx);
-	_pkt_raw_read(data->random, pkt, end, ctx, 32);
+	_pkt_Cookie32_read(&data->random, pkt, end, ctx);
 	_pkt_ByteArrayNetSerializable_read(&data->publicKey, pkt, end, ctx);
 }
 static void _pkt_BaseConnectToServerRequest_write(const struct BaseConnectToServerRequest *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_BaseMasterServerReliableRequest_write(&data->base, pkt, end, ctx);
 	_pkt_String_write(&data->userId, pkt, end, ctx);
 	_pkt_String_write(&data->userName, pkt, end, ctx);
-	_pkt_raw_write(data->random, pkt, end, ctx, 32);
+	_pkt_Cookie32_write(&data->random, pkt, end, ctx);
 	_pkt_ByteArrayNetSerializable_write(&data->publicKey, pkt, end, ctx);
 }
 static void _pkt_ConnectToServerRequest_read(struct ConnectToServerRequest *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -2204,41 +2204,41 @@ void _pkt_UserMessage_write(const struct UserMessage *restrict data, uint8_t **p
 }
 static void _pkt_ClientHelloRequest_read(struct ClientHelloRequest *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_BaseMasterServerReliableRequest_read(&data->base, pkt, end, ctx);
-	_pkt_raw_read(data->random, pkt, end, ctx, 32);
+	_pkt_Cookie32_read(&data->random, pkt, end, ctx);
 }
 static void _pkt_ClientHelloRequest_write(const struct ClientHelloRequest *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_BaseMasterServerReliableRequest_write(&data->base, pkt, end, ctx);
-	_pkt_raw_write(data->random, pkt, end, ctx, 32);
+	_pkt_Cookie32_write(&data->random, pkt, end, ctx);
 }
 static void _pkt_HelloVerifyRequest_read(struct HelloVerifyRequest *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_BaseMasterServerReliableResponse_read(&data->base, pkt, end, ctx);
-	_pkt_raw_read(data->cookie, pkt, end, ctx, 32);
+	_pkt_Cookie32_read(&data->cookie, pkt, end, ctx);
 }
 static void _pkt_HelloVerifyRequest_write(const struct HelloVerifyRequest *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_BaseMasterServerReliableResponse_write(&data->base, pkt, end, ctx);
-	_pkt_raw_write(data->cookie, pkt, end, ctx, 32);
+	_pkt_Cookie32_write(&data->cookie, pkt, end, ctx);
 }
 static void _pkt_ClientHelloWithCookieRequest_read(struct ClientHelloWithCookieRequest *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_BaseMasterServerReliableRequest_read(&data->base, pkt, end, ctx);
 	_pkt_u32_read(&data->certificateResponseId, pkt, end, ctx);
-	_pkt_raw_read(data->random, pkt, end, ctx, 32);
-	_pkt_raw_read(data->cookie, pkt, end, ctx, 32);
+	_pkt_Cookie32_read(&data->random, pkt, end, ctx);
+	_pkt_Cookie32_read(&data->cookie, pkt, end, ctx);
 }
 static void _pkt_ClientHelloWithCookieRequest_write(const struct ClientHelloWithCookieRequest *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_BaseMasterServerReliableRequest_write(&data->base, pkt, end, ctx);
 	_pkt_u32_write(&data->certificateResponseId, pkt, end, ctx);
-	_pkt_raw_write(data->random, pkt, end, ctx, 32);
-	_pkt_raw_write(data->cookie, pkt, end, ctx, 32);
+	_pkt_Cookie32_write(&data->random, pkt, end, ctx);
+	_pkt_Cookie32_write(&data->cookie, pkt, end, ctx);
 }
 static void _pkt_ServerHelloRequest_read(struct ServerHelloRequest *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_BaseMasterServerReliableResponse_read(&data->base, pkt, end, ctx);
-	_pkt_raw_read(data->random, pkt, end, ctx, 32);
+	_pkt_Cookie32_read(&data->random, pkt, end, ctx);
 	_pkt_ByteArrayNetSerializable_read(&data->publicKey, pkt, end, ctx);
 	_pkt_ByteArrayNetSerializable_read(&data->signature, pkt, end, ctx);
 }
 static void _pkt_ServerHelloRequest_write(const struct ServerHelloRequest *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_BaseMasterServerReliableResponse_write(&data->base, pkt, end, ctx);
-	_pkt_raw_write(data->random, pkt, end, ctx, 32);
+	_pkt_Cookie32_write(&data->random, pkt, end, ctx);
 	_pkt_ByteArrayNetSerializable_write(&data->publicKey, pkt, end, ctx);
 	_pkt_ByteArrayNetSerializable_write(&data->signature, pkt, end, ctx);
 }
@@ -2537,7 +2537,7 @@ static void _pkt_WireSessionAlloc_read(struct WireSessionAlloc *restrict data, c
 	_pkt_String_read(&data->secret, pkt, end, ctx);
 	_pkt_String_read(&data->userId, pkt, end, ctx);
 	_pkt_String_read(&data->userName, pkt, end, ctx);
-	_pkt_raw_read(data->random, pkt, end, ctx, 32);
+	_pkt_Cookie32_read(&data->random, pkt, end, ctx);
 	_pkt_ByteArrayNetSerializable_read(&data->publicKey, pkt, end, ctx);
 	_pkt_u32_read(&data->protocolVersion, pkt, end, ctx);
 }
@@ -2547,13 +2547,13 @@ static void _pkt_WireSessionAlloc_write(const struct WireSessionAlloc *restrict 
 	_pkt_String_write(&data->secret, pkt, end, ctx);
 	_pkt_String_write(&data->userId, pkt, end, ctx);
 	_pkt_String_write(&data->userName, pkt, end, ctx);
-	_pkt_raw_write(data->random, pkt, end, ctx, 32);
+	_pkt_Cookie32_write(&data->random, pkt, end, ctx);
 	_pkt_ByteArrayNetSerializable_write(&data->publicKey, pkt, end, ctx);
 	_pkt_u32_write(&data->protocolVersion, pkt, end, ctx);
 }
 static void _pkt_WireSessionAllocResp_read(struct WireSessionAllocResp *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u8_read(&data->result, pkt, end, ctx);
-	_pkt_raw_read(data->random, pkt, end, ctx, 32);
+	_pkt_Cookie32_read(&data->random, pkt, end, ctx);
 	_pkt_ByteArrayNetSerializable_read(&data->publicKey, pkt, end, ctx);
 	_pkt_GameplayServerConfiguration_read(&data->configuration, pkt, end, ctx);
 	_pkt_String_read(&data->managerId, pkt, end, ctx);
@@ -2561,7 +2561,7 @@ static void _pkt_WireSessionAllocResp_read(struct WireSessionAllocResp *restrict
 }
 static void _pkt_WireSessionAllocResp_write(const struct WireSessionAllocResp *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u8_write(&data->result, pkt, end, ctx);
-	_pkt_raw_write(data->random, pkt, end, ctx, 32);
+	_pkt_Cookie32_write(&data->random, pkt, end, ctx);
 	_pkt_ByteArrayNetSerializable_write(&data->publicKey, pkt, end, ctx);
 	_pkt_GameplayServerConfiguration_write(&data->configuration, pkt, end, ctx);
 	_pkt_String_write(&data->managerId, pkt, end, ctx);

@@ -29,15 +29,15 @@ static void PRF(uint8_t *out, uint8_t *key, uint32_t key_len, const uint8_t *see
 	memcpy(out, array, length);
 }
 
-static uint8_t MakeSeed(uint8_t *out, const char *baseSeed, const uint8_t serverRandom[32], const uint8_t clientRandom[32]) {
+static uint8_t MakeSeed(uint8_t *out, const char *baseSeed, const struct Cookie32 *serverRandom, const struct Cookie32 *clientRandom) {
 	uint8_t len = strlen(baseSeed);
 	memcpy(out, baseSeed, len);
-	memcpy(&out[len], serverRandom, 32);
-	memcpy(&out[len+32], clientRandom, 32);
-	return len + 32 + 32;
+	memcpy(&out[len], serverRandom->raw, sizeof(serverRandom->raw));
+	memcpy(&out[len + sizeof(struct Cookie32)], clientRandom->raw, sizeof(clientRandom->raw));
+	return len + sizeof(struct Cookie32[2]);
 }
 
-bool EncryptionState_init(struct EncryptionState *state, const mbedtls_mpi *preMasterSecret, const uint8_t serverRandom[32], const uint8_t clientRandom[32], bool isClient) {
+bool EncryptionState_init(struct EncryptionState *state, const mbedtls_mpi *preMasterSecret, const struct Cookie32 *serverRandom, const struct Cookie32 *clientRandom, bool isClient) {
 	if(!mbedtls_md_info_from_type(MBEDTLS_MD_SHA256)) {
 		uprintf("mbedtls_md_info_from_type(MBEDTLS_MD_SHA256) failed\n");
 		return true;

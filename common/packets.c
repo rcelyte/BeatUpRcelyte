@@ -164,27 +164,37 @@ static void _pkt_vi64_write(const int64_t *restrict data, uint8_t **pkt, const u
 #define _pkt_f32_write(data, pkt, end, ctx) _pkt_raw_write((const uint8_t*)(data), pkt, end, ctx, sizeof(float))
 #define _pkt_f64_write(data, pkt, end, ctx) _pkt_raw_write((const uint8_t*)(data), pkt, end, ctx, sizeof(double))
 
+[[maybe_unused]] static void _pkt_Cookie32_read(struct Cookie32 *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_raw_read(data->raw, pkt, end, ctx, 32);
+}
+[[maybe_unused]] static void _pkt_Cookie32_write(const struct Cookie32 *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_raw_write(data->raw, pkt, end, ctx, 32);
+}
+
+static uint32_t _pkt_BaseString_read(const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	if(ctx.netVersion < 12) {
+		uint32_t length32;
+		_pkt_u32_read(&length32, pkt, end, ctx);
+		return length32 + 1;
+	}
+	uint16_t length16;
+	_pkt_u16_read(&length16, pkt, end, ctx);
+	return length16;
+}
+
 #define STRING_RDWR_FUNC(type) \
 	[[maybe_unused]] static void _pkt_##type##_read(struct type *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) { \
-		data->isNull = 0; \
-		if(ctx.netVersion >= 12) { \
-			uint16_t length16; \
-			_pkt_u16_read(&length16, pkt, end, ctx); \
-			if((data->length = length16)) \
-				--data->length; \
-			else \
-				data->isNull = 1; \
-		} else { \
-			_pkt_u32_read(&data->length, pkt, end, ctx); \
-		} \
+		data->length = _pkt_BaseString_read(pkt, end, ctx); \
+		data->isNull = (data->length == 0); \
+		data->length -= !data->isNull; \
 		check_overflow(data->length, sizeof(data->data), #type ".data"); \
 		_pkt_raw_read((uint8_t*)data->data, pkt, end, ctx, data->length); \
 	} \
 	[[maybe_unused]] static void _pkt_##type##_write(const struct type *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) { \
-		if(ctx.netVersion >= 12) \
-			_pkt_u16_write((uint16_t[]){data->length + !data->isNull}, pkt, end, ctx); \
-		else \
+		if(ctx.netVersion < 12) \
 			_pkt_u32_write(&data->length, pkt, end, ctx); \
+		else \
+			_pkt_u16_write((uint16_t[]){data->length + !data->isNull}, pkt, end, ctx); \
 		_pkt_raw_write((const uint8_t*)data->data, pkt, end, ctx, data->length); \
 	}
 STRING_RDWR_FUNC(String)

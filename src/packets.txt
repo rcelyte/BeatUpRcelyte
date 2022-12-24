@@ -938,7 +938,7 @@ n ConnectToServerResponse
 		b isConnectionOwner:1
 		b isDedicatedServer:1
 		IPEndPoint remoteEndPoint
-		u8 random[32]
+		Cookie32 random
 		ByteArrayNetSerializable publicKey
 		ServerCode code
 		GameplayServerConfiguration configuration
@@ -947,7 +947,7 @@ n BaseConnectToServerRequest
 	BaseMasterServerReliableRequest base
 	String userId
 	String userName
-	u8 random[32]
+	Cookie32 random
 	ByteArrayNetSerializable publicKey
 n ConnectToServerRequest
 	BaseConnectToServerRequest base
@@ -1000,18 +1000,18 @@ d UserMessage
 		GetPublicServersResponse getPublicServersResponse
 n ClientHelloRequest
 	BaseMasterServerReliableRequest base
-	u8 random[32]
+	Cookie32 random
 n HelloVerifyRequest
 	BaseMasterServerReliableResponse base
-	u8 cookie[32]
+	Cookie32 cookie
 n ClientHelloWithCookieRequest
 	BaseMasterServerReliableRequest base
 	u32 certificateResponseId
-	u8 random[32]
-	u8 cookie[32]
+	Cookie32 random
+	Cookie32 cookie
 n ServerHelloRequest
 	BaseMasterServerReliableResponse base
-	u8 random[32]
+	Cookie32 random
 	ByteArrayNetSerializable publicKey
 	ByteArrayNetSerializable signature
 n ServerCertificateRequest

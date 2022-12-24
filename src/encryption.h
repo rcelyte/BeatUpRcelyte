@@ -15,7 +15,8 @@ struct EncryptionState {
 	bool initialized;
 };
 
-bool EncryptionState_init(struct EncryptionState *state, const mbedtls_mpi *preMasterSecret, const uint8_t serverRandom[32], const uint8_t clientRandom[32], bool isClient);
+struct Cookie32;
+bool EncryptionState_init(struct EncryptionState *state, const mbedtls_mpi *preMasterSecret, const struct Cookie32 *serverRandom, const struct Cookie32 *clientRandom, bool isClient);
 void EncryptionState_free(struct EncryptionState *state);
 uint32_t EncryptionState_decrypt(struct EncryptionState *state, const uint8_t raw[static 1536], const uint8_t *raw_end, uint8_t out[restrict static 1536]);
 uint32_t EncryptionState_encrypt(struct EncryptionState *state, mbedtls_ctr_drbg_context *ctr_drbg, const uint8_t *restrict buf, uint32_t buf_len, uint8_t out[static 1536]);

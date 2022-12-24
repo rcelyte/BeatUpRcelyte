@@ -10,12 +10,12 @@ n WireSessionAlloc
 	String secret
 	String userId
 	String userName
-	u8 random[32]
+	Cookie32 random
 	ByteArrayNetSerializable publicKey
 	u32 protocolVersion
 n WireSessionAllocResp
 	ConnectToServerResponse_Result result
-	u8 random[32]
+	Cookie32 random
 	ByteArrayNetSerializable publicKey
 	GameplayServerConfiguration configuration
 	String managerId

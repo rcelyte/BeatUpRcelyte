@@ -1907,7 +1907,7 @@ struct ConnectToServerResponse {
 	bool isConnectionOwner;
 	bool isDedicatedServer;
 	struct IPEndPoint remoteEndPoint;
-	uint8_t random[32];
+	struct Cookie32 random;
 	struct ByteArrayNetSerializable publicKey;
 	ServerCode code;
 	struct GameplayServerConfiguration configuration;
@@ -1917,7 +1917,7 @@ struct BaseConnectToServerRequest {
 	struct BaseMasterServerReliableRequest base;
 	struct String userId;
 	struct String userName;
-	uint8_t random[32];
+	struct Cookie32 random;
 	struct ByteArrayNetSerializable publicKey;
 };
 struct ConnectToServerRequest {
@@ -1977,21 +1977,21 @@ struct UserMessage {
 };
 struct ClientHelloRequest {
 	struct BaseMasterServerReliableRequest base;
-	uint8_t random[32];
+	struct Cookie32 random;
 };
 struct HelloVerifyRequest {
 	struct BaseMasterServerReliableResponse base;
-	uint8_t cookie[32];
+	struct Cookie32 cookie;
 };
 struct ClientHelloWithCookieRequest {
 	struct BaseMasterServerReliableRequest base;
 	uint32_t certificateResponseId;
-	uint8_t random[32];
-	uint8_t cookie[32];
+	struct Cookie32 random;
+	struct Cookie32 cookie;
 };
 struct ServerHelloRequest {
 	struct BaseMasterServerReliableResponse base;
-	uint8_t random[32];
+	struct Cookie32 random;
 	struct ByteArrayNetSerializable publicKey;
 	struct ByteArrayNetSerializable signature;
 };
@@ -2136,13 +2136,13 @@ struct WireSessionAlloc {
 	struct String secret;
 	struct String userId;
 	struct String userName;
-	uint8_t random[32];
+	struct Cookie32 random;
 	struct ByteArrayNetSerializable publicKey;
 	uint32_t protocolVersion;
 };
 struct WireSessionAllocResp {
 	ConnectToServerResponse_Result result;
-	uint8_t random[32];
+	struct Cookie32 random;
 	struct ByteArrayNetSerializable publicKey;
 	struct GameplayServerConfiguration configuration;
 	struct String managerId;

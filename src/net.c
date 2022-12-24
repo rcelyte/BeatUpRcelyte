@@ -32,37 +32,50 @@ static const uint32_t PossibleMtu[] = {
 	1500 - ENCRYPTION_LAYER_SIZE - 68,
 };
 
-const uint8_t *NetKeypair_get_random(const struct NetKeypair *keys) {
-	return keys->random;
+const struct Cookie32 *NetKeypair_get_random(const struct NetKeypair *keys) {
+	return &keys->random;
 }
-bool NetKeypair_write_key(const struct NetKeypair *keys, struct NetContext *ctx, uint8_t *out, uint32_t *out_len) {
+static size_t NetKeypair_write_key_internal(const struct NetKeypair *keys, struct NetContext *ctx, uint8_t *out, size_t out_len) {
 	size_t keylen = 0;
-	int32_t err = mbedtls_ecp_tls_write_point(&ctx->grp, &keys->public, MBEDTLS_ECP_PF_UNCOMPRESSED, &keylen, out, *out_len);
+	int32_t err = mbedtls_ecp_tls_write_point(&ctx->grp, &keys->public, MBEDTLS_ECP_PF_UNCOMPRESSED, &keylen, out, out_len);
 	if(err) {
 		uprintf("mbedtls_ecp_tls_write_point() failed: %s\n", mbedtls_high_level_strerr(err));
-		*out_len = 0;
-		return true;
+		keylen = 0;
 	}
-	*out_len = keylen;
-	return false;
+	return keylen;
 }
-const uint8_t *NetSession_get_cookie(const struct NetSession *session) {
-	return session->cookie;
+bool NetKeypair_write_key(const struct NetKeypair *keys, struct NetContext *ctx, struct ByteArrayNetSerializable *out) {
+	out->length = NetKeypair_write_key_internal(keys, ctx, out->data, out->length);
+	return out->length == 0;
 }
-bool NetSession_signature(const struct NetSession*, struct NetContext *ctx, const mbedtls_pk_context *key, const uint8_t *in, uint32_t in_len, struct ByteArrayNetSerializable *out) {
+const struct Cookie32 *NetSession_get_cookie(const struct NetSession *session) {
+	return &session->cookie;
+}
+bool NetSession_signature(struct NetSession *session, struct NetContext *ctx, const mbedtls_pk_context *key, struct ByteArrayNetSerializable *out) {
 	out->length = 0;
 	if(mbedtls_pk_get_type(key) != MBEDTLS_PK_RSA) {
 		uprintf("Key should be RSA\n");
 		return true;
 	}
-	mbedtls_rsa_context *rsa = mbedtls_pk_rsa(*key);
+	struct {
+		struct Cookie32 clientRandom;
+		struct Cookie32 serverRandom;
+		uint8_t publicKey[4096];
+	} input = {
+		.clientRandom = session->clientRandom,
+		.serverRandom = session->keys.random,
+	};
+	size_t publicKey_len = NetKeypair_write_key_internal(&session->keys, ctx, input.publicKey, sizeof(input.publicKey));
+	if(!publicKey_len)
+		return true;
 	uint8_t hash[32];
-	int32_t err = mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), in, in_len, hash);
+	int32_t err = mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), (const uint8_t*)&input, publicKey_len + sizeof(struct Cookie32[2]), hash);
 	if(err != 0) {
 		uprintf("mbedtls_md() failed: %s\n", mbedtls_high_level_strerr(err));
 		return true;
 	}
-	err = mbedtls_rsa_pkcs1_sign(rsa, mbedtls_ctr_drbg_random, &ctx->ctr_drbg, MBEDTLS_MD_SHA256, 32, hash, out->data);
+	mbedtls_rsa_context *rsa = mbedtls_pk_rsa(*key);
+	err = mbedtls_rsa_pkcs1_sign(rsa, mbedtls_ctr_drbg_random, &ctx->ctr_drbg, MBEDTLS_MD_SHA256, sizeof(hash), hash, out->data);
 	if(err != 0) {
 		uprintf("mbedtls_rsa_pkcs1_sign() failed: %s\n", mbedtls_high_level_strerr(err));
 		return true;
@@ -70,7 +83,7 @@ bool NetSession_signature(const struct NetSession*, struct NetContext *ctx, cons
 	out->length = mbedtls_rsa_get_len(rsa);
 	return false;
 }
-bool NetSession_set_clientPublicKey(struct NetSession *session, struct NetContext *ctx, const struct ByteArrayNetSerializable *in) {
+bool NetSession_set_remotePublicKey(struct NetSession *session, struct NetContext *ctx, const struct ByteArrayNetSerializable *in, bool client) {
 	const uint8_t *buf = in->data;
 	mbedtls_ecp_point clientPublicKey;
 	mbedtls_ecp_point_init(&clientPublicKey);
@@ -86,7 +99,7 @@ bool NetSession_set_clientPublicKey(struct NetSession *session, struct NetContex
 		uprintf("mbedtls_ecdh_compute_shared() failed: %s\n", mbedtls_high_level_strerr(err));
 		return true;
 	}
-	return EncryptionState_init(&session->encryptionState, &preMasterSecret, session->keys.random, session->clientRandom, 0);
+	return EncryptionState_init(&session->encryptionState, &preMasterSecret, &session->keys.random, &session->clientRandom, client);
 }
 uint32_t NetSession_get_lastKeepAlive(struct NetSession *session) {
 	return session->lastKeepAlive;
@@ -112,33 +125,40 @@ void net_tostr(const struct SS *address, char out[static INET6_ADDRSTRLEN + 8]) 
 		}
 		case AF_INET: {
 			inet_ntop(AF_INET, &address->in.sin_addr, ipStr, INET_ADDRSTRLEN);
-			sprintf(out, "%s:%u", ipStr, htons(address->in.sin_port));
+			snprintf(out, INET6_ADDRSTRLEN + 8, "%s:%u", ipStr, htons(address->in.sin_port));
 			break;
 		}
 		case AF_INET6: {
 			inet_ntop(AF_INET6, &address->in6.sin6_addr, ipStr, INET6_ADDRSTRLEN);
-			sprintf(out, "[%s]:%u", ipStr, htons(address->in6.sin6_port));
+			snprintf(out, INET6_ADDRSTRLEN + 8, "[%s]:%u", ipStr, htons(address->in6.sin6_port));
 			break;
 		}
-		default:
-		sprintf(out, "???");
+		default: sprintf(out, "???");
 	}
 }
 
-bool SS_equal(const struct SS *a0, const struct SS *a1) {
-	if(a0->ss.ss_family == AF_INET && a1->ss.ss_family == AF_INET) {
-		return a0->in.sin_addr.s_addr == a1->in.sin_addr.s_addr && a0->in.sin_port == a1->in.sin_port;
-	} else if(a0->ss.ss_family == AF_INET6 && a1->ss.ss_family == AF_INET6) {
-		for(uint_fast8_t i = 0; i < sizeof(struct in6_addr); ++i)
-			if(a0->in6.sin6_addr.s6_addr[i] != a1->in6.sin6_addr.s6_addr[i])
-				return false;
-		return a0->in6.sin6_port == a1->in6.sin6_port;
-	}
-	return false;
+static struct sockaddr_in6 SS_to6(const struct SS *addr) {
+	if(addr->in6.sin6_family != AF_INET)
+		return addr->in6;
+	const uint8_t *bytes = (const uint8_t*)&addr->in.sin_addr.s_addr;
+	return (struct sockaddr_in6){
+		.sin6_family = AF_INET6,
+		.sin6_port = addr->in.sin_port,
+		.sin6_flowinfo = 0,
+		.sin6_addr.s6_addr = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, bytes[0], bytes[1], bytes[2], bytes[3]},
+		.sin6_scope_id = 0,
+	};
 }
 
-static void net_cookie(mbedtls_ctr_drbg_context *ctr_drbg, uint8_t *out) {
-	mbedtls_ctr_drbg_random(ctr_drbg, out, 32);
+bool SS_equal(const struct SS *addr0, const struct SS *addr1) {
+	struct sockaddr_in6 norm[2] = {SS_to6(addr0), SS_to6(addr1)};
+	if(norm[0].sin6_family != AF_INET6 || norm[1].sin6_family != AF_INET6)
+		return false;
+	return memcmp(&norm[0].sin6_addr, &norm[1].sin6_addr, sizeof(struct in6_addr)) == 0 && norm[0].sin6_port == norm[1].sin6_port;
+}
+
+static void net_cookie(mbedtls_ctr_drbg_context *ctr_drbg, struct Cookie32 *out) {
+	mbedtls_ctr_drbg_random(ctr_drbg, out->raw, sizeof(out->raw));
 }
 
 static struct timespec GetTime() {
@@ -347,7 +367,7 @@ void net_keypair_init(struct NetKeypair *keys) {
 }
 
 void net_keypair_gen(struct NetContext *ctx, struct NetKeypair *keys) {
-	net_cookie(&ctx->ctr_drbg, keys->random);
+	net_cookie(&ctx->ctr_drbg, &keys->random);
 	if(mbedtls_ecp_gen_keypair(&ctx->grp, &keys->secret, &keys->public, mbedtls_ctr_drbg_random, &ctx->ctr_drbg)) {
 		uprintf("mbedtls_ecp_gen_keypair() failed\n");
 		abort();
@@ -376,7 +396,7 @@ void net_session_reset(struct NetContext *ctx, struct NetSession *session) {
 	net_session_free(session);
 	memset(session, 0, sizeof(*session));
 	session->version = PV_LEGACY_DEFAULT;
-	net_cookie(&ctx->ctr_drbg, session->cookie);
+	net_cookie(&ctx->ctr_drbg, &session->cookie);
 	session->addr = addr;
 	session->lastKeepAlive = net_time();
 	session->mtu = 0;

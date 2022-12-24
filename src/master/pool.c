@@ -34,8 +34,7 @@ static bool pool_grow(uint32_t newLength) {
 
 void pool_reset(struct NetContext *self) {
 	for(uint32_t i = 0; i < hosts_len; ++i)
-		if(hosts[i].link)
-			wire_disconnect(self, hosts[i].link);
+		wire_disconnect(self, hosts[i].link);
 	free(hosts);
 	hosts_len = 0, nextSlot = 0, hosts = NULL;
 }

@@ -242,12 +242,12 @@ static void handle_ClientHelloRequest(struct Context *ctx, struct MasterSession 
 		session->resend.set = COUNTER64_CLEAR;
 	}
 	session->epoch = req->base.requestId & 0xff000000;
-	memcpy(session->net.clientRandom, req->random, 32);
+	session->net.clientRandom = req->random;
 	struct HandshakeMessage r_hello = {
 		.type = HandshakeMessageType_HelloVerifyRequest,
 		.helloVerifyRequest.base.responseId = req->base.requestId,
 	};
-	memcpy(r_hello.helloVerifyRequest.cookie, NetSession_get_cookie(&session->net), sizeof(r_hello.helloVerifyRequest.cookie));
+	r_hello.helloVerifyRequest.cookie = *NetSession_get_cookie(&session->net);
 	uint8_t resp[65536], *resp_end = resp;
 	if(!MASTER_SERIALIZE(&r_hello, &resp_end, endof(resp)))
 		return;
@@ -259,9 +259,9 @@ static void handle_ClientHelloWithCookieRequest(struct Context *ctx, struct Mast
 	master_send_ack(ctx, session, MessageType_HandshakeMessage, req->base.requestId);
 	if(session->handshake.step != HandshakeMessageType_ClientHelloWithCookieRequest)
 		return;
-	if(memcmp(req->cookie, NetSession_get_cookie(&session->net), 32) != 0)
+	if(memcmp(req->cookie.raw, NetSession_get_cookie(&session->net)->raw, sizeof(req->cookie.raw)) != 0)
 		return;
-	if(memcmp(req->random, session->net.clientRandom, 32) != 0)
+	if(memcmp(req->random.raw, session->net.clientRandom.raw, sizeof(req->random.raw)) != 0)
 		return;
 
 	struct HandshakeMessage r_cert = {
@@ -298,21 +298,13 @@ static void handle_ServerCertificateRequest_sent(struct Context *ctx, struct Mas
 				.requestId = master_getNextRequestId(session),
 				.responseId = session->handshake.helloResponseId,
 			},
-			.publicKey = {
-				.length = sizeof(r_hello.serverHelloRequest.publicKey.data),
-			},
+			.random = *NetKeypair_get_random(&session->net.keys),
+			.publicKey.length = sizeof(r_hello.serverHelloRequest.publicKey.data),
 		},
 	};
-	memcpy(r_hello.serverHelloRequest.random, NetKeypair_get_random(&session->net.keys), sizeof(r_hello.serverHelloRequest.random));
-	if(NetKeypair_write_key(&session->net.keys, &ctx->net, r_hello.serverHelloRequest.publicKey.data, &r_hello.serverHelloRequest.publicKey.length))
+	if(NetKeypair_write_key(&session->net.keys, &ctx->net, &r_hello.serverHelloRequest.publicKey))
 		return;
-	{
-		uint8_t sig[r_hello.serverHelloRequest.publicKey.length + 64];
-		memcpy(sig, session->net.clientRandom, 32);
-		memcpy(&sig[32], NetKeypair_get_random(&session->net.keys), 32);
-		memcpy(&sig[64], r_hello.serverHelloRequest.publicKey.data, r_hello.serverHelloRequest.publicKey.length);
-		NetSession_signature(&session->net, &ctx->net, ctx->key, sig, sizeof(sig), &r_hello.serverHelloRequest.signature);
-	}
+	NetSession_signature(&session->net, &ctx->net, ctx->key, &r_hello.serverHelloRequest.signature);
 
 	uint8_t resp[65536], *resp_end = resp;
 	if(!MASTER_SERIALIZE(&r_hello, &resp_end, endof(resp)))
@@ -325,15 +317,13 @@ static void handle_ClientKeyExchangeRequest(struct Context *ctx, struct MasterSe
 	master_send_ack(ctx, session, MessageType_HandshakeMessage, req->base.requestId);
 	if(session->handshake.step != HandshakeMessageType_ClientKeyExchangeRequest)
 		return;
-	if(NetSession_set_clientPublicKey(&session->net, &ctx->net, &req->clientPublicKey))
+	if(NetSession_set_remotePublicKey(&session->net, &ctx->net, &req->clientPublicKey, false))
 		return;
 	struct HandshakeMessage r_spec = {
 		.type = HandshakeMessageType_ChangeCipherSpecRequest,
-		.changeCipherSpecRequest = {
-			.base = {
-				.requestId = master_getNextRequestId(session),
-				.responseId = req->base.requestId,
-			},
+		.changeCipherSpecRequest.base = {
+			.requestId = master_getNextRequestId(session),
+			.responseId = req->base.requestId,
 		},
 	};
 	uint8_t resp[65536], *resp_end = resp;
@@ -437,19 +427,22 @@ static void handle_WireSessionAllocResp(struct Context *ctx, struct PoolHost *ho
 	};
 
 	if(r_conn.connectToServerResponse.result == ConnectToServerResponse_Result_Success) {
-		r_conn.connectToServerResponse.code = pool_handle_code(host, state->room);
-		r_conn.connectToServerResponse.userId.isNull = false;
-		r_conn.connectToServerResponse.userId.length = sprintf(r_conn.connectToServerResponse.userId.data, "beatupserver:%08x", rand()); // TODO: use meaningful id here
-		r_conn.connectToServerResponse.userName.length = 0;
-		r_conn.connectToServerResponse.secret = state->secret;
-		r_conn.connectToServerResponse.selectionMask = state->selectionMask;
-		r_conn.connectToServerResponse.isConnectionOwner = true;
-		r_conn.connectToServerResponse.isDedicatedServer = true;
-		r_conn.connectToServerResponse.remoteEndPoint = sessionAlloc->endPoint;
-		memcpy(r_conn.connectToServerResponse.random, sessionAlloc->random, sizeof(sessionAlloc->random));
-		r_conn.connectToServerResponse.publicKey = sessionAlloc->publicKey;
-		r_conn.connectToServerResponse.configuration = sessionAlloc->configuration;
-		r_conn.connectToServerResponse.managerId = sessionAlloc->managerId;
+		r_conn.connectToServerResponse = (struct ConnectToServerResponse){
+			.base = r_conn.connectToServerResponse.base,
+			.result = ConnectToServerResponse_Result_Success,
+			.userId = String_fmt("beatupserver:%08x", rand()), // TODO: use meaningful id here
+			.userName = String_from(""),
+			.secret = state->secret,
+			.selectionMask = state->selectionMask,
+			.isConnectionOwner = true,
+			.isDedicatedServer = true,
+			.remoteEndPoint = sessionAlloc->endPoint,
+			.random = sessionAlloc->random,
+			.publicKey = sessionAlloc->publicKey,
+			.code = pool_handle_code(host, state->room),
+			.configuration = sessionAlloc->configuration,
+			.managerId = sessionAlloc->managerId,
+		};
 		char scode[8];
 		uprintf("Sending player to room `%s`\n", ServerCodeToString(scode, r_conn.connectToServerResponse.code));
 	} else if(spawn) {
@@ -532,11 +525,11 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		.secret = req->secret,
 		.userId = req->base.userId,
 		.userName = req->base.userName,
+		.random = req->base.random,
 		.publicKey = req->base.publicKey,
 		.protocolVersion = session->net.version.protocolVersion,
 	};
 	memcpy(sessionAllocData.address.data, &state.addr.ss, state.addr.len);
-	memcpy(sessionAllocData.random, req->base.random, sizeof(sessionAllocData.random));
 	uint32_t cookie;
 	bool failed;
 	if(req->code == ServerCode_NONE) {
@@ -656,7 +649,7 @@ static void handle_packet(struct Context *ctx, struct MasterSession *session, st
 				case UserMessageType_MultipartMessage: handle_MultipartMessage(ctx, session, &message.multipartMessage); break;
 				case UserMessageType_SessionKeepaliveMessage: break;
 				case UserMessageType_GetPublicServersRequest: uprintf("UserMessageType_GetPublicServersRequest not implemented\n"); abort();
-				case UserMessageType_GetPublicServersResponse: uprintf("UserMessageType_GetPublicServersResponse not implemented\n"); abort();
+				case UserMessageType_GetPublicServersResponse: uprintf("BAD TYPE: UserMessageType_GetPublicServersResponse\n"); break;
 				default: uprintf("BAD USER MESSAGE TYPE: %hhu\n", message.type);
 			}
 		} else if(header.type == MessageType_HandshakeMessage) {

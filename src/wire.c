@@ -222,7 +222,7 @@ void wire_accept(struct NetContext *self, int32_t listenfd) {
 }
 
 void wire_disconnect(struct NetContext *self, union WireLink *link) {
-	if(link->type == WireLinkType_INVALID)
+	if(link == NULL || link->type == WireLinkType_INVALID)
 		return;
 	self->onWireMessage(self->userptr, link, NULL);
 	if(link->type == WireLinkType_LOCAL) {
@@ -242,7 +242,7 @@ void wire_disconnect(struct NetContext *self, union WireLink *link) {
 }
 
 bool wire_send(struct NetContext *self, union WireLink *link, const struct WireMessage *message) {
-	if(link->type == WireLinkType_INVALID)
+	if(link == NULL || link->type == WireLinkType_INVALID)
 		return true;
 	if(link->type == WireLinkType_LOCAL) {
 		uprintf("wire_send_local(%s)\n", reflect(WireMessageType, message->type));

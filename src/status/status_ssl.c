@@ -92,8 +92,6 @@ bool status_ssl_init(mbedtls_x509_crt certs[2], mbedtls_pk_context keys[2], cons
 		uprintf("mbedtls_ctr_drbg_seed() failed: %s\n", mbedtls_high_level_strerr(res));
 		return true;
 	}
-	char service[8];
-	sprintf(service, "%hu", port);
 	res = mbedtls_ssl_config_defaults(&ctx.conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT);
 	if(res) {
 		uprintf("mbedtls_ssl_config_defaults() failed: %s\n", mbedtls_high_level_strerr(res));

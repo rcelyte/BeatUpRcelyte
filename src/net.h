@@ -49,7 +49,7 @@ int32_t net_bind_tcp(uint16_t port, uint32_t backlog);
 void net_close(int32_t sockfd);
 
 struct NetKeypair {
-	uint8_t NET_H_PRIVATE(random)[32];
+	struct Cookie32 NET_H_PRIVATE(random);
 	mbedtls_mpi NET_H_PRIVATE(secret);
 	mbedtls_ecp_point NET_H_PRIVATE(public);
 };
@@ -57,8 +57,8 @@ struct NetKeypair {
 struct NetSession {
 	struct NetKeypair keys;
 	struct PacketContext version;
-	uint8_t clientRandom[32];
-	uint8_t NET_H_PRIVATE(cookie)[32];
+	struct Cookie32 clientRandom;
+	struct Cookie32 NET_H_PRIVATE(cookie);
 	struct EncryptionState NET_H_PRIVATE(encryptionState);
 	struct SS NET_H_PRIVATE(addr);
 	uint32_t lastKeepAlive;
@@ -97,16 +97,16 @@ struct NetContext {
 // Initialize memory such that calling `net_cleanup()` without a prior `net_init()` is well defined
 #define CLEAR_NETCONTEXT {._typeid = WireLinkType_INVALID}
 
+struct ByteArrayNetSerializable;
 void net_keypair_init(struct NetKeypair *keys);
 void net_keypair_gen(struct NetContext *ctx, struct NetKeypair *keys);
 void net_keypair_free(struct NetKeypair *keys);
-const uint8_t *NetKeypair_get_random(const struct NetKeypair *keys);
-bool NetKeypair_write_key(const struct NetKeypair *keys, struct NetContext *ctx, uint8_t *out, uint32_t *out_len);
+const struct Cookie32 *NetKeypair_get_random(const struct NetKeypair *keys);
+bool NetKeypair_write_key(const struct NetKeypair *keys, struct NetContext *ctx, struct ByteArrayNetSerializable *out);
+bool NetSession_signature(struct NetSession *session, struct NetContext *ctx, const mbedtls_pk_context *key, struct ByteArrayNetSerializable *out);
 
-struct ByteArrayNetSerializable;
-const uint8_t *NetSession_get_cookie(const struct NetSession *session);
-bool NetSession_signature(const struct NetSession *session, struct NetContext *ctx, const mbedtls_pk_context *key, const uint8_t *in, uint32_t in_len, struct ByteArrayNetSerializable *out);
-bool NetSession_set_clientPublicKey(struct NetSession *session, struct NetContext *ctx, const struct ByteArrayNetSerializable *in);
+const struct Cookie32 *NetSession_get_cookie(const struct NetSession *session);
+bool NetSession_set_remotePublicKey(struct NetSession *session, struct NetContext *ctx, const struct ByteArrayNetSerializable *in, bool client);
 uint32_t NetSession_get_lastKeepAlive(struct NetSession *session);
 const struct SS *NetSession_get_addr(struct NetSession *session);
 

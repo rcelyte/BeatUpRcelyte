@@ -164,7 +164,7 @@ static uint8_t ConnectionId_index(uint8_t connectionId) {
 }
 
 static bool BeatmapIdentifierNetSerializable_eq(const struct BeatmapIdentifierNetSerializable *a, const struct BeatmapIdentifierNetSerializable *b, bool ignoreDifficulty) {
-	if(!String_eq(a->levelID, b->levelID))
+	if(!LongString_eq(a->levelID, b->levelID))
 		return false;
 	return ignoreDifficulty || (String_eq(a->beatmapCharacteristicSerializedName, b->beatmapCharacteristicSerializedName) && a->difficulty == b->difficulty);
 }
@@ -502,7 +502,12 @@ static void session_set_state(struct InstanceContext *ctx, struct Room *room, st
 				playerSettings = &r_sync.setActivePlayerFailedToConnect.playersAtGameStart;
 				id = &r_sync.setActivePlayerFailedToConnect.sessionGameId;
 			}
-			id->length = snprintf(id->data, sizeof(id->data), "%08"PRIx64"-%04"PRIx64"-%04"PRIx64"-%04"PRIx64"-%012"PRIx64, (room->global.sessionId[0] >> 32) & 0xffffffff, (room->global.sessionId[0] >> 16) & 0xffff, room->global.sessionId[0] & 0xffff, (room->global.sessionId[1] >> 48) & 0xffff, room->global.sessionId[1] & 0xffffffffffff);
+			*id = String_fmt("%08"PRIx64"-%04"PRIx64"-%04"PRIx64"-%04"PRIx64"-%012"PRIx64,
+				room->global.sessionId[0] >> 32 & 0xffffffff,
+				room->global.sessionId[0] >> 16 & 0xffff,
+				room->global.sessionId[0]       & 0xffff,
+				room->global.sessionId[1] >> 48 & 0xffff,
+				room->global.sessionId[1]       & 0xffffffffffff);
 			FOR_SOME_PLAYERS(id, room->game.activePlayers,)
 				playerSettings->activePlayerSpecificSettingsAtGameStart[playerSettings->count++] = room->players[id].settings;
 			if(active) {
@@ -725,7 +730,7 @@ static void handle_MenuRpc(struct InstanceContext *ctx, struct Room *room, struc
 		case MenuRpcType_GetIsEntitledToLevel: uprintf("BAD TYPE: MenuRpcType_GetIsEntitledToLevel\n"); break;
 		case MenuRpcType_SetIsEntitledToLevel: {
 			struct SetIsEntitledToLevel entitlement = rpc->setIsEntitledToLevel;
-			if(!((room->state & ServerState_Lobby) && entitlement.flags.hasValue0 && String_eq(entitlement.levelId, room->global.selectedBeatmap.levelID)))
+			if(!((room->state & ServerState_Lobby) && entitlement.flags.hasValue0 && LongString_eq(entitlement.levelId, room->global.selectedBeatmap.levelID)))
 				break;
 			if(!entitlement.flags.hasValue1 || entitlement.entitlementStatus == EntitlementsStatus_Unknown) {
 				entitlement.entitlementStatus = EntitlementsStatus_NotOwned;
@@ -1457,7 +1462,7 @@ static void handle_ConnectRequest(struct InstanceContext *ctx, struct Room *room
 		},
 	};
 	memcpy(r_identity.playerIdentity.random.data, NetKeypair_get_random(&room->keys), 32);
-	NetKeypair_write_key(&room->keys, &ctx->net, r_identity.playerIdentity.publicEncryptionKey.data, &r_identity.playerIdentity.publicEncryptionKey.length);
+	NetKeypair_write_key(&room->keys, &ctx->net, &r_identity.playerIdentity.publicEncryptionKey);
 	if(pkt_serialize(&r_identity, &resp_end, endof(resp), session->net.version))
 		instance_send_channeled(&session->net, &session->channels, resp, resp_end - resp, DeliveryMethod_ReliableOrdered);
 
@@ -1645,8 +1650,8 @@ static void *instance_handler(struct InstanceContext *ctx) {
 	struct InstanceSession *session;
 	while((len = net_recv(&ctx->net, pkt, (struct NetSession**)&session, (void**)&room)))
 		handle_packet(ctx, room, session, pkt, &pkt[len]);
-	if(ctx->master)
-		wire_disconnect(&ctx->net, ctx->master);
+	wire_disconnect(&ctx->net, ctx->master);
+	ctx->master = NULL;
 	fail:
 	net_unlock(&ctx->net);
 	return 0;
@@ -1715,14 +1720,9 @@ static uint32_t instance_onResend(struct InstanceContext *ctx, uint32_t currentT
 
 static const char *instance_domainIPv4 = NULL, *instance_domain = NULL;
 static struct IPEndPoint instance_get_endpoint(struct NetContext *net, bool ipv4) {
-	struct IPEndPoint out;
-	out.address.length = 0;
-	out.address.isNull = false;
-	out.port = 0;
-	if(ipv4)
-		out.address.length = sprintf(out.address.data, "%s", instance_domainIPv4);
-	else
-		out.address.length = sprintf(out.address.data, "%s", instance_domain);
+	struct IPEndPoint out = {
+		.address = String_fmt("%s", ipv4 ? instance_domainIPv4 : instance_domain),
+	};
 
 	struct SS addr = {.len = sizeof(struct sockaddr_storage)};
 	getsockname(net_get_sockfd(net), &addr.sa, &addr.len);
@@ -1858,15 +1858,15 @@ static struct WireSessionAllocResp room_resolve_session(struct InstanceContext *
 	session->stateHash.bloomFilter = (struct BitMask128){0, 0};
 	session->avatar = CLEAR_AVATARDATA;
 
-	memcpy(session->net.clientRandom, req->random, 32);
-	memcpy(resp.random, NetKeypair_get_random(&session->net.keys), 32);
+	session->net.clientRandom = req->random;
+	resp.random = *NetKeypair_get_random(&session->net.keys);
 	resp.publicKey.length = sizeof(resp.publicKey.data);
-	if(NetKeypair_write_key(&session->net.keys, &ctx->net, resp.publicKey.data, &resp.publicKey.length)) {
+	if(NetKeypair_write_key(&session->net.keys, &ctx->net, &resp.publicKey)) {
 		uprintf("Connect to Server Error: NetKeypair_write_key() failed\n");
 		return resp; // TODO: clean up and remove session data if either of these errors is hit
 	}
-	if(NetSession_set_clientPublicKey(&session->net, &ctx->net, &req->publicKey)) {
-		uprintf("Connect to Server Error: NetSession_set_clientPublicKey() failed\n");
+	if(NetSession_set_remotePublicKey(&session->net, &ctx->net, &req->publicKey, false)) {
+		uprintf("Connect to Server Error: NetSession_set_remotePublicKey() failed\n");
 		return resp;
 	}
 	resp.configuration = room->configuration;
