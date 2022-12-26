@@ -1101,8 +1101,8 @@ static bool handle_MultiplayerSession(struct InstanceContext *ctx, struct Room *
 		case MultiplayerSessionMessageType_GameplayRpc: handle_GameplayRpc(ctx, room, session, &message->gameplayRpc); break;
 		case MultiplayerSessionMessageType_NodePoseSyncState: break;
 		case MultiplayerSessionMessageType_ScoreSyncState: break;
-		case MultiplayerSessionMessageType_NodePoseSyncStateDelta: break;
-		case MultiplayerSessionMessageType_ScoreSyncStateDelta: break;
+		case MultiplayerSessionMessageType_NodePoseSyncStateDelta: uprintf("BAD TYPE: MultiplayerSessionMessageType_NodePoseSyncStateDelta\n"); break;
+		case MultiplayerSessionMessageType_ScoreSyncStateDelta: uprintf("BAD TYPE: MultiplayerSessionMessageType_ScoreSyncStateDelta\n"); break;
 		case MultiplayerSessionMessageType_MpCore: /*handle_MpCore(ctx, room, session, &message->mpCore);*/ break;
 		case MultiplayerSessionMessageType_BeatUpMessage: return handle_BeatUpMessage(&message->beatUpMessage);
 		default: uprintf("BAD MULTIPLAYER SESSION MESSAGE TYPE\n");
@@ -1233,9 +1233,13 @@ static bool handle_RoutingHeader(struct InstanceContext *ctx, struct Room *room,
 				.encrypted = routing.encrypted,
 			});
 			pkt_write_bytes(*data, &resp_end, endof(resp), room->players[id].net.version, (size_t)(end - *data));
+			// TODO: repack and selectively broadcast individual messages in the process loop
+			// TODO: tamper with sync states to fix whatever triggers the game's "broken tracking" bug
+			// TODO: more intelligent rate limiting (reduced sync state rates, global load monitoring)
+			// TODO: investigate fast paths? This block could theoretically be hit upwards of 1.2 million times per second in a fully saturated 254 player lobby
 			if(reliable)
 				instance_send_channeled(&room->players[id].net, &room->players[id].channels, resp, (uint32_t)(resp_end - resp), channelId);
-			else
+			else if(!room->players[id].channels.ro.base.backlog) // unreliable transport is only used for sync state deltas, which are safe to drop if rate limiting is needed
 				net_send_internal(&ctx->net, &room->players[id].net, resp, (uint32_t)(resp_end - resp), 1);
 		}
 		return routing.connectionId != 127 || routing.encrypted;
@@ -1246,7 +1250,7 @@ static bool handle_RoutingHeader(struct InstanceContext *ctx, struct Room *room,
 static void process_message(struct InstanceContext *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data, const uint8_t *end, bool reliable, DeliveryMethod channelId) {
 	if(!session->net.alive)
 		return;
-	if(handle_RoutingHeader(ctx, room, session, data, end, reliable, channelId)) {
+	if(handle_RoutingHeader(ctx, room, session, data, end, reliable, channelId) || !reliable) { // unreliable packets aren't meaningful to the server
 		*data = end;
 		return;
 	}
@@ -1315,7 +1319,7 @@ struct ChanneledState {
 	struct InstanceSession *session;
 };
 static void process_Channeled(struct ChanneledState *state, const uint8_t **data, const uint8_t *end, DeliveryMethod channelId) {
-	process_message(state->ctx, state->room, state->session, data, end, 1, channelId);
+	process_message(state->ctx, state->room, state->session, data, end, true, channelId);
 }
 
 static void handle_ConnectRequest(struct InstanceContext *ctx, struct Room *room, struct InstanceSession *session, const struct ConnectRequest *req, const uint8_t **data, const uint8_t *end) {
@@ -1589,7 +1593,7 @@ static inline void handle_packet(struct InstanceContext *ctx, struct Room **room
 		}
 		const uint8_t *sub = data;
 		switch(header.property) {
-			case PacketProperty_Unreliable: process_message(ctx, *room, session, &sub, &sub[length], 0, 0); break;
+			case PacketProperty_Unreliable: process_message(ctx, *room, session, &sub, &sub[length], false, 0); break;
 			case PacketProperty_Channeled: handle_Channeled((ChanneledHandler)process_Channeled, &(struct ChanneledState){ctx, *room, session}, &ctx->net, &session->net, &session->channels, &header, &sub, &sub[length]); break;
 			case PacketProperty_Ack: handle_Ack(&session->net, &session->channels, &header.ack); break;
 			case PacketProperty_Ping: handle_Ping(&ctx->net, &session->net, &session->tableTennis, header.ping); break;
