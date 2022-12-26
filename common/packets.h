@@ -40,7 +40,7 @@ static inline bool LongString_eq(struct LongString a, struct LongString b) {retu
 	va_list args;
 	va_start(args, format);
 	struct String out = {.isNull = false};
-	out.length = vsnprintf(out.data, sizeof(out.data) / sizeof(*out.data), format, args);
+	out.length = (uint32_t)vsnprintf(out.data, sizeof(out.data) / sizeof(*out.data), format, args);
 	va_end(args);
 	return out;
 }

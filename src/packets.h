@@ -1,4 +1,5 @@
 #pragma once
+#define PACKETS_H
 #include "../common/packets.h"
 
 struct RemoteProcedureCallFlags {

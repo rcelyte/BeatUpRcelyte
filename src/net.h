@@ -3,9 +3,6 @@
 #include "encryption.h"
 #include "perf.h"
 #include "../common/packets.h"
-#include <mbedtls/x509_crt.h>
-#include <mbedtls/pk.h>
-#include <mbedtls/ctr_drbg.h>
 #include <mbedtls/entropy.h>
 #include <stdatomic.h>
 #include <pthread.h>
@@ -98,8 +95,7 @@ struct NetContext {
 #define CLEAR_NETCONTEXT {._typeid = WireLinkType_INVALID}
 
 struct ByteArrayNetSerializable;
-void net_keypair_init(struct NetKeypair *keys);
-void net_keypair_gen(struct NetContext *ctx, struct NetKeypair *keys);
+void net_keypair_init(struct NetContext *ctx, struct NetKeypair *keys);
 void net_keypair_free(struct NetKeypair *keys);
 const struct Cookie32 *NetKeypair_get_random(const struct NetKeypair *keys);
 bool NetKeypair_write_key(const struct NetKeypair *keys, struct NetContext *ctx, struct ByteArrayNetSerializable *out);
@@ -127,7 +123,7 @@ void net_send_internal(struct NetContext *ctx, struct NetSession *session, const
 int32_t net_get_sockfd(struct NetContext *ctx);
 mbedtls_ctr_drbg_context *net_get_ctr_drbg(struct NetContext *ctx);
 
-uint32_t net_time();
+uint32_t net_time(void);
 
 static inline int32_t RelativeSequenceNumber(int32_t to, int32_t from) {
 	return (to - from + NET_MAX_SEQUENCE + NET_MAX_SEQUENCE / 2) % NET_MAX_SEQUENCE - NET_MAX_SEQUENCE / 2;

@@ -4,18 +4,13 @@
 #include <stdlib.h>
 #include <pthread.h>
 
-#define MAX_SERVER_CODE 62193780
-#define POOL_BLOCK_COUNT ((MAX_SERVER_CODE+256*16) / (256*16))
-
 struct PoolHost {
 	union WireLink *link;
 	bool discover;
-	uint16_t capacity;
+	uint32_t capacity;
 	struct Counter64 blocks;
 	ServerCode *codes;
 };
-
-#define CLEAR_POOLHOST (struct PoolHost){NULL, false, 0, {0}, NULL}
 
 static uint32_t hosts_len = 0, nextSlot = 0;
 static struct PoolHost *hosts = NULL;
@@ -28,7 +23,7 @@ static bool pool_grow(uint32_t newLength) {
 	}
 	hosts = newHosts;
 	while(hosts_len < newLength)
-		hosts[hosts_len++] = CLEAR_POOLHOST;
+		hosts[hosts_len++] = (struct PoolHost){0};
 	return false;
 }
 
@@ -36,7 +31,9 @@ void pool_reset(struct NetContext *self) {
 	for(uint32_t i = 0; i < hosts_len; ++i)
 		wire_disconnect(self, hosts[i].link);
 	free(hosts);
-	hosts_len = 0, nextSlot = 0, hosts = NULL;
+	hosts_len = 0;
+	nextSlot = 0;
+	hosts = NULL;
 }
 
 struct PoolHost *pool_host_attach(union WireLink *link) {
@@ -46,10 +43,6 @@ struct PoolHost *pool_host_attach(union WireLink *link) {
 	struct PoolHost *host = &hosts[nextSlot];
 	*host = (struct PoolHost){
 		.link = link,
-		.discover = false,
-		.capacity = 0,
-		.blocks = {0},
-		.codes = NULL,
 	};
 	while(++nextSlot < hosts_len)
 		if(hosts[nextSlot].link == NULL)
@@ -62,22 +55,21 @@ void pool_host_detach(struct PoolHost *host) {
 	if(host >= &hosts[hosts_len] || host->link == NULL)
 		return;
 	free(host->codes);
-	*host = CLEAR_POOLHOST;
+	*host = (struct PoolHost){0};
 	if((uint32_t)(host - hosts) < nextSlot)
 		nextSlot = (uint32_t)(host - hosts);
 }
 
 void TEMPpool_host_setAttribs(struct PoolHost *host, uint32_t capacity, bool discover) { // TODO: `TEMP` since calling multiple times for the same host will break things
-	capacity &= ~1u; // round down to power of 2 for alignment
-	host->codes = malloc(capacity * sizeof(*hosts->codes));
-	if(!host->codes) {
-		*host = CLEAR_POOLHOST;
-		uprintf("alloc error\n");
-		return;
-	}
 	host->discover = discover;
 	host->capacity = capacity;
 	host->blocks.bits = ~0llu;
+	host->codes = malloc(capacity * sizeof(*hosts->codes));
+	if(!host->codes) {
+		*host = (struct PoolHost){0};
+		uprintf("alloc error\n");
+		return;
+	}
 	for(ServerCode *it = host->codes, *end = &host->codes[capacity]; it < end; ++it)
 		*it = ServerCode_NONE;
 }
@@ -101,14 +93,18 @@ static struct PoolHost *_pool_handle_new(uint32_t *room_out, ServerCode code) {
 		uprintf("Error: instance not available\n");
 		return NULL;
 	}
-	uint32_t block = __builtin_ctzll(host->blocks.bits), freeCount = 0;
-	for(uint32_t start = host->capacity * block / 64, i = host->capacity * (block + 1) / 64; i > start;)
-		if(host->codes[--i] == ServerCode_NONE)
-			*room_out = i, ++freeCount;
+	uint32_t block = (uint32_t)__builtin_ctzll(host->blocks.bits), freeCount = 0;
+	for(uint32_t start = host->capacity * block / 64, i = host->capacity * (block + 1) / 64; i > start;) {
+		if(host->codes[--i] == ServerCode_NONE) {
+			*room_out = i;
+			++freeCount;
+		}
+	}
 	if(freeCount < 2)
 		Counter64_clear(&host->blocks, block);
 	host->codes[*room_out] = code;
-	++globalRoomCount, uprintf("%u room%s open\n", globalRoomCount, (globalRoomCount == 1) ? "" : "s");
+	++globalRoomCount;
+	uprintf("%u room%s open\n", globalRoomCount, (globalRoomCount == 1) ? "" : "s");
 	return host;
 }
 
@@ -132,12 +128,13 @@ struct PoolHost *pool_handle_new_named(uint32_t *room_out, ServerCode code) {
 	return _pool_handle_new(room_out, code);
 }
 
-void pool_handle_free(struct PoolHost *host, uint16_t room) {
+void pool_handle_free(struct PoolHost *host, uint32_t room) {
 	Counter64_set(&host->blocks, room * 64 / host->capacity);
 	if(pool_handle_code(host, room) == ServerCode_NONE)
 		return;
 	host->codes[room] = ServerCode_NONE;
-	--globalRoomCount, uprintf("%u room%s open\n", globalRoomCount, (globalRoomCount == 1) ? "" : "s");
+	--globalRoomCount;
+	uprintf("%u room%s open\n", globalRoomCount, (globalRoomCount == 1) ? "" : "s");
 }
 
 ServerCode pool_handle_code(struct PoolHost *host, uint32_t room) {
@@ -149,7 +146,7 @@ struct PoolHost *pool_handle_lookup(uint32_t *room_out, ServerCode code) { // TO
 		for(ServerCode *room = host->codes, *codes_end = &host->codes[host->capacity]; room < codes_end; ++room) {
 			if(*room != code)
 				continue;
-			*room_out = room - host->codes;
+			*room_out = (uint32_t)(room - host->codes);
 			return host;
 		}
 	}

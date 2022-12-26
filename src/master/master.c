@@ -171,19 +171,19 @@ static uint32_t master_send(struct NetContext *ctx, struct MasterSession *sessio
 		bool res = pkt_write_c(&buf_end, endof(buf), PV_LEGACY_DEFAULT, NetPacketHeader, {
 			.property = PacketProperty_UnconnectedMessage,
 			.unconnectedMessage = header,
-		}) && pkt_write_bytes(data, &buf_end, endof(buf), PV_LEGACY_DEFAULT, data_end - data);
+		}) && pkt_write_bytes(data, &buf_end, endof(buf), PV_LEGACY_DEFAULT, (size_t)(data_end - data));
 		if(res)
-			master_send_internal(ctx, session, buf, buf_end - buf, read_requestId(data, data_end, PV_LEGACY_DEFAULT), type != MessageType_HandshakeMessage);
+			master_send_internal(ctx, session, buf, (uint16_t)(buf_end - buf), read_requestId(data, data_end, PV_LEGACY_DEFAULT), type != MessageType_HandshakeMessage);
 		return 1;
 	}
 	if(!(pkt_write(&header, &buf_end, endof(buf), PV_LEGACY_DEFAULT) &&
-	     pkt_write_bytes(data, &buf_end, endof(buf), PV_LEGACY_DEFAULT, data_end - data)))
+	     pkt_write_bytes(data, &buf_end, endof(buf), PV_LEGACY_DEFAULT, (size_t)(data_end - data))))
 		return 0;
 	struct MultipartMessageProxy mpp = {
 		.value = {
 			.multipartMessageId = read_requestId(data, data_end, PV_LEGACY_DEFAULT),
 			.length = 384,
-			.totalLength = buf_end - buf,
+			.totalLength = (uint32_t)(buf_end - buf),
 		},
 	};
 	switch(type) {
@@ -195,9 +195,9 @@ static uint32_t master_send(struct NetContext *ctx, struct MasterSession *sessio
 	uint32_t partCount = 0;
 	do {
 		mpp.value.base.requestId = master_getNextRequestId(session);
-		mpp.value.offset = buf_it - buf;
+		mpp.value.offset = (uint32_t)(buf_it - buf);
 		if((uintptr_t)(buf_end - buf_it) < mpp.value.length)
-			mpp.value.length = buf_end - buf_it;
+			mpp.value.length = (uint32_t)(buf_end - buf_it);
 		uint8_t mpbuf[512], *mpbuf_end = mpbuf;
 		memcpy(mpp.value.data, buf_it, mpp.value.length);
 		bool res = pkt_write_c(&mpbuf_end, endof(mpbuf), PV_LEGACY_DEFAULT, NetPacketHeader, {
@@ -208,7 +208,7 @@ static uint32_t master_send(struct NetContext *ctx, struct MasterSession *sessio
 			},
 		}) && MASTER_SERIALIZE(&mpp, &mpbuf_end, endof(mpbuf));
 		(void)res;
-		master_send_internal(ctx, session, mpbuf, mpbuf_end - mpbuf, mpp.value.base.requestId, type != MessageType_HandshakeMessage);
+		master_send_internal(ctx, session, mpbuf, (uint16_t)(mpbuf_end - mpbuf), mpp.value.base.requestId, type != MessageType_HandshakeMessage);
 		++partCount;
 		buf_it += mpp.value.length;
 	} while(buf_it < buf_end);
@@ -231,7 +231,7 @@ static void master_send_ack(struct Context *ctx, struct MasterSession *session, 
 		},
 	}), &resp_end, endof(resp));
 	if(res)
-		net_send_internal(&ctx->net, &session->net, resp, resp_end - resp, type != MessageType_HandshakeMessage);
+		net_send_internal(&ctx->net, &session->net, resp, (uint32_t)(resp_end - resp), type != MessageType_HandshakeMessage);
 }
 
 static void handle_ClientHelloRequest(struct Context *ctx, struct MasterSession *session, const struct ClientHelloRequest *req) {
@@ -272,7 +272,7 @@ static void handle_ClientHelloWithCookieRequest(struct Context *ctx, struct Mast
 		},
 	};
 	for(const mbedtls_x509_crt *it = ctx->cert; it; it = it->next) {
-		r_cert.serverCertificateRequest.certificateList[r_cert.serverCertificateRequest.certificateCount].length = it->raw.len;
+		r_cert.serverCertificateRequest.certificateList[r_cert.serverCertificateRequest.certificateCount].length = (uint32_t)it->raw.len;
 		memcpy(r_cert.serverCertificateRequest.certificateList[r_cert.serverCertificateRequest.certificateCount].data, it->raw.p, r_cert.serverCertificateRequest.certificateList[r_cert.serverCertificateRequest.certificateCount].length);
 		++r_cert.serverCertificateRequest.certificateCount;
 	}
@@ -299,7 +299,6 @@ static void handle_ServerCertificateRequest_sent(struct Context *ctx, struct Mas
 				.responseId = session->handshake.helloResponseId,
 			},
 			.random = *NetKeypair_get_random(&session->net.keys),
-			.publicKey.length = sizeof(r_hello.serverHelloRequest.publicKey.data),
 		},
 	};
 	if(NetKeypair_write_key(&session->net.keys, &ctx->net, &r_hello.serverHelloRequest.publicKey))
@@ -635,8 +634,8 @@ static void handle_packet(struct Context *ctx, struct MasterSession *session, st
 		}
 		if(header.type == MessageType_UserMessage) {
 			if(header.protocolVersion > session->net.version.protocolVersion)
-				session->net.version.protocolVersion = header.protocolVersion;
-			struct UserMessage message = {.type = ~0};
+				session->net.version.protocolVersion = (uint8_t)header.protocolVersion;
+			struct UserMessage message = {.type = (UserMessageType)UINT32_C(0xffffffff)};
 			pkt_read(&message, &sub, &sub[serial.length], session->net.version);
 			if(pkt_debug("BAD USER MESSAGE LENGTH", sub, data, serial.length, session->net.version))
 				continue;
@@ -654,8 +653,8 @@ static void handle_packet(struct Context *ctx, struct MasterSession *session, st
 			}
 		} else if(header.type == MessageType_HandshakeMessage) {
 			if(header.protocolVersion > session->net.version.protocolVersion)
-				session->net.version.protocolVersion = header.protocolVersion;
-			struct HandshakeMessage message = {.type = ~0};
+				session->net.version.protocolVersion = (uint8_t)header.protocolVersion;
+			struct HandshakeMessage message = {.type = (HandshakeMessageType)UINT32_C(0xffffffff)};
 			pkt_read(&message, &sub, &sub[serial.length], session->net.version);
 			if(pkt_debug("BAD HANDSHAKE MESSAGE LENGTH", sub, data, serial.length, session->net.version))
 				continue;

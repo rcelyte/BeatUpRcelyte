@@ -5,7 +5,7 @@
 bool _pkt_serialize(PacketWriteFunc inner, const void *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	uint8_t *start = (*pkt)++;
 	struct SerializeHeader header = {
-		.length = _pkt_try_write(inner, data, pkt, end, ctx),
+		.length = (uint32_t)_pkt_try_write(inner, data, pkt, end, ctx),
 	};
 	if(header.length) {
 		uint8_t *retry = start;
@@ -65,7 +65,7 @@ char *ServerCodeToString(char *out, ServerCode in) {
 	_pkt_String_write(&str, pkt, end, ctx);
 }
 [[maybe_unused]] static void _pkt_RemoteProcedureCallFlags_read(struct RemoteProcedureCallFlags *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	uint8_t bits = ~0;
+	uint8_t bits = 0xff;
 	if(ctx.protocolVersion > 6)
 		_pkt_u8_read(&bits, pkt, end, ctx);
 	data->hasValue0 = (bits >> 0) & 1;
@@ -90,7 +90,7 @@ MpCoreType MpCoreType_From(const struct String *type) {
 		return MpCoreType_MpPlayerData;
 	if(String_is(*type, "CustomAvatarPacket"))
 		return MpCoreType_CustomAvatarPacket;
-	return ~0;
+	return (MpCoreType)0xffffffff;
 }
 
 #pragma GCC diagnostic ignored "-Wunused-parameter"

@@ -43,14 +43,12 @@ n BeatmapLevelSelectionMask
 	SongPackMask songPacks
 n RemoteProcedureCall
 	f32 syncTime
-n PlayersMissingEntitlementsNetSerializable
-	i32 count
-	String playersWithoutEntitlements[254,.count]
 n SetPlayersMissingEntitlementsToLevel
 	RemoteProcedureCall base
 	RemoteProcedureCallFlags flags
 	if(.flags.hasValue0)
-		PlayersMissingEntitlementsNetSerializable playersMissingEntitlements
+		i32 count
+		String players[254,.count]
 n GetIsEntitledToLevel
 	RemoteProcedureCall base
 	RemoteProcedureCallFlags flags
@@ -72,7 +70,7 @@ n SelectLevelPack
 		String levelPackId
 n BeatmapIdentifierNetSerializable
 	LongString levelID
-	String beatmapCharacteristicSerializedName
+	String characteristic
 	BeatmapDifficulty difficulty
 n SetSelectedBeatmap
 	RemoteProcedureCall base
@@ -219,11 +217,11 @@ n GetPermissionConfiguration
 	RemoteProcedureCall base
 n PlayerLobbyPermissionConfigurationNetSerializable
 	String userId
-	b isServerOwner:1
-	b hasRecommendBeatmapsPermission:1
-	b hasRecommendGameplayModifiersPermission:1
-	b hasKickVotePermission:1
-	b hasInvitePermission:1
+	b serverOwner:1
+	b recommendBeatmaps:1
+	b recommendModifiers:1
+	b kickVote:1
+	b invite:1
 n PlayersLobbyPermissionConfigurationNetSerializable
 	i32 count
 	PlayerLobbyPermissionConfigurationNetSerializable playersPermission[254,.count]
@@ -1069,7 +1067,7 @@ n Pong
 n ConnectRequest
 	u32 protocolId
 	u64 connectTime
-	if(($netVersion = .protocolId) >= 12)
+	if(($netVersion = (uint8_t).protocolId) >= 12)
 		i32 peerId
 	u8 addrlen
 	u8 address[38, .addrlen]

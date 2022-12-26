@@ -1,3 +1,4 @@
+#include "status.h"
 #include "../net.h"
 #include "../ssl.h"
 #include "internal.h"
@@ -45,7 +46,7 @@ static void *handle_client(void *fd) {
 	if(res < 0) {
 		uprintf("mbedtls_ssl_read() failed: %s\n", mbedtls_high_level_strerr(res));
 	} else {
-		size_t len = status_resp("HTTPS", ctx.path, (char*)buf, res);
+		size_t len = status_resp("HTTPS", ctx.path, (char*)buf, (uint32_t)res);
 		if(len) {
 			while((res = mbedtls_ssl_write(&ssl, buf, len)) <= 0) { // TODO: len > 16384 support
 				if(res == MBEDTLS_ERR_SSL_WANT_WRITE)
@@ -61,7 +62,7 @@ static void *handle_client(void *fd) {
 	} while(res == MBEDTLS_ERR_SSL_WANT_READ || res == MBEDTLS_ERR_SSL_WANT_WRITE);
 	reset:;
 	mbedtls_ssl_free(&ssl);
-	close((intptr_t)fd);
+	close((int)(intptr_t)fd);
 	return 0;
 }
 

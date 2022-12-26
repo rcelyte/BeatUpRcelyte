@@ -53,18 +53,20 @@ static intptr_t wire_connect_tcp(const char *address) {
 	bool ipv6 = (*address == '[');
 	if(ipv6) {
 		++address;
-		host_end = memchr(address, ']', address_end - address);
+		host_end = memchr(address, ']', (size_t)(address_end - address));
 		if(!host_end) {
 			uprintf("missing closing `]`\n");
 			return -1;
 		}
-		for(const char *it = host_end; (it = memchr(it, ':', address_end - it));)
+		for(const char *it = host_end; (it = memchr(it, ':', (size_t)(address_end - it)));)
 			port = &it[1];
 	} else {
-		for(const char *it = address; (it = memchr(it, ':', address_end - it));)
-			host_end = it, port = &it[1];
+		for(const char *it = address; (it = memchr(it, ':', (size_t)(address_end - it)));) {
+			host_end = it;
+			port = &it[1];
+		}
 	}
-	memcpy(host, address, (const uint8_t*)host_end - (const uint8_t*)address);
+	memcpy(host, address, (size_t)((const uint8_t*)host_end - (const uint8_t*)address));
 	host[host_end - address] = 0;
 
 	#ifdef WINDOWS // `getaddrinfo()` requires dynamic linking in glibc
@@ -95,7 +97,7 @@ static intptr_t wire_connect_tcp(const char *address) {
 	freeaddrinfo(result);
 	return sockfd;
 	#else
-	uint16_t portNum = *port ? htons(atoi(port)) : htons(2328); // TODO: default to "Port" config value
+	uint16_t portNum = *port ? htons((uint16_t)atoi(port)) : htons(2328); // TODO: default to "Port" config value
 	struct SS addr = ipv6 ? (struct SS){
 		.len = sizeof(struct sockaddr_in6),
 		.in6 = {
@@ -122,12 +124,12 @@ static intptr_t wire_connect_tcp(const char *address) {
 	}
 	char addrstr[INET6_ADDRSTRLEN + 8];
 	net_tostr(&addr, addrstr);
-	if(connect(sockfd, &addr.sa, addr.len) != -1) {
+	if(connect((int)sockfd, &addr.sa, addr.len) != -1) {
 		uprintf("Connected to %s\n", addrstr);
 		return sockfd;
 	}
 	uprintf("Failed to connect to %s\n", addrstr);
-	close(sockfd);
+	close((int)sockfd);
 	return -1;
 	#endif
 }
@@ -188,7 +190,7 @@ union WireLink *wire_connect_remote(struct NetContext *self, const char *address
 	}
 	mbedtls_ssl_free(&link->ctx);
 	mbedtls_ssl_config_free(&link->conf);
-	close(sockfd);
+	close((int)sockfd);
 	free(link);
 	return NULL;
 }
@@ -217,7 +219,7 @@ void wire_accept(struct NetContext *self, int32_t listenfd) {
 	mbedtls_ssl_config_free(&link->conf);
 	free(link);
 	fail:
-	close(sockfd);
+	close((int)sockfd);
 	uprintf("wire_accept(%d) failed\n", sockfd);
 }
 
@@ -234,7 +236,7 @@ void wire_disconnect(struct NetContext *self, union WireLink *link) {
 	do {
 		res = mbedtls_ssl_close_notify(&link->remote.ctx);
 	} while(res == MBEDTLS_ERR_SSL_WANT_READ || res == MBEDTLS_ERR_SSL_WANT_WRITE);
-	int32_t sockfd = (intptr_t)link->remote.ctx.MBEDTLS_PRIVATE(p_bio);
+	int32_t sockfd = (int32_t)(intptr_t)link->remote.ctx.MBEDTLS_PRIVATE(p_bio);
 	mbedtls_ssl_free(&link->remote.ctx);
 	mbedtls_ssl_config_free(&link->remote.conf);
 	free(link);
@@ -264,7 +266,7 @@ bool wire_send(struct NetContext *self, union WireLink *link, const struct WireM
 	}
 	uint8_t pkt[16384], *pkt_end = pkt;
 	pkt_write(message, &pkt_end, endof(pkt), PV_LEGACY_DEFAULT);
-	for(int res = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED; (res = mbedtls_ssl_write(&link->remote.ctx, pkt, pkt_end - pkt)) <= 0;) {
+	for(int res = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED; (res = mbedtls_ssl_write(&link->remote.ctx, pkt, (size_t)(pkt_end - pkt))) <= 0;) {
 		if(res == MBEDTLS_ERR_SSL_WANT_WRITE)
 			continue;
 		if(res != MBEDTLS_ERR_NET_CONN_RESET)

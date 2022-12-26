@@ -17,11 +17,12 @@ static void vuprintf(const char *format, va_list vlist) {
 			printf("[%s] ", __builtin_strrchr("/"__BASE_FILE__, '/') + 1);
 		#endif
 		end = strchr(it, '\n');
-		if(end)
-			++end, carry = true;
+		carry = (end != NULL);
+		if(carry)
+			++end;
 		else
-			end = &buf[sizeof(buf) - 1], carry = false;
-		fwrite(it, 1, end - it, stdout);
+			end = &buf[sizeof(buf) - 1];
+		fwrite(it, 1, (size_t)(end - it), stdout);
 		if(carry)
 			fflush(stdout);
 	}

@@ -586,7 +586,7 @@ static const char *fill_expr(const char *expr, const char *data, const char *ctx
 static const char *FieldToken_get_count(const struct FieldToken *field, const char *structName) {
 	static char out[8192];
 	if(*field->count)
-		snprintf(out, sizeof(out), "check_overflow(%s, %u, \"%s.%s\")", fill_expr(field->count, "data->", "ctx."), field->maxCount, structName, field->name);
+		snprintf(out, sizeof(out), "check_overflow((uint32_t)(%s), %u, \"%s.%s\")", fill_expr(field->count, "data->", "ctx."), field->maxCount, structName, field->name);
 	else
 		snprintf(out, sizeof(out), "%u", field->maxCount);
 	return out;

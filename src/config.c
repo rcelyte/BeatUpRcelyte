@@ -18,7 +18,7 @@ static uint16_t GetCoreCount() {
 #define NEWLINE "\n"
 
 static uint16_t GetCoreCount() {
-	return get_nprocs();
+	return (uint16_t)get_nprocs();
 }
 #endif
 
@@ -70,19 +70,19 @@ static void config_read_url(const char **it, jsonkey_t key, char address_out[sta
 	}
 	long portNum;
 	if(uri_len > 8 && memcmp(uri, "https://", 8) == 0) {
-		*https_out = true, portNum = 443;
-		uri += 8, uri_len -= 8;
+		*https_out = true; portNum = 443;
+		uri += 8; uri_len -= 8;
 	} else if(uri_len > 7 && memcmp(uri, "http://", 7) == 0) {
-		*https_out = false, portNum = 80;
-		uri += 7, uri_len -= 7;
+		*https_out = false; portNum = 80;
+		uri += 7; uri_len -= 7;
 	} else {
 		json_error(it, "Error parsing config value \"%s\": URL must begin with `http://` or `https://`\n", JSON_KEY_TOSTRING(key));
 		return;
 	}
 	const char *path = memchr(uri, '/', uri_len);
 	const char *port_end = path ? path : &uri[uri_len];
-	const char *port = memchr(uri, ':', port_end - uri);
-	size_t address_len = (port ? port : port_end) - uri;
+	const char *port = memchr(uri, ':', (uint32_t)(port_end - uri));
+	uint32_t address_len = (uint32_t)((port ? port : port_end) - uri);
 	memcpy(address_out, uri, address_len);
 	address_out[address_len] = 0;
 	if(port) {
@@ -92,12 +92,12 @@ static void config_read_url(const char **it, jsonkey_t key, char address_out[sta
 			return;
 		}
 	}
-	*port_out = portNum;
-	size_t path_len = 0;
+	*port_out = (uint16_t)portNum;
+	uint32_t path_len = 0;
 	if(path++) {
-		path_len = &uri[uri_len] - path;
+		path_len = (uint32_t)(&uri[uri_len] - path);
 		memcpy(path_out, path, path_len);
-		if(path_len && path_out[path_len-1] != '/')
+		if(path_len && path_out[path_len - 1] != '/')
 			path_out[path_len++] = '/';
 	}
 	path_out[path_len] = 0;
@@ -115,8 +115,8 @@ static void config_read_hex(const char **it, jsonkey_t key, uint8_t key_out[stat
 		return;
 	}
 	*length_out = 32;
-	for(uint8_t *it = key_out; it < &key_out[32]; ++it, str += 2)
-		*it = table[str[0] & 127] << 4 | table[str[1] & 127];
+	for(uint8_t *key_it = key_out; key_it < &key_out[32]; ++key_it, str += 2)
+		*key_it = (uint8_t)(table[str[0] & 127] << 4 | table[str[1] & 127]);
 }
 
 static void config_read_string(const char **it, jsonkey_t key, char out[static CONFIG_STRING_LENGTH]) {
@@ -135,7 +135,7 @@ static void config_read_uint16(const char **it, jsonkey_t key, uint16_t minValue
 		json_error(it, "Error parsing config value \"%s\": integer out of range\n", JSON_KEY_TOSTRING(key));
 		return;
 	}
-	*out = value;
+	*out = (uint16_t)value;
 }
 
 bool config_load(struct Config *out, const char *path) {
@@ -194,7 +194,7 @@ bool config_load(struct Config *out, const char *path) {
 		goto fail;
 	}
 	fseek(f, 0, SEEK_END);
-	size_t flen = ftell(f);
+	size_t flen = (size_t)ftell(f);
 	fseek(f, 0, SEEK_SET);
 	if(flen >= sizeof(config_json)) {
 		uprintf("Failed to read %s: File too large\n", path);
@@ -211,9 +211,9 @@ bool config_load(struct Config *out, const char *path) {
 
 	const char *it = config_json;
 	JSON_ITER_OBJECT(&it) {
-		case JSON_KEY('w','i','r','e','K','e','y',0): config_read_hex(&it, key, out->wireKey, &out->wireKey_len); break; // TODO: multiple keys
+		case JSON_KEY('w','i','r','e','K','e','y'): config_read_hex(&it, key, out->wireKey, &out->wireKey_len); break; // TODO: multiple keys
 		case JSON_KEY('i','n','s','t','a','n','c','e'): enableInstance = true; JSON_ITER_OBJECT(&it) {
-			case JSON_KEY('a','d','d','r','e','s','s',0): {
+			case JSON_KEY('a','d','d','r','e','s','s'): {
 				if(*it != '[') {
 					config_read_string(&it, key, out->instanceAddress[0]);
 					break;
@@ -227,21 +227,21 @@ bool config_load(struct Config *out, const char *path) {
 				}
 				break;
 			}
-			case JSON_KEY('m','a','s','t','e','r',0,0): config_read_string(&it, key, out->instanceParent); break;
-			case JSON_KEY('m','a','p','P','o','o','l',0): config_read_string(&it, key, out->instanceMapPool); break;
-			case JSON_KEY('c','o','u','n','t',0,0,0): config_read_uint16(&it, key, 0, 8192, &out->instanceCount); break;
+			case JSON_KEY('m','a','s','t','e','r'): config_read_string(&it, key, out->instanceParent); break;
+			case JSON_KEY('m','a','p','P','o','o','l'): config_read_string(&it, key, out->instanceMapPool); break;
+			case JSON_KEY('c','o','u','n','t'): config_read_uint16(&it, key, 0, 8192, &out->instanceCount); break;
 			default: json_skip_any(&it);
 		} break;
-		case JSON_KEY('m','a','s','t','e','r',0,0): enableMaster = true; JSON_ITER_OBJECT(&it) {
-			case JSON_KEY('c','e','r','t',0,0,0,0): config_read_cert(&it, key, &out->masterCert); break;
-			case JSON_KEY('k','e','y',0,0,0,0,0): config_read_pk(&it, key, &ctr_drbg, &out->masterKey); break;
-			case JSON_KEY('p','o','r','t',0,0,0,0): config_read_uint16(&it, key, 1, 65535, &out->masterPort); break;
+		case JSON_KEY('m','a','s','t','e','r'): enableMaster = true; JSON_ITER_OBJECT(&it) {
+			case JSON_KEY('c','e','r','t'): config_read_cert(&it, key, &out->masterCert); break;
+			case JSON_KEY('k','e','y'): config_read_pk(&it, key, &ctr_drbg, &out->masterKey); break;
+			case JSON_KEY('p','o','r','t'): config_read_uint16(&it, key, 1, 65535, &out->masterPort); break;
 			default: json_skip_any(&it);
 		} break;
-		case JSON_KEY('s','t','a','t','u','s',0,0): enableStatus = true; JSON_ITER_OBJECT(&it) {
-			case JSON_KEY('u','r','l',0,0,0,0,0): config_read_url(&it, key, out->statusAddress, out->statusPath, &out->statusPort, &statusHTTPS); break;
-			case JSON_KEY('c','e','r','t',0,0,0,0): config_read_cert(&it, key, &out->statusCert); break;
-			case JSON_KEY('k','e','y',0,0,0,0,0): config_read_pk(&it, key, &ctr_drbg, &out->statusKey); break;
+		case JSON_KEY('s','t','a','t','u','s'): enableStatus = true; JSON_ITER_OBJECT(&it) {
+			case JSON_KEY('u','r','l'): config_read_url(&it, key, out->statusAddress, out->statusPath, &out->statusPort, &statusHTTPS); break;
+			case JSON_KEY('c','e','r','t'): config_read_cert(&it, key, &out->statusCert); break;
+			case JSON_KEY('k','e','y'): config_read_pk(&it, key, &ctr_drbg, &out->statusKey); break;
 			default: json_skip_any(&it);
 		} break;
 		default: json_skip_any(&it);
@@ -299,7 +299,7 @@ bool config_load(struct Config *out, const char *path) {
 				uprintf("mbedtls_x509write_crt_der() failed: %s\n", mbedtls_high_level_strerr(res));
 				goto fail;
 			}
-			res = mbedtls_x509_crt_parse_der(&out->masterCert, &cert[sizeof(cert) - res], res);
+			res = mbedtls_x509_crt_parse_der(&out->masterCert, &cert[sizeof(cert) - (uint32_t)res], (size_t)res);
 			if(res < 0) {
 				uprintf("mbedtls_x509_crt_parse_der() failed: %s\n", mbedtls_high_level_strerr(res));
 				goto fail;

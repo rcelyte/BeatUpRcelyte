@@ -1,10 +1,10 @@
 static void _pkt_ByteArrayNetSerializable_read(struct ByteArrayNetSerializable *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_vu32_read(&data->length, pkt, end, ctx);
-	_pkt_raw_read(data->data, pkt, end, ctx, check_overflow(data->length, 8192, "ByteArrayNetSerializable.data"));
+	_pkt_raw_read(data->data, pkt, end, ctx, check_overflow((uint32_t)(data->length), 8192, "ByteArrayNetSerializable.data"));
 }
 static void _pkt_ByteArrayNetSerializable_write(const struct ByteArrayNetSerializable *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_vu32_write(&data->length, pkt, end, ctx);
-	_pkt_raw_write(data->data, pkt, end, ctx, check_overflow(data->length, 8192, "ByteArrayNetSerializable.data"));
+	_pkt_raw_write(data->data, pkt, end, ctx, check_overflow((uint32_t)(data->length), 8192, "ByteArrayNetSerializable.data"));
 }
 static void _pkt_ConnectInfo_read(struct ConnectInfo *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_read(&data->protocolId, pkt, end, ctx);
@@ -17,13 +17,13 @@ static void _pkt_ConnectInfo_write(const struct ConnectInfo *restrict data, uint
 static void _pkt_PreviewDifficultyBeatmapSet_read(struct PreviewDifficultyBeatmapSet *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_String_read(&data->characteristic, pkt, end, ctx);
 	_pkt_u8_read(&data->difficulties_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->difficulties_len, 5, "PreviewDifficultyBeatmapSet.difficulties"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->difficulties_len), 5, "PreviewDifficultyBeatmapSet.difficulties"); i < count; ++i)
 		_pkt_vu32_read(&data->difficulties[i], pkt, end, ctx);
 }
 static void _pkt_PreviewDifficultyBeatmapSet_write(const struct PreviewDifficultyBeatmapSet *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_String_write(&data->characteristic, pkt, end, ctx);
 	_pkt_u8_write(&data->difficulties_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->difficulties_len, 5, "PreviewDifficultyBeatmapSet.difficulties"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->difficulties_len), 5, "PreviewDifficultyBeatmapSet.difficulties"); i < count; ++i)
 		_pkt_vu32_write(&data->difficulties[i], pkt, end, ctx);
 }
 static void _pkt_PreviewBeatmapLevel_read(struct PreviewBeatmapLevel *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -42,7 +42,7 @@ static void _pkt_PreviewBeatmapLevel_read(struct PreviewBeatmapLevel *restrict d
 	_pkt_String_read(&data->environmentInfo, pkt, end, ctx);
 	_pkt_String_read(&data->allDirectionsEnvironmentInfo, pkt, end, ctx);
 	_pkt_u8_read(&data->beatmapSets_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->beatmapSets_len, 8, "PreviewBeatmapLevel.beatmapSets"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->beatmapSets_len), 8, "PreviewBeatmapLevel.beatmapSets"); i < count; ++i)
 		_pkt_PreviewDifficultyBeatmapSet_read(&data->beatmapSets[i], pkt, end, ctx);
 	_pkt_ByteArrayNetSerializable_read(&data->cover, pkt, end, ctx);
 }
@@ -62,40 +62,40 @@ static void _pkt_PreviewBeatmapLevel_write(const struct PreviewBeatmapLevel *res
 	_pkt_String_write(&data->environmentInfo, pkt, end, ctx);
 	_pkt_String_write(&data->allDirectionsEnvironmentInfo, pkt, end, ctx);
 	_pkt_u8_write(&data->beatmapSets_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->beatmapSets_len, 8, "PreviewBeatmapLevel.beatmapSets"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->beatmapSets_len), 8, "PreviewBeatmapLevel.beatmapSets"); i < count; ++i)
 		_pkt_PreviewDifficultyBeatmapSet_write(&data->beatmapSets[i], pkt, end, ctx);
 	_pkt_ByteArrayNetSerializable_write(&data->cover, pkt, end, ctx);
 }
 static void _pkt_CustomLabelSet_read(struct CustomLabelSet *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u8_read(&data->difficulties_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->difficulties_len, 5, "CustomLabelSet.difficulties"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->difficulties_len), 5, "CustomLabelSet.difficulties"); i < count; ++i)
 		_pkt_LongString_read(&data->difficulties[i], pkt, end, ctx);
 }
 static void _pkt_CustomLabelSet_write(const struct CustomLabelSet *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u8_write(&data->difficulties_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->difficulties_len, 5, "CustomLabelSet.difficulties"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->difficulties_len), 5, "CustomLabelSet.difficulties"); i < count; ++i)
 		_pkt_LongString_write(&data->difficulties[i], pkt, end, ctx);
 }
 static void _pkt_RecommendPreview_read(struct RecommendPreview *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_PreviewBeatmapLevel_read(&data->base, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->base.beatmapSets_len, 8, "RecommendPreview.labelSets"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->base.beatmapSets_len), 8, "RecommendPreview.labelSets"); i < count; ++i)
 		_pkt_CustomLabelSet_read(&data->labelSets[i], pkt, end, ctx);
 	_pkt_vu32_read(&data->requirements_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->requirements_len, 16, "RecommendPreview.requirements"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->requirements_len), 16, "RecommendPreview.requirements"); i < count; ++i)
 		_pkt_String_read(&data->requirements[i], pkt, end, ctx);
 	_pkt_vu32_read(&data->suggestions_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->suggestions_len, 16, "RecommendPreview.suggestions"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->suggestions_len), 16, "RecommendPreview.suggestions"); i < count; ++i)
 		_pkt_String_read(&data->suggestions[i], pkt, end, ctx);
 }
 static void _pkt_RecommendPreview_write(const struct RecommendPreview *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_PreviewBeatmapLevel_write(&data->base, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->base.beatmapSets_len, 8, "RecommendPreview.labelSets"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->base.beatmapSets_len), 8, "RecommendPreview.labelSets"); i < count; ++i)
 		_pkt_CustomLabelSet_write(&data->labelSets[i], pkt, end, ctx);
 	_pkt_vu32_write(&data->requirements_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->requirements_len, 16, "RecommendPreview.requirements"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->requirements_len), 16, "RecommendPreview.requirements"); i < count; ++i)
 		_pkt_String_write(&data->requirements[i], pkt, end, ctx);
 	_pkt_vu32_write(&data->suggestions_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->suggestions_len, 16, "RecommendPreview.suggestions"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->suggestions_len), 16, "RecommendPreview.suggestions"); i < count; ++i)
 		_pkt_String_write(&data->suggestions[i], pkt, end, ctx);
 }
 static void _pkt_ShareMeta_read(struct ShareMeta *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -240,28 +240,22 @@ static void _pkt_RemoteProcedureCall_read(struct RemoteProcedureCall *restrict d
 static void _pkt_RemoteProcedureCall_write(const struct RemoteProcedureCall *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_f32_write(&data->syncTime, pkt, end, ctx);
 }
-static void _pkt_PlayersMissingEntitlementsNetSerializable_read(struct PlayersMissingEntitlementsNetSerializable *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_i32_read(&data->count, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->count, 254, "PlayersMissingEntitlementsNetSerializable.playersWithoutEntitlements"); i < count; ++i)
-		_pkt_String_read(&data->playersWithoutEntitlements[i], pkt, end, ctx);
-}
-static void _pkt_PlayersMissingEntitlementsNetSerializable_write(const struct PlayersMissingEntitlementsNetSerializable *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_i32_write(&data->count, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->count, 254, "PlayersMissingEntitlementsNetSerializable.playersWithoutEntitlements"); i < count; ++i)
-		_pkt_String_write(&data->playersWithoutEntitlements[i], pkt, end, ctx);
-}
 static void _pkt_SetPlayersMissingEntitlementsToLevel_read(struct SetPlayersMissingEntitlementsToLevel *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_RemoteProcedureCall_read(&data->base, pkt, end, ctx);
 	_pkt_RemoteProcedureCallFlags_read(&data->flags, pkt, end, ctx);
 	if(data->flags.hasValue0) {
-		_pkt_PlayersMissingEntitlementsNetSerializable_read(&data->playersMissingEntitlements, pkt, end, ctx);
+		_pkt_i32_read(&data->count, pkt, end, ctx);
+		for(uint32_t i = 0, count = check_overflow((uint32_t)(data->count), 254, "SetPlayersMissingEntitlementsToLevel.players"); i < count; ++i)
+			_pkt_String_read(&data->players[i], pkt, end, ctx);
 	}
 }
 static void _pkt_SetPlayersMissingEntitlementsToLevel_write(const struct SetPlayersMissingEntitlementsToLevel *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_RemoteProcedureCall_write(&data->base, pkt, end, ctx);
 	_pkt_RemoteProcedureCallFlags_write(&data->flags, pkt, end, ctx);
 	if(data->flags.hasValue0) {
-		_pkt_PlayersMissingEntitlementsNetSerializable_write(&data->playersMissingEntitlements, pkt, end, ctx);
+		_pkt_i32_write(&data->count, pkt, end, ctx);
+		for(uint32_t i = 0, count = check_overflow((uint32_t)(data->count), 254, "SetPlayersMissingEntitlementsToLevel.players"); i < count; ++i)
+			_pkt_String_write(&data->players[i], pkt, end, ctx);
 	}
 }
 static void _pkt_GetIsEntitledToLevel_read(struct GetIsEntitledToLevel *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -320,12 +314,12 @@ static void _pkt_SelectLevelPack_write(const struct SelectLevelPack *restrict da
 }
 static void _pkt_BeatmapIdentifierNetSerializable_read(struct BeatmapIdentifierNetSerializable *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_LongString_read(&data->levelID, pkt, end, ctx);
-	_pkt_String_read(&data->beatmapCharacteristicSerializedName, pkt, end, ctx);
+	_pkt_String_read(&data->characteristic, pkt, end, ctx);
 	_pkt_vu32_read(&data->difficulty, pkt, end, ctx);
 }
 static void _pkt_BeatmapIdentifierNetSerializable_write(const struct BeatmapIdentifierNetSerializable *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_LongString_write(&data->levelID, pkt, end, ctx);
-	_pkt_String_write(&data->beatmapCharacteristicSerializedName, pkt, end, ctx);
+	_pkt_String_write(&data->characteristic, pkt, end, ctx);
 	_pkt_vu32_write(&data->difficulty, pkt, end, ctx);
 }
 static void _pkt_SetSelectedBeatmap_read(struct SetSelectedBeatmap *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -642,30 +636,30 @@ static void _pkt_PlayerLobbyPermissionConfigurationNetSerializable_read(struct P
 	_pkt_String_read(&data->userId, pkt, end, ctx);
 	uint8_t bitfield0;
 	_pkt_u8_read(&bitfield0, pkt, end, ctx);
-	data->isServerOwner = bitfield0 >> 0 & 1;
-	data->hasRecommendBeatmapsPermission = bitfield0 >> 1 & 1;
-	data->hasRecommendGameplayModifiersPermission = bitfield0 >> 2 & 1;
-	data->hasKickVotePermission = bitfield0 >> 3 & 1;
-	data->hasInvitePermission = bitfield0 >> 4 & 1;
+	data->serverOwner = bitfield0 >> 0 & 1;
+	data->recommendBeatmaps = bitfield0 >> 1 & 1;
+	data->recommendModifiers = bitfield0 >> 2 & 1;
+	data->kickVote = bitfield0 >> 3 & 1;
+	data->invite = bitfield0 >> 4 & 1;
 }
 static void _pkt_PlayerLobbyPermissionConfigurationNetSerializable_write(const struct PlayerLobbyPermissionConfigurationNetSerializable *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_String_write(&data->userId, pkt, end, ctx);
 	uint8_t bitfield0 = 0;
-	bitfield0 |= (data->isServerOwner & 1u) << 0;
-	bitfield0 |= (data->hasRecommendBeatmapsPermission & 1u) << 1;
-	bitfield0 |= (data->hasRecommendGameplayModifiersPermission & 1u) << 2;
-	bitfield0 |= (data->hasKickVotePermission & 1u) << 3;
-	bitfield0 |= (data->hasInvitePermission & 1u) << 4;
+	bitfield0 |= (data->serverOwner & 1u) << 0;
+	bitfield0 |= (data->recommendBeatmaps & 1u) << 1;
+	bitfield0 |= (data->recommendModifiers & 1u) << 2;
+	bitfield0 |= (data->kickVote & 1u) << 3;
+	bitfield0 |= (data->invite & 1u) << 4;
 	_pkt_u8_write(&bitfield0, pkt, end, ctx);
 }
 static void _pkt_PlayersLobbyPermissionConfigurationNetSerializable_read(struct PlayersLobbyPermissionConfigurationNetSerializable *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_i32_read(&data->count, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->count, 254, "PlayersLobbyPermissionConfigurationNetSerializable.playersPermission"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->count), 254, "PlayersLobbyPermissionConfigurationNetSerializable.playersPermission"); i < count; ++i)
 		_pkt_PlayerLobbyPermissionConfigurationNetSerializable_read(&data->playersPermission[i], pkt, end, ctx);
 }
 static void _pkt_PlayersLobbyPermissionConfigurationNetSerializable_write(const struct PlayersLobbyPermissionConfigurationNetSerializable *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_i32_write(&data->count, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->count, 254, "PlayersLobbyPermissionConfigurationNetSerializable.playersPermission"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->count), 254, "PlayersLobbyPermissionConfigurationNetSerializable.playersPermission"); i < count; ++i)
 		_pkt_PlayerLobbyPermissionConfigurationNetSerializable_write(&data->playersPermission[i], pkt, end, ctx);
 }
 static void _pkt_SetPermissionConfiguration_read(struct SetPermissionConfiguration *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -854,12 +848,12 @@ static void _pkt_PlayerSpecificSettingsNetSerializable_write(const struct Player
 }
 static void _pkt_PlayerSpecificSettingsAtStartNetSerializable_read(struct PlayerSpecificSettingsAtStartNetSerializable *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_i32_read(&data->count, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->count, 254, "PlayerSpecificSettingsAtStartNetSerializable.activePlayerSpecificSettingsAtGameStart"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->count), 254, "PlayerSpecificSettingsAtStartNetSerializable.activePlayerSpecificSettingsAtGameStart"); i < count; ++i)
 		_pkt_PlayerSpecificSettingsNetSerializable_read(&data->activePlayerSpecificSettingsAtGameStart[i], pkt, end, ctx);
 }
 static void _pkt_PlayerSpecificSettingsAtStartNetSerializable_write(const struct PlayerSpecificSettingsAtStartNetSerializable *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_i32_write(&data->count, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->count, 254, "PlayerSpecificSettingsAtStartNetSerializable.activePlayerSpecificSettingsAtGameStart"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->count), 254, "PlayerSpecificSettingsAtStartNetSerializable.activePlayerSpecificSettingsAtGameStart"); i < count; ++i)
 		_pkt_PlayerSpecificSettingsNetSerializable_write(&data->activePlayerSpecificSettingsAtGameStart[i], pkt, end, ctx);
 }
 static void _pkt_SetGameplaySceneSyncFinish_read(struct SetGameplaySceneSyncFinish *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -1573,13 +1567,13 @@ static void _pkt_ScoreSyncStateDelta_write(const struct ScoreSyncStateDelta *res
 static void _pkt_MpRequirementSet_read(struct MpRequirementSet *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u8_read(&data->difficulty, pkt, end, ctx);
 	_pkt_u8_read(&data->requirements_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->requirements_len, 16, "MpRequirementSet.requirements"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->requirements_len), 16, "MpRequirementSet.requirements"); i < count; ++i)
 		_pkt_String_read(&data->requirements[i], pkt, end, ctx);
 }
 static void _pkt_MpRequirementSet_write(const struct MpRequirementSet *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u8_write(&data->difficulty, pkt, end, ctx);
 	_pkt_u8_write(&data->requirements_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->requirements_len, 16, "MpRequirementSet.requirements"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->requirements_len), 16, "MpRequirementSet.requirements"); i < count; ++i)
 		_pkt_String_write(&data->requirements[i], pkt, end, ctx);
 }
 static void _pkt_MpMapColor_read(struct MpMapColor *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -1659,13 +1653,13 @@ void _pkt_MpBeatmapPacket_read(struct MpBeatmapPacket *restrict data, const uint
 	_pkt_String_read(&data->characteristic, pkt, end, ctx);
 	_pkt_u32_read(&data->difficulty, pkt, end, ctx);
 	_pkt_u8_read(&data->requirementSets_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->requirementSets_len, 5, "MpBeatmapPacket.requirementSets"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->requirementSets_len), 5, "MpBeatmapPacket.requirementSets"); i < count; ++i)
 		_pkt_MpRequirementSet_read(&data->requirementSets[i], pkt, end, ctx);
 	_pkt_u8_read(&data->contributors_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->contributors_len*3, 24, "MpBeatmapPacket.contributors"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->contributors_len*3), 24, "MpBeatmapPacket.contributors"); i < count; ++i)
 		_pkt_String_read(&data->contributors[i], pkt, end, ctx);
 	_pkt_u8_read(&data->mapColors_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->mapColors_len, 5, "MpBeatmapPacket.mapColors"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->mapColors_len), 5, "MpBeatmapPacket.mapColors"); i < count; ++i)
 		_pkt_MpMapColor_read(&data->mapColors[i], pkt, end, ctx);
 }
 static void _pkt_MpBeatmapPacket_write(const struct MpBeatmapPacket *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -1679,13 +1673,13 @@ static void _pkt_MpBeatmapPacket_write(const struct MpBeatmapPacket *restrict da
 	_pkt_String_write(&data->characteristic, pkt, end, ctx);
 	_pkt_u32_write(&data->difficulty, pkt, end, ctx);
 	_pkt_u8_write(&data->requirementSets_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->requirementSets_len, 5, "MpBeatmapPacket.requirementSets"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->requirementSets_len), 5, "MpBeatmapPacket.requirementSets"); i < count; ++i)
 		_pkt_MpRequirementSet_write(&data->requirementSets[i], pkt, end, ctx);
 	_pkt_u8_write(&data->contributors_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->contributors_len*3, 24, "MpBeatmapPacket.contributors"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->contributors_len*3), 24, "MpBeatmapPacket.contributors"); i < count; ++i)
 		_pkt_String_write(&data->contributors[i], pkt, end, ctx);
 	_pkt_u8_write(&data->mapColors_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->mapColors_len, 5, "MpBeatmapPacket.mapColors"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->mapColors_len), 5, "MpBeatmapPacket.mapColors"); i < count; ++i)
 		_pkt_MpMapColor_write(&data->mapColors[i], pkt, end, ctx);
 }
 static void _pkt_MpPlayerData_read(struct MpPlayerData *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -2110,7 +2104,7 @@ static void _pkt_MultipartMessage_read(struct MultipartMessage *restrict data, c
 	_pkt_vu32_read(&data->offset, pkt, end, ctx);
 	_pkt_vu32_read(&data->length, pkt, end, ctx);
 	_pkt_vu32_read(&data->totalLength, pkt, end, ctx);
-	_pkt_raw_read(data->data, pkt, end, ctx, check_overflow(data->length, 384, "MultipartMessage.data"));
+	_pkt_raw_read(data->data, pkt, end, ctx, check_overflow((uint32_t)(data->length), 384, "MultipartMessage.data"));
 }
 static void _pkt_MultipartMessage_write(const struct MultipartMessage *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_BaseMasterServerReliableRequest_write(&data->base, pkt, end, ctx);
@@ -2118,7 +2112,7 @@ static void _pkt_MultipartMessage_write(const struct MultipartMessage *restrict 
 	_pkt_vu32_write(&data->offset, pkt, end, ctx);
 	_pkt_vu32_write(&data->length, pkt, end, ctx);
 	_pkt_vu32_write(&data->totalLength, pkt, end, ctx);
-	_pkt_raw_write(data->data, pkt, end, ctx, check_overflow(data->length, 384, "MultipartMessage.data"));
+	_pkt_raw_write(data->data, pkt, end, ctx, check_overflow((uint32_t)(data->length), 384, "MultipartMessage.data"));
 }
 void _pkt_MultipartMessageProxy_write(const struct MultipartMessageProxy *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u8_write(&data->type, pkt, end, ctx);
@@ -2159,7 +2153,7 @@ static void _pkt_GetPublicServersResponse_read(struct GetPublicServersResponse *
 	_pkt_u8_read(&data->result, pkt, end, ctx);
 	if(data->result == GetPublicServersResponse_Result_Success) {
 		_pkt_vu32_read(&data->publicServerCount, pkt, end, ctx);
-		for(uint32_t i = 0, count = check_overflow(data->publicServerCount, 20, "GetPublicServersResponse.publicServers"); i < count; ++i)
+		for(uint32_t i = 0, count = check_overflow((uint32_t)(data->publicServerCount), 20, "GetPublicServersResponse.publicServers"); i < count; ++i)
 			_pkt_PublicServerInfo_read(&data->publicServers[i], pkt, end, ctx);
 	}
 }
@@ -2168,7 +2162,7 @@ static void _pkt_GetPublicServersResponse_write(const struct GetPublicServersRes
 	_pkt_u8_write(&data->result, pkt, end, ctx);
 	if(data->result == GetPublicServersResponse_Result_Success) {
 		_pkt_vu32_write(&data->publicServerCount, pkt, end, ctx);
-		for(uint32_t i = 0, count = check_overflow(data->publicServerCount, 20, "GetPublicServersResponse.publicServers"); i < count; ++i)
+		for(uint32_t i = 0, count = check_overflow((uint32_t)(data->publicServerCount), 20, "GetPublicServersResponse.publicServers"); i < count; ++i)
 			_pkt_PublicServerInfo_write(&data->publicServers[i], pkt, end, ctx);
 	}
 }
@@ -2245,13 +2239,13 @@ static void _pkt_ServerHelloRequest_write(const struct ServerHelloRequest *restr
 static void _pkt_ServerCertificateRequest_read(struct ServerCertificateRequest *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_BaseMasterServerReliableResponse_read(&data->base, pkt, end, ctx);
 	_pkt_vu32_read(&data->certificateCount, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->certificateCount, 10, "ServerCertificateRequest.certificateList"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->certificateCount), 10, "ServerCertificateRequest.certificateList"); i < count; ++i)
 		_pkt_ByteArrayNetSerializable_read(&data->certificateList[i], pkt, end, ctx);
 }
 static void _pkt_ServerCertificateRequest_write(const struct ServerCertificateRequest *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_BaseMasterServerReliableResponse_write(&data->base, pkt, end, ctx);
 	_pkt_vu32_write(&data->certificateCount, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->certificateCount, 10, "ServerCertificateRequest.certificateList"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->certificateCount), 10, "ServerCertificateRequest.certificateList"); i < count; ++i)
 		_pkt_ByteArrayNetSerializable_write(&data->certificateList[i], pkt, end, ctx);
 }
 static void _pkt_ClientKeyExchangeRequest_read(struct ClientKeyExchangeRequest *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -2330,7 +2324,7 @@ static void _pkt_Ack_read(struct Ack *restrict data, const uint8_t **pkt, const 
 	_pkt_u16_read(&data->sequence, pkt, end, ctx);
 	_pkt_u8_read(&data->channelId, pkt, end, ctx);
 	if(data->channelId % 2 == 0) {
-		_pkt_raw_read(data->data, pkt, end, ctx, check_overflow(ctx.windowSize / 8, 16, "Ack.data"));
+		_pkt_raw_read(data->data, pkt, end, ctx, check_overflow((uint32_t)(ctx.windowSize / 8), 16, "Ack.data"));
 		_pkt_u8_read(&data->_pad0, pkt, end, ctx);
 	}
 }
@@ -2338,7 +2332,7 @@ static void _pkt_Ack_write(const struct Ack *restrict data, uint8_t **pkt, const
 	_pkt_u16_write(&data->sequence, pkt, end, ctx);
 	_pkt_u8_write(&data->channelId, pkt, end, ctx);
 	if(data->channelId % 2 == 0) {
-		_pkt_raw_write(data->data, pkt, end, ctx, check_overflow(ctx.windowSize / 8, 16, "Ack.data"));
+		_pkt_raw_write(data->data, pkt, end, ctx, check_overflow((uint32_t)(ctx.windowSize / 8), 16, "Ack.data"));
 		_pkt_u8_write(&data->_pad0, pkt, end, ctx);
 	}
 }
@@ -2359,11 +2353,11 @@ static void _pkt_Pong_write(const struct Pong *restrict data, uint8_t **pkt, con
 static void _pkt_ConnectRequest_read(struct ConnectRequest *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_read(&data->protocolId, pkt, end, ctx);
 	_pkt_u64_read(&data->connectTime, pkt, end, ctx);
-	if((ctx.netVersion = data->protocolId) >= 12) {
+	if((ctx.netVersion = (uint8_t)data->protocolId) >= 12) {
 		_pkt_i32_read(&data->peerId, pkt, end, ctx);
 	}
 	_pkt_u8_read(&data->addrlen, pkt, end, ctx);
-	_pkt_raw_read(data->address, pkt, end, ctx, check_overflow(data->addrlen, 38, "ConnectRequest.address"));
+	_pkt_raw_read(data->address, pkt, end, ctx, check_overflow((uint32_t)(data->addrlen), 38, "ConnectRequest.address"));
 	_pkt_String_read(&data->secret, pkt, end, ctx);
 	_pkt_String_read(&data->userId, pkt, end, ctx);
 	_pkt_String_read(&data->userName, pkt, end, ctx);
@@ -2372,11 +2366,11 @@ static void _pkt_ConnectRequest_read(struct ConnectRequest *restrict data, const
 static void _pkt_ConnectRequest_write(const struct ConnectRequest *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_write(&data->protocolId, pkt, end, ctx);
 	_pkt_u64_write(&data->connectTime, pkt, end, ctx);
-	if((ctx.netVersion = data->protocolId) >= 12) {
+	if((ctx.netVersion = (uint8_t)data->protocolId) >= 12) {
 		_pkt_i32_write(&data->peerId, pkt, end, ctx);
 	}
 	_pkt_u8_write(&data->addrlen, pkt, end, ctx);
-	_pkt_raw_write(data->address, pkt, end, ctx, check_overflow(data->addrlen, 38, "ConnectRequest.address"));
+	_pkt_raw_write(data->address, pkt, end, ctx, check_overflow((uint32_t)(data->addrlen), 38, "ConnectRequest.address"));
 	_pkt_String_write(&data->secret, pkt, end, ctx);
 	_pkt_String_write(&data->userId, pkt, end, ctx);
 	_pkt_String_write(&data->userName, pkt, end, ctx);
@@ -2420,12 +2414,12 @@ void _pkt_UnconnectedMessage_write(const struct UnconnectedMessage *restrict dat
 }
 static void _pkt_Mtu_read(struct Mtu *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_read(&data->newMtu0, pkt, end, ctx);
-	_pkt_raw_read(data->pad, pkt, end, ctx, check_overflow(data->newMtu0 - 9, 1423, "Mtu.pad"));
+	_pkt_raw_read(data->pad, pkt, end, ctx, check_overflow((uint32_t)(data->newMtu0 - 9), 1423, "Mtu.pad"));
 	_pkt_u32_read(&data->newMtu1, pkt, end, ctx);
 }
 static void _pkt_Mtu_write(const struct Mtu *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_write(&data->newMtu0, pkt, end, ctx);
-	_pkt_raw_write(data->pad, pkt, end, ctx, check_overflow(data->newMtu0 - 9, 1423, "Mtu.pad"));
+	_pkt_raw_write(data->pad, pkt, end, ctx, check_overflow((uint32_t)(data->newMtu0 - 9), 1423, "Mtu.pad"));
 	_pkt_u32_write(&data->newMtu1, pkt, end, ctx);
 }
 static void _pkt_MtuCheck_read(struct MtuCheck *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -2517,11 +2511,11 @@ void _pkt_PacketEncryptionLayer_write(const struct PacketEncryptionLayer *restri
 }
 static void _pkt_WireAddress_read(struct WireAddress *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_vu32_read(&data->length, pkt, end, ctx);
-	_pkt_raw_read(data->data, pkt, end, ctx, check_overflow(data->length, 128, "WireAddress.data"));
+	_pkt_raw_read(data->data, pkt, end, ctx, check_overflow((uint32_t)(data->length), 128, "WireAddress.data"));
 }
 static void _pkt_WireAddress_write(const struct WireAddress *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_vu32_write(&data->length, pkt, end, ctx);
-	_pkt_raw_write(data->data, pkt, end, ctx, check_overflow(data->length, 128, "WireAddress.data"));
+	_pkt_raw_write(data->data, pkt, end, ctx, check_overflow((uint32_t)(data->length), 128, "WireAddress.data"));
 }
 static void _pkt_WireSetAttribs_read(struct WireSetAttribs *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_read(&data->capacity, pkt, end, ctx);

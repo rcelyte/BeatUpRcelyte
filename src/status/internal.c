@@ -2,7 +2,12 @@
 #include "status.h"
 #include <string.h>
 #include <inttypes.h>
-#define READ_SYM(dest, sym) (memcpy(dest, sym, sym##_end - sym), (sym##_end - sym))
+
+#define READ_SYM(dest, sym) _read_sym(dest, sym, (uint32_t)(sym##_end - sym))
+static inline uint32_t _read_sym(char *restrict dest, const uint8_t *restrict sym, uint32_t length) {
+	memcpy(dest, sym, length);
+	return length;
+}
 
 static const uint64_t TEST_maintenanceStartTime = 0;
 static const uint64_t TEST_maintenanceEndTime = 0;
@@ -24,7 +29,8 @@ static struct LevelList list[16384];
 static uint16_t count = 0, alloc[16384];
 
 void status_internal_init() {
-	for(uint32_t i = 0; i < lengthof(alloc); ++i) {
+	_Static_assert(lengthof(alloc) < UINT16_MAX, "array too large");
+	for(uint16_t i = 0; i < lengthof(alloc); ++i) {
 		list[i].code = ServerCode_NONE;
 		alloc[i] = i;
 	}
@@ -46,7 +52,7 @@ void status_entry_set_playerCount(StatusHandle index, uint8_t count) {
 }
 
 void status_entry_set_level(StatusHandle index, const char *name, float nps) {
-	list[index].levelNPms = nps * 1000;
+	list[index].levelNPms = (uint16_t)(nps * 1000);
 	snprintf(list[index].levelName, sizeof(list->levelName), "%s", name);
 }
 
@@ -56,7 +62,7 @@ void status_entry_free(StatusHandle index) {
 }
 
 static uint32_t status_head(char *buf, const char *code, const char *mime, size_t len) {
-	return sprintf(buf,
+	return (uint32_t)sprintf(buf,
 		"HTTP/1.1 %s\r\n"
 		"Connection: close\r\n"
 		"Content-Length: %zd\r\n"
@@ -74,7 +80,7 @@ static uint32_t status_bin(char *buf, const char *code, const char *mime, const 
 }
 #define status_text(buf, code, mime, resp) status_bin(buf, code, mime, (const uint8_t*)resp, sizeof(resp)-sizeof(char))
 
-static size_t escape(uint8_t *out, size_t limit, const uint8_t *in, size_t in_len) {
+static uint32_t escape(uint8_t *out, size_t limit, const uint8_t *in, size_t in_len) {
 	uint8_t *start = out;
 	if(in_len)
 		*out++ = ((*in & 192) == 128) ? *in & 127 : *in; // prevents buffer underrun in handling maliciously crafted strings
@@ -95,7 +101,7 @@ static size_t escape(uint8_t *out, size_t limit, const uint8_t *in, size_t in_le
 			default: *out++ = in[i];
 		}
 	}
-	return out - start;
+	return (uint32_t)(out - start);
 }
 
 static uint32_t status_web(char *buf, ServerCode code) {
@@ -114,7 +120,7 @@ static uint32_t status_web(char *buf, ServerCode code) {
 				sprintf(plim, "%u", list[i].playerCap);
 			ServerCodeToString(scode, list[i].code);
 			uint32_t level_len = escape((uint8_t*)level, sizeof(level), (const uint8_t*)list[i].levelName, strlen(list[i].levelName));
-			len += sprintf(&page[len],
+			len += (uint32_t)sprintf(&page[len],
 				"<tr>"
 					"<th><a href=\"%s\"><code>%s</code></a></th>"
 					"<td><a href=\"%s\"><div class=\"ln\"%s><span>%.*s</span><br><div>|%.*s||%.*s|</div></div></a></td>"
@@ -127,7 +133,7 @@ static uint32_t status_web(char *buf, ServerCode code) {
 				scode, (list[i].code == StringToServerCode("INDEX", 5)) ? " style=\"color:#ff0;font-weight:bold\"" : "", level_len, level, level_len, level, level_len, level,
 				scode, list[i].playerCount, plim,
 				scode,
-				scode, list[i].playerNPms / 1000.f, list[i].levelNPms / 1000.f,
+				scode, list[i].playerNPms / 1000., list[i].levelNPms / 1000.,
 				scode);
 		}
 	} else {
@@ -178,7 +184,7 @@ static UserAgent identify(const char *buf, const char *end) {
 
 static uint32_t status_status(char *buf, bool isGame) {
 	char msg[65536], *msg_end = msg;
-	#define PUT(...) (msg_end += snprintf(msg_end, (msg_end >= endof(msg)) ? 0 : endof(msg) - msg_end, __VA_ARGS__))
+	#define PUT(...) (msg_end += (uint32_t)snprintf(msg_end, (msg_end >= endof(msg)) ? 0 : (uint32_t)(endof(msg) - msg_end), __VA_ARGS__))
 	PUT("{\"minimumAppVersion\":\"1.19.0%s\"", isGame ? "b2147483647" : "");
 	PUT(",\"status\":%u", TEST_maintenanceStartTime != 0);
 	if(TEST_maintenanceStartTime) {
@@ -199,7 +205,7 @@ static uint32_t status_status(char *buf, bool isGame) {
 	"]}");
 	if(msg_end >= endof(msg))
 		return status_text(buf, "500 Internal Server Error", "text/plain", "");
-	return status_bin(buf, "200 OK", "application/json", (const uint8_t*)msg, msg_end - msg);
+	return status_bin(buf, "200 OK", "application/json", (const uint8_t*)msg, (uint32_t)(msg_end - msg));
 }
 
 uint32_t status_resp(const char *source, const char *path, char *buf, uint32_t buf_len) {
@@ -208,7 +214,7 @@ uint32_t status_resp(const char *source, const char *path, char *buf, uint32_t b
 		return status_text(buf, "404 Not Found", "text/plain", "");
 	req += 5;
 	UserAgent userAgent = identify(req, req_end);
-	const char *reqPath_end = (char*)memchr(req, ' ', req_end - req);
+	const char *reqPath_end = (char*)memchr(req, ' ', (uint32_t)(req_end - req));
 	uprintf("(%s,%s): /%.*s\n", source, UserAgent_ToString[userAgent], (int32_t)(reqPath_end - req), req);
 	if(startsWith(req, req_end, "robots.txt "))
 		return status_text(buf, "200 OK", "text/plain", "User-agent: *\nDisallow: /\n");

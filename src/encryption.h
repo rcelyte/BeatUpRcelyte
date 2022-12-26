@@ -1,7 +1,6 @@
-#include <mbedtls/aes.h>
+#include "../common/packets.h"
 #include <mbedtls/bignum.h>
 #include <mbedtls/ctr_drbg.h>
-#include <mbedtls/md.h>
 
 struct EncryptionState {
 	mbedtls_aes_context aes;
@@ -16,7 +15,7 @@ struct EncryptionState {
 };
 
 struct Cookie32;
-bool EncryptionState_init(struct EncryptionState *state, const mbedtls_mpi *preMasterSecret, const struct Cookie32 *serverRandom, const struct Cookie32 *clientRandom, bool isClient);
+bool EncryptionState_init(struct EncryptionState *state, const mbedtls_mpi *secret, const struct Cookie32 random[static 2], bool client);
 void EncryptionState_free(struct EncryptionState *state);
 uint32_t EncryptionState_decrypt(struct EncryptionState *state, const uint8_t raw[static 1536], const uint8_t *raw_end, uint8_t out[restrict static 1536]);
 uint32_t EncryptionState_encrypt(struct EncryptionState *state, mbedtls_ctr_drbg_context *ctr_drbg, const uint8_t *restrict buf, uint32_t buf_len, uint8_t out[static 1536]);

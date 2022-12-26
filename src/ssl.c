@@ -22,15 +22,15 @@ static inline int ssl_error(int intr) {
 }
 
 int ssl_send(void *fd, const unsigned char *buf, size_t len) {
-	ssize_t ret = send((intptr_t)fd, (char*)buf, len, 0);
+	ssize_t ret = send((int)(intptr_t)fd, (const char*)buf, len, 0);
 	if(ret >= 0)
-		return ret;
+		return (int)ret;
 	return ssl_error(MBEDTLS_ERR_SSL_WANT_WRITE);
 }
 
 int ssl_recv(void *fd, unsigned char *buf, size_t len) {
-	ssize_t ret = recv((intptr_t)fd, (char*)buf, len, 0);
+	ssize_t ret = recv((int)(intptr_t)fd, (char*)buf, len, 0);
 	if(ret >= 0)
-		return ret;
+		return (int)ret;
 	return ssl_error(MBEDTLS_ERR_SSL_WANT_READ);
 }

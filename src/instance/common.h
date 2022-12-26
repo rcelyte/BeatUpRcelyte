@@ -1,6 +1,8 @@
 #include "../global.h"
 #include "../net.h"
+#ifndef PACKETS_H
 #include "../packets.h"
+#endif
 
 #define LOAD_TIMEOUT 15
 #define IDLE_TIMEOUT_MS 10000
@@ -141,16 +143,16 @@ struct PingPong {
 	struct Pong pong;
 };
 
-typedef void (*ChanneledHandler)(void *ctx, void *room, void *session, const uint8_t **data, const uint8_t *end, DeliveryMethod channelId);
+typedef void (*ChanneledHandler)(void *userptr, const uint8_t **data, const uint8_t *end, DeliveryMethod channelId);
 
 void instance_pingpong_init(struct PingPong *pingpong);
 void instance_channels_init(struct Channels *channels);
 void instance_channels_free(struct Channels *channels);
 void instance_send_channeled(struct NetSession *session, struct Channels *channels, const uint8_t *buf, uint32_t len, DeliveryMethod method);
 void handle_Ack(struct NetSession *session, struct Channels *channels, const struct Ack *ack);
-void handle_Channeled(ChanneledHandler handler, struct NetContext *net, struct NetSession *session, struct Channels *channels, void *p_ctx, void *p_room, void *p_session, const struct NetPacketHeader *header, const uint8_t **data, const uint8_t *end);
+void handle_Channeled(ChanneledHandler handler, void *userptr, struct NetContext *net, struct NetSession *session, struct Channels *channels, const struct NetPacketHeader *header, const uint8_t **data, const uint8_t *end);
 void handle_Ping(struct NetContext *net, struct NetSession *session, struct PingPong *pingpong, struct Ping ping);
 float handle_Pong(struct NetContext *net, struct NetSession *session, struct PingPong *pingpong, struct Pong pong);
 void handle_MtuCheck(struct NetContext *net, struct NetSession *session, const struct MtuCheck *req);
-void try_resend(struct NetContext *net, struct NetSession *session, struct InstanceResendPacket *p, uint32_t currentTime);
-void flush_ack(struct NetContext *net, struct NetSession *session, struct Ack *ack);
+void InstanceResendPacket_trySend(struct InstanceResendPacket *packet, struct NetContext *net, struct NetSession *session, uint32_t currentTime);
+void Ack_flush(struct Ack *ack, struct NetContext *net, struct NetSession *session);

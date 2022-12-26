@@ -1,3 +1,4 @@
+#include "status.h"
 #include "../net.h"
 #include "internal.h"
 #include <unistd.h>
@@ -11,13 +12,13 @@ static struct Context ctx = {-1, NULL};
 
 static void *handle_client(void *fd) {
 	char buf[65536];
-	ssize_t size = recv((intptr_t)fd, buf, sizeof(buf), 0);
+	ssize_t size = recv((int)(intptr_t)fd, buf, sizeof(buf), 0);
 	if(size >= 0) {
-		size = status_resp("HTTP", ctx.path, buf, size);
+		size = status_resp("HTTP", ctx.path, buf, (uint32_t)size);
 		if(size)
-			send((intptr_t)fd, buf, size, 0);
+			send((int)(intptr_t)fd, buf, (uint32_t)size, 0);
 	}
-	close((intptr_t)fd);
+	close((int)(intptr_t)fd);
 	return 0;
 }
 

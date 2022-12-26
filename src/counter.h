@@ -44,14 +44,14 @@ static inline bool Counter64_isFilled(struct Counter64 set) {
 static inline bool Counter64_clear_next(struct Counter64 *set, uint32_t *bit) {
 	if(Counter64_isEmpty(*set))
 		return false;
-	*bit = __builtin_ctzll(set->bits);
+	*bit = (uint32_t)__builtin_ctzll(set->bits);
 	Counter64_clear(set, *bit);
 	return true;
 }
 static inline bool Counter64_set_next(struct Counter64 *set, uint32_t *bit) {
 	if(Counter64_isFilled(*set))
 		return false;
-	*bit = __builtin_ctzll(~set->bits);
+	*bit = (uint32_t)__builtin_ctzll(~set->bits);
 	Counter64_set(set, *bit);
 	return true;
 }

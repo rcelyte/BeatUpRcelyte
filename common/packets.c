@@ -19,7 +19,7 @@ size_t _pkt_try_read(void (*inner)(void *restrict, const uint8_t**, const uint8_
 		return 0;
 	}
 	inner(data, pkt, end, ctx);
-	return *pkt - start;
+	return (size_t)(*pkt - start);
 }
 size_t _pkt_try_write(void (*inner)(const void *restrict, uint8_t**, const uint8_t*, struct PacketContext), const void *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	uint8_t *start = *pkt;
@@ -28,9 +28,9 @@ size_t _pkt_try_write(void (*inner)(const void *restrict, uint8_t**, const uint8
 		return 0;
 	}
 	inner(data, pkt, end, ctx);
-	return *pkt - start;
+	return (size_t)(*pkt - start);
 }
-static void range_fail() {
+[[gnu::noreturn]] static void range_fail() {
 	uprintf("Unexpected end of packet\n");
 	longjmp(fail, 1);
 }
@@ -54,14 +54,14 @@ static_assert(sizeof(uint16_t) == 2, "");
 #define _pkt_i16_read(data, pkt, end, ctx) _pkt_u16_read((uint16_t*)(data), pkt, end, ctx)
 [[maybe_unused]] static void _pkt_u16_read(uint16_t *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext) {
 	RANGE_CHECK(sizeof(*data));
-	*data = (*pkt)[0] | (*pkt)[1] << 8;
+	*data = (*pkt)[0] | (uint16_t)((*pkt)[1] << 8);
 	*pkt += sizeof(*data);
 }
 static_assert(sizeof(uint32_t) == 4, "");
 #define _pkt_i32_read(data, pkt, end, ctx) _pkt_u32_read((uint32_t*)(data), pkt, end, ctx)
 [[maybe_unused]] static void _pkt_u32_read(uint32_t *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext) {
 	RANGE_CHECK(sizeof(*data));
-	*data = (*pkt)[0] | (*pkt)[1] << 8 | (*pkt)[2] << 16 | (*pkt)[3] << 24;
+	*data = (*pkt)[0] | (uint32_t)(*pkt)[1] << 8 | (uint32_t)(*pkt)[2] << 16 | (uint32_t)(*pkt)[3] << 24;
 	*pkt += sizeof(*data);
 }
 static_assert(sizeof(uint64_t) == 8, "");
@@ -143,11 +143,11 @@ static void _pkt_u8_write(const uint8_t *restrict data, uint8_t **pkt, const uin
 static void _pkt_vu64_write(const uint64_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	uint64_t v = *data;
 	for(; v >= 128; v >>= 7)
-		_pkt_u8_write((uint8_t[]){v | 128}, pkt, end, ctx);
-	_pkt_u8_write((uint8_t[]){v}, pkt, end, ctx);
+		_pkt_u8_write((uint8_t[]){(uint8_t)v | 128u}, pkt, end, ctx);
+	_pkt_u8_write((uint8_t[]){(uint8_t)v}, pkt, end, ctx);
 }
 static void _pkt_vi64_write(const int64_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	uint64_t v = (*data < 0) ? (-(*data + 1ll) << 1) + 1ll : *data << 1;
+	uint64_t v = (*data < 0) ? (uint64_t)((-(*data + 1) << 1) + 1) : (uint64_t)*data << 1;
 	_pkt_vu64_write(&v, pkt, end, ctx);
 }
 [[maybe_unused]] static void _pkt_vu32_write(const uint32_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -194,7 +194,7 @@ static uint32_t _pkt_BaseString_read(const uint8_t **pkt, const uint8_t *end, st
 		if(ctx.netVersion < 12) \
 			_pkt_u32_write(&data->length, pkt, end, ctx); \
 		else \
-			_pkt_u16_write((uint16_t[]){data->length + !data->isNull}, pkt, end, ctx); \
+			_pkt_u16_write((uint16_t[]){(uint16_t)data->length + !data->isNull}, pkt, end, ctx); \
 		_pkt_raw_write((const uint8_t*)data->data, pkt, end, ctx, data->length); \
 	}
 STRING_RDWR_FUNC(String)

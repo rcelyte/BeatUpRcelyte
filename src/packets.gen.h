@@ -1143,14 +1143,11 @@ struct BeatmapLevelSelectionMask {
 struct RemoteProcedureCall {
 	float syncTime;
 };
-struct PlayersMissingEntitlementsNetSerializable {
-	int32_t count;
-	struct String playersWithoutEntitlements[254];
-};
 struct SetPlayersMissingEntitlementsToLevel {
 	struct RemoteProcedureCall base;
 	struct RemoteProcedureCallFlags flags;
-	struct PlayersMissingEntitlementsNetSerializable playersMissingEntitlements;
+	int32_t count;
+	struct String players[254];
 };
 struct GetIsEntitledToLevel {
 	struct RemoteProcedureCall base;
@@ -1173,7 +1170,7 @@ struct SelectLevelPack {
 };
 struct BeatmapIdentifierNetSerializable {
 	struct LongString levelID;
-	struct String beatmapCharacteristicSerializedName;
+	struct String characteristic;
 	BeatmapDifficulty difficulty;
 };
 struct SetSelectedBeatmap {
@@ -1301,11 +1298,11 @@ struct GetPermissionConfiguration {
 };
 struct PlayerLobbyPermissionConfigurationNetSerializable {
 	struct String userId;
-	bool isServerOwner;
-	bool hasRecommendBeatmapsPermission;
-	bool hasRecommendGameplayModifiersPermission;
-	bool hasKickVotePermission;
-	bool hasInvitePermission;
+	bool serverOwner;
+	bool recommendBeatmaps;
+	bool recommendModifiers;
+	bool kickVote;
+	bool invite;
 };
 struct PlayersLobbyPermissionConfigurationNetSerializable {
 	int32_t count;

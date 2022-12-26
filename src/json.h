@@ -1,13 +1,22 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdlib.h>
+#ifdef WINDOWS
+#include <winsock.h>
+#else
+#include <arpa/inet.h>
+#endif
 
 typedef uint64_t jsonkey_t; // an 8 byte or shorter string
-#define JSON_KEY(c0, c1, c2, c3, c4, c5, c6, c7) ((uint64_t)(c0) | (uint64_t)(c1) << 8 | (uint64_t)(c2) << 16 | (uint64_t)(c3) << 24 | (uint64_t)(c4) << 32 | (uint64_t)(c5) << 40 | (uint64_t)(c6) << 48 | (uint64_t)(c7) << 56)
+#define JSON_KEY_V(c0, c1, c2, c3, c4, c5, c6, c7, ...) ((uint64_t)(c0) | (uint64_t)(c1) << 8 | (uint64_t)(c2) << 16 | (uint64_t)(c3) << 24 | (uint64_t)(c4) << 32 | (uint64_t)(c5) << 40 | (uint64_t)(c6) << 48 | (uint64_t)(c7) << 56)
+#define JSON_KEY(...) JSON_KEY_V(__VA_ARGS__,0,0,0,0,0,0,0,0,)
 
 #define JSON_KEY_TOSTRING(key) (_json_key_tostring((uint8_t[]){0,0,0,0,0,0,0,0,0}, (key)))
-static inline const char *_json_key_tostring(uint8_t *buf, jsonkey_t key) {
-	buf[0] = key, buf[1] = key >> 8, buf[2] = key >> 16, buf[3] = key >> 24, buf[4] = key >> 32, buf[5] = key >> 40, buf[6] = key >> 48, buf[7] = key >> 56;
+static inline const char *_json_key_tostring(uint8_t buf[restrict static 8], jsonkey_t key) {
+	if(ntohl(1) == 1)
+		key = __builtin_bswap64(key);
+	memcpy(buf, &key, sizeof(key));
 	return (char*)buf;
 }
 
@@ -184,6 +193,8 @@ static jsonkey_t json_read_key(const char **it) {
 	for(bool cont = json_iter_array_start(it); cont; cont = json_iter_array_next(it))
 
 [[maybe_unused]] static int64_t json_read_int64(const char **it) {
-	int64_t v = strtoll(*it, (char**)it, 10);
+	char *end = NULL; // strtoll expects a non-const pointer
+	int64_t v = strtoll(*it, &end, 10);
+	*it = end;
 	return v;
 }
