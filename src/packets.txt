@@ -215,21 +215,21 @@ n RequestKickPlayer
 		String kickedPlayerId
 n GetPermissionConfiguration
 	RemoteProcedureCall base
-n PlayerLobbyPermissionConfigurationNetSerializable
+n PlayerLobbyPermissionConfiguration
 	String userId
 	b serverOwner:1
 	b recommendBeatmaps:1
 	b recommendModifiers:1
 	b kickVote:1
 	b invite:1
-n PlayersLobbyPermissionConfigurationNetSerializable
+n PlayersLobbyPermissionConfiguration
 	i32 count
-	PlayerLobbyPermissionConfigurationNetSerializable playersPermission[254,.count]
+	PlayerLobbyPermissionConfiguration playersPermission[254,.count]
 n SetPermissionConfiguration
 	RemoteProcedureCall base
 	RemoteProcedureCallFlags flags
 	if(.flags.hasValue0)
-		PlayersLobbyPermissionConfigurationNetSerializable playersPermissionConfiguration
+		PlayersLobbyPermissionConfiguration playersPermissionConfiguration
 n GetIsStartButtonEnabled
 	RemoteProcedureCall base
 vi32 CannotStartGameReason
@@ -302,7 +302,7 @@ n ColorSchemeNetSerializable
 	ColorNoAlphaSerializable environmentColor1
 	ColorNoAlphaSerializable environmentColor0Boost
 	ColorNoAlphaSerializable environmentColor1Boost
-n PlayerSpecificSettingsNetSerializable
+n PlayerSpecificSettings
 	String userId
 	String userName
 	b leftHanded
@@ -310,21 +310,21 @@ n PlayerSpecificSettingsNetSerializable
 	f32 playerHeight
 	f32 headPosToPlayerHeightOffset
 	ColorSchemeNetSerializable colorScheme
-n PlayerSpecificSettingsAtStartNetSerializable
+n PlayerSpecificSettingsAtStart
 	i32 count
-	PlayerSpecificSettingsNetSerializable activePlayerSpecificSettingsAtGameStart[254,.count]
+	PlayerSpecificSettings players[254,.count]
 n SetGameplaySceneSyncFinish
 	RemoteProcedureCall base
 	RemoteProcedureCallFlags flags
 	if(.flags.hasValue0)
-		PlayerSpecificSettingsAtStartNetSerializable playersAtGameStart
+		PlayerSpecificSettingsAtStart settings
 	if(.flags.hasValue1)
 		String sessionGameId
 n SetGameplaySceneReady
 	RemoteProcedureCall base
 	RemoteProcedureCallFlags flags
 	if(.flags.hasValue0)
-		PlayerSpecificSettingsNetSerializable playerSpecificSettingsNetSerializable
+		PlayerSpecificSettings playerSpecificSettings
 n GetGameplaySceneReady
 	RemoteProcedureCall base
 n SetActivePlayerFailedToConnect
@@ -333,7 +333,7 @@ n SetActivePlayerFailedToConnect
 	if(.flags.hasValue0)
 		String failedUserId
 	if(.flags.hasValue1)
-		PlayerSpecificSettingsAtStartNetSerializable playersAtGameStart
+		PlayerSpecificSettingsAtStart settings
 	if(.flags.hasValue2)
 		String sessionGameId
 n SetGameplaySongReady

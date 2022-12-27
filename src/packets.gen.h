@@ -1296,7 +1296,7 @@ struct RequestKickPlayer {
 struct GetPermissionConfiguration {
 	struct RemoteProcedureCall base;
 };
-struct PlayerLobbyPermissionConfigurationNetSerializable {
+struct PlayerLobbyPermissionConfiguration {
 	struct String userId;
 	bool serverOwner;
 	bool recommendBeatmaps;
@@ -1304,14 +1304,14 @@ struct PlayerLobbyPermissionConfigurationNetSerializable {
 	bool kickVote;
 	bool invite;
 };
-struct PlayersLobbyPermissionConfigurationNetSerializable {
+struct PlayersLobbyPermissionConfiguration {
 	int32_t count;
-	struct PlayerLobbyPermissionConfigurationNetSerializable playersPermission[254];
+	struct PlayerLobbyPermissionConfiguration playersPermission[254];
 };
 struct SetPermissionConfiguration {
 	struct RemoteProcedureCall base;
 	struct RemoteProcedureCallFlags flags;
-	struct PlayersLobbyPermissionConfigurationNetSerializable playersPermissionConfiguration;
+	struct PlayersLobbyPermissionConfiguration playersPermissionConfiguration;
 };
 struct GetIsStartButtonEnabled {
 	struct RemoteProcedureCall base;
@@ -1386,7 +1386,7 @@ struct ColorSchemeNetSerializable {
 	struct ColorNoAlphaSerializable environmentColor0Boost;
 	struct ColorNoAlphaSerializable environmentColor1Boost;
 };
-struct PlayerSpecificSettingsNetSerializable {
+struct PlayerSpecificSettings {
 	struct String userId;
 	struct String userName;
 	bool leftHanded;
@@ -1395,20 +1395,20 @@ struct PlayerSpecificSettingsNetSerializable {
 	float headPosToPlayerHeightOffset;
 	struct ColorSchemeNetSerializable colorScheme;
 };
-struct PlayerSpecificSettingsAtStartNetSerializable {
+struct PlayerSpecificSettingsAtStart {
 	int32_t count;
-	struct PlayerSpecificSettingsNetSerializable activePlayerSpecificSettingsAtGameStart[254];
+	struct PlayerSpecificSettings players[254];
 };
 struct SetGameplaySceneSyncFinish {
 	struct RemoteProcedureCall base;
 	struct RemoteProcedureCallFlags flags;
-	struct PlayerSpecificSettingsAtStartNetSerializable playersAtGameStart;
+	struct PlayerSpecificSettingsAtStart settings;
 	struct String sessionGameId;
 };
 struct SetGameplaySceneReady {
 	struct RemoteProcedureCall base;
 	struct RemoteProcedureCallFlags flags;
-	struct PlayerSpecificSettingsNetSerializable playerSpecificSettingsNetSerializable;
+	struct PlayerSpecificSettings playerSpecificSettings;
 };
 struct GetGameplaySceneReady {
 	struct RemoteProcedureCall base;
@@ -1417,7 +1417,7 @@ struct SetActivePlayerFailedToConnect {
 	struct RemoteProcedureCall base;
 	struct RemoteProcedureCallFlags flags;
 	struct String failedUserId;
-	struct PlayerSpecificSettingsAtStartNetSerializable playersAtGameStart;
+	struct PlayerSpecificSettingsAtStart settings;
 	struct String sessionGameId;
 };
 struct SetGameplaySongReady {

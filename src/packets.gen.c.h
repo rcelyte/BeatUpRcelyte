@@ -632,7 +632,7 @@ static void _pkt_GetPermissionConfiguration_read(struct GetPermissionConfigurati
 static void _pkt_GetPermissionConfiguration_write(const struct GetPermissionConfiguration *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_RemoteProcedureCall_write(&data->base, pkt, end, ctx);
 }
-static void _pkt_PlayerLobbyPermissionConfigurationNetSerializable_read(struct PlayerLobbyPermissionConfigurationNetSerializable *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+static void _pkt_PlayerLobbyPermissionConfiguration_read(struct PlayerLobbyPermissionConfiguration *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_String_read(&data->userId, pkt, end, ctx);
 	uint8_t bitfield0;
 	_pkt_u8_read(&bitfield0, pkt, end, ctx);
@@ -642,7 +642,7 @@ static void _pkt_PlayerLobbyPermissionConfigurationNetSerializable_read(struct P
 	data->kickVote = bitfield0 >> 3 & 1;
 	data->invite = bitfield0 >> 4 & 1;
 }
-static void _pkt_PlayerLobbyPermissionConfigurationNetSerializable_write(const struct PlayerLobbyPermissionConfigurationNetSerializable *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+static void _pkt_PlayerLobbyPermissionConfiguration_write(const struct PlayerLobbyPermissionConfiguration *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_String_write(&data->userId, pkt, end, ctx);
 	uint8_t bitfield0 = 0;
 	bitfield0 |= (data->serverOwner & 1u) << 0;
@@ -652,28 +652,28 @@ static void _pkt_PlayerLobbyPermissionConfigurationNetSerializable_write(const s
 	bitfield0 |= (data->invite & 1u) << 4;
 	_pkt_u8_write(&bitfield0, pkt, end, ctx);
 }
-static void _pkt_PlayersLobbyPermissionConfigurationNetSerializable_read(struct PlayersLobbyPermissionConfigurationNetSerializable *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+static void _pkt_PlayersLobbyPermissionConfiguration_read(struct PlayersLobbyPermissionConfiguration *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_i32_read(&data->count, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->count), 254, "PlayersLobbyPermissionConfigurationNetSerializable.playersPermission"); i < count; ++i)
-		_pkt_PlayerLobbyPermissionConfigurationNetSerializable_read(&data->playersPermission[i], pkt, end, ctx);
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->count), 254, "PlayersLobbyPermissionConfiguration.playersPermission"); i < count; ++i)
+		_pkt_PlayerLobbyPermissionConfiguration_read(&data->playersPermission[i], pkt, end, ctx);
 }
-static void _pkt_PlayersLobbyPermissionConfigurationNetSerializable_write(const struct PlayersLobbyPermissionConfigurationNetSerializable *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+static void _pkt_PlayersLobbyPermissionConfiguration_write(const struct PlayersLobbyPermissionConfiguration *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_i32_write(&data->count, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->count), 254, "PlayersLobbyPermissionConfigurationNetSerializable.playersPermission"); i < count; ++i)
-		_pkt_PlayerLobbyPermissionConfigurationNetSerializable_write(&data->playersPermission[i], pkt, end, ctx);
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->count), 254, "PlayersLobbyPermissionConfiguration.playersPermission"); i < count; ++i)
+		_pkt_PlayerLobbyPermissionConfiguration_write(&data->playersPermission[i], pkt, end, ctx);
 }
 static void _pkt_SetPermissionConfiguration_read(struct SetPermissionConfiguration *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_RemoteProcedureCall_read(&data->base, pkt, end, ctx);
 	_pkt_RemoteProcedureCallFlags_read(&data->flags, pkt, end, ctx);
 	if(data->flags.hasValue0) {
-		_pkt_PlayersLobbyPermissionConfigurationNetSerializable_read(&data->playersPermissionConfiguration, pkt, end, ctx);
+		_pkt_PlayersLobbyPermissionConfiguration_read(&data->playersPermissionConfiguration, pkt, end, ctx);
 	}
 }
 static void _pkt_SetPermissionConfiguration_write(const struct SetPermissionConfiguration *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_RemoteProcedureCall_write(&data->base, pkt, end, ctx);
 	_pkt_RemoteProcedureCallFlags_write(&data->flags, pkt, end, ctx);
 	if(data->flags.hasValue0) {
-		_pkt_PlayersLobbyPermissionConfigurationNetSerializable_write(&data->playersPermissionConfiguration, pkt, end, ctx);
+		_pkt_PlayersLobbyPermissionConfiguration_write(&data->playersPermissionConfiguration, pkt, end, ctx);
 	}
 }
 static void _pkt_GetIsStartButtonEnabled_read(struct GetIsStartButtonEnabled *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -828,7 +828,7 @@ static void _pkt_ColorSchemeNetSerializable_write(const struct ColorSchemeNetSer
 	_pkt_ColorNoAlphaSerializable_write(&data->environmentColor0Boost, pkt, end, ctx);
 	_pkt_ColorNoAlphaSerializable_write(&data->environmentColor1Boost, pkt, end, ctx);
 }
-static void _pkt_PlayerSpecificSettingsNetSerializable_read(struct PlayerSpecificSettingsNetSerializable *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+static void _pkt_PlayerSpecificSettings_read(struct PlayerSpecificSettings *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_String_read(&data->userId, pkt, end, ctx);
 	_pkt_String_read(&data->userName, pkt, end, ctx);
 	_pkt_b_read(&data->leftHanded, pkt, end, ctx);
@@ -837,7 +837,7 @@ static void _pkt_PlayerSpecificSettingsNetSerializable_read(struct PlayerSpecifi
 	_pkt_f32_read(&data->headPosToPlayerHeightOffset, pkt, end, ctx);
 	_pkt_ColorSchemeNetSerializable_read(&data->colorScheme, pkt, end, ctx);
 }
-static void _pkt_PlayerSpecificSettingsNetSerializable_write(const struct PlayerSpecificSettingsNetSerializable *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+static void _pkt_PlayerSpecificSettings_write(const struct PlayerSpecificSettings *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_String_write(&data->userId, pkt, end, ctx);
 	_pkt_String_write(&data->userName, pkt, end, ctx);
 	_pkt_b_write(&data->leftHanded, pkt, end, ctx);
@@ -846,21 +846,21 @@ static void _pkt_PlayerSpecificSettingsNetSerializable_write(const struct Player
 	_pkt_f32_write(&data->headPosToPlayerHeightOffset, pkt, end, ctx);
 	_pkt_ColorSchemeNetSerializable_write(&data->colorScheme, pkt, end, ctx);
 }
-static void _pkt_PlayerSpecificSettingsAtStartNetSerializable_read(struct PlayerSpecificSettingsAtStartNetSerializable *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+static void _pkt_PlayerSpecificSettingsAtStart_read(struct PlayerSpecificSettingsAtStart *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_i32_read(&data->count, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->count), 254, "PlayerSpecificSettingsAtStartNetSerializable.activePlayerSpecificSettingsAtGameStart"); i < count; ++i)
-		_pkt_PlayerSpecificSettingsNetSerializable_read(&data->activePlayerSpecificSettingsAtGameStart[i], pkt, end, ctx);
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->count), 254, "PlayerSpecificSettingsAtStart.players"); i < count; ++i)
+		_pkt_PlayerSpecificSettings_read(&data->players[i], pkt, end, ctx);
 }
-static void _pkt_PlayerSpecificSettingsAtStartNetSerializable_write(const struct PlayerSpecificSettingsAtStartNetSerializable *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+static void _pkt_PlayerSpecificSettingsAtStart_write(const struct PlayerSpecificSettingsAtStart *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_i32_write(&data->count, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->count), 254, "PlayerSpecificSettingsAtStartNetSerializable.activePlayerSpecificSettingsAtGameStart"); i < count; ++i)
-		_pkt_PlayerSpecificSettingsNetSerializable_write(&data->activePlayerSpecificSettingsAtGameStart[i], pkt, end, ctx);
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->count), 254, "PlayerSpecificSettingsAtStart.players"); i < count; ++i)
+		_pkt_PlayerSpecificSettings_write(&data->players[i], pkt, end, ctx);
 }
 static void _pkt_SetGameplaySceneSyncFinish_read(struct SetGameplaySceneSyncFinish *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_RemoteProcedureCall_read(&data->base, pkt, end, ctx);
 	_pkt_RemoteProcedureCallFlags_read(&data->flags, pkt, end, ctx);
 	if(data->flags.hasValue0) {
-		_pkt_PlayerSpecificSettingsAtStartNetSerializable_read(&data->playersAtGameStart, pkt, end, ctx);
+		_pkt_PlayerSpecificSettingsAtStart_read(&data->settings, pkt, end, ctx);
 	}
 	if(data->flags.hasValue1) {
 		_pkt_String_read(&data->sessionGameId, pkt, end, ctx);
@@ -870,7 +870,7 @@ static void _pkt_SetGameplaySceneSyncFinish_write(const struct SetGameplaySceneS
 	_pkt_RemoteProcedureCall_write(&data->base, pkt, end, ctx);
 	_pkt_RemoteProcedureCallFlags_write(&data->flags, pkt, end, ctx);
 	if(data->flags.hasValue0) {
-		_pkt_PlayerSpecificSettingsAtStartNetSerializable_write(&data->playersAtGameStart, pkt, end, ctx);
+		_pkt_PlayerSpecificSettingsAtStart_write(&data->settings, pkt, end, ctx);
 	}
 	if(data->flags.hasValue1) {
 		_pkt_String_write(&data->sessionGameId, pkt, end, ctx);
@@ -880,14 +880,14 @@ static void _pkt_SetGameplaySceneReady_read(struct SetGameplaySceneReady *restri
 	_pkt_RemoteProcedureCall_read(&data->base, pkt, end, ctx);
 	_pkt_RemoteProcedureCallFlags_read(&data->flags, pkt, end, ctx);
 	if(data->flags.hasValue0) {
-		_pkt_PlayerSpecificSettingsNetSerializable_read(&data->playerSpecificSettingsNetSerializable, pkt, end, ctx);
+		_pkt_PlayerSpecificSettings_read(&data->playerSpecificSettings, pkt, end, ctx);
 	}
 }
 static void _pkt_SetGameplaySceneReady_write(const struct SetGameplaySceneReady *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_RemoteProcedureCall_write(&data->base, pkt, end, ctx);
 	_pkt_RemoteProcedureCallFlags_write(&data->flags, pkt, end, ctx);
 	if(data->flags.hasValue0) {
-		_pkt_PlayerSpecificSettingsNetSerializable_write(&data->playerSpecificSettingsNetSerializable, pkt, end, ctx);
+		_pkt_PlayerSpecificSettings_write(&data->playerSpecificSettings, pkt, end, ctx);
 	}
 }
 static void _pkt_GetGameplaySceneReady_read(struct GetGameplaySceneReady *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -903,7 +903,7 @@ static void _pkt_SetActivePlayerFailedToConnect_read(struct SetActivePlayerFaile
 		_pkt_String_read(&data->failedUserId, pkt, end, ctx);
 	}
 	if(data->flags.hasValue1) {
-		_pkt_PlayerSpecificSettingsAtStartNetSerializable_read(&data->playersAtGameStart, pkt, end, ctx);
+		_pkt_PlayerSpecificSettingsAtStart_read(&data->settings, pkt, end, ctx);
 	}
 	if(data->flags.hasValue2) {
 		_pkt_String_read(&data->sessionGameId, pkt, end, ctx);
@@ -916,7 +916,7 @@ static void _pkt_SetActivePlayerFailedToConnect_write(const struct SetActivePlay
 		_pkt_String_write(&data->failedUserId, pkt, end, ctx);
 	}
 	if(data->flags.hasValue1) {
-		_pkt_PlayerSpecificSettingsAtStartNetSerializable_write(&data->playersAtGameStart, pkt, end, ctx);
+		_pkt_PlayerSpecificSettingsAtStart_write(&data->settings, pkt, end, ctx);
 	}
 	if(data->flags.hasValue2) {
 		_pkt_String_write(&data->sessionGameId, pkt, end, ctx);
