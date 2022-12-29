@@ -2,10 +2,6 @@
 #include <stdlib.h>
 #include <time.h>
 
-void instance_pingpong_init(struct PingPong *pingpong) {
-	*pingpong = (struct PingPong){0};
-}
-
 void instance_channels_init(struct Channels *channels) {
 	*channels = (struct Channels){
 		.ru.base = {
@@ -317,18 +313,31 @@ void handle_MtuCheck(struct NetContext *net, struct NetSession *session, const s
 	net_send_internal(net, session, resp, (uint32_t)(resp_end - resp), true);
 }
 
-void InstanceResendPacket_trySend(struct InstanceResendPacket *packet, struct NetContext *net, struct NetSession *session, uint32_t currentTime) {
+static void InstanceResendPacket_trySend(struct InstanceResendPacket *packet, struct NetContext *net, struct NetSession *session, uint32_t currentTime) {
 	if(packet->len == 0 || currentTime - packet->timeStamp < NET_RESEND_DELAY)
 		return;
 	net_queue_merged(net, session, packet->data, packet->len);
 	packet->timeStamp += (currentTime - packet->timeStamp) / NET_RESEND_DELAY * NET_RESEND_DELAY;
 }
 
-void Ack_flush(struct Ack *ack, struct NetContext *net, struct NetSession *session) {
+static void Ack_flush(struct Ack *ack, struct NetContext *net, struct NetSession *session) {
 	uint8_t resp[65536], *resp_end = resp;
 	pkt_write_c(&resp_end, endof(resp), session->version, NetPacketHeader, {
 		.property = PacketProperty_Ack,
 		.ack = *ack,
 	});
 	net_queue_merged(net, session, resp, (uint16_t)(resp_end - resp));
+}
+
+uint32_t instance_channels_tick(struct Channels *channels, struct NetContext *net, struct NetSession *session, uint32_t currentTime) {
+	for(; channels->ru.base.sendAck; channels->ru.base.sendAck = false)
+		Ack_flush(&channels->ru.base.ack, net, session);
+	for(; channels->ro.base.sendAck; channels->ro.base.sendAck = false)
+		Ack_flush(&channels->ro.base.ack, net, session);
+	for(uint_fast8_t i = 0; i < 64; ++i)
+		InstanceResendPacket_trySend(&channels->ru.base.resend[i], net, session, currentTime);
+	for(uint_fast8_t i = 0; i < 64; ++i)
+		InstanceResendPacket_trySend(&channels->ro.base.resend[i], net, session, currentTime);
+	InstanceResendPacket_trySend(&channels->rs.resend, net, session, currentTime);
+	return 15; // TODO: proper resend timing
 }

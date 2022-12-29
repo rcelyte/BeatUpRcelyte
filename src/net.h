@@ -112,7 +112,6 @@ void net_cleanup(struct NetContext *ctx);
 void net_lock(struct NetContext *ctx);
 void net_unlock(struct NetContext *ctx);
 void net_session_init(struct NetContext *ctx, struct NetSession *session, struct SS addr);
-void net_session_reset(struct NetContext *ctx, struct NetSession *session);
 void net_session_free(struct NetSession *session);
 bool net_add_remote(struct NetContext *ctx, mbedtls_ssl_context *link);
 bool net_remove_remote(struct NetContext *ctx, mbedtls_ssl_context *link);

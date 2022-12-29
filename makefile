@@ -96,7 +96,7 @@ clean:
 	$(MAKE) -C BeatUpClient clean
 	$(MAKE) -C mbedtls/library clean
 	rm -rf .obj/
-	rm -f beatupserver*
+	rm -f beatupserver
 
 .PHONY: default bsipa bmbf install uninstall remove clean
 

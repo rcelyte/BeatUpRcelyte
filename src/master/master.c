@@ -238,7 +238,9 @@ static void handle_ClientHelloRequest(struct Context *ctx, struct MasterSession 
 	if(session->handshake.step != HandshakeMessageType_ClientHelloRequest) {
 		if(net_time() - NetSession_get_lastKeepAlive(&session->net) < 5000) // 5 second timeout to prevent clients from getting "locked out" if their previous session hasn't closed or timed out yet
 			return;
-		net_session_reset(&ctx->net, &session->net); // security or something idk
+		struct SS addr = *NetSession_get_addr(&session->net);
+		net_session_free(&session->net);
+		net_session_init(&ctx->net, &session->net, addr); // security or something idk
 		session->resend.set = COUNTER64_CLEAR;
 	}
 	session->epoch = req->base.requestId & 0xff000000;

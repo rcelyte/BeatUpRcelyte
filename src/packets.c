@@ -90,6 +90,7 @@ MpCoreType MpCoreType_From(const struct String *type) {
 		return MpCoreType_MpPlayerData;
 	if(String_is(*type, "CustomAvatarPacket"))
 		return MpCoreType_CustomAvatarPacket;
+	uprintf("Unsupported MpCore custom packet: %.*s\n", type->length, type->data);
 	return (MpCoreType)0xffffffff;
 }
 

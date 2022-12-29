@@ -569,9 +569,9 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 	if(STATE_EDGE(room->state, state, ServerState_Lobby)) {
 		room->global.selectedBeatmap = CLEAR_BEATMAP;
 		room->global.selectedModifiers = CLEAR_MODIFIERS;
-		room->lobby.isEntitled = COUNTER128_CLEAR;
-		room->lobby.isDownloaded = COUNTER128_CLEAR;
-		room->lobby.isReady = COUNTER128_CLEAR;
+		room->lobby.isEntitled = COUNTERP_CLEAR;
+		room->lobby.isDownloaded = COUNTERP_CLEAR;
+		room->lobby.isReady = COUNTERP_CLEAR;
 		room->lobby.reason = CannotStartGameReason_NoSongSelected;
 		room->lobby.requester = (playerid_t)~0u;
 		if(room->configuration.songSelectionMode == SongSelectionMode_Random) {
@@ -626,7 +626,6 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 			}
 			room->lobby.requester = select;
 			if(select > (playerid_t)room->configuration.maxPlayerCount || room->players[select].recommendedBeatmap.characteristic.length == 0) {
-				uprintf("No map from %u\n", select);
 				room->lobby.isEntitled = room->connected;
 				room->global.selectedBeatmap = CLEAR_BEATMAP;
 				room->global.selectedModifiers = CLEAR_MODIFIERS;
@@ -637,11 +636,11 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 				if(BeatmapIdentifier_eq(&room->players[select].recommendedBeatmap, &room->global.selectedBeatmap, 0))
 					return;
 			room->lobby.reason = 0;
-			room->lobby.isEntitled = COUNTER128_CLEAR;
-			room->lobby.isDownloaded = COUNTER128_CLEAR;
+			room->lobby.isEntitled = COUNTERP_CLEAR;
+			room->lobby.isDownloaded = COUNTERP_CLEAR;
 			room->global.selectedBeatmap = room->players[select].recommendedBeatmap;
 			room->global.selectedModifiers = room->players[select].recommendedModifiers;
-			room->lobby.entitlement.missing = COUNTER128_CLEAR;
+			room->lobby.entitlement.missing = COUNTERP_CLEAR;
 			break;
 		}
 		case ServerState_Lobby_Idle: {
@@ -689,7 +688,7 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 			break;
 		}
 		case ServerState_Game_LoadingScene: {
-			room->game.loadingScene.isLoaded = COUNTER128_CLEAR;
+			room->game.loadingScene.isLoaded = COUNTERP_CLEAR;
 			room->global.timeout = room_get_syncTime(room) + LOAD_TIMEOUT;
 			break;
 		}
@@ -700,7 +699,7 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 					return;
 			}
 			mbedtls_ctr_drbg_random(&ctx->net.ctr_drbg, (uint8_t*)room->global.sessionId, sizeof(room->global.sessionId));
-			room->game.loadingSong.isLoaded = COUNTER128_CLEAR;
+			room->game.loadingSong.isLoaded = COUNTERP_CLEAR;
 			room->global.timeout = room_get_syncTime(room) + LOAD_TIMEOUT;
 			break;
 		}
@@ -772,7 +771,7 @@ static void handle_MenuRpc(struct InstanceContext *ctx, struct Room *room, struc
 			if(r_missing.setPlayersMissingEntitlementsToLevel.count == 0) {
 				room_set_state(ctx, room, ServerState_Lobby_Ready);
 			} else if(room->configuration.songSelectionMode == SongSelectionMode_Random) {
-				room->global.roundRobin = roundRobin_next(room->global.roundRobin, COUNTER128_CLEAR);
+				room->global.roundRobin = roundRobin_next(room->global.roundRobin, COUNTERP_CLEAR);
 				mapPool_update(room);
 				room_set_state(ctx, room, ServerState_Lobby_Entitlement);
 			} else {
@@ -1016,7 +1015,7 @@ static void handle_MenuRpc(struct InstanceContext *ctx, struct Room *room, struc
 static bool room_try_finish(struct InstanceContext *ctx, struct Room *room) {
 	if(!CounterP_isEmpty(room->game.activePlayers))
 		return false;
-	room->global.roundRobin = roundRobin_next(room->global.roundRobin, (room->configuration.songSelectionMode == SongSelectionMode_Random) ? COUNTER128_CLEAR : room->connected);
+	room->global.roundRobin = roundRobin_next(room->global.roundRobin, (room->configuration.songSelectionMode == SongSelectionMode_Random) ? COUNTERP_CLEAR : room->connected);
 	room_set_state(ctx, room, ServerState_Game_Results);
 	return true;
 }
@@ -1232,7 +1231,7 @@ static bool handle_RoutingHeader(struct InstanceContext *ctx, struct Room *room,
 		struct CounterP mask = room->connected;
 		CounterP_clear(&mask, (uint32_t)indexof(room->players, session));
 		if(routing.connectionId != 127) {
-			struct CounterP single = COUNTER128_CLEAR;
+			struct CounterP single = COUNTERP_CLEAR;
 			if((uint32_t)routing.connectionId / 8 < sizeof(struct CounterP))
 				CounterP_set(&single, ConnectionId_index(routing.connectionId));
 			mask = CounterP_and(mask, single); // Mask out invalid IDs
@@ -1454,7 +1453,7 @@ static void handle_ConnectRequest(struct InstanceContext *ctx, struct Room *room
 			},
 		};
 		memcpy(r_identity.playerIdentity.random.data, room->players[id].random.raw, sizeof(room->players->random.raw));
-		uprintf("TODO: do we need to include the encrytion key?\n");
+		// TODO: do we need to include the encrytion key?
 		pkt_write_c(&resp_end, endof(resp), session->net.version, RoutingHeader, {InstanceSession_connectionId(room->players, &room->players[id]), 0, false});
 		if(pkt_serialize(&r_identity, &resp_end, endof(resp), session->net.version))
 			instance_send_channeled(&session->net, &session->channels, resp, (uint32_t)(resp_end - resp), DeliveryMethod_ReliableOrdered);
@@ -1473,7 +1472,7 @@ static void handle_ConnectRequest(struct InstanceContext *ctx, struct Room *room
 			.random.length = 32,
 		},
 	};
-	memcpy(r_identity.playerIdentity.random.data, NetKeypair_get_random(&room->keys), 32);
+	memcpy(r_identity.playerIdentity.random.data, NetKeypair_get_random(&room->keys)->raw, 32);
 	NetKeypair_write_key(&room->keys, &ctx->net, &r_identity.playerIdentity.publicEncryptionKey);
 	if(pkt_serialize(&r_identity, &resp_end, endof(resp), session->net.version))
 		instance_send_channeled(&session->net, &session->channels, resp, (uint32_t)(resp_end - resp), DeliveryMethod_ReliableOrdered);
@@ -1485,8 +1484,8 @@ static void log_players(const struct Room *room, struct InstanceSession *session
 	char addrstr[INET6_ADDRSTRLEN + 8], bitText[sizeof(room->playerSort) * 3], *bitText_end = bitText;
 	net_tostr(NetSession_get_addr(&session->net), addrstr);
 	uint32_t playerCount = 0;
-	for(uint32_t offset = 0; offset * 8 < (uint32_t)room->configuration.maxPlayerCount; ++offset) {
-		uint8_t byte = (uint8_t)(room->playerSort.sub[offset / sizeof(room->playerSort.sub->bits)].bits >> ((offset % sizeof(room->playerSort.sub->bits)) * 8));
+	for(uint32_t offset = 0; offset < (uint32_t)room->configuration.maxPlayerCount; offset += 8) {
+		uint8_t byte = (uint8_t)(room->playerSort.sub[offset / 64].bits >> (offset % 64));
 		playerCount += (uint32_t)__builtin_popcount(byte);
 		*bitText_end++ = (char)(226u);
 		*bitText_end++ = (char)(160u | (byte >> 6));
@@ -1514,19 +1513,16 @@ static void room_free(struct InstanceContext *ctx, struct Room **room) {
 
 enum DisconnectMode {
 	DC_DEFAULT = 0,
-	DC_RESET = 1,
+	DC_HOLD = 1,
 	DC_NOTIFY = 2,
 };
 
 static void room_disconnect(struct InstanceContext *ctx, struct Room **room, struct InstanceSession *session, enum DisconnectMode mode) {
 	playerid_t id = (playerid_t)indexof((*room)->players, session);
 	CounterP_clear(&(*room)->playerSort, id);
-	log_players(*room, session, (mode & DC_RESET) ? "reconnect" : "disconnect");
+	log_players(*room, session, (mode & DC_HOLD) ? "reconnect" : "disconnect");
 	instance_channels_free(&session->channels);
-	if(mode & DC_RESET)
-		net_session_reset(&ctx->net, &session->net);
-	else
-		net_session_free(&session->net);
+	net_session_free(&session->net);
 
 	if(id == (*room)->serverOwner) {
 		(*room)->serverOwner = 0;
@@ -1568,7 +1564,7 @@ static void room_disconnect(struct InstanceContext *ctx, struct Room **room, str
 			session->state = 0;
 		}
 		return;
-	} else if(mode & DC_RESET) {
+	} else if(mode & DC_HOLD) {
 		return;
 	}
 
@@ -1703,20 +1699,11 @@ static uint32_t instance_onResend(struct InstanceContext *ctx, uint32_t currentT
 			if(kickTime < 0) {
 				uprintf("session timeout\n");
 				room_disconnect(ctx, room, session, DC_NOTIFY);
-			} else {
-				if(kickTime < nextTick)
-					nextTick = kickTime;
-				for(; session->channels.ru.base.sendAck; session->channels.ru.base.sendAck = false)
-					Ack_flush(&session->channels.ru.base.ack, &ctx->net, &session->net);
-				for(; session->channels.ro.base.sendAck; session->channels.ro.base.sendAck = false)
-					Ack_flush(&session->channels.ro.base.ack, &ctx->net, &session->net);
-				for(uint_fast8_t i = 0; i < 64; ++i)
-					InstanceResendPacket_trySend(&session->channels.ru.base.resend[i], &ctx->net, &session->net, currentTime);
-				for(uint_fast8_t i = 0; i < 64; ++i)
-					InstanceResendPacket_trySend(&session->channels.ro.base.resend[i], &ctx->net, &session->net, currentTime);
-				InstanceResendPacket_trySend(&session->channels.rs.resend, &ctx->net, &session->net, currentTime);
-				nextTick = 15; // TODO: proper resend timing
+				continue;
 			}
+			if(kickTime < nextTick)
+				nextTick = kickTime;
+			nextTick = instance_channels_tick(&session->channels, &ctx->net, &session->net, currentTime); // TODO: proper resend timing
 		}
 		if(!*room)
 			continue;
@@ -1770,8 +1757,8 @@ static struct Room **room_open(struct InstanceContext *ctx, uint32_t roomID, str
 	#endif
 	if(configuration.maxPlayerCount < 1)
 		configuration.maxPlayerCount = 1;
-	else if((uint32_t)configuration.maxPlayerCount > sizeof(struct CounterP) * 8 - 2)
-		configuration.maxPlayerCount = sizeof(struct CounterP) * 8 - 2;
+	else if((uint32_t)configuration.maxPlayerCount > 126/*sizeof(struct CounterP) * 8 - 2*/)
+		configuration.maxPlayerCount = 126/*sizeof(struct CounterP) * 8 - 2*/; // TODO: restore extended lobbies once MpCore patches the 128 player "halt & catch fire" bug
 	if(configuration.invitePolicy >= 3 || configuration.invitePolicy < 0)
 		configuration.invitePolicy = InvitePolicy_NobodyCanInvite;
 	if(instance_mapPool) {
@@ -1801,13 +1788,13 @@ static struct Room **room_open(struct InstanceContext *ctx, uint32_t roomID, str
 	room->perPlayerDifficulty = false;
 	room->perPlayerModifiers = false;
 	room->joinCount = 0;
-	room->connected = COUNTER128_CLEAR;
-	room->playerSort = COUNTER128_CLEAR;
+	room->connected = COUNTERP_CLEAR;
+	room->playerSort = COUNTERP_CLEAR;
 	room->state = 0;
 	room->global.sessionId[0] = 0;
 	room->global.sessionId[1] = 0;
-	room->global.inLobby = COUNTER128_CLEAR;
-	room->global.isSpectating = COUNTER128_CLEAR;
+	room->global.inLobby = COUNTERP_CLEAR;
+	room->global.isSpectating = COUNTERP_CLEAR;
 	room->global.selectedBeatmap = CLEAR_BEATMAP;
 	room->global.selectedModifiers = CLEAR_MODIFIERS;
 	room->global.roundRobin = 0;
@@ -1841,45 +1828,33 @@ static struct WireSessionAllocResp room_resolve_session(struct InstanceContext *
 		return (struct WireSessionAllocResp){.result = ConnectToServerResponse_Result_UnknownError};
 	struct SS addr = {.len = req->address.length};
 	memcpy(&addr.ss, req->address.data, req->address.length);
+	FOR_SOME_PLAYERS(id, room->playerSort,)
+		if(SS_equal(NetSession_get_addr(&room->players[id].net), &addr))
+			room_disconnect(ctx, &room, &room->players[id], DC_HOLD | DC_NOTIFY);
 	struct InstanceSession *session = NULL;
-	FOR_SOME_PLAYERS(id, room->playerSort,) {
-		if(SS_equal(&addr, NetSession_get_addr(&room->players[id].net))) {
-			session = &room->players[id];
-			room_disconnect(ctx, &room, session, DC_RESET | DC_NOTIFY);
-			break;
-		}
-	}
-	if(!session) {
+	{
 		struct CounterP tmp = room->playerSort;
 		uint32_t id = 0;
 		if((!CounterP_set_next(&tmp, &id)) || (int32_t)id >= room->configuration.maxPlayerCount) {
-			uprintf("ROOM FULL\n");
-			return (struct WireSessionAllocResp){.result = ConnectToServerResponse_Result_UnknownError};
+			uprintf("ROOM FULL: %u >= %d\n", id ? id : (uint32_t)(sizeof(tmp.sub) * 8), room->configuration.maxPlayerCount);
+			return (struct WireSessionAllocResp){.result = ConnectToServerResponse_Result_ServerAtCapacity};
 		}
 		session = &room->players[id];
-		net_session_init(&ctx->net, &session->net, addr);
-		session->net.version = PV_LEGACY_DEFAULT;
-		session->net.version.protocolVersion = (uint8_t)req->protocolVersion;
 		room->playerSort = tmp;
 	}
-	session->secret = req->secret;
-	session->userName = req->userName;
-	session->userId = AnnotateIDs ? String_fmt("%.*s$%zu", req->userId.length, req->userId.data, indexof(room->players, session)) : req->userId;
-	session->publicEncryptionKey.length = 0;
-	session->sentIdentity = false;
-	session->directDownloads = false;
-	session->joinOrder = ++room->joinCount;
-	session->state = 0;
-	session->recommendTime = 0;
-	session->recommendedBeatmap = CLEAR_BEATMAP;
-	session->recommendedModifiers = CLEAR_MODIFIERS;
-
-	instance_pingpong_init(&session->tableTennis);
-	instance_channels_init(&session->channels);
-	session->stateHash.bloomFilter = (struct BitMask128){0, 0};
-	session->avatar = CLEAR_AVATARDATA;
-
+	net_session_init(&ctx->net, &session->net, addr);
+	session->net.version.protocolVersion = (uint8_t)req->protocolVersion;
 	session->net.clientRandom = req->random;
+	*session = (struct InstanceSession){
+		.net = session->net,
+		.secret = req->secret,
+		.userName = req->userName,
+		.userId = AnnotateIDs ? String_fmt("%.*s$%u", req->userId.length, req->userId.data, (uint32_t)indexof(room->players, session)) : req->userId,
+		.joinOrder = ++room->joinCount,
+		.avatar = CLEAR_AVATARDATA,
+	};
+	instance_channels_init(&session->channels);
+
 	bool ipv4 = (addr.ss.ss_family != AF_INET6 || memcmp(addr.in6.sin6_addr.s6_addr, (const uint16_t[]){0,0,0,0,0,0xffff}, 12) == 0);
 	struct WireSessionAllocResp resp = {
 		.result = ConnectToServerResponse_Result_Success,
@@ -1922,8 +1897,9 @@ static void instance_room_join(struct InstanceContext *ctx, union WireLink *link
 		.type = WireMessageType_WireRoomJoinResp,
 		.cookie = cookie,
 	};
-	if(instance_room_get_protocol(ctx, req->base.room).protocolVersion != req->base.protocolVersion) {
-		uprintf("Connect to Server Error: Version mismatch\n");
+	uint32_t roomProtocol = instance_room_get_protocol(ctx, req->base.room).protocolVersion;
+	if(roomProtocol != req->base.protocolVersion) {
+		uprintf("Connect to Server Error: Version mismatch (room=%u, client=%u)\n", roomProtocol, req->base.protocolVersion);
 		r_alloc.roomJoinResp.base.result = ConnectToServerResponse_Result_VersionMismatch;
 	} else {
 		r_alloc.roomJoinResp.base = room_resolve_session(ctx, &req->base);
@@ -1994,9 +1970,8 @@ void instance_cleanup() {
 			pthread_join(threads[i], NULL);
 			threads[i] = 0;
 			FOR_ALL_ROOMS(ctx, room) {
-				FOR_SOME_PLAYERS(id, (*room)->playerSort,) {
+				FOR_SOME_PLAYERS(id, (*room)->playerSort,)
 					room_disconnect(ctx, room, &(*room)->players[id], DC_DEFAULT);
-				}
 			}
 			ctx->roomMask = COUNTER64_CLEAR; // should be redundant, but just to be safe
 			memset(ctx->rooms, 0, sizeof(ctx->rooms));

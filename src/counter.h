@@ -14,19 +14,19 @@ struct CounterP {
 };
 
 static const struct Counter64 COUNTER64_CLEAR = {0};
-static const struct CounterP COUNTER128_CLEAR = {{{0}, {0}}};
+static const struct CounterP COUNTERP_CLEAR = {0};
 
 static inline bool Counter64_get(struct Counter64 set, uint32_t bit) {
 	return (set.bits >> bit) & 1;
 }
 static inline bool Counter64_clear(struct Counter64 *set, uint32_t bit) {
 	bool prev = Counter64_get(*set, bit);
-	set->bits &= ~(1 << bit);
+	set->bits &= ~(UINT64_C(1) << bit);
 	return prev;
 }
 static inline bool Counter64_set(struct Counter64 *set, uint32_t bit) {
 	bool prev = Counter64_get(*set, bit);
-	set->bits |= 1 << bit;
+	set->bits |= UINT64_C(1) << bit;
 	return prev;
 }
 static inline bool Counter64_overwrite(struct Counter64 *set, uint32_t bit, bool state) {
@@ -81,40 +81,56 @@ static inline bool CounterP_overwrite(struct CounterP *set, uint32_t bit, bool s
 	return (state ? CounterP_set : CounterP_clear)(set, bit);
 }
 [[maybe_unused]] static bool CounterP_clear_next(struct CounterP *set, uint32_t *bit) {
-	uint8_t i = Counter64_isEmpty(set->sub[0]);
-	if(!Counter64_clear_next(&set->sub[i], bit))
-		return false;
-	*bit += i * 64;
-	return true;
+	for(uint32_t i = 0; i < lengthof(set->sub); ++i) {
+		if(!Counter64_clear_next(&set->sub[i], bit))
+			continue;
+		*bit += i * 64;
+		return true;
+	}
+	return false;
 }
 [[maybe_unused]] static bool CounterP_set_next(struct CounterP *set, uint32_t *bit) {
-	uint8_t i = Counter64_isFilled(set->sub[0]);
-	if(!Counter64_set_next(&set->sub[i], bit))
-		return false;
-	*bit += i * 64;
-	return true;
+	for(uint32_t i = 0; i < lengthof(set->sub); ++i) {
+		if(!Counter64_set_next(&set->sub[i], bit))
+			continue;
+		*bit += i * 64;
+		return true;
+	}
+	return false;
 }
 static inline bool CounterP_eq(struct CounterP a, struct CounterP b) {
-	return Counter64_eq(a.sub[0], b.sub[0]) && Counter64_eq(a.sub[1], b.sub[1]);
+	for(uint32_t i = 0; i < lengthof(a.sub); ++i)
+		if(!Counter64_eq(a.sub[i], b.sub[i]))
+			return false;
+	return true;
 }
 static inline bool CounterP_contains(struct CounterP set, struct CounterP subset) {
-	return Counter64_contains(set.sub[0], subset.sub[0]) && Counter64_contains(set.sub[1], subset.sub[1]);
+	for(uint32_t i = 0; i < lengthof(set.sub); ++i)
+		if(!Counter64_contains(set.sub[i], subset.sub[i]))
+			return false;
+	return true;
 }
 static inline bool CounterP_containsNone(struct CounterP set, struct CounterP subset) {
-	return Counter64_containsNone(set.sub[0], subset.sub[0]) && Counter64_containsNone(set.sub[1], subset.sub[1]);
+	for(uint32_t i = 0; i < lengthof(set.sub); ++i)
+		if(!Counter64_containsNone(set.sub[i], subset.sub[i]))
+			return false;
+	return true;
 }
 static inline bool CounterP_isEmpty(struct CounterP set) {
-	return Counter64_isEmpty(set.sub[0]) && Counter64_isEmpty(set.sub[1]);
+	for(uint32_t i = 0; i < lengthof(set.sub); ++i)
+		if(!Counter64_isEmpty(set.sub[i]))
+			return false;
+	return true;
 }
 static inline struct CounterP CounterP_and(struct CounterP a, struct CounterP b) {
-	return (struct CounterP){{
-		Counter64_and(a.sub[0], b.sub[0]),
-		Counter64_and(a.sub[1], b.sub[1]),
-	}};
+	struct CounterP out;
+	for(uint32_t i = 0; i < lengthof(a.sub); ++i)
+		out.sub[i] = Counter64_and(a.sub[i], b.sub[i]);
+	return out;
 }
 static inline struct CounterP CounterP_or(struct CounterP a, struct CounterP b) {
-	return (struct CounterP){{
-		Counter64_or(a.sub[0], b.sub[0]),
-		Counter64_or(a.sub[1], b.sub[1]),
-	}};
+	struct CounterP out;
+	for(uint32_t i = 0; i < lengthof(a.sub); ++i)
+		out.sub[i] = Counter64_or(a.sub[i], b.sub[i]);
+	return out;
 }

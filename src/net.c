@@ -403,12 +403,6 @@ void net_keypair_free(struct NetKeypair *keys) {
 	mbedtls_ecp_point_free(&keys->public);
 }
 
-void net_session_reset(struct NetContext *ctx, struct NetSession *session) {
-	struct SS addr = session->addr;
-	net_session_free(session);
-	net_session_init(ctx, session, addr);
-}
-
 void net_stop(struct NetContext *ctx) {
 	if(ctx->sockfd == -1)
 		return;
@@ -513,36 +507,42 @@ static inline int32_t max32(int32_t a, int32_t b) {
 	return a > b ? a : b;
 }
 
-uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSession **session, void **userdata_out) {
-	retry:; // __attribute__((musttail)) not available in all compilers
-	uint32_t currentTime = net_time();
-	uint32_t nextTick = ctx->onResend(ctx->userptr, currentTime);
-	if(nextTick < 2)
-		nextTick = 2;
-	struct timeval timeout;
-	timeout.tv_sec = nextTick / 1000; // Don't loop if there's nothing to do
-	timeout.tv_usec = (nextTick % 1000) * 1000;
-	fd_set fdSet;
-	FD_ZERO(&fdSet);
-	FD_SET(ctx->sockfd, &fdSet);
+static bool net_poll(struct NetContext *ctx, fd_set *fdSet, uint32_t timeout) {
+	FD_ZERO(fdSet);
+	FD_SET(ctx->sockfd, fdSet);
 	if(ctx->listenfd != -1)
-		FD_SET(ctx->listenfd, &fdSet);
+		FD_SET(ctx->listenfd, fdSet);
 	int32_t fdMax = max32(ctx->sockfd, ctx->listenfd);
 	for(mbedtls_ssl_context **link = NetContext_remoteLinks(ctx), **end = &link[ctx->remoteLinks_len]; link < end; ++link) {
 		int32_t remotefd = (int32_t)(intptr_t)(*link)->MBEDTLS_PRIVATE(p_bio);
-		FD_SET(remotefd, &fdSet);
+		FD_SET(remotefd, fdSet);
 		fdMax = max32(fdMax, remotefd);
 	}
 	net_unlock(ctx);
 	[[maybe_unused]] struct timespec sleepStart = GetTime();
-	bool noData = (select(fdMax + 1, &fdSet, NULL, NULL, &timeout) == 0);
+	int nfd = select(fdMax + 1, fdSet, NULL, NULL, &(struct timeval){
+		.tv_sec = timeout / 1000,
+		.tv_usec = (timeout % 1000) * 1000,
+	});
 	[[maybe_unused]] struct timespec sleepEnd = GetTime();
 	net_lock(ctx);
 	#ifdef PERFTEST
 	perf_tick(&ctx->perf, sleepStart, sleepEnd);
 	#endif
-	if(noData)
-		goto retry;
+	if(nfd == -1) {
+		uprintf("select() failed: %s\n", net_strerror(net_error()));
+		FD_ZERO(fdSet);
+		FD_SET(ctx->sockfd, fdSet);
+		atomic_store(&ctx->run, false);
+	}
+	return nfd == 0;
+}
+
+uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSession **session, void **userdata_out) {
+	retry:; // __attribute__((musttail)) not available in all compilers
+	fd_set fdSet;
+	for(uint32_t nextTick = 0; net_poll(ctx, &fdSet, nextTick); nextTick = (nextTick >= 2) ? nextTick : 2)
+		nextTick = ctx->onResend(ctx->userptr, net_time());
 	for(uint32_t i = 0, len = ctx->remoteLinks_len; i < len; ++i) {
 		mbedtls_ssl_context *link = NetContext_remoteLinks(ctx)[i];
 		if(!FD_ISSET((intptr_t)link->MBEDTLS_PRIVATE(p_bio), &fdSet))

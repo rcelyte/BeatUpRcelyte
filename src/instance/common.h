@@ -145,14 +145,12 @@ struct PingPong {
 
 typedef void (*ChanneledHandler)(void *userptr, const uint8_t **data, const uint8_t *end, DeliveryMethod channelId);
 
-void instance_pingpong_init(struct PingPong *pingpong);
 void instance_channels_init(struct Channels *channels);
 void instance_channels_free(struct Channels *channels);
+uint32_t instance_channels_tick(struct Channels *channels, struct NetContext *net, struct NetSession *session, uint32_t currentTime);
 void instance_send_channeled(struct NetSession *session, struct Channels *channels, const uint8_t *buf, uint32_t len, DeliveryMethod method);
 void handle_Ack(struct NetSession *session, struct Channels *channels, const struct Ack *ack);
 void handle_Channeled(ChanneledHandler handler, void *userptr, struct NetContext *net, struct NetSession *session, struct Channels *channels, const struct NetPacketHeader *header, const uint8_t **data, const uint8_t *end);
 void handle_Ping(struct NetContext *net, struct NetSession *session, struct PingPong *pingpong, struct Ping ping);
 float handle_Pong(struct NetContext *net, struct NetSession *session, struct PingPong *pingpong, struct Pong pong);
 void handle_MtuCheck(struct NetContext *net, struct NetSession *session, const struct MtuCheck *req);
-void InstanceResendPacket_trySend(struct InstanceResendPacket *packet, struct NetContext *net, struct NetSession *session, uint32_t currentTime);
-void Ack_flush(struct Ack *ack, struct NetContext *net, struct NetSession *session);
