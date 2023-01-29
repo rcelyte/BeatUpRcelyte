@@ -7,9 +7,11 @@ static partial class BeatUpClient {
 		}
 	}
 
-	[Patch(PatchType.Postfix, typeof(PlatformAuthenticationTokenProvider), nameof(PlatformAuthenticationTokenProvider.GetAuthenticationToken))]
-	public static void PlatformAuthenticationTokenProvider_GetAuthenticationToken(ref System.Threading.Tasks.Task<AuthenticationToken> __result, AuthenticationToken.Platform ____platform, string ____userId, string ____userName) {
+	[Detour(typeof(PlatformAuthenticationTokenProvider), nameof(PlatformAuthenticationTokenProvider.GetAuthenticationToken))]
+	static System.Threading.Tasks.Task<AuthenticationToken> PlatformAuthenticationTokenProvider_GetAuthenticationToken(PlatformAuthenticationTokenProvider self) {
+		System.Threading.Tasks.Task<AuthenticationToken> result = (System.Threading.Tasks.Task<AuthenticationToken>)Base(self);
 		if(Resolve<CustomNetworkConfig>() != null)
-			__result = AuthWrapper(__result, ____platform, ____userId, ____userName);
+			result = AuthWrapper(result, self._platform, self._userId, self._userName);
+		return result;
 	}
 }

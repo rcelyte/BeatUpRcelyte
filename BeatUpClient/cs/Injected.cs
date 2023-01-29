@@ -1,6 +1,8 @@
 static partial class BeatUpClient {
-	static class Injected<T> where T : class {
+	internal static class Injected<T> where T : class {
 		public static T? Instance = default(T);
+		public static T? Resolve(Zenject.DiContainer container) =>
+			(Instance = container.TryResolve<T>());
 		public static T? Resolve<U>(Zenject.DiContainer container) where U : class =>
 			(Instance = container.TryResolve<U>() as T);
 	}

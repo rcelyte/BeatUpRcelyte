@@ -57,17 +57,15 @@ static partial class BeatUpClient {
 
 			characteristicSelector.didSelectBeatmapCharacteristicEvent = delegate {};
 			difficultySelector.didSelectDifficultyEvent = delegate {};
-			System.Collections.Generic.IReadOnlyList<PreviewDifficultyBeatmapSet>? previewSets = beatmapLevel?.beatmapLevel.previewDifficultyBeatmapSets;
+			if(beatmapLevel == null)
+				return;
+			System.Collections.Generic.IReadOnlyList<PreviewDifficultyBeatmapSet>? previewSets = beatmapLevel.beatmapLevel.previewDifficultyBeatmapSets;
 			if(previewSets == null)
 				return;
-			System.Collections.Generic.IReadOnlyList<IDifficultyBeatmap> diffs = (previewSets
-				.Where(set => set.beatmapCharacteristic == beatmapLevel!.beatmapCharacteristic && set.beatmapDifficulties?.Length >= 1)
-				.Select(set => set.beatmapDifficulties)
-				.FirstOrDefault()
-				?? new[] {beatmapLevel!.beatmapDifficulty})
-				.Select(diff => new PlaceholderDifficulty(diff))
-				.ToList();
-			difficultySelector.SetData(diffs, beatmapLevel!.beatmapDifficulty);
+			PlaceholderDifficulty[]? diffs = previewSets
+				.FirstOrDefault(set => set.beatmapCharacteristic == beatmapLevel.beatmapCharacteristic && set.beatmapDifficulties?.Length >= 1)
+				?.beatmapDifficulties.Select(diff => new PlaceholderDifficulty(diff)).ToArray();
+			difficultySelector.SetData(diffs ?? new[] {new PlaceholderDifficulty(beatmapLevel.beatmapDifficulty)}, beatmapLevel.beatmapDifficulty);
 			characteristicSelector.SetData(previewSets.Select(set => new DifficultyBeatmapSet(set.beatmapCharacteristic, null!)).ToList(), beatmapLevel.beatmapCharacteristic);
 			if(hideHints)
 				foreach(HMUI.HoverHint hint in characteristicSelector.GetComponentsInChildren<HMUI.HoverHint>())

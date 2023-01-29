@@ -2,90 +2,134 @@ using static System.Linq.Enumerable;
 
 static partial class BeatUpClient {
 	class ServerDropdown : DropdownSettingsController {
-		struct Entry {
-			public string? name, status;
+		const bool EnableOfficial = true;
+
+		readonly struct Entry {
+			public readonly string name, status;
+			public Entry(string name, string status) =>
+				(this.name, this.status) = (name, status);
+			public bool Existing() => (EnableOfficial && string.IsNullOrEmpty(name)) || BeatUpClient_Config.Instance.Servers.ContainsKey(name);
 		}
-		static bool EnableOfficial = true;
-		Entry[] options = null!;
-		Entry ephemeral = new Entry();
-		int ephemeralIndex = -1;
-		internal UnityEngine.GameObject? addButton = null, editButton = null;
-		internal UnityEngine.GameObject? removeButton = null, saveButton = null;
+
+		readonly MultiplayerModeSelectionFlowCoordinator flowCoordinator;
+		Entry? ephemeralEntry = null;
+		Entry[] options = new Entry[0];
+		readonly UnityEngine.UI.Button editButton;
+		readonly UnityEngine.GameObject addButton, saveButton, removeButton;
 		public ServerDropdown() {
 			_dropdown = GetComponent<HMUI.SimpleTextDropdown>();
 			_dropdown._modalView._dismissPanelAnimation._duration = 0; // Animations will break the UI if the player clicks too fast
-			BeatUpClient_Config.Instance.Servers.TryGetValue(customServerHostName, out string? status);
-			SetServer(customServerHostName, status);
+			flowCoordinator = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerModeSelectionFlowCoordinator>()[0];
+			ephemeralEntry = new Entry(customServerHostName.value, "");
+
+			UnityEngine.GameObject colorSchemeButton = UnityEngine.Resources.FindObjectsOfTypeAll<ColorsOverrideSettingsPanelController>()[0]._editColorSchemeButton.gameObject;
+			UnityEngine.GameObject okButton = UnityEngine.Resources.FindObjectsOfTypeAll<EditColorSchemeController>()[0]._closeButton.gameObject;
+			UnityEngine.Sprite[] sprites = UnityEngine.Resources.FindObjectsOfTypeAll<UnityEngine.Sprite>();
+
+			editButton = UI.CreateButtonFrom(colorSchemeButton, transform, "EditServer", () =>
+				EditServerViewController.Instance.TryPresent(true)).gameObject.GetComponent<UnityEngine.UI.Button>();
+			editButton.interactable = false;
+			UnityEngine.RectTransform addButton = UI.CreateButtonFrom(colorSchemeButton, transform, "AddServer", () =>
+				EditServerViewController.Instance.TryPresent(false));
+			addButton.Find("Icon").GetComponent<HMUI.ImageView>().sprite = sprites.FirstOrDefault(sprite => sprite.name == "AddIcon");
+			this.addButton = addButton.gameObject;
+
+			UnityEngine.RectTransform smallButton = (UnityEngine.RectTransform)colorSchemeButton.transform;
+			UnityEngine.GameObject smallIcon = smallButton.Find("Icon").gameObject;
+			UnityEngine.GameObject CreateShinyButton(float iconScale, string name, UnityEngine.Sprite? sprite, System.Action callback) {
+				UnityEngine.RectTransform button = UI.CreateButtonFrom(okButton, transform, name, callback);
+				UnityEngine.Object.Destroy(button.Find("Content").gameObject);
+				(button.pivot, button.sizeDelta) = (smallButton.pivot, smallButton.sizeDelta - new UnityEngine.Vector2(1, 0));
+				UnityEngine.GameObject icon = UnityEngine.Object.Instantiate(smallIcon, button);
+				icon.transform.localScale = new UnityEngine.Vector3(iconScale, iconScale, 1);
+				icon.GetComponent<HMUI.ImageView>().sprite = sprite;
+				return button.gameObject;
+			}
+			saveButton = CreateShinyButton(.75f, "SaveServer", sprites.FirstOrDefault(sprite => sprite.name == "DownloadIcon"), SaveEphemeral);
+			removeButton = CreateShinyButton(.65f, "RemoveServer", sprites.FirstOrDefault(sprite => sprite.name == "CloseIcon"), ClearEphemeral);
 		}
+		void Awake() {
+			editButton.transform.localPosition = new UnityEngine.Vector3(52, 0, 0);
+			addButton.transform.localPosition = new UnityEngine.Vector3(-40, 0, 0);
+			saveButton.transform.localPosition = new UnityEngine.Vector3(51.5f, 0, 0);
+			removeButton.transform.localPosition = new UnityEngine.Vector3(-40.5f, 0, 0);
+
+			onNetworkConfigChanged += SetServer;
+		}
+		void OnDestroy() =>
+			onNetworkConfigChanged -= SetServer;
 		protected override bool GetInitValues(out int idx, out int numberOfElements) {
+			System.Collections.Generic.IEnumerable<Entry> addrs = BeatUpClient_Config.Instance.Servers.Select(s => new Entry(s.Key, s.Value ?? ""));
+			if(ephemeralEntry is Entry entry) {
+				if(entry.Existing())
+					ephemeralEntry = null;
+				else
+					addrs = addrs.Prepend(entry);
+			}
+			if(EnableOfficial)
+				addrs = addrs.Prepend(new Entry("", ""));
+			options = addrs.ToArray();
+
 			idx = 0;
-			for(int i = System.Convert.ToInt32(EnableOfficial), count = options.Length; i < count; ++i) {
+			for(int i = 0, count = options.Length; i < count; ++i) {
 				if(options[i].name != customServerHostName.value)
 					continue;
 				idx = i;
 				break;
 			}
 			numberOfElements = options.Length;
-			RefreshEphemeralUI(idx == ephemeralIndex);
+			RefreshStyle(idx);
 			Log.Debug($"ServerDropdown.GetInitValues(idx={idx}, numberOfElements={numberOfElements})");
 			return true;
 		}
 		protected override void ApplyValue(int idx) {
-			RefreshEphemeralUI(idx == ephemeralIndex);
-			Entry newValue = options[idx];
-			if(!SetNetworkConfig(newValue.name, newValue.status))
+			RefreshStyle(idx);
+			onNetworkConfigChanged -= SetServer;
+			bool changed = UpdateNetworkConfig(options[idx].name, options[idx].status);
+			onNetworkConfigChanged += SetServer;
+			if(!changed)
 				return;
 			_dropdown.Hide(false);
-			ReenterModeSelection();
+			ReenterModeSelection(flowCoordinator);
 		}
 		protected override string TextForValue(int idx) =>
-			options[idx].name ?? "Official Server";
-		public void SetServer(string name, string? status) {
+			string.IsNullOrEmpty(options[idx].name) ? "Official Server" : options[idx].name;
+		public void SetServer(string name, string status) {
 			Log.Debug($"ServerDropdown.SetServer(\"{name}\", \"{status}\")");
-			System.Collections.Generic.IEnumerable<Entry> addrs = BeatUpClient_Config.Instance.Servers.Select(s => new Entry {name = s.Key, status = s.Value});
-			if(!(string.IsNullOrEmpty(name) || BeatUpClient_Config.Instance.Servers.ContainsKey(name)))
-				ephemeral = new Entry {name = name, status = status};
-			else if(name == ephemeral.name)
-				ephemeral = new Entry();
-			ephemeralIndex = -1;
-			if(!string.IsNullOrEmpty(ephemeral.name)) {
-				ephemeralIndex = System.Convert.ToInt32(EnableOfficial);
-				addrs = addrs.Prepend(ephemeral);
-			}
-			if(EnableOfficial)
-				addrs = addrs.Prepend(new Entry());
-			options = addrs.ToArray();
+			Entry entry = new Entry(name, status);
+			if(!entry.Existing())
+				ephemeralEntry = entry;
 			Refresh(false);
 		}
-		internal void ClearEphemeral() {
-			ephemeral = new Entry();
-			if(BeatUpClient_Config.Instance.Servers.TryGetValue(customServerHostName, out string? statusUrl))
-				SetServer(customServerHostName, statusUrl);
-			else
-				SetServer(string.Empty, null);
+		void ClearEphemeral() {
+			ephemeralEntry = null;
 			Refresh(true);
 		}
-		internal void SaveEphemeral() {
-			if(NullableStringHelper.IsNullOrEmpty(ephemeral.name))
+		void SaveEphemeral() {
+			if(string.IsNullOrEmpty(ephemeralEntry?.name))
 				return;
-			BeatUpClient_Config.Instance.Servers[ephemeral.name] = ephemeral.status;
+			Entry entry = ephemeralEntry.GetValueOrDefault();
+			BeatUpClient_Config.Instance.Servers[entry.name] = entry.status;
 			BeatUpClient_Config.Instance.Changed();
-			SetServer(ephemeral.name, ephemeral.status);
+			Refresh(false);
 		}
-		void RefreshEphemeralUI(bool isEphemeral) {
-			_dropdown._text.color = isEphemeral ? new UnityEngine.Color(1, 1, 0.1956522f, 1) : UnityEngine.Color.white;
-			addButton?.SetActive(!isEphemeral);
-			editButton?.SetActive(!isEphemeral);
-			removeButton?.SetActive(isEphemeral);
-			saveButton?.SetActive(isEphemeral);
+		void RefreshStyle(int idx) {
+			bool existing = options[idx].Existing();
+			_dropdown._text.color = existing ? UnityEngine.Color.white : new UnityEngine.Color(1, 1, 0.1956522f, 1);
+			editButton.gameObject.SetActive(existing);
+			addButton.SetActive(existing);
+			saveButton.SetActive(!existing);
+			removeButton.SetActive(!existing);
+			editButton.interactable = !string.IsNullOrEmpty(options[idx].name);
 		}
-	}
 
-	static UnityEngine.RectTransform CreateServerDropdown(UnityEngine.Transform parent, string name, IValue<string> value, System.Collections.Generic.IEnumerable<string> options) {
-		UnityEngine.GameObject simpleDropdownTemplate = UnityEngine.Resources.FindObjectsOfTypeAll<HMUI.SimpleTextDropdown>().First(dropdown => dropdown.GetComponents(typeof(UnityEngine.Component)).Length == 2).gameObject;
-		UnityEngine.GameObject gameObject = UI.CreateElement(simpleDropdownTemplate, parent, name);
-		gameObject.AddComponent<ServerDropdown>();
-		gameObject.SetActive(true);
-		return (UnityEngine.RectTransform)gameObject.transform;
+		public static UnityEngine.RectTransform Create(UnityEngine.Transform parent, string name) {
+			UnityEngine.GameObject template = UnityEngine.Resources.FindObjectsOfTypeAll<HMUI.SimpleTextDropdown>()
+				.First(dropdown => dropdown.GetComponents(typeof(UnityEngine.Component)).Length == 2).gameObject;
+			UnityEngine.GameObject gameObject = UI.CreateElement(template, parent, name);
+			gameObject.AddComponent<ServerDropdown>();
+			gameObject.SetActive(true);
+			return (UnityEngine.RectTransform)gameObject.transform;
+		}
 	}
 }

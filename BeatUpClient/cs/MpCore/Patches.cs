@@ -36,10 +36,6 @@ static partial class BeatUpClient_MpCore {
 		Net.SetLocalProgressUnreliable(new LoadProgress(LoadState.Downloading, (ushort)(value * 65535)));
 	}
 
-	[Patch(PatchType.Postfix, typeof(MultiplayerCore.Objects.MpLevelLoader), nameof(MultiplayerCore.Objects.MpLevelLoader.LoadLevel))]
-	public static void MpLevelLoader_LoadLevel_post(ILevelGameplaySetupData gameplaySetupData, System.Threading.CancellationTokenSource ____getBeatmapCancellationTokenSource, ref System.Threading.Tasks.Task<BeatmapLevelsModel.GetBeatmapLevelResult> ____getBeatmapLevelResultTask) =>
-		MultiplayerLevelLoader_LoadLevel_post(true, gameplaySetupData, ____getBeatmapCancellationTokenSource, ref ____getBeatmapLevelResultTask);
-
 	[Patch.Overload(PatchType.Postfix, typeof(MultiplayerCore.Patchers.NetworkConfigPatcher), nameof(MultiplayerCore.Patchers.NetworkConfigPatcher.UseMasterServer), new[] {typeof(DnsEndPoint), typeof(string), typeof(System.Nullable<int>)})]
 	[Patch.Overload(PatchType.Postfix, typeof(MultiplayerCore.Patchers.NetworkConfigPatcher), nameof(MultiplayerCore.Patchers.NetworkConfigPatcher.UseMasterServer), new[] {typeof(DnsEndPoint), typeof(string), typeof(System.Nullable<int>), typeof(string)})]
 	public static void NetworkConfigPatcher_UseMasterServer(DnsEndPoint endPoint, string statusUrl) =>
@@ -47,20 +43,16 @@ static partial class BeatUpClient_MpCore {
 
 	[Patch(PatchType.Postfix, typeof(MultiplayerCore.Patchers.NetworkConfigPatcher), nameof(MultiplayerCore.Patchers.NetworkConfigPatcher.UseOfficialServer))]
 	public static void NetworkConfigPatcher_UseOfficialServer() =>
-		UpdateNetworkConfig(string.Empty, null);
+		UpdateNetworkConfig(string.Empty);
 
-	public static System.Exception? MultiplayerStatusModel_MoveNext() => null;
+	static System.Exception? MultiplayerStatusModel_MoveNext() => null;
 
 	[Init]
 	public static void Patch() {
 		MultiplayerCore.Patches.DataModelBinderPatch._playersDataModelMethod = HarmonyLib.AccessTools.DeclaredMethod(typeof(BeatUpClient_MpCore), nameof(BeatUpClient_MpCore.Patch)); // Suppress transpiler
-		DiJack.Register(typeof(PlayersDataModel));
-		DiJack.Patch();
 
-		System.Reflection.MethodBase? original = HarmonyLib.AccessTools.FirstInner(typeof(MultiplayerStatusModel), t => t.Name.StartsWith("<GetMultiplayerStatusAsyncInternal"))?.GetMethod("MoveNext", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-		harmony.Patch(original, finalizer: new HarmonyLib.HarmonyMethod(HarmonyLib.AccessTools.DeclaredMethod(typeof(BeatUpClient_MpCore), nameof(MultiplayerStatusModel_MoveNext))));
+		new Patch(PatchType.Finalizer, typeof(MultiplayerStatusModel).Assembly.GetType("MultiplayerStatusModel+<GetMultiplayerStatusAsyncInternal>d__9", true), "MoveNext")
+			.Bind(HarmonyLib.AccessTools.DeclaredMethod(typeof(BeatUpClient_MpCore), nameof(MultiplayerStatusModel_MoveNext)))();
 	}
-	public static void Unpatch() =>
-		DiJack.UnregisterAll();
 }
 #endif

@@ -41,7 +41,7 @@ static partial class BeatUpClient {
 	[Patch(PatchType.Prefix, typeof(MultiplayerConnectedPlayerInstaller), nameof(MultiplayerConnectedPlayerInstaller.InstallBindings))]
 	public static void MultiplayerConnectedPlayerInstaller_InstallBindings(GameplayCoreSceneSetupData ____sceneSetupData, IConnectedPlayer ____connectedPlayer) {
 		bool zenMode = ____sceneSetupData.gameplayModifiers.zenMode || (BeatUpClient_Config.Instance.HideOtherLevels && !haveMpEx);
-		if(connectInfo.perPlayerModifiers && PlayerIndex(____connectedPlayer) < 128) {
+		if(connectInfo.perPlayerModifiers) {
 			PlayerData.ModifiersWeCareAbout mods = playerData.lockedModifiers[PlayerIndex(____connectedPlayer)];
 			____sceneSetupData.gameplayModifiers = ____sceneSetupData.gameplayModifiers.CopyWith(disappearingArrows: mods.disappearingArrows, ghostNotes: mods.ghostNotes, zenMode: zenMode, smallCubes: mods.smallCubes);
 		} else {

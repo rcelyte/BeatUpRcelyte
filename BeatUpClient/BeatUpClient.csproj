@@ -4,7 +4,7 @@
 		<TargetFramework>net472</TargetFramework>
 		<AssemblyName>MakeThingsPublic</AssemblyName>
 		<OutputType>Exe</OutputType>
-		<LangVersion>8</LangVersion>
+		<LangVersion>9</LangVersion>
 		<Nullable>enable</Nullable>
 		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 		<LocalRefsDir Condition="Exists('..\Refs')">..\Refs</LocalRefsDir>
@@ -35,64 +35,18 @@
 		<PropertyGroup Condition="'$(OS)' != 'Windows_NT'">
 			<MakeThingsPublic_exe>mono $(TargetPath)</MakeThingsPublic_exe>
 		</PropertyGroup>
+		<Exec Command="$(MakeThingsPublic_exe) $(BeatSaberDir)"/>
+		<WriteLinesToFile File=".obj/manifest.json" Lines="{&quot;%24schema&quot;:&quot;https://raw.githubusercontent.com/bsmg/BSIPA-MetadataFileSchema/master/Schema.json&quot;,&quot;author&quot;:&quot;rcelyte&quot;,&quot;description&quot;:&quot;Tweaks and enhancements for enabling modded multiplayer&quot;,&quot;gameVersion&quot;:&quot;1.20.0&quot;,&quot;dependsOn&quot;:{&quot;BSIPA&quot;:&quot;*&quot;},&quot;conflictsWith&quot;:{&quot;BeatTogether&quot;:&quot;*&quot;},&quot;loadBefore&quot;:[&quot;MultiplayerCore&quot;],&quot;id&quot;:&quot;BeatUpClient&quot;,&quot;name&quot;:&quot;BeatUpClient&quot;,&quot;version&quot;:&quot;$(ModVersion)&quot;,&quot;links&quot;:{&quot;project-source&quot;:&quot;https://github.com/rcelyte/BeatUpRcelyte&quot;}}" Overwrite="true" Encoding="Unicode"/>
 		<ItemGroup>
-			<SourceDLL Include="$(BeatSaberDir)/Beat Saber_Data/Managed/*.dll"/>
-			<SourceDLL Include="$(BeatSaberDir)/Libs/MonoMod.RuntimeDetour.dll"/>
-			<SourceDLL Include="$(BeatSaberDir)/Libs/MonoMod.Utils.dll"/>
-			<SourceDLL Include="$(BeatSaberDir)/Libs/Mono.Cecil.dll"/>
-			<SourceDLL Include="$(BeatSaberDir)/Libs/0Harmony.dll"/>
-			<SourceDLL Include="$(BeatSaberDir)/Libs/Hive.Versioning.dll"/>
-			<SourceDLL Include="$(BeatSaberDir)/Libs/Newtonsoft.Json.dll"/>
-			<SourceDLL Include="$(BeatSaberDir)/Plugins/SongCore.dll"/>
-			<SourceDLL Include="$(BeatSaberDir)/Plugins/SiraUtil.dll"/>
-			<SourceDLL Include="$(BeatSaberDir)/Plugins/MultiplayerCore.dll"/>
-		</ItemGroup>
-		<MakeDir Directories=".tmp"/>
-		<Copy DestinationFolder=".folderNameWithoutSpaces" SourceFiles="@(SourceDLL)"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/MonoMod.RuntimeDetour.dll .tmp/MonoMod.RuntimeDetour.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/MonoMod.Utils.dll .tmp/MonoMod.Utils.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/Mono.Cecil.dll .tmp/Mono.Cecil.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/0Harmony.dll .tmp/0Harmony.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/Hive.Versioning.dll .tmp/Hive.Versioning.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/Newtonsoft.Json.dll .tmp/Newtonsoft.Json.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/SongCore.dll .tmp/SongCore.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/SiraUtil.dll .tmp/SiraUtil.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/MultiplayerCore.dll .tmp/MultiplayerCore.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/mscorlib.dll .tmp/mscorlib.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/IPA.Loader.dll .tmp/IPA.Loader.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/BGNet.dll .tmp/BGNet.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/BeatmapCore.dll .tmp/BeatmapCore.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/Colors.dll .tmp/Colors.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/GameplayCore.dll .tmp/GameplayCore.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/HMLib.dll .tmp/HMLib.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/HMUI.dll .tmp/HMUI.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/Main.dll .tmp/Main.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/UnityEngine.CoreModule.dll .tmp/UnityEngine.CoreModule.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/UnityEngine.AssetBundleModule.dll .tmp/UnityEngine.AssetBundleModule.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/UnityEngine.AudioModule.dll .tmp/UnityEngine.AudioModule.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/UnityEngine.ImageConversionModule.dll .tmp/UnityEngine.ImageConversionModule.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/UnityEngine.UnityWebRequestModule.dll .tmp/UnityEngine.UnityWebRequestModule.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/UnityEngine.UnityWebRequestAudioModule.dll .tmp/UnityEngine.UnityWebRequestAudioModule.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/UnityEngine.UIModule.dll .tmp/UnityEngine.UIModule.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/UnityEngine.UI.dll .tmp/UnityEngine.UI.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/Unity.TextMeshPro.dll .tmp/Unity.TextMeshPro.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/Polyglot.dll .tmp/Polyglot.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/System.IO.Compression.dll .tmp/System.IO.Compression.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/LiteNetLib.dll .tmp/LiteNetLib.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/VRUI.dll .tmp/VRUI.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/Zenject.dll .tmp/Zenject.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/Zenject-usage.dll .tmp/Zenject-usage.dll"/>
-		<Exec Command="$(MakeThingsPublic_exe) .folderNameWithoutSpaces/netstandard.dll .tmp/netstandard.dll"/>
-		<WriteLinesToFile File=".tmp/manifest.json" Lines="{&quot;%24schema&quot;:&quot;https://raw.githubusercontent.com/bsmg/BSIPA-MetadataFileSchema/master/Schema.json&quot;,&quot;author&quot;:&quot;rcelyte&quot;,&quot;description&quot;:&quot;Tweaks and enhancements for enabling modded multiplayer&quot;,&quot;gameVersion&quot;:&quot;1.20.0&quot;,&quot;dependsOn&quot;:{&quot;BSIPA&quot;:&quot;*&quot;},&quot;conflictsWith&quot;:{&quot;BeatTogether&quot;:&quot;*&quot;},&quot;loadBefore&quot;:[&quot;MultiplayerCore&quot;],&quot;id&quot;:&quot;BeatUpClient&quot;,&quot;name&quot;:&quot;BeatUpClient&quot;,&quot;version&quot;:&quot;$(ModVersion)&quot;,&quot;links&quot;:{&quot;project-source&quot;:&quot;https://github.com/rcelyte/BeatUpRcelyte&quot;}}" Overwrite="true" Encoding="Unicode"/>
-		<ItemGroup>
-			<ClientRef Include="$(BeatSaberDir)/Beat Saber_Data/Managed/mscorlib.dll"/>
 			<ClientRef Include="$(BeatSaberDir)/Beat Saber_Data/Managed/System.dll"/>
 			<ClientRef Include="$(BeatSaberDir)/Beat Saber_Data/Managed/System.Core.dll"/>
-			<ClientRef Include=".tmp/*.dll"/>
+			<ClientRef Include=".obj/Refs/Libs/*.dll"/>
+			<ClientRef Include=".obj/Refs/Managed/*.dll"/>
+			<ClientRef Include=".obj/Refs/Plugins/*.dll"/>
 			<ClientResource Include="data.bundle" LogicalName="BeatUpClient.data"/>
-			<ClientResource Include=".tmp/manifest.json" LogicalName=".manifest.json"/>
+			<ClientResource Include=".obj/manifest.json" LogicalName=".manifest.json"/>
 		</ItemGroup>
-		<Csc TargetType="library" Optimize="true" EmitDebugInformation="false" AllowUnsafeBlocks="true" Nullable="enable" LangVersion="8" DefineConstants="MPCORE_SUPPORT" Sources="cs/*.cs;cs/MpCore/*.cs;cs/Packets/*.cs;cs/Patches/*.cs;cs/Selector/*.cs;cs/Sharing/*.cs" OutputAssembly="BeatUpClient.dll" Resources="@(ClientResource)" References="@(ClientRef)"/>
+		<Csc TargetType="library" Optimize="true" EmitDebugInformation="false" AllowUnsafeBlocks="true" Nullable="enable" LangVersion="9" DefineConstants="MPCORE_SUPPORT" Sources="cs/*.cs;cs/MpCore/*.cs;cs/Packets/*.cs;cs/Patches/*.cs;cs/Selector/*.cs;cs/Sharing/*.cs" OutputAssembly="BeatUpClient.dll" Resources="@(ClientResource)" References="@(ClientRef)"/>
 	</Target>
 	<ItemGroup>
 		<PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.0">

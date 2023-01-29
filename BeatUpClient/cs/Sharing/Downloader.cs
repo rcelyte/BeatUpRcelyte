@@ -88,15 +88,16 @@ static partial class BeatUpClient {
 		System.Threading.Tasks.Task<byte[]?>? bufferTask = null;
 		System.Threading.CancellationTokenSource bufferCTS = new System.Threading.CancellationTokenSource();
 		System.Collections.Generic.Dictionary<ConnectedPlayerManager.ConnectedPlayer, uint> sources = new System.Collections.Generic.Dictionary<ConnectedPlayerManager.ConnectedPlayer, uint>();
-		public Downloader(ShareMeta meta) {
-			if(meta.byteLength == 0)
+		public Downloader(ShareInfo info, ConnectedPlayerManager.ConnectedPlayer firstPlayer) {
+			if(info.meta.byteLength == 0)
 				throw new System.ArgumentException("`meta.byteLength` cannot be zero");
-			if(meta.byteLength >= 1U << 31)
+			if(info.meta.byteLength >= 1U << 31)
 				throw new System.ArgumentException("`meta.byteLength` must be representable within a 32 bit signed integer");
 			connectedPlayerManager = Resolve<MultiplayerSessionManager>()?.connectedPlayerManager ?? throw new System.InvalidOperationException("Failed to resolve `ConnectedPlayerManager`");
 			writer = new LiteNetLib.Utils.NetDataWriter(false, ConnectedPlayerManager.kMaxUnreliableMessageLength);
 			connectedPlayerManager.Write(writer, new DataFragmentRequest(~0U).Wrap());
-			(this.meta, requestLength) = (meta, writer.Length);
+			(meta, requestLength) = (info.meta, writer.Length);
+			Add(firstPlayer, info.offset);
 		}
 		async System.Threading.Tasks.Task<byte[]?> GetInternal(System.Threading.CancellationToken cancellationToken) {
 			Log.Debug($"Downloading {meta.byteLength} bytes from {sources.Count} player{((sources.Count == 1) ? "" : "s")}");
@@ -137,7 +138,7 @@ static partial class BeatUpClient {
 						return null;
 					}
 					foreach((ConnectedPlayerManager.ConnectedPlayer source, uint blockStart) in sources.Select(pair => (pair.Key, pair.Value))) {
-						uint count = 256 / (uint)sources.Count + 1;
+						uint count = 7 / (uint)sources.Count + 1;
 						writer.Reset();
 						writer.Put(((ConnectedPlayerManager.ConnectedPlayer)connectedPlayerManager.localPlayer).connectionId);
 						writer.Put(source.remoteConnectionId);
@@ -157,7 +158,7 @@ static partial class BeatUpClient {
 						}
 						source.connection.Send(writer, LiteNetLib.DeliveryMethod.Unreliable);
 					}
-					await System.Threading.Tasks.Task.Delay(7, cancellationToken);
+					await System.Threading.Tasks.Task.Delay(20, cancellationToken);
 					cancellationToken.ThrowIfCancellationRequested();
 					if((++cycle & 3) == 0 && pendingProgress) {
 						onProgress?.Invoke((ushort)(progress * 65535 / blockCount));

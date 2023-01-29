@@ -15,17 +15,18 @@ static partial class BeatUpClient {
 		}
 	}
 
-	[Patch(PatchType.Postfix, typeof(MainSystemInit), nameof(MainSystemInit.InstallBindings))]
-	public static void MainSystemInit_InstallBindings_post(MainSystemInit __instance, Zenject.DiContainer container, MainSettingsModelSO ____mainSettingsModel) {
-		customServerHostName = ____mainSettingsModel.customServerHostName;
-		NetworkConfigSetup(__instance._networkConfig);
-		Injected<BeatmapCharacteristicCollectionSO>.Resolve<BeatmapCharacteristicCollectionSO>(container);
-		Injected<BeatmapLevelsModel>.Resolve<BeatmapLevelsModel>(container);
-		Injected<CustomLevelLoader>.Resolve<CustomLevelLoader>(container);
+	[Detour(typeof(MainSystemInit), nameof(MainSystemInit.InstallBindings))]
+	static void MainSystemInit_InstallBindings_post(MainSystemInit self, Zenject.DiContainer container) {
+		Base(self, container);
+		customServerHostName = self._mainSettingsModel.customServerHostName;
+		NetworkConfigSetup(self._networkConfig);
+		Injected<BeatmapCharacteristicCollectionSO>.Resolve(container);
+		Injected<BeatmapLevelsModel>.Resolve(container);
+		Injected<CustomLevelLoader>.Resolve(container);
 		Injected<CustomNetworkConfig>.Resolve<INetworkConfig>(container);
-		Injected<IMultiplayerStatusModel>.Resolve<IMultiplayerStatusModel>(container);
-		Injected<IQuickPlaySetupModel>.Resolve<IQuickPlaySetupModel>(container);
+		Injected<IMultiplayerStatusModel>.Resolve(container);
+		Injected<IQuickPlaySetupModel>.Resolve(container);
 		Injected<MultiplayerSessionManager>.Resolve<IMultiplayerSessionManager>(container)?.SetLocalPlayerState("modded", true);
-		Net.Setup(Injected<IMenuRpcManager>.Resolve<IMenuRpcManager>(container)!);
+		Net.Setup(Injected<IMenuRpcManager>.Resolve(container)!);
 	}
 }

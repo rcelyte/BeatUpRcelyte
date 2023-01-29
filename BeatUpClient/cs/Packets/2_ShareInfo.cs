@@ -17,12 +17,12 @@ static partial class BeatUpClient {
 		public void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
 			writer.PutVarULong(byteLength);
 			writer.ResizeIfNeed(writer._position + Hash256.Size);
-			hash.Span().CopyTo(new System.Span<byte>(writer.Data, writer._position, Hash256.Size));
+			hash.CopyTo(writer.Data, writer._position);
 			writer._position += Hash256.Size;
 		}
 		public ShareMeta(LiteNetLib.Utils.NetDataReader reader) : this() {
 			byteLength = reader.GetVarULong();
-			new System.ReadOnlySpan<byte>(reader.RawData, reader.Position, Hash256.Size).CopyTo(hash.Span());
+			hash = new(reader.RawData, reader.Position);
 			reader.SkipBytes(Hash256.Size);
 		}
 		public ShareMeta(ulong byteLength, Hash256 hash = default) =>

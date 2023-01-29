@@ -27,12 +27,12 @@ static partial class BeatUpClient {
 			(this.type, this.methodName) = (type, methodName);
 		static System.Type[] ParameterTypes(System.Reflection.ParameterInfo[] parameters, int start) {
 			System.Type[] types = new System.Type[System.Math.Max(parameters.Length - start, 0)];
-			for(int i = start, o = 0; i < parameters.Length; ++i, ++o)
-				types[o] = parameters[i].ParameterType;
+			for(int i = start; i < parameters.Length; ++i)
+				types[i - start] = parameters[i].ParameterType;
 			return types;
 		}
 		static readonly System.Reflection.BindingFlags declaredFlags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.GetField | System.Reflection.BindingFlags.SetField | System.Reflection.BindingFlags.GetProperty | System.Reflection.BindingFlags.SetProperty | System.Reflection.BindingFlags.DeclaredOnly;
-		public BoundPatch Bind(System.Reflection.MethodInfo self) {
+		public System.Action Bind(System.Reflection.MethodInfo self) {
 			System.Reflection.ParameterInfo[] parameters = self.GetParameters();
 			System.Reflection.MethodBase? original = null;
 			if(methodName == null) {
@@ -45,29 +45,28 @@ static partial class BeatUpClient {
 			}
 			if(original == null)
 				throw new System.ArgumentException($"Missing original method for `{self}`");
-			return new BoundPatch(() => {
-				MonoMod.RuntimeDetour.IDetour? hook = new MonoMod.RuntimeDetour.Detour(original, self), ilhook = null;
-				void Undo() {
-					hook.Dispose();
-					ilhook?.Dispose();
-				}
-				onUnpatch += Undo;
-				System.Reflection.MethodBase trampoline = hook.GenerateTrampoline();
-				ilhook = new MonoMod.RuntimeDetour.ILHook(self, il => {
-					bool fix = false;
-					Mono.Cecil.Cil.Code fixOp = ((original as System.Reflection.MethodInfo)?.ReturnType != typeof(void)) ? Mono.Cecil.Cil.Code.Unbox_Any : Mono.Cecil.Cil.Code.Pop;
-					foreach(Mono.Cecil.Cil.Instruction ins in il.Body.Instructions) {
-						if(ins.OpCode.Code == Mono.Cecil.Cil.Code.Call && ins.Operand is Mono.Cecil.MethodReference method && method.DeclaringType?.FullName == "BeatUpClient" && method.Name == "Base") {
-							ins.Operand = il.Import(trampoline);
-							fix = true;
-						} else if(fix) {
-							if(ins.OpCode.Code == fixOp)
-								ins.OpCode = Mono.Cecil.Cil.OpCodes.Nop;
-							fix = false;
-						}
+			MonoMod.RuntimeDetour.IDetour hook = new MonoMod.RuntimeDetour.Detour(original, self, new MonoMod.RuntimeDetour.DetourConfig {ManualApply = true});
+			onUnpatch += hook.Dispose;
+			System.Reflection.MethodBase trampoline = hook.GenerateTrampoline();
+			MonoMod.RuntimeDetour.IDetour ilhook = new MonoMod.RuntimeDetour.ILHook(self, il => {
+				bool fix = false;
+				Mono.Cecil.Cil.Code fixOp = ((original as System.Reflection.MethodInfo)?.ReturnType != typeof(void)) ? Mono.Cecil.Cil.Code.Unbox_Any : Mono.Cecil.Cil.Code.Pop;
+				foreach(Mono.Cecil.Cil.Instruction ins in il.Body.Instructions) {
+					if(ins.OpCode.Code == Mono.Cecil.Cil.Code.Call && ins.Operand is Mono.Cecil.MethodReference method && method.DeclaringType?.FullName == "BeatUpClient" && method.Name == "Base") {
+						ins.Operand = il.Import(trampoline);
+						fix = true;
+					} else if(fix) {
+						if(ins.OpCode.Code == fixOp)
+							ins.OpCode = Mono.Cecil.Cil.OpCodes.Nop;
+						fix = false;
 					}
-				});
-			});
+				}
+			}, new MonoMod.RuntimeDetour.ILHookConfig {ManualApply = true});
+			onUnpatch += ilhook.Dispose;
+			return () => {
+				ilhook.Apply();
+				hook.Apply();
+			};
 		}
 		static System.Action? onUnpatch = null;
 		public static void UnpatchAll() {

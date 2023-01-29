@@ -1,8 +1,9 @@
 static partial class BeatUpClient {
 	static ServerConnectInfo connectInfo = ServerConnectInfo.Default;
 
-	[Patch(PatchType.Postfix, typeof(BasicConnectionRequestHandler), nameof(BasicConnectionRequestHandler.GetConnectionMessage))]
-	public static void BasicConnectionRequestHandler_GetConnectionMessage(LiteNetLib.Utils.NetDataWriter writer) {
+	[Detour(typeof(BasicConnectionRequestHandler), nameof(BasicConnectionRequestHandler.GetConnectionMessage))]
+	static void BasicConnectionRequestHandler_GetConnectionMessage(BasicConnectionRequestHandler self, LiteNetLib.Utils.NetDataWriter writer, string userId, string userName, bool isConnectionOwner) {
+		Base(self, writer, userId, userName, isConnectionOwner);
 		Log.Debug("BasicConnectionRequestHandler_GetConnectionMessage()");
 		LiteNetLib.Utils.NetDataWriter sub = new LiteNetLib.Utils.NetDataWriter(false, (int)ServerConnectInfo.Size);
 		new ServerConnectInfo(LocalBlockSize, BeatUpClient_Config.Instance).Serialize(sub);
@@ -13,13 +14,13 @@ static partial class BeatUpClient {
 	}
 
 	// `windowSize` MUST be set before LiteNetLib constructs any `ReliableChannel`s
-	[Patch(PatchType.Prefix, typeof(LiteNetLib.NetConnectAcceptPacket), "FromData")]
-	public static void NetConnectAcceptPacket_FromData(ref LiteNetLib.NetPacket packet) {
+	[Detour(typeof(LiteNetLib.NetConnectAcceptPacket), nameof(LiteNetLib.NetConnectAcceptPacket.FromData))]
+	static LiteNetLib.NetConnectAcceptPacket NetConnectAcceptPacket_FromData(LiteNetLib.NetPacket packet) {
 		if(packet.Size == LiteNetLib.NetConnectAcceptPacket.Size + ServerConnectInfo.Size) {
 			packet.Size = LiteNetLib.NetConnectAcceptPacket.Size;
 			ServerConnectInfo info = new ServerConnectInfo(new LiteNetLib.Utils.NetDataReader(packet.RawData, packet.Size));
 			if(info.windowSize < 32 || info.windowSize > 512)
-				return;
+				return (LiteNetLib.NetConnectAcceptPacket)Base(packet);
 			connectInfo = info;
 			infoText.SetActive(true);
 			Log.Info($"Overriding window size - {info.windowSize}");
@@ -27,18 +28,22 @@ static partial class BeatUpClient {
 			Log.Error($"Bad NetConnectAcceptPacket length: {packet.Size} != {LiteNetLib.NetConnectAcceptPacket.Size}");
 		}
 		Polyglot.LocalizedTextMeshProUGUI? SuggestedModifiers = UnityEngine.Resources.FindObjectsOfTypeAll<GameServerPlayersTableView>()[0].transform.Find("ServerPlayersTableHeader/Labels/SuggestedModifiers")?.GetComponent<Polyglot.LocalizedTextMeshProUGUI>();
-		if(SuggestedModifiers == null)
-			return;
-		SuggestedModifiers.Key = connectInfo.perPlayerModifiers ? "BEATUP_SELECTED_MODIFIERS" : "SUGGESTED_MODIFIERS";
+		if(SuggestedModifiers != null)
+			SuggestedModifiers.Key = connectInfo.perPlayerModifiers ? "BEATUP_SELECTED_MODIFIERS" : "SUGGESTED_MODIFIERS";
+		return (LiteNetLib.NetConnectAcceptPacket)Base(packet);
 	}
 
-	[Patch(PatchType.Postfix, typeof(ConnectedPlayerManager.ConnectedPlayer), nameof(ConnectedPlayerManager.ConnectedPlayer.CreateDirectlyConnectedPlayer))]
-	public static void ConnectedPlayer_CreateDirectlyConnectedPlayer(IConnectedPlayer __result) {
+	[Detour(typeof(ConnectedPlayerManager.ConnectedPlayer), nameof(ConnectedPlayerManager.ConnectedPlayer.CreateDirectlyConnectedPlayer))]
+	static ConnectedPlayerManager.ConnectedPlayer ConnectedPlayer_CreateDirectlyConnectedPlayer(ConnectedPlayerManager manager, byte connectionId, IConnection connection) {
+		ConnectedPlayerManager.ConnectedPlayer result = (ConnectedPlayerManager.ConnectedPlayer)Base(manager, connectionId, connection);
 		if(connectInfo.@base.protocolId != 0)
-			Net.HandleConnectInfo(connectInfo.@base, __result);
+			Net.HandleConnectInfo(connectInfo.@base, result);
+		return result;
 	}
 
-	[Patch(PatchType.Prefix, typeof(ConnectedPlayerManager), "RemovePlayer")]
-	public static void ConnectedPlayerManager_RemovePlayer(IConnectedPlayer player) =>
-		Net.onDisconnect?.Invoke(player);
+	[Detour(typeof(ConnectedPlayerManager), nameof(ConnectedPlayerManager.RemovePlayer))]
+	static void ConnectedPlayerManager_RemovePlayer(ConnectedPlayerManager self, ConnectedPlayerManager.ConnectedPlayer player, DisconnectedReason reason) {
+		Net.OnDisconnect(player);
+		Base(self, player, reason);
+	}
 }

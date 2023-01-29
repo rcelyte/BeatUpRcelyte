@@ -17,24 +17,24 @@ static partial class BeatUpClient {
 		public readonly System.Collections.Generic.Dictionary<string, byte> tiers;
 		public event System.Action<LoadProgress, IConnectedPlayer>? onLoadProgress;
 		public PlayerData(int playerCount) {
-			previews = new RecommendPreview[128];
-			progress = new LoadProgress[128];
-			modifiers = new ModifiersWeCareAbout[128];
-			lockedModifiers = new ModifiersWeCareAbout[128];
+			previews = new RecommendPreview[256];
+			progress = new LoadProgress[256];
+			modifiers = new ModifiersWeCareAbout[256];
+			lockedModifiers = new ModifiersWeCareAbout[256];
 			tiers = new System.Collections.Generic.Dictionary<string, byte>();
 			onLoadProgress = null;
 			System.Array.Fill(previews, new RecommendPreview(null, null));
 			System.Array.Fill(modifiers, new ModifiersWeCareAbout {songSpeed = (GameplayModifiers.SongSpeed)255});
 			System.Array.Fill(lockedModifiers, new ModifiersWeCareAbout {songSpeed = (GameplayModifiers.SongSpeed)255});
 		}
-		public void Reset(int player) {
+		public void Reset(byte player) {
 			progress[player] = new LoadProgress();
 			lockedModifiers[player].songSpeed = modifiers[player].songSpeed = (GameplayModifiers.SongSpeed)255;
 		}
 		public void UpdateLoadProgress(LoadProgress newProgress, IConnectedPlayer? player, bool ignoreSequence = false) {
 			if(player == null)
 				return;
-			int index = PlayerIndex(player);
+			byte index = PlayerIndex(player);
 			if(ignoreSequence)
 				newProgress.sequence = progress[index].sequence;
 			else if(newProgress.sequence < progress[index].sequence)
@@ -46,11 +46,11 @@ static partial class BeatUpClient {
 			previews.FirstOrDefault((RecommendPreview preview) => preview.levelID == levelId);
 	}
 
-	internal static int PlayerIndex(IConnectedPlayer? player) { // A unique persistent index
+	internal static byte PlayerIndex(IConnectedPlayer? player) { // A unique persistent index
 		if(player?.isMe == true)
 			return 0;
 		if(player is ConnectedPlayerManager.ConnectedPlayer connectedPlayer)
-			return connectedPlayer.connectionId;
+			return connectedPlayer.remoteConnectionId;
 		return 127;
 	}
 }

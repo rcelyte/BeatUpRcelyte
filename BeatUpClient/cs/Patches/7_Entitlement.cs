@@ -12,15 +12,16 @@ static partial class BeatUpClient {
 				status = EntitlementsStatus.NotOwned;
 			} else if(result.beatmapLevel is CustomBeatmapLevel level) {
 				await announceTask;
-				if(ShareCache.TryGet(levelId, out ShareData cached)) {
-					info = cached.info;
+				ShareInfo oldInfo = ShareProvider.GetCurrent().info;
+				if(oldInfo.id.name == levelId) {
+					info = oldInfo;
 				} else {
 					System.Threading.Tasks.Task<(Hash256, System.ArraySegment<byte>)> zipTask = ZipLevel(level, System.Threading.CancellationToken.None, progress =>
 						Net.SetLocalProgressUnreliable(new LoadProgress(LoadState.Exporting, progress)));
 					announceTask = zipTask;
 					(Hash256 hash, System.ArraySegment<byte> data) = await zipTask;
 					if(data != null)
-						info = ShareCache.Add(levelId, hash, data);
+						info = ShareProvider.Set(levelId, hash, data);
 				}
 			}
 		}
@@ -49,30 +50,31 @@ static partial class BeatUpClient {
 			if(potentialSources.Count == 0)
 				canDownload.TrySetResult(false);
 		}
-		void OnEntitlement(string userId, string userLevelId, EntitlementsStatus entitlement) {
-			if(userLevelId != levelId)
-				return;
-			Log.Debug($"    No ShareInfo from user `{userId}`");
-			Remove(userId);
+		void OnEntitlement(string userId, string userLevelId, EntitlementsStatus status) {
+			if(userLevelId == levelId)
+				Remove(userId);
 		}
 		void OnDisconnect(IConnectedPlayer player) =>
 			Remove(player.userId);
-		void OnShareInfo(ShareInfo info, IConnectedPlayer player) {
+		void OnShareInfo(ShareInfo info, IConnectedPlayer player, bool processed) {
 			if(info.id.usage != id.usage || info.id.name != id.name)
 				return;
-			if(info.meta.byteLength > 0 && info.id.mimeType == id.mimeType) {
+			if(processed) {
 				Log.Debug($"    User `{player.userId}` can share!");
 				canDownload.TrySetResult(true);
-			} else {
-				Log.Debug($"    Invalid ShareInfo from user `{player.userId}`");
-				Remove(player.userId);
 			}
+			Remove(player.userId);
 		}
 		MenuRpcManager menuRpcManager = (MenuRpcManager)rpcManager;
 		try { // Callbacks must be registered immediately to avoid missing responses
 			menuRpcManager.setIsEntitledToLevelEvent += OnEntitlement;
 			Net.onDisconnect += OnDisconnect;
-			Net.onShareInfo += OnShareInfo;
+			ShareTracker.onProcess += OnShareInfo;
+			Remove(string.Empty); // Avoids potential softlock in solo lobbies
+			/*System.Collections.Generic.Dictionary<string, IPreviewBeatmapLevel> loadedPreviews = Resolve<BeatmapLevelsModel>()!._loadedPreviewBeatmapLevels;
+			if(loadedPreviews.TryGetValue(levelId, out IPreviewBeatmapLevel loaded) && (loaded is ShareTracker.DownloadPreview))
+				loadedPreviews.Remove(levelId);*/
+
 			EntitlementsStatus status = await AnnounceWrapper(await task, id.name);
 			RecommendPreview? preview = playerData.ResolvePreview(levelId);
 			if(MissingRequirements(preview)){
@@ -91,10 +93,6 @@ static partial class BeatUpClient {
 				Log.Debug("    Entitlement: untrusted requirements present");
 				return status;
 			}
-			if(ShareCache.CheckAvailability(levelId) != ShareCache.Status.None) {
-				Log.Debug("    Entitlement: download info cached");
-				return EntitlementsStatus.NotDownloaded;
-			}
 			if(await canDownload.Task) {
 				Log.Debug("    Entitlement: download available");
 				return EntitlementsStatus.NotDownloaded;
@@ -106,7 +104,7 @@ static partial class BeatUpClient {
 			return EntitlementsStatus.NotOwned;
 		} finally {
 			Log.Debug("EntitlementWrapper() end");
-			Net.onShareInfo -= OnShareInfo;
+			ShareTracker.onProcess -= OnShareInfo;
 			Net.onDisconnect -= OnDisconnect;
 			menuRpcManager.setIsEntitledToLevelEvent -= OnEntitlement;
 		}

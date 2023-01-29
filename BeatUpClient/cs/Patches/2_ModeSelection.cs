@@ -11,10 +11,10 @@ static partial class BeatUpClient {
 		}
 	}
 
-	[Patch(PatchType.Prefix, typeof(HMUI.FlowCoordinator), "ProvideInitialViewControllers")]
-	public static void FlowCoordinator_ProvideInitialViewControllers(HMUI.FlowCoordinator __instance, ref HMUI.ViewController mainViewController) {
+	[Detour(typeof(HMUI.FlowCoordinator), nameof(HMUI.FlowCoordinator.ProvideInitialViewControllers))]
+	static void FlowCoordinator_ProvideInitialViewControllers(HMUI.FlowCoordinator self, HMUI.ViewController mainViewController, HMUI.ViewController leftScreenViewController, HMUI.ViewController rightScreenViewController, HMUI.ViewController bottomScreenViewController, HMUI.ViewController topScreenViewController) {
 		JoiningLobbyViewController? originalView = mainViewController as JoiningLobbyViewController;
-		MultiplayerModeSelectionFlowCoordinator? flowCoordinator = __instance as MultiplayerModeSelectionFlowCoordinator;
+		MultiplayerModeSelectionFlowCoordinator? flowCoordinator = self as MultiplayerModeSelectionFlowCoordinator;
 		if(originalView != null && flowCoordinator != null) {
 			mainViewController = flowCoordinator._multiplayerModeSelectionViewController;
 			flowCoordinator._multiplayerModeSelectionViewController.transform.Find("Buttons")?.gameObject.SetActive(false);
@@ -22,20 +22,25 @@ static partial class BeatUpClient {
 			flowCoordinator.showBackButton = true;
 			ShowLoading(UnityEngine.Object.Instantiate(originalView._loadingControl.gameObject, mainViewController.transform));
 		}
+		Base(self, mainViewController, leftScreenViewController, rightScreenViewController, bottomScreenViewController, topScreenViewController);
 	}
 
 	// This callback triggers twice if `_multiplayerStatusModel.GetMultiplayerStatusAsync()` was cancelled by pressing the back button
-	[Patch(PatchType.Prefix, typeof(MainFlowCoordinator), nameof(MainFlowCoordinator.HandleMultiplayerModeSelectionFlowCoordinatorDidFinish))]
-	public static bool MainFlowCoordinator_HandleMultiplayerModeSelectionFlowCoordinatorDidFinish(MultiplayerModeSelectionFlowCoordinator multiplayerModeSelectionFlowCoordinator) =>
-		multiplayerModeSelectionFlowCoordinator.isActivated;
+	[Detour(typeof(MainFlowCoordinator), nameof(MainFlowCoordinator.HandleMultiplayerModeSelectionFlowCoordinatorDidFinish))]
+	static void MainFlowCoordinator_HandleMultiplayerModeSelectionFlowCoordinatorDidFinish(MainFlowCoordinator self, MultiplayerModeSelectionFlowCoordinator multiplayerModeSelectionFlowCoordinator) {
+		if(multiplayerModeSelectionFlowCoordinator.isActivated)
+			Base(self, multiplayerModeSelectionFlowCoordinator);
+	}
 
 	// The UI deletes itself at the end of `MultiplayerModeSelectionFlowCoordinator.TryShowModeSelection()` without this
-	[Patch.Overload(PatchType.Prefix, typeof(HMUI.FlowCoordinator), "ReplaceTopViewController", new[] {typeof(HMUI.ViewController), typeof(System.Action), typeof(HMUI.ViewController.AnimationType), typeof(HMUI.ViewController.AnimationDirection)})]
-	public static bool FlowCoordinator_ReplaceTopViewController(HMUI.FlowCoordinator __instance, HMUI.ViewController viewController, System.Action finishedCallback, HMUI.ViewController.AnimationType animationType) {
-		return (!(viewController is MultiplayerModeSelectionViewController)).Or(() => {
-			__instance.TopViewControllerWillChange(viewController, viewController, animationType);
+	[Detour(typeof(HMUI.FlowCoordinator), nameof(HMUI.FlowCoordinator.ReplaceTopViewController))]
+	static void FlowCoordinator_ReplaceTopViewController(HMUI.FlowCoordinator self, HMUI.ViewController viewController, System.Action finishedCallback, HMUI.ViewController.AnimationType animationType, HMUI.ViewController.AnimationDirection animationDirection) {
+		if(viewController is MultiplayerModeSelectionViewController) {
+			self.TopViewControllerWillChange(viewController, viewController, animationType);
 			finishedCallback();
-		});
+		} else {
+			Base(self, viewController, finishedCallback, animationType, animationDirection);
+		}
 	}
 
 	static string GetMaintenanceMessage(MultiplayerUnavailableReason reason, long? maintenanceWindowEndTime) {
@@ -44,45 +49,45 @@ static partial class BeatUpClient {
 		return $"{Polyglot.Localization.Get(MultiplayerUnavailableReasonMethods.LocalizedKey(reason))} ({MultiplayerUnavailableReasonMethods.ErrorCode(reason)})";
 	}
 
-	[Patch(PatchType.Prefix, typeof(MultiplayerModeSelectionFlowCoordinator), nameof(MultiplayerModeSelectionFlowCoordinator.PresentMasterServerUnavailableErrorDialog))]
-	public static bool MultiplayerModeSelectionFlowCoordinator_PresentMasterServerUnavailableErrorDialog(MultiplayerModeSelectionFlowCoordinator __instance, MultiplayerModeSelectionViewController ____multiplayerModeSelectionViewController, MultiplayerUnavailableReason reason, long? maintenanceWindowEndTime, string? remoteLocalizedMessage) {
-		if(mainFlowCoordinator?.childFlowCoordinator != __instance)
-			return false;
+	[Detour(typeof(MultiplayerModeSelectionFlowCoordinator), nameof(MultiplayerModeSelectionFlowCoordinator.PresentMasterServerUnavailableErrorDialog))]
+	static void MultiplayerModeSelectionFlowCoordinator_PresentMasterServerUnavailableErrorDialog(MultiplayerModeSelectionFlowCoordinator self, MultiplayerUnavailableReason reason, System.Exception exception, long? maintenanceWindowEndTime, string? remoteLocalizedMessage) {
+		if(!(self._parentFlowCoordinator is MainFlowCoordinator))
+			return;
 		ShowLoading(null);
-		TMPro.TextMeshProUGUI message = ____multiplayerModeSelectionViewController._maintenanceMessageText;
+		TMPro.TextMeshProUGUI message = self._multiplayerModeSelectionViewController._maintenanceMessageText;
 		message.text = remoteLocalizedMessage ?? GetMaintenanceMessage(reason, maintenanceWindowEndTime);
 		message.richText = true;
 		message.transform.localPosition = new UnityEngine.Vector3(0, 15, 0);
 		message.gameObject.SetActive(true);
-		__instance.SetTitle(Polyglot.Localization.Get("LABEL_CONNECTION_ERROR"), HMUI.ViewController.AnimationType.In);
-		return false;
+		self.SetTitle(Polyglot.Localization.Get("LABEL_CONNECTION_ERROR"), HMUI.ViewController.AnimationType.In);
 	}
 
 	static UnityEngine.GameObject[]? BeatUpServerUI = null;
-	static UnityEngine.Sprite[] altCreateButtonSprites = new UnityEngine.Sprite[4];
+	static (UnityEngine.Sprite normal, UnityEngine.Sprite highlight, UnityEngine.Sprite pressed, UnityEngine.Sprite disabled) altCreateButtonSprites;
 	static bool createButtonSpriteState = false;
-	[Patch(PatchType.Prefix, typeof(MultiplayerModeSelectionViewController), nameof(MultiplayerModeSelectionViewController.SetData))]
-	public static void MultiplayerModeSelectionViewController_SetData(MultiplayerModeSelectionViewController __instance, MultiplayerStatusData? multiplayerStatusData, TMPro.TextMeshProUGUI ____maintenanceMessageText) {
+	[Detour(typeof(MultiplayerModeSelectionViewController), nameof(MultiplayerModeSelectionViewController.SetData))]
+	static void MultiplayerModeSelectionViewController_SetData(MultiplayerModeSelectionViewController self, MultiplayerStatusData? multiplayerStatusData) {
 		ShowLoading(null);
-		____maintenanceMessageText.richText = false;
-		____maintenanceMessageText.transform.localPosition = new UnityEngine.Vector3(0, -5, 0);
+		self._maintenanceMessageText.richText = false;
+		self._maintenanceMessageText.transform.localPosition = new UnityEngine.Vector3(0, -5, 0);
 		bool isBeatUp = multiplayerStatusData?.minimumAppVersion?.EndsWith("b2147483647") == true;
 		if(BeatUpServerUI != null)
 			foreach(UnityEngine.GameObject element in BeatUpServerUI)
 				element.SetActive(isBeatUp);
-		UnityEngine.Transform? buttons = __instance.transform.Find("Buttons");
-		if(buttons == null)
-			return;
-		if(createButtonSpriteState != isBeatUp) {
-			HMUI.ButtonSpriteSwap? sprites = buttons.Find("CreateServerButton")?.GetComponent<HMUI.ButtonSpriteSwap>();
-			if(sprites != null) {
-				(sprites._normalStateSprite, altCreateButtonSprites[0]) = (altCreateButtonSprites[0], sprites._normalStateSprite);
-				(sprites._highlightStateSprite, altCreateButtonSprites[1]) = (altCreateButtonSprites[1], sprites._highlightStateSprite);
-				(sprites._pressedStateSprite, altCreateButtonSprites[2]) = (altCreateButtonSprites[2], sprites._pressedStateSprite);
-				(sprites._disabledStateSprite, altCreateButtonSprites[3]) = (altCreateButtonSprites[3], sprites._disabledStateSprite);
-				createButtonSpriteState = isBeatUp;
+		UnityEngine.Transform? buttons = self.transform.Find("Buttons");
+		if(buttons != null) {
+			if(createButtonSpriteState != isBeatUp) {
+				HMUI.ButtonSpriteSwap? sprites = buttons.Find("CreateServerButton")?.GetComponent<HMUI.ButtonSpriteSwap>();
+				if(sprites != null) {
+					(sprites._normalStateSprite, altCreateButtonSprites.normal) = (altCreateButtonSprites.normal, sprites._normalStateSprite);
+					(sprites._highlightStateSprite, altCreateButtonSprites.highlight) = (altCreateButtonSprites.highlight, sprites._highlightStateSprite);
+					(sprites._pressedStateSprite, altCreateButtonSprites.pressed) = (altCreateButtonSprites.pressed, sprites._pressedStateSprite);
+					(sprites._disabledStateSprite, altCreateButtonSprites.disabled) = (altCreateButtonSprites.disabled, sprites._disabledStateSprite);
+					createButtonSpriteState = isBeatUp;
+				}
 			}
+			buttons.gameObject.SetActive(true);
 		}
-		buttons.gameObject.SetActive(true);
+		Base(self, multiplayerStatusData);
 	}
 }

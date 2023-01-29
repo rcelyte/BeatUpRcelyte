@@ -5,8 +5,6 @@ public class BeatUpClient_BSIPA {
 
 	struct LogWrapper : BeatUpClient.ILogger {
 		public IPA.Logging.Logger logger;
-		public void Trace(string message) =>
-			logger.Trace(message);
 		public void Debug(string message) =>
 			logger.Debug(message);
 		public void Info(string message) =>

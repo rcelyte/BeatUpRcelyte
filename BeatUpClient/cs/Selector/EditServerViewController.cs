@@ -2,7 +2,9 @@ using static System.Linq.Enumerable;
 
 static partial class BeatUpClient {
 	public class EditServerViewController : HMUI.ViewController {
-		HMUI.FlowCoordinator? flowCoordinator = null;
+		public static EditServerViewController Instance = null!;
+		internal MainFlowCoordinator mainFlowCoordinator = null!;
+		MultiplayerModeSelectionFlowCoordinator? flowCoordinator = null;
 		bool edit = false;
 		VRUIControls.VRInputModule vrInputModule = null!;
 		HMUI.InputFieldView editHostnameTextbox = null!;
@@ -137,13 +139,13 @@ static partial class BeatUpClient {
 				editStatusPlaceholder.text = "https://status." + text;
 		}
 
-		public void TryPresent(HMUI.FlowCoordinator flowCoordinator, bool edit) {
-			if(this.flowCoordinator == null && flowCoordinator is MultiplayerModeSelectionFlowCoordinator) {
-				this.flowCoordinator = flowCoordinator;
+		public void TryPresent(bool edit) {
+			if(this.flowCoordinator == null && mainFlowCoordinator.childFlowCoordinator is MultiplayerModeSelectionFlowCoordinator modeSelection) {
+				this.flowCoordinator = modeSelection;
 				this.edit = edit;
-				flowCoordinator.PresentViewController(this, null, HMUI.ViewController.AnimationDirection.Vertical, false);
-				flowCoordinator.SetTitle(Polyglot.Localization.Get(edit ? "BEATUP_EDIT_SERVER" : "BEATUP_ADD_SERVER"), HMUI.ViewController.AnimationType.In);
-				flowCoordinator._screenSystem.SetBackButton(false, true);
+				modeSelection.PresentViewController(this, null, HMUI.ViewController.AnimationDirection.Vertical, false);
+				modeSelection.SetTitle(Polyglot.Localization.Get(edit ? "BEATUP_EDIT_SERVER" : "BEATUP_ADD_SERVER"), HMUI.ViewController.AnimationType.In);
+				modeSelection._screenSystem.SetBackButton(false, true);
 			}
 		}
 
@@ -154,7 +156,7 @@ static partial class BeatUpClient {
 			if(activeKey != null)
 				BeatUpClient_Config.Instance.Servers.Remove(activeKey);
 			string? hostname = editHostnameTextbox.text;
-			string? status = null;
+			string status = string.Empty;
 			if(hostname.Length < 1 || hostname.IndexOf(':') == 0)
 				hostname = null;
 			else if(editStatusTextbox.text.Length >= 1)
@@ -163,8 +165,9 @@ static partial class BeatUpClient {
 				BeatUpClient_Config.Instance.Servers[hostname] = status;
 			BeatUpClient_Config.Instance.Changed();
 			UpdateNetworkConfig(hostname ?? string.Empty, status);
+			MultiplayerModeSelectionFlowCoordinator? lastFlowCoordinator = flowCoordinator;
 			Dismiss(true);
-			ReenterModeSelection();
+			ReenterModeSelection(lastFlowCoordinator);
 		}
 	}
 }

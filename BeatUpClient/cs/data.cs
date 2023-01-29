@@ -1,17 +1,21 @@
 static partial class BeatUpClient {
-	[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, Size = 32)]
-	internal struct Hash256 : System.IEquatable<Hash256> {
+	[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit, Size = 32)]
+	internal struct Hash256 {
 		public const int Size = 32;
-		ulong _0, _1, _2, _3;
+		[System.Runtime.InteropServices.FieldOffset(0)] (ulong, ulong, ulong, ulong) raw;
+		[System.Runtime.InteropServices.FieldOffset(0)] byte first;
 		public bool Equals(Hash256 other) =>
-			(_0, _1, _2, _3) == (other._0, other._1, other._2, other._3);
-		public unsafe System.Span<byte> Span() {
-			fixed(Hash256 *ptr = &this) {
-				return System.SpanExtensions.AsBytes(new System.Span<Hash256>(ptr, 1));
-			}
+			raw == other.raw;
+		public Hash256(byte[] from, int offset = 0) : this() {
+			if(offset > from.Length || offset + Size > from.Length)
+				throw new System.ArgumentOutOfRangeException("offset");
+			System.Runtime.CompilerServices.Unsafe.CopyBlock(ref first, ref from[offset], Size);
 		}
-		public Hash256(System.ReadOnlySpan<byte> from) : this() =>
-			from.CopyTo(Span());
+		public void CopyTo(byte[] to, int offset = 0) {
+			if(offset > to.Length || offset + Size > to.Length)
+				throw new System.ArgumentException("Destination is too short.");
+			System.Runtime.CompilerServices.Unsafe.CopyBlock(ref to[offset], ref first, Size);
+		}
 	}
 
 	internal interface IOneWaySerializable {
@@ -23,22 +27,22 @@ static partial class BeatUpClient {
 		void LiteNetLib.Utils.INetSerializable.Deserialize(LiteNetLib.Utils.NetDataReader reader) {} // BeatUpPacket deserialization bypasses this method
 	}
 
-	internal class BeatUpPacket<T> : BeatUpPacket where T : struct, IOneWaySerializable {
+	internal class BeatUpPacket<T> : BeatUpPacket, IPoolablePacket where T : struct, IOneWaySerializable {
 		static readonly Net.MessageType messageType = (Net.MessageType)System.Enum.Parse(typeof(Net.MessageType), typeof(T).Name);
-		[System.ThreadStatic]
-		static BeatUpPacket<T> pooled = new BeatUpPacket<T>();
-		[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-		public static T Value() => pooled.value;
-		[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+		[System.ThreadStatic] static BeatUpPacket<T>? pool = null;
+		T inner;
 		public static BeatUpPacket<T> From(T data) {
-			pooled.value = data;
-			return pooled;
+			BeatUpPacket<T> packet = pool ?? new();
+			pool = null;
+			packet.inner = data;
+			return packet;
 		}
-		T value;
 		public override void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
 			writer.Put((byte)messageType);
-			value.Serialize(writer);
+			inner.Serialize(writer);
 		}
+		void IPoolablePacket.Release() =>
+			pool = this;
 	}
 
 	struct Property<T> : IValue<T> {

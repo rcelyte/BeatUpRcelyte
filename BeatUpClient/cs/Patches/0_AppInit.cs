@@ -9,17 +9,21 @@ static partial class BeatUpClient {
 	}
 
 	static bool initialSceneRegistered = false;
-	[Patch.Overload(PatchType.Prefix, typeof(Zenject.Context), "InstallInstallers", new[] {typeof(System.Collections.Generic.List<Zenject.InstallerBase>), typeof(System.Collections.Generic.List<System.Type>), typeof(System.Collections.Generic.List<Zenject.ScriptableObjectInstaller>), typeof(System.Collections.Generic.List<Zenject.MonoInstaller>), typeof(System.Collections.Generic.List<Zenject.MonoInstaller>)})]
-	public static void Context_InstallInstallers(Zenject.Context __instance) =>
-		initialSceneRegistered |= (__instance.name == "AppCoreSceneContext");
+	[Detour(typeof(Zenject.Context), nameof(Zenject.Context.InstallInstallers))]
+	static void Context_InstallInstallers(Zenject.Context self, System.Collections.Generic.List<Zenject.InstallerBase> normalInstallers, System.Collections.Generic.List<System.Type> normalInstallerTypes, System.Collections.Generic.List<Zenject.ScriptableObjectInstaller> scriptableObjectInstallers, System.Collections.Generic.List<Zenject.MonoInstaller> installers, System.Collections.Generic.List<Zenject.MonoInstaller> installerPrefabs) {
+		initialSceneRegistered |= (self.name == "AppCoreSceneContext");
+		Base(self, normalInstallers, normalInstallerTypes, scriptableObjectInstallers, installers, installerPrefabs);
+	}
 
 	static BeatUpScenesTransitionSetupDataSO? restartTransitionData = null;
-	[Patch(PatchType.Prefix, typeof(GameScenesManager), nameof(GameScenesManager.ReplaceScenes))] // Fallback if SiraUtil isn't installed
-	public static bool GameScenesManager_ReplaceScenes(GameScenesManager __instance, ScenesTransitionSetupDataSO scenesTransitionSetupData) {
-		return (haveSiraUtil || initialSceneRegistered).Or(() => {
+	[Detour(typeof(GameScenesManager), nameof(GameScenesManager.ReplaceScenes))]
+	static void GameScenesManager_ReplaceScenes(GameScenesManager self, ScenesTransitionSetupDataSO scenesTransitionSetupData, System.Collections.IEnumerator[] beforeNewScenesActivateRoutines, float minDuration, System.Action afterMinDurationCallback, System.Action<Zenject.DiContainer> finishCallback) {
+		if(haveSiraUtil || initialSceneRegistered) {
+			Base(self, scenesTransitionSetupData, beforeNewScenesActivateRoutines, minDuration, afterMinDurationCallback, finishCallback);
+		} else { // Fallback if SiraUtil isn't installed
 			restartTransitionData ??= UnityEngine.ScriptableObject.CreateInstance<BeatUpScenesTransitionSetupDataSO>();
-			__instance.ClearAndOpenScenes(restartTransitionData, finishCallback: container =>
-				UnityEngine.SceneManagement.SceneManager.GetSceneByName(__instance.GetCurrentlyLoadedSceneNames()[0]).GetRootGameObjects()[0].GetComponent<PCAppInit>().TransitionToNextScene());
-		});
+			self.ClearAndOpenScenes(restartTransitionData, finishCallback: container =>
+				UnityEngine.SceneManagement.SceneManager.GetSceneByName(self.GetCurrentlyLoadedSceneNames()[0]).GetRootGameObjects()[0].GetComponent<PCAppInit>().TransitionToNextScene());
+		}
 	}
 }

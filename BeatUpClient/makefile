@@ -23,9 +23,6 @@ FILES := $(wildcard src/*.c src/*.cpp src/*/*.cpp)
 OBJS := $(FILES:%=$(OBJDIR)/%.o)
 
 CSFILES := $(wildcard cs/*.cs cs/*/*.cs)
-CSREFS := Libs/MonoMod.RuntimeDetour.dll Libs/MonoMod.Utils.dll Libs/Mono.Cecil.dll Libs/0Harmony.dll Libs/Hive.Versioning.dll Libs/Newtonsoft.Json.dll Plugins/SongCore.dll Plugins/SiraUtil.dll Plugins/MultiplayerCore.dll Data/mscorlib.dll Data/IPA.Loader.dll Data/BGNet.dll Data/BeatmapCore.dll Data/Colors.dll Data/GameplayCore.dll Data/HMLib.dll Data/HMUI.dll Data/Main.dll Data/UnityEngine.CoreModule.dll Data/UnityEngine.AssetBundleModule.dll Data/UnityEngine.AudioModule.dll Data/UnityEngine.ImageConversionModule.dll Data/UnityEngine.UnityWebRequestModule.dll Data/UnityEngine.UnityWebRequestAudioModule.dll Data/UnityEngine.UIModule.dll Data/UnityEngine.UI.dll Data/Unity.TextMeshPro.dll Data/Polyglot.dll Data/System.IO.Compression.dll Data/LiteNetLib.dll Data/VRUI.dll Data/Zenject.dll Data/Zenject-usage.dll
-CSREFS += Data/netstandard.dll # TODO: Required by `Hive.Versioning.VersionRange`; remove once beta version check is gone
-PUBREFS := $(CSREFS:%=.obj/Refs/%)
 
 libBeatUpClient.so: $(OBJS) | ndk
 	@echo "[cxx $@]"
@@ -64,27 +61,15 @@ extern:
 .obj/MakeThingsPublic.exe: MakeThingsPublic.cs makefile
 	@echo "[csc $(notdir $@)]"
 	@mkdir -p "$(@D)"
-	csc -nologo -o+ -debug- -nullable+ -w:4 -warnaserror+ -langversion:8 "$<" -out:"$@" -r:$(BSINSTALL)/Libs/Mono.Cecil.dll
+	csc -nologo -o+ -debug- -nullable+ -w:4 -warnaserror+ -langversion:9 "$<" -out:"$@" -r:$(BSINSTALL)/Libs/Mono.Cecil.dll
 	MONO_PATH=$(BSINSTALL)/Libs mono --aot -O=all "$@"
 
-.obj/Refs/Data/%.dll: $(BSINSTALL)/Beat\ Saber_Data/Managed/%.dll .obj/MakeThingsPublic.exe
-	@echo "[MakeThingsPublic $(notdir $@)]"
-	@mkdir -p "$(@D)"
-	MONO_PATH=$(BSINSTALL)/Libs mono .obj/MakeThingsPublic.exe "$<" "$@"
-.obj/Refs/Plugins/%.dll: $(BSINSTALL)/Plugins/%.dll .obj/MakeThingsPublic.exe
-	@echo "[MakeThingsPublic $(notdir $@)]"
-	@mkdir -p "$(@D)"
-	MONO_PATH=$(BSINSTALL)/Libs mono .obj/MakeThingsPublic.exe "$<" "$@"
-.obj/Refs/Libs/%.dll: $(BSINSTALL)/Libs/%.dll .obj/MakeThingsPublic.exe
-	@echo "[MakeThingsPublic $(notdir $@)]"
-	@mkdir -p "$(@D)"
-	MONO_PATH=$(BSINSTALL)/Libs mono .obj/MakeThingsPublic.exe "$<" "$@"
-
-BeatUpClient.dll: $(CSFILES) $(PUBREFS) makefile
+BeatUpClient.dll: $(CSFILES) .obj/MakeThingsPublic.exe makefile
 	@echo "[csc $@]"
 	@mkdir -p .obj/
 	printf "{\"\$$schema\":\"https://raw.githubusercontent.com/bsmg/BSIPA-MetadataFileSchema/master/Schema.json\",\"author\":\"rcelyte\",\"description\":\"Tweaks and enhancements for enabling modded multiplayer\",\"gameVersion\":\"1.20.0\",\"dependsOn\":{\"BSIPA\":\"*\"},\"conflictsWith\":{\"BeatTogether\":\"*\"},\"loadBefore\":[\"MultiplayerCore\"],\"id\":\"BeatUpClient\",\"name\":\"BeatUpClient\",\"version\":\"$(VERSION)\",\"links\":{\"project-source\":\"https://github.com/rcelyte/BeatUpRcelyte\"}}" > .obj/manifest.json
-	csc -nologo -t:library -nostdlib -o+ -debug- -nullable+ -unsafe+ -w:4 -warnaserror+ -langversion:9 -define:MPCORE_SUPPORT $(CSFILES) -res:.obj/manifest.json,.manifest.json -res:data.bundle,BeatUpClient.data -out:"$@" $(PUBREFS:%=-r:%)
+	MONO_PATH=$(BSINSTALL)/Libs mono .obj/MakeThingsPublic.exe $(BSINSTALL)
+	csc -nologo -t:library -nostdlib -o+ -debug- -nullable+ -unsafe+ -w:4 -warnaserror+ -langversion:9 -define:MPCORE_SUPPORT $(CSFILES) -res:.obj/manifest.json,.manifest.json -res:data.bundle,BeatUpClient.data -out:"$@" -r:.obj/Refs/Libs/0Harmony.dll,.obj/Refs/Libs/Hive.Versioning.dll,.obj/Refs/Libs/Mono.Cecil.dll,.obj/Refs/Libs/MonoMod.RuntimeDetour.dll,.obj/Refs/Libs/MonoMod.Utils.dll,.obj/Refs/Libs/Newtonsoft.Json.dll,.obj/Refs/Managed/BeatmapCore.dll,.obj/Refs/Managed/BGNet.dll,.obj/Refs/Managed/Colors.dll,.obj/Refs/Managed/GameplayCore.dll,.obj/Refs/Managed/HMLib.dll,.obj/Refs/Managed/HMUI.dll,.obj/Refs/Managed/IPA.Loader.dll,.obj/Refs/Managed/LiteNetLib.dll,.obj/Refs/Managed/Main.dll,.obj/Refs/Managed/mscorlib.dll,.obj/Refs/Managed/netstandard.dll,.obj/Refs/Managed/Polyglot.dll,.obj/Refs/Managed/System.IO.Compression.dll,.obj/Refs/Managed/UnityEngine.AssetBundleModule.dll,.obj/Refs/Managed/UnityEngine.AudioModule.dll,.obj/Refs/Managed/UnityEngine.CoreModule.dll,.obj/Refs/Managed/UnityEngine.ImageConversionModule.dll,.obj/Refs/Managed/UnityEngine.UI.dll,.obj/Refs/Managed/UnityEngine.UIModule.dll,.obj/Refs/Managed/UnityEngine.UnityWebRequestAudioModule.dll,.obj/Refs/Managed/UnityEngine.UnityWebRequestModule.dll,.obj/Refs/Managed/Unity.TextMeshPro.dll,.obj/Refs/Managed/VRUI.dll,.obj/Refs/Managed/Zenject.dll,.obj/Refs/Managed/Zenject-usage.dll,.obj/Refs/Plugins/MultiplayerCore.dll,.obj/Refs/Plugins/SiraUtil.dll,.obj/Refs/Plugins/SongCore.dll
 
 AudioPluginMsHRTF.dll: cs/loader.c BeatUpClient.dll
 	@echo "[cc $@]"
@@ -94,7 +79,7 @@ AudioPluginMsHRTF.dll: cs/loader.c BeatUpClient.dll
 
 clean:
 	@echo "[cleaning]"
-	rm -rf .folderNameWithoutSpaces/ .obj/ .tmp/ bin/ obj/ include/ shared/ BeatUpClient.dll BeatUpClient.qmod libBeatUpClient.so
+	rm -rf .obj/ bin/ obj/ include/ shared/ BeatUpClient.dll BeatUpClient.qmod libBeatUpClient.so
 	qpm-rust clear || true
 
 .PHONY: clean ndk

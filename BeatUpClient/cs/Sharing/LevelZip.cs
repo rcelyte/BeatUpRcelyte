@@ -73,10 +73,10 @@ static partial class BeatUpClient {
 		progressOffset = progressLength;
 		progressLength = 65535 - progressOffset;
 		memoryStream.Seek(0, System.IO.SeekOrigin.Begin);
-		new System.ReadOnlySpan<byte>(await System.Threading.Tasks.Task.Run(() => {
+		res.hash = new(await System.Threading.Tasks.Task.Run(() => {
 			using System.Security.Cryptography.SHA256 sha256 = System.Security.Cryptography.SHA256.Create();
 			return sha256.ComputeHash(new CallbackStream(memoryStream, HandleProgress)); // TODO: need `cancellationToken` here
-		})).CopyTo(res.hash.Span());
+		}));
 		Log.Debug($"    Hashed {totalLength} bytes");
 		return res;
 	}

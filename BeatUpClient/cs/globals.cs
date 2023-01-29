@@ -14,8 +14,6 @@ static partial class BeatUpClient {
 
 	static UnityEngine.GameObject infoText = null!;
 	static StringSO customServerHostName = null!;
-	static MainFlowCoordinator? mainFlowCoordinator = null;
-	static ServerDropdown? serverDropdown = null;
 	static DifficultyPanel lobbyDifficultyPanel = null!;
 	internal static PlayerData playerData = new PlayerData(0);
 }

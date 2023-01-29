@@ -12,12 +12,10 @@ static partial class BeatUpClient {
 		}
 
 		const byte beatUpMessageType = 101;
-		const byte mpMessageType = 100;
+		const byte mpCoreMessageType = 100;
 
-		public static event System.Action<ShareInfo, IConnectedPlayer>? onShareInfo = null;
-		public static event System.Action<DataFragmentRequest, IConnectedPlayer>? onDataFragmentRequest = null;
 		public static event System.Action<DataFragment, IConnectedPlayer>? onDataFragment = null;
-		internal static System.Action<IConnectedPlayer>? onDisconnect = OnDisconnect;
+		public static event System.Action<IConnectedPlayer>? onDisconnect = null;
 		internal static System.Collections.Generic.Dictionary<IConnectedPlayer, ushort> beatUpPlayers = new System.Collections.Generic.Dictionary<IConnectedPlayer, ushort>();
 		const ushort blockSize = LocalBlockSize;
 
@@ -43,15 +41,15 @@ static partial class BeatUpClient {
 				poolable.Release();
 		}
 
-		static ConnectedPlayerManager? UpdateOwnProgress(LoadProgress progress) {
-			ConnectedPlayerManager? connectedPlayerManager = Resolve<MultiplayerSessionManager>()?.connectedPlayerManager;
-			playerData.UpdateLoadProgress(progress, connectedPlayerManager?.localPlayer);
-			return connectedPlayerManager;
+		public static void SetLocalProgress(LoadProgress progress) {
+			playerData.UpdateLoadProgress(progress, Resolve<MultiplayerSessionManager>()?.connectedPlayerManager?.localPlayer);
+			Send(progress.Wrap());
 		}
-		public static void SetLocalProgress(LoadProgress progress) =>
-			UpdateOwnProgress(progress)?.Send(progress.Wrap());
-		public static void SetLocalProgressUnreliable(LoadProgress progress) =>
-			UpdateOwnProgress(progress)?.SendUnreliable(progress.Wrap());
+		public static void SetLocalProgressUnreliable(LoadProgress progress) {
+			MultiplayerSessionManager? sessionManager = Resolve<MultiplayerSessionManager>();
+			playerData.UpdateLoadProgress(progress, sessionManager?.connectedPlayerManager?.localPlayer);
+			sessionManager?.SendUnreliable(progress.Wrap());
+		}
 
 		public static void HandleConnectInfo(ConnectInfo packet, IConnectedPlayer player) {
 			if(packet.blockSize != LocalBlockSize)
@@ -59,8 +57,10 @@ static partial class BeatUpClient {
 			beatUpPlayers[player] = packet.blockSize;
 			Log.Debug($"ConnectInfo from {player}");
 		}
-		static void OnDisconnect(IConnectedPlayer player) =>
+		public static void OnDisconnect(IConnectedPlayer player) {
+			onDisconnect?.Invoke(player);
 			beatUpPlayers.Remove(player);
+		}
 		// static void HandleRecommendPreview(RecommendPreview packet, IConnectedPlayer player) {}
 
 		static void HandleBeatUpPacket(LiteNetLib.Utils.NetDataReader reader, int length, IConnectedPlayer player) {
@@ -72,8 +72,8 @@ static partial class BeatUpClient {
 				switch(type) {
 					case MessageType.ConnectInfo: HandleConnectInfo(new ConnectInfo(reader), player); break;
 					case MessageType.RecommendPreview: playerData.previews[PlayerIndex(player)] = new RecommendPreview(reader); break;
-					case MessageType.ShareInfo: onShareInfo?.Invoke(new ShareInfo(reader), player); break;
-					case MessageType.DataFragmentRequest: onDataFragmentRequest?.Invoke(new DataFragmentRequest(reader), player); break;
+					case MessageType.ShareInfo: ShareTracker.OnShareInfo(new ShareInfo(reader), player); break;
+					case MessageType.DataFragmentRequest: ShareProvider.OnDataFragmentRequest(new DataFragmentRequest(reader), player); break;
 					case MessageType.DataFragment: onDataFragment?.Invoke(new DataFragment(reader, end), player); break;
 					case MessageType.LoadProgress: playerData.UpdateLoadProgress(new LoadProgress(reader), player); break;
 					default: break;
@@ -109,15 +109,17 @@ static partial class BeatUpClient {
 			MultiplayerSessionManager? multiplayerSessionManager = Resolve<MultiplayerSessionManager>();
 			if(multiplayerSessionManager != null) {
 				multiplayerSessionManager._packetSerializer._typeRegistry[typeof(BeatUpPacket)] = beatUpMessageType;
-				multiplayerSessionManager._packetSerializer._typeRegistry[typeof(MpBeatmapPacket)] = mpMessageType;
+				multiplayerSessionManager._packetSerializer._typeRegistry[typeof(MpBeatmapPacket)] = mpCoreMessageType;
 				multiplayerSessionManager._packetSerializer._messsageHandlers[beatUpMessageType] = HandleBeatUpPacket;
 				if(!haveMpCore)
-					multiplayerSessionManager._packetSerializer._messsageHandlers[mpMessageType] = HandleMpPacket;
+					multiplayerSessionManager._packetSerializer._messsageHandlers[mpCoreMessageType] = HandleMpPacket;
 			}
 		}
 	}
 
-	[Patch(PatchType.Prefix, typeof(MenuRpcManager), nameof(MenuRpcManager.SetIsEntitledToLevel))]
-	public static void MenuRpcManager_SetIsEntitledToLevel(IMultiplayerSessionManager ____multiplayerSessionManager, EntitlementsStatus entitlementStatus) =>
-		playerData.UpdateLoadProgress(new LoadProgress(entitlementStatus), ____multiplayerSessionManager.localPlayer, true);
+	[Detour(typeof(MenuRpcManager), nameof(MenuRpcManager.SetIsEntitledToLevel))]
+	static void MenuRpcManager_SetIsEntitledToLevel(MenuRpcManager self, string levelId, EntitlementsStatus entitlementStatus) {
+		playerData.UpdateLoadProgress(new LoadProgress(entitlementStatus), self._multiplayerSessionManager.localPlayer, true);
+		Base(self, levelId, entitlementStatus);
+	}
 }

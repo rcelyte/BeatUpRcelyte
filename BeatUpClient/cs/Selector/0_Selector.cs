@@ -1,17 +1,17 @@
 using static System.Linq.Enumerable;
 
 static partial class BeatUpClient {
-	static void ReenterModeSelection() {
-		if(mainFlowCoordinator?.childFlowCoordinator is MultiplayerModeSelectionFlowCoordinator multiplayerModeSelectionFlowCoordinator) {
-			mainFlowCoordinator.DismissFlowCoordinator(multiplayerModeSelectionFlowCoordinator, HMUI.ViewController.AnimationDirection.Horizontal, () => {
+	static void ReenterModeSelection(MultiplayerModeSelectionFlowCoordinator? flowCoordinator) {
+		if(flowCoordinator?._parentFlowCoordinator is MainFlowCoordinator mainFlowCoordinator) {
+			mainFlowCoordinator.DismissFlowCoordinator(flowCoordinator, HMUI.ViewController.AnimationDirection.Horizontal, () => {
 				mainFlowCoordinator.PresentMultiplayerModeSelectionFlowCoordinatorWithDisclaimerAndAvatarCreator();
 			}, true);
 		}
 	}
 
-	static EditServerViewController editServerViewController = null!;
-	static UnityEngine.UI.Button editServerButton = null!;
 	static void SelectorSetup() {
+		if(Resolve<CustomNetworkConfig>() == null)
+			return;
 		UnityEngine.Transform CreateServerFormView = UnityEngine.Resources.FindObjectsOfTypeAll<CreateServerFormController>()[0].transform;
 		BeatUpServerUI = new[] {
 			UI.CreateValuePicker(CreateServerFormView, "CountdownDuration", "BEATUP_COUNTDOWN_DURATION", new Property<float>(BeatUpClient_Config.Instance, nameof(BeatUpClient_Config.CountdownDuration)), new byte[] {(byte)(BeatUpClient_Config.Instance.CountdownDuration * 4), 0, 12, 20, 32, 40, 60}).gameObject,
@@ -34,54 +34,21 @@ static partial class BeatUpClient {
 			CreateServerFormView.gameObject.GetComponent<UnityEngine.UI.ContentSizeFitter>().enabled = true;
 		}
 
-		MultiplayerModeSelectionViewController multiplayerModeSelectionViewController = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerModeSelectionViewController>()[0];
-		TMPro.TextMeshProUGUI customServerEndPointText = multiplayerModeSelectionViewController._customServerEndPointText;
-		UnityEngine.GameObject colorSchemeButton = UnityEngine.Resources.FindObjectsOfTypeAll<ColorsOverrideSettingsPanelController>()[0]._editColorSchemeButton.gameObject;
-		UnityEngine.GameObject okButton = UnityEngine.Resources.FindObjectsOfTypeAll<EditColorSchemeController>()[0]._closeButton.gameObject;
-		UnityEngine.Sprite[] sprites = UnityEngine.Resources.FindObjectsOfTypeAll<UnityEngine.Sprite>();
+		MultiplayerModeSelectionViewController modeSelection = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerModeSelectionViewController>()[0];
+		EditServerViewController.Instance ??= EditServerViewController.Create("BeatUpClient_EditServerView", modeSelection.transform.parent);
+		EditServerViewController.Instance.mainFlowCoordinator = UnityEngine.Resources.FindObjectsOfTypeAll<MainFlowCoordinator>()[0];
 
+		TMPro.TextMeshProUGUI customServerEndPointText = modeSelection._customServerEndPointText;
 		customServerEndPointText.enabled = false;
-		editServerViewController ??= EditServerViewController.Create("BeatUpClient_EditServerView", multiplayerModeSelectionViewController.transform.parent);
-		UnityEngine.RectTransform server = CreateServerDropdown(customServerEndPointText.transform, "Selector", customServerHostName, BeatUpClient_Config.Instance.Servers.Keys);
-		server.sizeDelta = new UnityEngine.Vector2(80, server.sizeDelta.y);
-		if(server.Find("DropDownButton/Text") is UnityEngine.RectTransform text)
-			text.sizeDelta = new UnityEngine.Vector2(68, server.sizeDelta.y);
-		server.localPosition = new UnityEngine.Vector3(0, 39.5f, 0);
-		foreach(UnityEngine.Transform tr in server)
+		UnityEngine.RectTransform serverDropdown = ServerDropdown.Create(customServerEndPointText.transform, "Selector");
+		serverDropdown.sizeDelta = new UnityEngine.Vector2(80, serverDropdown.sizeDelta.y);
+		if(serverDropdown.Find("DropDownButton/Text") is UnityEngine.RectTransform text)
+			text.sizeDelta = new UnityEngine.Vector2(68, serverDropdown.sizeDelta.y);
+		serverDropdown.localPosition = new UnityEngine.Vector3(0, 39.5f, 0);
+		foreach(UnityEngine.Transform tr in serverDropdown)
 			tr.localPosition = new UnityEngine.Vector3(0, 0, 0);
-		serverDropdown = server.GetComponent<ServerDropdown>();
-
-		UnityEngine.RectTransform CreateButtonAt(float x, UnityEngine.GameObject from, string name, System.Action callback) {
-			UnityEngine.RectTransform btn = UI.CreateButtonFrom(from, customServerEndPointText.transform, name, callback);
-			btn.localPosition = new UnityEngine.Vector3(x, 39.5f, 0);
-			return btn;
-		}
-		UnityEngine.RectTransform addButton = CreateButtonAt(-40, colorSchemeButton, "AddServer", () =>
-			editServerViewController.TryPresent(mainFlowCoordinator!.childFlowCoordinator, false));
-		addButton.Find("Icon").GetComponent<HMUI.ImageView>().sprite = sprites.FirstOrDefault(sprite => sprite.name == "AddIcon");
-		UnityEngine.RectTransform editButton = CreateButtonAt(52, colorSchemeButton, "EditServer", () =>
-			editServerViewController.TryPresent(mainFlowCoordinator!.childFlowCoordinator, true));
-		editServerButton = editButton.GetComponent<UnityEngine.UI.Button>();
-		(serverDropdown.addButton, serverDropdown.editButton) = (addButton.gameObject, editButton.gameObject);
-
-		UnityEngine.RectTransform smallButton = (UnityEngine.RectTransform)colorSchemeButton.transform;
-		UnityEngine.GameObject smallIcon = smallButton.Find("Icon").gameObject;
-		UnityEngine.GameObject CreateShinyButton(float x, float scale, string name, UnityEngine.Sprite? sprite, System.Action callback) {
-			UnityEngine.RectTransform btn = CreateButtonAt(x, okButton, name, callback);
-			UnityEngine.Object.Destroy(btn.Find("Content").gameObject);
-			UnityEngine.Vector2 sizeDelta = smallButton.sizeDelta;
-			(btn.pivot, btn.sizeDelta) = (smallButton.pivot, new UnityEngine.Vector2(sizeDelta.x - 1, sizeDelta.y));
-			UnityEngine.GameObject icon = UnityEngine.Object.Instantiate(smallIcon, btn);
-			icon.transform.localScale = new UnityEngine.Vector3(scale, scale, 1);
-			icon.GetComponent<HMUI.ImageView>().sprite = sprite;
-			return btn.gameObject;
-		}
-		serverDropdown.removeButton = CreateShinyButton(-40.5f, .65f, "RemoveServer", sprites.FirstOrDefault(sprite => sprite.name == "CloseIcon"), () =>
-			serverDropdown?.ClearEphemeral());
-		serverDropdown.saveButton = CreateShinyButton(51.5f, .75f, "SaveServer", sprites.FirstOrDefault(sprite => sprite.name == "DownloadIcon"), () =>
-			serverDropdown?.SaveEphemeral());
 
 		BeatUpClient_Config.Instance.Servers.TryGetValue(customServerHostName.value, out string? statusUrl);
-		SetNetworkConfig(customServerHostName, statusUrl);
+		UpdateNetworkConfig(customServerHostName, statusUrl ?? string.Empty);
 	}
 }

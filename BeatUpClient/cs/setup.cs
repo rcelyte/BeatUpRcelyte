@@ -7,32 +7,34 @@ static partial class BeatUpClient {
 	[System.AttributeUsage(System.AttributeTargets.Method)]
 	internal class InitAttribute : System.Attribute {}
 
-	internal static System.Collections.Generic.IEnumerable<BoundPatch> GatherMethods(System.Type type) {
+	internal static System.Action GatherMethods(System.Type type, ref uint patchCount) {
 		// Log.Debug($"GatherMethods({type})");
+		System.Action applyMethods = delegate {};
 		foreach(System.Type nested in type.GetNestedTypes(HarmonyLib.AccessTools.all))
-			foreach(BoundPatch patch in GatherMethods(nested))
-				yield return patch;
+			applyMethods += GatherMethods(nested, ref patchCount);
 		if(type.IsInterface)
-			yield break;
+			return applyMethods;
 		foreach(System.Reflection.MethodInfo method in type.GetMethods(System.Reflection.BindingFlags.DeclaredOnly | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static)) {
 			if(method.IsAbstract)
 				continue;
 			if(!method.ContainsGenericParameters)
 				method.MethodHandle.GetFunctionPointer(); // Force JIT compilation
-			foreach(IPatch patch in method.GetCustomAttributes(typeof(IPatch), false))
-				yield return patch.Bind(method);
+			foreach(IPatch patch in method.GetCustomAttributes(typeof(IPatch), false)) {
+				// Log.Debug($"    {method}");
+				applyMethods += patch.Bind(method);
+				++patchCount;
+			}
 			if(method.GetCustomAttributes(typeof(InitAttribute), false).Length != 0)
 				((System.Action)System.Delegate.CreateDelegate(typeof(System.Action), method))?.Invoke(); // TODO: temp code; inits need to be delayed until just before applying patches
 		}
+		return applyMethods;
 	}
 
 	static void OnSceneLoaded(UnityEngine.SceneManagement.Scene scene, UnityEngine.SceneManagement.LoadSceneMode mode) {
 		if(scene.name != "MainMenu")
 			return;
 		Log.Debug("load MainMenu");
-		mainFlowCoordinator = UnityEngine.Resources.FindObjectsOfTypeAll<MainFlowCoordinator>()[0];
-		if(Resolve<CustomNetworkConfig>() != null)
-			SelectorSetup();
+		SelectorSetup();
 		LobbyUISetup();
 	}
 
@@ -85,22 +87,23 @@ static partial class BeatUpClient {
 
 		try {
 			Log.Debug("Gathering patches");
-			BoundPatch[] patches = new (System.Type type, bool enable)[] {
+			uint patchCount = 0;
+			System.Action applyPatches = new (System.Type type, bool enable)[] {
 				(typeof(BeatUpClient), true),
 				(typeof(BeatUpClient_SongCore), haveSongCore),
 				(typeof(BeatUpClient_MpCore), haveMpCore),
-			}.Where(section => section.enable).SelectMany(section => GatherMethods(section.type)).ToArray();
+			}.Aggregate((System.Action)delegate {}, (acc, section) => {
+				if(section.enable)
+					acc += GatherMethods(section.type, ref patchCount);
+				return acc;
+			});
 			Log.Debug("Loading assets");
 			UnityEngine.AssetBundle data = UnityEngine.AssetBundle.LoadFromStream(System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("BeatUpClient.data"));
-			UnityEngine.Sprite[] sprites = data.LoadAllAssets<UnityEngine.Sprite>();
-			defaultPackCover = sprites[0];
-			altCreateButtonSprites[0] = sprites[1];
-			altCreateButtonSprites[1] = sprites[2];
-			altCreateButtonSprites[2] = sprites[2];
-			altCreateButtonSprites[3] = sprites[1];
-			Log.Debug($"Applying {patches.Length} patches");
-			foreach(BoundPatch patch in patches)
-				patch.Apply();
+			defaultPackCover = data.LoadAsset<UnityEngine.Sprite>("cover");
+			UnityEngine.Sprite[] sprites = data.LoadAssetWithSubAssets<UnityEngine.Sprite>("create");
+			altCreateButtonSprites = (sprites[0], sprites[1], sprites[1], sprites[0]);
+			Log.Debug($"Applying {patchCount} patches");
+			applyPatches();
 			UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnSceneLoaded;
 		} catch(System.Exception ex) {
 			Log.Error($"Error applying patches: {ex}");
@@ -113,8 +116,6 @@ static partial class BeatUpClient {
 			UnityEngine.SceneManagement.SceneManager.sceneLoaded -= OnSceneLoaded;
 			harmony.UnpatchSelf();
 			DetourAttribute.UnpatchAll();
-			if(haveMpCore)
-				BeatUpClient_MpCore.Unpatch();
 		} catch(System.Exception ex) {
 			Log.Error($"Error removing patches: {ex}");
 		}

@@ -83,11 +83,9 @@ static partial class BeatUpClient {
 		level.hash = System.BitConverter.ToString(hash.HashFinal()).Replace("-", string.Empty);
 		return level;
 	}
-	static async System.Threading.Tasks.Task<CustomBeatmapLevel?> UnzipLevel(string levelId, System.ArraySegment<byte> data, System.Threading.CancellationToken cancellationToken, byte[]? fallbackCover = null) {
-		if(data.Count < 1)
-			return null;
+	static async System.Threading.Tasks.Task<CustomBeatmapLevel?> UnzipLevel(string levelId, byte[] data, System.Threading.CancellationToken cancellationToken, byte[]? fallbackCover = null) {
 		try {
-			using System.IO.MemoryStream stream = new System.IO.MemoryStream(data.Array, data.Offset, data.Count);
+			using System.IO.MemoryStream stream = new System.IO.MemoryStream(data);
 			using System.IO.Compression.ZipArchive archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Read);
 			ulong totalLength = 0;
 			foreach(System.IO.Compression.ZipArchiveEntry entry in archive.Entries) {

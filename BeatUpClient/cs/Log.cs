@@ -1,6 +1,5 @@
 static partial class BeatUpClient {
 	public interface ILogger {
-		void Trace(string message);
 		void Debug(string message);
 		void Info(string message);
 		void Warn(string message);
@@ -8,8 +7,6 @@ static partial class BeatUpClient {
 		void Critical(string message);
 	}
 	struct DefaultLogger : ILogger {
-		public void Trace(string message) =>
-			UnityEngine.Debug.Log("[BeatUpClient|Trace] " + message);
 		public void Debug(string message) =>
 			UnityEngine.Debug.Log("[BeatUpClient|Debug] " + message);
 		public void Info(string message) =>

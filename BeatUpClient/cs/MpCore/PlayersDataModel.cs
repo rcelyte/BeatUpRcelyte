@@ -3,33 +3,38 @@ using static BeatUpClient;
 using static System.Linq.Enumerable;
 
 static partial class BeatUpClient_MpCore {
-	class PlayersDataModel : LobbyPlayersDataModel, System.IDisposable {
-		[Zenject.Inject]
-		readonly MultiplayerCore.Networking.MpPacketSerializer packetSerializer = null!;
-		[Zenject.Inject]
-		readonly MultiplayerCore.Beatmaps.Providers.MpBeatmapLevelProvider beatmapLevelProvider = null!;
+	[Detour(typeof(MainSystemInit), nameof(MainSystemInit.InstallBindings))]
+	static void MainSystemInit_InstallBindings(MainSystemInit self, Zenject.DiContainer container) {
+		Base(self, container);
+		// TODO: learn how to zenject
+		Injected<MultiplayerCore.Networking.MpPacketSerializer>.Resolve(container);
+		Injected<MultiplayerCore.Beatmaps.Providers.MpBeatmapLevelProvider>.Resolve(container);
+	}
 
-		public override void Activate() {
-			packetSerializer.registeredTypes.Add(typeof(MpBeatmapPacket));
-			packetSerializer.RegisterCallback<MultiplayerCore.Beatmaps.Packets.MpBeatmapPacket>(HandleMpexBeatmapPacket);
-			base.Activate();
-		}
+	[Detour(typeof(LobbyPlayersDataModel), nameof(LobbyPlayersDataModel.Activate))]
+	static void LobbyPlayersDataModel_Activate(LobbyPlayersDataModel self) {
+		MultiplayerCore.Networking.MpPacketSerializer packetSerializer = Resolve<MultiplayerCore.Networking.MpPacketSerializer>()!;
+		packetSerializer.registeredTypes.Add(typeof(MpBeatmapPacket));
+		packetSerializer.RegisterCallback<MultiplayerCore.Beatmaps.Packets.MpBeatmapPacket>(HandleMpexBeatmapPacket);
+		Base(self);
+	}
 
-		public override void Deactivate() {
-			packetSerializer.UnregisterCallback<MultiplayerCore.Beatmaps.Packets.MpBeatmapPacket>();
-			packetSerializer.registeredTypes.Remove(typeof(MpBeatmapPacket));
-			base.Deactivate();
-		}
+	[Detour(typeof(LobbyPlayersDataModel), nameof(LobbyPlayersDataModel.Deactivate))]
+	static void LobbyPlayersDataModel_Deactivate(LobbyPlayersDataModel self) {
+		MultiplayerCore.Networking.MpPacketSerializer packetSerializer = Resolve<MultiplayerCore.Networking.MpPacketSerializer>()!;
+		packetSerializer.UnregisterCallback<MultiplayerCore.Beatmaps.Packets.MpBeatmapPacket>();
+		packetSerializer.registeredTypes.Remove(typeof(MpBeatmapPacket));
+		Base(self);
+	}
 
-		void HandleMpexBeatmapPacket(MultiplayerCore.Beatmaps.Packets.MpBeatmapPacket packet, IConnectedPlayer player) {
-			IPreviewBeatmapLevel preview = beatmapLevelProvider.GetBeatmapFromPacket(packet);
-			if(preview is MultiplayerCore.Beatmaps.Abstractions.MpBeatmapLevel mpPreview) {
-				mpPreview.previewDifficultyBeatmapSets ??= mpPreview.requirements
-					.Select(set => new PreviewDifficultyBeatmapSet(SerializedCharacteristic(set.Key), set.Value.Select(diff => diff.Key).ToArray()))
-					.ToArray(); // Fill in data for difficulty selector
-			}
-			Net.ProcessMpPreview(preview, player, packet.requirements.Values.SelectMany(set => set).ToHashSet().ToArray());
+	static void HandleMpexBeatmapPacket(MultiplayerCore.Beatmaps.Packets.MpBeatmapPacket packet, IConnectedPlayer player) {
+		IPreviewBeatmapLevel preview = Resolve<MultiplayerCore.Beatmaps.Providers.MpBeatmapLevelProvider>()!.GetBeatmapFromPacket(packet);
+		if(preview is MultiplayerCore.Beatmaps.Abstractions.MpBeatmapLevel mpPreview) {
+			mpPreview.previewDifficultyBeatmapSets ??= mpPreview.requirements
+				.Select(set => new PreviewDifficultyBeatmapSet(SerializedCharacteristic(set.Key), set.Value.Select(diff => diff.Key).ToArray()))
+				.ToArray(); // Fill in data for difficulty selector
 		}
+		Net.ProcessMpPreview(preview, player, packet.requirements.Values.SelectMany(set => set).ToHashSet().ToArray());
 	}
 }
 #endif
