@@ -23,7 +23,7 @@ static struct Context ctx = {
 	.listenfd = -1
 };
 
-static void *handle_client(void *fd) {
+static void *handle_client_https(uintptr_t fd) {
 	mbedtls_ssl_context ssl;
 	mbedtls_ssl_init(&ssl);
 	int res = mbedtls_ssl_setup(&ssl, &ctx.conf);
@@ -31,7 +31,7 @@ static void *handle_client(void *fd) {
 		uprintf("mbedtls_ssl_setup() failed: %s\n", mbedtls_high_level_strerr(res));
 		goto reset;
 	}
-	mbedtls_ssl_set_bio(&ssl, fd, ssl_send, ssl_recv, NULL);
+	mbedtls_ssl_set_bio(&ssl, (void*)fd, ssl_send, ssl_recv, NULL);
 	while((res = mbedtls_ssl_handshake(&ssl)) != 0) {
 		if(res == MBEDTLS_ERR_SSL_WANT_READ || res == MBEDTLS_ERR_SSL_WANT_WRITE)
 			continue;
@@ -62,15 +62,7 @@ static void *handle_client(void *fd) {
 	} while(res == MBEDTLS_ERR_SSL_WANT_READ || res == MBEDTLS_ERR_SSL_WANT_WRITE);
 	reset:;
 	mbedtls_ssl_free(&ssl);
-	close((int)(intptr_t)fd);
-	return 0;
-}
-
-static void *status_ssl_handler(void*) {
-	uprintf("Started HTTPS\n");
-	struct SS addr = {.len = sizeof(struct sockaddr_storage)};
-	for(intptr_t clientfd; (clientfd = accept(ctx.listenfd, &addr.sa, &addr.len)) != -1;)
-		pthread_create((pthread_t[]){NET_THREAD_INVALID}, NULL, (void *(*)(void*))handle_client, (void*)clientfd);
+	close((int)fd);
 	return 0;
 }
 
@@ -109,12 +101,13 @@ bool status_ssl_init(mbedtls_x509_crt certs[2], mbedtls_pk_context keys[2], cons
 	ctx.keys = keys;
 	ctx.domain = domain;
 	ctx.path = path;
-	if(pthread_create(&status_thread, NULL, (void *(*)(void*))status_ssl_handler, NULL)) {
+	if(pthread_create(&status_thread, NULL, (void *(*)(void*))status_handler, *(void**)(void*(*[])(uintptr_t)){handle_client_https})) {
 		status_thread = NET_THREAD_INVALID;
 		return true;
 	}
 	return false;
 }
+
 void status_ssl_cleanup() {
 	if(ctx.listenfd == -1)
 		return;

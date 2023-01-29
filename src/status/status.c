@@ -10,23 +10,32 @@ struct Context {
 };
 static struct Context ctx = {-1, NULL};
 
-static void *handle_client(void *fd) {
+static void *handle_client_http(uintptr_t fd) {
 	char buf[65536];
-	ssize_t size = recv((int)(intptr_t)fd, buf, sizeof(buf), 0);
+	ssize_t size = recv((int)fd, buf, sizeof(buf), 0);
 	if(size >= 0) {
 		size = status_resp("HTTP", ctx.path, buf, (uint32_t)size);
 		if(size)
-			send((int)(intptr_t)fd, buf, (uint32_t)size, 0);
+			send((int)fd, buf, (uint32_t)size, 0);
 	}
-	close((int)(intptr_t)fd);
+	close((int)fd);
 	return 0;
 }
 
-static void *status_handler(void*) {
-	uprintf("Started HTTP\n");
+void *status_handler(void *(*handleClient)(void*)) {
+	pthread_attr_t attr;
+	if(pthread_attr_init(&attr)) {
+		uprintf("pthread_attr_init() failed\n");
+		return 0;
+	}
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+	uprintf("Started HTTP%s\n", (*(void**)(void*(*[])(void*)){handleClient} == *(void**)(void*(*[])(uintptr_t)){handle_client_http}) ? "" : "S");
 	struct SS addr = {.len = sizeof(struct sockaddr_storage)};
 	for(intptr_t clientfd; (clientfd = accept(ctx.listenfd, &addr.sa, &addr.len)) != -1;)
-		pthread_create((pthread_t[]){NET_THREAD_INVALID}, NULL, (void *(*)(void*))handle_client, (void*)clientfd);
+		if(pthread_create((pthread_t[]){NET_THREAD_INVALID}, &attr, handleClient, (void*)clientfd))
+			uprintf("pthread_create() failed\n");
+	if(pthread_attr_destroy(&attr))
+		uprintf("pthread_attr_destroy() failed\n");
 	return 0;
 }
 
@@ -36,7 +45,7 @@ bool status_init(const char *path, uint16_t port) {
 	if(ctx.listenfd == -1)
 		return true;
 	ctx.path = path;
-	if(pthread_create(&status_thread, NULL, (void *(*)(void*))status_handler, NULL)) {
+	if(pthread_create(&status_thread, NULL, (void *(*)(void*))status_handler, *(void**)(void*(*[])(uintptr_t)){handle_client_http})) {
 		status_thread = NET_THREAD_INVALID;
 		return true;
 	}
