@@ -8,20 +8,19 @@
 #define IDLE_TIMEOUT_MS 10000
 #define KICK_TIMEOUT_MS 3000
 
+#define NET_MAX_WINDOW_SIZE 64
+
 #define bitsize(e) (sizeof(e) * 8)
 #define indexof(a, e) ((uintptr_t)((e) - (a)))
 
-#define SERIALIZE_SESSION(mtype, mfield, pkt, end, ctx, ...) { \
-	struct InternalMessage _msg = { \
+#define SERIALIZE_SESSION(mtype, mfield, pkt, end, ctx, ...) \
+	pkt_serialize((&(struct InternalMessage){ \
 		.type = InternalMessageType_MultiplayerSession, \
 		.multiplayerSession = { \
 			.type = MultiplayerSessionMessageType_##mtype, \
 			.mfield = __VA_ARGS__, \
 		}, \
-	}; \
-	bool res = pkt_serialize(&_msg, pkt, end, ctx); \
-	(void)res; \
-}
+	}), pkt, end, ctx)
 
 #define SERIALIZE_MENURPC(pkt, end, ctx, ...) SERIALIZE_SESSION(MenuRpc, menuRpc, pkt, end, ctx, __VA_ARGS__)
 #define SERIALIZE_GAMEPLAYRPC(pkt, end, ctx, ...) SERIALIZE_SESSION(GameplayRpc, gameplayRpc, pkt, end, ctx, __VA_ARGS__)
@@ -29,11 +28,19 @@
 #define SERIALIZE_BEATUP(pkt, end, ctx, ...) SERIALIZE_SESSION(BeatUpMessage, beatUpMessage, pkt, end, ctx, __VA_ARGS__)
 
 #define CLEAR_STRING (struct String){0}
-#define CLEAR_LONGSTRING (struct LongString){0}
 #define CLEAR_BEATMAP (struct BeatmapIdentifierNetSerializable){0}
 #define CLEAR_MODIFIERS (struct GameplayModifiers){0}
-#define CLEAR_COLORSCHEME (struct ColorSchemeNetSerializable){0}
-#define CLEAR_AVATARDATA (struct MultiplayerAvatarData){CLEAR_STRING, {0, 0, 0, 1}, {0, 0, 0, 1}, CLEAR_STRING, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, {{0, 0, 0, 1}, {0, 0, 0, 1}}, CLEAR_STRING, CLEAR_STRING, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, CLEAR_STRING, CLEAR_STRING, CLEAR_STRING}
+#define CLEAR_AVATARDATA (struct MultiplayerAvatarData){ \
+	.headTopPrimaryColor.a = 1, \
+	.handsColor.a = 1, \
+	.clothesPrimaryColor.a = 1, \
+	.clothesSecondaryColor.a = 1, \
+	.clothesDetailColor.a = 1, \
+	._unused = {{.a = 1}, {.a = 1}}, \
+	.glassesColor.a = 1, \
+	.facialHairColor.a = 1, \
+	.headTopSecondaryColor.a = 1, \
+}
 #define CLEAR_SETTINGS (struct PlayerSpecificSettings){0}
 
 #define REQUIRED_MODIFIER_MASK (15 << 18) // SongSpeed
@@ -87,14 +94,11 @@ enum ServerState {
 
 struct InstancePacket {
 	uint16_t len;
-	bool isFragmented;
-	struct FragmentedHeader fragmentHeader;
 	uint8_t data[NET_MAX_PKT_SIZE];
 };
 struct InstanceResendPacket {
 	uint32_t timeStamp;
-	uint16_t len;
-	uint8_t data[NET_MAX_PKT_SIZE];
+	struct InstancePacket pkt;
 };
 struct ReliableChannel {
 	struct Ack ack;
@@ -102,16 +106,24 @@ struct ReliableChannel {
 	uint16_t outboundSequence, inboundSequence;
 	uint16_t outboundWindowStart;
 	struct InstanceResendPacket resend[NET_MAX_WINDOW_SIZE];
-	struct InstancePacketList *backlog;
-	struct InstancePacketList **backlogEnd;
+	struct InstancePacketList {
+		struct InstancePacketList *next;
+		bool isFragmented;
+		struct InstancePacket pkt;
+	} *backlog, **backlogEnd;
 };
 struct ReliableUnorderedChannel {
 	struct ReliableChannel base;
-	bool earlyReceived[NET_MAX_WINDOW_SIZE];
+	uint8_t earlyReceived[(NET_MAX_WINDOW_SIZE + 7) / 8];
+};
+struct EarlyReceivedPacket {
+	uint16_t len;
+	bool isFragmented;
+	uint8_t data[NET_MAX_PKT_SIZE];
 };
 struct ReliableOrderedChannel {
 	struct ReliableChannel base;
-	struct InstancePacket receivedPackets[NET_MAX_WINDOW_SIZE];
+	struct EarlyReceivedPacket receivedPackets[NET_MAX_WINDOW_SIZE];
 };
 struct SequencedChannel {
 	struct Ack ack;
@@ -124,11 +136,10 @@ struct IncomingFragments {
 	DeliveryMethod channelId;
 	uint16_t count, total;
 	uint32_t size;
-	struct InstancePacket fragments[];
-};
-struct InstancePacketList {
-	struct InstancePacketList *next;
-	struct InstancePacket pkt;
+	struct PacketFragment {
+		uint16_t len;
+		uint8_t data[NET_MAX_PKT_SIZE];
+	} fragments[];
 };
 struct Channels {
 	struct ReliableUnorderedChannel ru;
@@ -146,7 +157,7 @@ struct PingPong {
 typedef void (*ChanneledHandler)(void *userptr, const uint8_t **data, const uint8_t *end, DeliveryMethod channelId);
 
 void instance_channels_init(struct Channels *channels);
-void instance_channels_free(struct Channels *channels);
+void instance_channels_reset(struct Channels *channels);
 uint32_t instance_channels_tick(struct Channels *channels, struct NetContext *net, struct NetSession *session, uint32_t currentTime);
 void instance_send_channeled(struct NetSession *session, struct Channels *channels, const uint8_t *buf, uint32_t len, DeliveryMethod method);
 void handle_Ack(struct NetSession *session, struct Channels *channels, const struct Ack *ack);

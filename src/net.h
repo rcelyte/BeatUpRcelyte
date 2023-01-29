@@ -24,8 +24,6 @@ typedef int socklen_t;
 #endif
 
 #define NET_MAX_PKT_SIZE 1432
-#define NET_MAX_SEQUENCE 32768
-#define NET_MAX_WINDOW_SIZE 64
 #define NET_RESEND_DELAY 27
 
 #define NET_THREAD_INVALID 0 // TODO: this macro marks all non-portable uses of the pthreads API
@@ -123,9 +121,5 @@ int32_t net_get_sockfd(struct NetContext *ctx);
 mbedtls_ctr_drbg_context *net_get_ctr_drbg(struct NetContext *ctx);
 
 uint32_t net_time(void);
-
-static inline int32_t RelativeSequenceNumber(int32_t to, int32_t from) {
-	return (to - from + NET_MAX_SEQUENCE + NET_MAX_SEQUENCE / 2) % NET_MAX_SEQUENCE - NET_MAX_SEQUENCE / 2;
-}
 
 extern bool net_useIPv4;

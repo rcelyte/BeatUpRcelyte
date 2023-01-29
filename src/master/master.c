@@ -95,10 +95,10 @@ static struct MasterSession *master_disconnect(struct MasterSession *session) {
 }
 
 static uint32_t master_onResend(struct Context *ctx, uint32_t currentTime) {
-	int32_t nextTick = 180000;
+	uint32_t nextTick = 180000;
 	for(struct MasterSession **sp = &ctx->sessionList; *sp;) {
-		int32_t kickTime = (int32_t)(NetSession_get_lastKeepAlive(&(*sp)->net) + 180000 - currentTime);
-		if(kickTime < 0) { // this filters the RFC-1149 user
+		uint32_t kickTime = NetSession_get_lastKeepAlive(&(*sp)->net) + 180000 - currentTime;
+		if((int32_t)kickTime < 0) { // this filters the RFC-1149 user
 			*sp = master_disconnect(*sp);
 			continue;
 		}
@@ -106,19 +106,20 @@ static uint32_t master_onResend(struct Context *ctx, uint32_t currentTime) {
 			nextTick = kickTime;
 		struct MasterSession *session = *sp;
 		struct Counter64 iter = session->resend.set;
-		for(uint32_t i; Counter64_clear_next(&iter, &i);) {
-			int32_t nextSend = (int32_t)(session->resend.slots[i].timeStamp + NET_RESEND_DELAY - currentTime);
-			if(session->resend.slots[i].length && nextSend < 0) {
-				net_send_internal(&ctx->net, &session->net, session->resend.slots[i].data, session->resend.slots[i].length, session->resend.slots[i].encrypt);
-				for(; nextSend < 0; nextSend += NET_RESEND_DELAY)
-					session->resend.slots[i].timeStamp += NET_RESEND_DELAY;
+		for(uint32_t i; (i = Counter64_clear_next(&iter)) != COUNTER64_INVALID;) {
+			struct MasterPacket *slot = &session->resend.slots[i];
+			if(!slot->length)
+				continue;
+			if((int32_t)(slot->timeStamp - currentTime) <= 0) {
+				net_send_internal(&ctx->net, &session->net, slot->data, slot->length, slot->encrypt);
+				slot->timeStamp = currentTime + NET_RESEND_DELAY - (currentTime - slot->timeStamp) % NET_RESEND_DELAY;
 			}
-			if(nextSend < nextTick)
-				nextTick = nextSend;
+			if(slot->timeStamp - currentTime < nextTick)
+				nextTick = slot->timeStamp - currentTime;
 		}
 		sp = &(*sp)->next;
 	}
-	return (uint32_t)nextTick;
+	return nextTick;
 }
 
 static uint32_t master_getNextRequestId(struct MasterSession *session) {
@@ -130,7 +131,7 @@ static uint32_t master_getNextRequestId(struct MasterSession *session) {
 static const struct MasterPacket *master_handle_ack(struct MasterSession *session, const struct MessageReceivedAcknowledge *ack) {
 	uint32_t requestId = ack->base.responseId;
 	struct Counter64 iter = session->resend.set;
-	for(uint32_t i; Counter64_clear_next(&iter, &i);) {
+	for(uint32_t i; (i = Counter64_clear_next(&iter)) != COUNTER64_INVALID;) {
 		if(requestId != session->resend.requestIds[i])
 			continue;
 		Counter64_clear(&session->resend.set, i);
@@ -140,8 +141,8 @@ static const struct MasterPacket *master_handle_ack(struct MasterSession *sessio
 }
 
 static void master_send_internal(struct NetContext *ctx, struct MasterSession *session, const uint8_t *buf, uint16_t length, uint32_t requestId, bool encrypt) {
-	uint32_t i;
-	if(Counter64_set_next(&session->resend.set, &i)) {
+	uint32_t i = Counter64_set_next(&session->resend.set);
+	if(i != COUNTER64_INVALID) {
 		struct MasterPacket *slot = &session->resend.slots[i];
 		slot->timeStamp = net_time();
 		slot->length = length;
@@ -150,8 +151,8 @@ static void master_send_internal(struct NetContext *ctx, struct MasterSession *s
 		session->resend.requestIds[i] = requestId;
 	} else {
 		uprintf("RESEND BUFFER FULL\n");
+		net_send_internal(ctx, &session->net, buf, length, encrypt);
 	}
-	net_send_internal(ctx, &session->net, buf, length, encrypt);
 }
 
 static uint32_t read_requestId(const uint8_t *data, const uint8_t *data_end, struct PacketContext version) {
@@ -253,7 +254,7 @@ static void handle_ClientHelloRequest(struct Context *ctx, struct MasterSession 
 	uint8_t resp[65536], *resp_end = resp;
 	if(!MASTER_SERIALIZE(&r_hello, &resp_end, endof(resp)))
 		return;
-	master_send(&ctx->net, session, MessageType_HandshakeMessage, resp, resp_end);
+	master_send(&ctx->net, session, MessageType_HandshakeMessage, resp, resp_end); // TODO: this should not be sent reliably
 	session->handshake.step = HandshakeMessageType_ClientHelloWithCookieRequest;
 }
 

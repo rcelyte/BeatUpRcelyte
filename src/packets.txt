@@ -1057,7 +1057,7 @@ n Ack
 	u16 sequence
 	DeliveryMethod channelId
 	if(.channelId % 2 == 0)
-		u8 data[16, $windowSize / 8]
+		u8 data[16, ($windowSize + 7) / 8]
 		u8 _pad0
 n Ping
 	u16 sequence

@@ -63,7 +63,7 @@ void pool_host_detach(struct PoolHost *host) {
 void TEMPpool_host_setAttribs(struct PoolHost *host, uint32_t capacity, bool discover) { // TODO: `TEMP` since calling multiple times for the same host will break things
 	host->discover = discover;
 	host->capacity = capacity;
-	host->blocks.bits = ~0llu;
+	host->blocks.bits = ~UINT64_C(0);
 	host->codes = malloc(capacity * sizeof(*hosts->codes));
 	if(!host->codes) {
 		*host = (struct PoolHost){0};
@@ -89,16 +89,16 @@ static uint32_t globalRoomCount = 0;
 
 static struct PoolHost *_pool_handle_new(uint32_t *room_out, ServerCode code) {
 	struct PoolHost *host = &hosts[0]; // TODO: multiple hosts + load balancing
-	if(!host->discover || Counter64_isEmpty(host->blocks)) {
+	uint32_t block = Counter64_get_next(host->blocks), freeCount = 0;
+	if(!host->discover || block == COUNTER64_INVALID) {
 		uprintf("Error: instance not available\n");
 		return NULL;
 	}
-	uint32_t block = (uint32_t)__builtin_ctzll(host->blocks.bits), freeCount = 0;
 	for(uint32_t start = host->capacity * block / 64, i = host->capacity * (block + 1) / 64; i > start;) {
-		if(host->codes[--i] == ServerCode_NONE) {
-			*room_out = i;
-			++freeCount;
-		}
+		if(host->codes[--i] != ServerCode_NONE) 
+			continue;
+		*room_out = i;
+		++freeCount;
 	}
 	if(freeCount < 2)
 		Counter64_clear(&host->blocks, block);
