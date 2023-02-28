@@ -10,7 +10,7 @@
 #include <string.h>
 
 struct Context {
-	int32_t listenfd;
+	struct ContextBase base;
 	mbedtls_ssl_config conf;
 	mbedtls_entropy_context entropy;
 	mbedtls_ctr_drbg_context ctr_drbg;
@@ -20,10 +20,10 @@ struct Context {
 	const char *path;
 };
 static struct Context ctx = {
-	.listenfd = -1
+	.base.listenfd = -1,
 };
 
-static void *handle_client_https(uintptr_t fd) {
+static void *handle_client_https(void *fd) {
 	mbedtls_ssl_context ssl;
 	mbedtls_ssl_init(&ssl);
 	int res = mbedtls_ssl_setup(&ssl, &ctx.conf);
@@ -31,7 +31,7 @@ static void *handle_client_https(uintptr_t fd) {
 		uprintf("mbedtls_ssl_setup() failed: %s\n", mbedtls_high_level_strerr(res));
 		goto reset;
 	}
-	mbedtls_ssl_set_bio(&ssl, (void*)fd, ssl_send, ssl_recv, NULL);
+	mbedtls_ssl_set_bio(&ssl, fd, ssl_send, ssl_recv, NULL);
 	while((res = mbedtls_ssl_handshake(&ssl)) != 0) {
 		if(res == MBEDTLS_ERR_SSL_WANT_READ || res == MBEDTLS_ERR_SSL_WANT_WRITE)
 			continue;
@@ -62,7 +62,7 @@ static void *handle_client_https(uintptr_t fd) {
 	} while(res == MBEDTLS_ERR_SSL_WANT_READ || res == MBEDTLS_ERR_SSL_WANT_WRITE);
 	reset:;
 	mbedtls_ssl_free(&ssl);
-	close((int)fd);
+	close((int)(uintptr_t)fd);
 	return 0;
 }
 
@@ -74,8 +74,11 @@ static int status_ssl_sni(struct Context *ctx, mbedtls_ssl_context *ssl, const u
 
 static pthread_t status_thread = NET_THREAD_INVALID;
 bool status_ssl_init(mbedtls_x509_crt certs[2], mbedtls_pk_context keys[2], const char *domain, const char *path, uint16_t port) {
-	ctx.listenfd = net_bind_tcp(port, 128);
-	if(ctx.listenfd == -1)
+	ctx.base = (struct ContextBase){
+		.listenfd = net_bind_tcp(port, 128),
+		.handleClient = handle_client_https,
+	};
+	if(ctx.base.listenfd == -1)
 		return true;
 	mbedtls_ssl_config_init(&ctx.conf);
 	mbedtls_entropy_init(&ctx.entropy);
@@ -101,7 +104,7 @@ bool status_ssl_init(mbedtls_x509_crt certs[2], mbedtls_pk_context keys[2], cons
 	ctx.keys = keys;
 	ctx.domain = domain;
 	ctx.path = path;
-	if(pthread_create(&status_thread, NULL, (void *(*)(void*))status_handler, *(void**)(void*(*[])(uintptr_t)){handle_client_https})) {
+	if(pthread_create(&status_thread, NULL, (void *(*)(void*))status_handler, &ctx.base)) {
 		status_thread = NET_THREAD_INVALID;
 		return true;
 	}
@@ -109,15 +112,15 @@ bool status_ssl_init(mbedtls_x509_crt certs[2], mbedtls_pk_context keys[2], cons
 }
 
 void status_ssl_cleanup() {
-	if(ctx.listenfd == -1)
+	if(ctx.base.listenfd == -1)
 		return;
 	uprintf("Stopping HTTPS\n");
 	mbedtls_ctr_drbg_free(&ctx.ctr_drbg);
 	mbedtls_entropy_free(&ctx.entropy);
 	mbedtls_ssl_config_free(&ctx.conf);
-	shutdown(ctx.listenfd, SHUT_RD);
-	net_close(ctx.listenfd);
-	ctx.listenfd = -1;
+	shutdown(ctx.base.listenfd, SHUT_RD);
+	net_close(ctx.base.listenfd);
+	ctx.base.listenfd = -1;
 	if(status_thread != NET_THREAD_INVALID) {
 		pthread_join(status_thread, NULL);
 		status_thread = NET_THREAD_INVALID;

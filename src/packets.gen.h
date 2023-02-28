@@ -2036,7 +2036,7 @@ struct Channeled {
 struct Ack {
 	uint16_t sequence;
 	DeliveryMethod channelId;
-	uint8_t data[16];
+	uint8_t data[32];
 	uint8_t _pad0;
 };
 struct Ping {
@@ -2177,7 +2177,7 @@ static const struct PacketContext PV_LEGACY_DEFAULT = {
 	.netVersion = 11,
 	.protocolVersion = 6,
 	.beatUpVersion = 0,
-	.windowSize = 64,
+	.windowSize = 0,
 };
 void _pkt_BeatUpMessage_read(struct BeatUpMessage *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 void _pkt_BeatUpMessage_write(const struct BeatUpMessage *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);

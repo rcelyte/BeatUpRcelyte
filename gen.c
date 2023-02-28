@@ -520,7 +520,7 @@ static void gen_header(char **out) {
 		"\t.netVersion = 11,\n"
 		"\t.protocolVersion = 6,\n"
 		"\t.beatUpVersion = 0,\n"
-		"\t.windowSize = 64,\n"
+		"\t.windowSize = 0,\n"
 		"};\n");
 	for(struct Token *token = tokens; token < tokens_end; ++token) {
 		if(token->type != TType_Struct_start)

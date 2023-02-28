@@ -32,6 +32,7 @@ void instance_channels_init(struct Channels *channels) {
 		.ro.base = {
 			.ack.channelId = DeliveryMethod_ReliableOrdered,
 			.backlogEnd = &channels->ro.base.backlog,
+			.outboundSequence = 1, // ID 0 is skipped due to window size probing
 		},
 		.rs.ack.channelId = DeliveryMethod_ReliableSequenced,
 	};
@@ -123,6 +124,19 @@ void instance_send_channeled(struct NetSession *session, struct Channels *channe
 	for(fragmentHeader.fragmentPart = 0; fragmentHeader.fragmentPart < fragmentHeader.fragmentsTotal - 1; ++fragmentHeader.fragmentPart, buf += session->maxFragmentSize, len -= session->maxFragmentSize)
 		instance_send_backlog(session->version, channels, buf, session->maxFragmentSize, channelId, fragmentHeader);
 	instance_send_backlog(session->version, channels, buf, (uint16_t)len, channelId, fragmentHeader);
+}
+
+static void ReliableChannel_setWindow(struct ReliableChannel *channel, struct PacketContext version, DeliveryMethod channelId) {
+	while(RelativeSequenceNumber(channel->outboundSequence, channel->outboundWindowStart) < version.windowSize && channel->backlog != NULL) {
+		// TODO: deduplicate? It's only two lines...
+		struct InstancePacket *resend = resend_add(version, channel, channelId, channel->backlog->isFragmented);
+		resend->len += pkt_write_bytes(channel->backlog->pkt.data, (uint8_t*[]){&resend->data[resend->len]}, endof(resend->data), version, channel->backlog->pkt.len);
+	}
+}
+
+void instance_channels_setWindow(struct Channels *channels, struct NetSession *session) {
+	ReliableChannel_setWindow(&channels->ru.base, session->version, DeliveryMethod_ReliableUnordered);
+	ReliableChannel_setWindow(&channels->ro.base, session->version, DeliveryMethod_ReliableOrdered);
 }
 
 void handle_Ack(struct NetSession *session, struct Channels *channels, const struct Ack *ack) {
@@ -350,13 +364,22 @@ static void Ack_flush(struct Ack *ack, struct NetContext *net, struct NetSession
 }
 
 uint32_t instance_channels_tick(struct Channels *channels, struct NetContext *net, struct NetSession *session, uint32_t currentTime) {
+	if(!session->version.windowSize) {
+		uint8_t resp[65536];
+		size_t length = pkt_write_c((uint8_t*[]){resp}, endof(resp), session->version, NetPacketHeader, {
+			.property = PacketProperty_Channeled,
+			.channeled.channelId = DeliveryMethod_ReliableOrdered,
+		});
+		net_queue_merged(net, session, resp, length);
+		return 15;
+	}
 	for(; channels->ru.base.sendAck; channels->ru.base.sendAck = false)
 		Ack_flush(&channels->ru.base.ack, net, session);
 	for(; channels->ro.base.sendAck; channels->ro.base.sendAck = false)
 		Ack_flush(&channels->ro.base.ack, net, session);
-	for(uint_fast8_t i = 0; i < 64; ++i)
+	for(uint32_t i = 0; i < lengthof(channels->ru.base.resend); ++i)
 		InstanceResendPacket_trySend(&channels->ru.base.resend[i], net, session, currentTime);
-	for(uint_fast8_t i = 0; i < 64; ++i)
+	for(uint32_t i = 0; i < lengthof(channels->ro.base.resend); ++i)
 		InstanceResendPacket_trySend(&channels->ro.base.resend[i], net, session, currentTime);
 	InstanceResendPacket_trySend(&channels->rs.resend, net, session, currentTime);
 	return 15; // TODO: proper resend timing

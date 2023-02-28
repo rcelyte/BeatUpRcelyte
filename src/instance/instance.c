@@ -114,7 +114,7 @@ struct InstanceContext {
 	struct NetContext net;
 	union WireLink *master;
 	struct Counter64 roomMask;
-	struct Room *rooms[64][8];
+	struct Room *rooms[64][4];
 };
 static struct InstanceContext *contexts = NULL;
 
@@ -1369,11 +1369,6 @@ static void handle_ConnectRequest(struct InstanceContext *ctx, struct Room *room
 		if(!pkt_read(&info, &sub, *data, session->net.version))
 			continue;
 		session->net.version.beatUpVersion = (uint8_t)info.base.protocolId;
-		session->net.version.windowSize = (uint16_t)info.windowSize;
-		if(session->net.version.windowSize > NET_MAX_WINDOW_SIZE)
-			session->net.version.windowSize = NET_MAX_WINDOW_SIZE;
-		if(session->net.version.windowSize < 32)
-			session->net.version.windowSize = 32;
 		directDownloads = info.directDownloads;
 		if(indexof(room->players, session) == room->serverOwner) {
 			room->shortCountdown = info.countdownDuration / 4.f;
@@ -1394,7 +1389,7 @@ static void handle_ConnectRequest(struct InstanceContext *ctx, struct Room *room
 					.protocolId = session->net.version.beatUpVersion,
 					.blockSize = 398,
 				},
-				.windowSize = session->net.version.windowSize,
+				.windowSize = 256,
 				.countdownDuration = (uint8_t)(room->shortCountdown * 4),
 				.directDownloads = directDownloads,
 				.skipResults = room->skipResults,
@@ -1564,17 +1559,17 @@ static void room_disconnect(struct InstanceContext *ctx, struct Room **room, str
 	});
 }
 
-static bool handle_Merged(const uint8_t **data, const uint8_t *end, struct NetPacketHeader *header_out, size_t *length_out) {
+static bool handle_Merged(const uint8_t **data, const uint8_t *end, struct NetPacketHeader *header_out, size_t *length_out, struct PacketContext version) {
 	if(*data >= end)
 		return false;
 	struct MergedHeader merged;
-	if(!pkt_read(&merged, data, end, PV_LEGACY_DEFAULT))
+	if(!pkt_read(&merged, data, end, version))
 		return false;
 	if(end - *data < (int32_t)merged.length) {
 		uprintf("OVERFLOW\n");
 		return false;
 	}
-	*length_out = merged.length - pkt_read(header_out, data, &(*data)[merged.length], PV_LEGACY_DEFAULT);
+	*length_out = merged.length - pkt_read(header_out, data, &(*data)[merged.length], version);
 	return *length_out != merged.length;
 }
 
@@ -1584,7 +1579,7 @@ static inline void handle_packet(struct InstanceContext *ctx, struct Room **room
 		return;
 	size_t length = (size_t)(end - data);
 	if(header.property == PacketProperty_Merged /*&& !header.isFragmented*/)
-		if(!handle_Merged(&data, end, &header, &length))
+		if(!handle_Merged(&data, end, &header, &length, session->net.version))
 			return;
 	do {
 		if(session->state == 0 && header.property != PacketProperty_ConnectRequest)
@@ -1597,7 +1592,21 @@ static inline void handle_packet(struct InstanceContext *ctx, struct Room **room
 		switch(header.property) {
 			case PacketProperty_Unreliable: process_message(ctx, *room, session, &sub, &sub[length], false, 0); break;
 			case PacketProperty_Channeled: handle_Channeled((ChanneledHandler)process_Channeled, &(struct ChanneledState){ctx, *room, session}, &ctx->net, &session->net, &session->channels, &header, &sub, &sub[length]); break;
-			case PacketProperty_Ack: handle_Ack(&session->net, &session->channels, &header.ack); break;
+			case PacketProperty_Ack: {
+				if(!session->net.version.windowSize) {
+					if(!length || length > sizeof(header.ack.data)) {
+						uprintf("BAD ACK LENGTH\n");
+						room_disconnect(ctx, room, session, false);
+						return;
+					}
+					session->net.version.windowSize = length * 8;
+					instance_channels_setWindow(&session->channels, &session->net);
+					memcpy(header.ack.data, sub - sizeof(header.ack._pad0), length);
+					sub += length;
+				}
+				handle_Ack(&session->net, &session->channels, &header.ack);
+				break;
+			}
 			case PacketProperty_Ping: handle_Ping(&ctx->net, &session->net, &session->tableTennis, header.ping); break;
 			case PacketProperty_Pong: {
 				struct InternalMessage r_latency = {
@@ -1626,7 +1635,7 @@ static inline void handle_packet(struct InstanceContext *ctx, struct Room **room
 		}
 		data += length;
 		pkt_debug("BAD PACKET LENGTH", sub, data, length, session->net.version);
-	} while(handle_Merged(&data, end, &header, &length));
+	} while(handle_Merged(&data, end, &header, &length, session->net.version));
 }
 
 static const char *instance_masterAddress = NULL;

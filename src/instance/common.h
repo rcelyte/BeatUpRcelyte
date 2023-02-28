@@ -8,7 +8,7 @@
 #define IDLE_TIMEOUT_MS 10000
 #define KICK_TIMEOUT_MS 3000
 
-#define NET_MAX_WINDOW_SIZE 64
+#define NET_MAX_WINDOW_SIZE 256
 
 #define bitsize(e) (sizeof(e) * 8)
 #define indexof(a, e) ((uintptr_t)((e) - (a)))
@@ -158,6 +158,7 @@ typedef void (*ChanneledHandler)(void *userptr, const uint8_t **data, const uint
 
 void instance_channels_init(struct Channels *channels);
 void instance_channels_reset(struct Channels *channels);
+void instance_channels_setWindow(struct Channels *channels, struct NetSession *session);
 uint32_t instance_channels_tick(struct Channels *channels, struct NetContext *net, struct NetSession *session, uint32_t currentTime);
 void instance_send_channeled(struct NetSession *session, struct Channels *channels, const uint8_t *buf, uint32_t len, DeliveryMethod method);
 void handle_Ack(struct NetSession *session, struct Channels *channels, const struct Ack *ack);

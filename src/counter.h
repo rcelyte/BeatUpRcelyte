@@ -31,7 +31,7 @@ static inline uint8_t Counter64_clear_next(struct Counter64 *set) {
 	if(set->bits == 0)
 		return COUNTER64_INVALID;
 	uint8_t bit = (uint8_t)__builtin_ctzll(set->bits);
-	Counter64_clear(set, bit);
+	set->bits &= set->bits - 1u;
 	return bit;
 }
 static inline uint8_t Counter64_set_next(struct Counter64 *set) {
@@ -65,7 +65,7 @@ static inline bool CounterP_overwrite(struct CounterP *set, uint32_t bit, bool s
 		return false;
 	i = (uint32_t)__builtin_ctz(i);
 	*out = (uint32_t)__builtin_ctzll(set->bits[i]);
-	set->bits[i] &= ~(UINT64_C(1) << *out);
+	set->bits[i] &= set->bits[i] - 1;
 	*out |= i * 64;
 	return true;
 }

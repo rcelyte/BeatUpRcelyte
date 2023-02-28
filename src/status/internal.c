@@ -218,7 +218,7 @@ uint32_t status_resp(const char *source, const char *path, char *buf, uint32_t b
 	uprintf("(%s,%s): /%.*s\n", source, UserAgent_ToString[userAgent], (int32_t)(reqPath_end - req), req);
 	if(startsWith(req, req_end, "robots.txt "))
 		return status_text(buf, "200 OK", "text/plain", "User-agent: *\nDisallow: /\n");
-	if(userAgent) {
+	if(userAgent != UserAgent_Web) {
 		size_t path_len = strlen(path);
 		if(!startsWithBytes(req, req_end, path, path_len * sizeof(*path)))
 			return status_text(buf, "404 Not Found", "text/plain", "");

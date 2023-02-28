@@ -2324,7 +2324,7 @@ static void _pkt_Ack_read(struct Ack *restrict data, const uint8_t **pkt, const 
 	_pkt_u16_read(&data->sequence, pkt, end, ctx);
 	_pkt_u8_read(&data->channelId, pkt, end, ctx);
 	if(data->channelId % 2 == 0) {
-		_pkt_raw_read(data->data, pkt, end, ctx, check_overflow((uint32_t)((ctx.windowSize + 7) / 8), 16, "Ack.data"));
+		_pkt_raw_read(data->data, pkt, end, ctx, check_overflow((uint32_t)((ctx.windowSize + 7) / 8), 32, "Ack.data"));
 		_pkt_u8_read(&data->_pad0, pkt, end, ctx);
 	}
 }
@@ -2332,7 +2332,7 @@ static void _pkt_Ack_write(const struct Ack *restrict data, uint8_t **pkt, const
 	_pkt_u16_write(&data->sequence, pkt, end, ctx);
 	_pkt_u8_write(&data->channelId, pkt, end, ctx);
 	if(data->channelId % 2 == 0) {
-		_pkt_raw_write(data->data, pkt, end, ctx, check_overflow((uint32_t)((ctx.windowSize + 7) / 8), 16, "Ack.data"));
+		_pkt_raw_write(data->data, pkt, end, ctx, check_overflow((uint32_t)((ctx.windowSize + 7) / 8), 32, "Ack.data"));
 		_pkt_u8_write(&data->_pad0, pkt, end, ctx);
 	}
 }
