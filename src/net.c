@@ -112,6 +112,10 @@ const struct SS *NetSession_get_addr(struct NetSession *session) {
 	return &session->addr;
 }
 
+uint32_t NetSession_decrypt(struct NetSession *session, const uint8_t packet[static 1536], uint32_t packet_len, uint8_t out[static 1536]) {
+	return EncryptionState_decrypt(&session->encryptionState, packet, &packet[packet_len], out);
+}
+
 int32_t net_get_sockfd(struct NetContext *ctx) {
 	return ctx->sockfd;
 }
@@ -185,7 +189,7 @@ void net_send_internal(struct NetContext *ctx, struct NetSession *session, const
 	sendto(ctx->sockfd, (char*)body, body_len, 0, &session->addr.sa, session->addr.len);
 }
 
-static struct NetSession *onResolve_stub(void*, struct SS, void**) {return NULL;}
+static struct NetSession *onResolve_stub(void*, struct SS, const uint8_t*, uint32_t, uint8_t*, uint32_t*, void**) {return NULL;}
 static uint32_t onResend_stub(void*, uint32_t) {return 180000;}
 static void onWireMessage_stub(void*, union WireLink*, const struct WireMessage*) {}
 
@@ -367,7 +371,7 @@ static void net_set_mtu(struct NetSession *session, uint8_t idx) {
 	session->maxFragmentSize = session->maxChanneledSize - (uint16_t)pkt_write_c(&buf_end, endof(buf), session->version, FragmentedHeader, {0});
 }
 
-void net_session_init(struct NetContext *ctx, struct NetSession *session, struct SS addr) {
+void NetSession_init(struct NetContext *ctx, struct NetSession *session, struct SS addr) {
 	*session = (struct NetSession){
 		.version = PV_LEGACY_DEFAULT,
 		.cookie = net_cookie(&ctx->ctr_drbg),
@@ -383,7 +387,7 @@ void net_session_init(struct NetContext *ctx, struct NetSession *session, struct
 	net_flush_merged(ctx, session);
 }
 
-void net_session_free(struct NetSession *session) {
+void NetSession_free(struct NetSession *session) {
 	EncryptionState_free(&session->encryptionState);
 	net_keypair_free(&session->keys);
 }
@@ -584,10 +588,10 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSe
 		// uprintf("ping[%s]: %hhu\n", namestr, raw[0]);
 		goto retry;
 	}
-	*session = ctx->onResolve(ctx->userptr, addr, userdata_out);
+	uint32_t length = 0;
+	*session = ctx->onResolve(ctx->userptr, addr, raw, (uint32_t)raw_len, out, &length, userdata_out);
 	if(!*session)
 		goto retry;
-	uint32_t length = EncryptionState_decrypt(&(*session)->encryptionState, raw, &raw[raw_len], out);
 	if(!length) {
 		uprintf("Packet decryption failed\n");
 		goto retry;

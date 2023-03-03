@@ -55,7 +55,7 @@ struct NetSession {
 	struct Cookie32 clientRandom;
 	struct Cookie32 NET_H_PRIVATE(cookie);
 	struct EncryptionState NET_H_PRIVATE(encryptionState);
-	struct SS NET_H_PRIVATE(addr);
+	struct SS addr;
 	uint32_t lastKeepAlive;
 	uint16_t NET_H_PRIVATE(mtu);
 	uint8_t NET_H_PRIVATE(mtuIdx);
@@ -82,7 +82,7 @@ struct NetContext {
 	} NET_H_PRIVATE(remoteLinks);
 	struct WireCookie *NET_H_PRIVATE(cookies);
 	void *userptr;
-	struct NetSession *(*onResolve)(void *userptr, struct SS addr, void **userdata_out);
+	struct NetSession *(*onResolve)(void *userptr, struct SS addr, const uint8_t packet[static 1536], uint32_t packet_len, uint8_t out[static 1536], uint32_t *out_len, void **userdata_out);
 	uint32_t (*onResend)(void *userptr, uint32_t currentTime);
 	void (*onWireLink)(void *userptr, union WireLink *link);
 	void (*onWireMessage)(void *userptr, union WireLink *link, const struct WireMessage *message);
@@ -103,14 +103,15 @@ const struct Cookie32 *NetSession_get_cookie(const struct NetSession *session);
 bool NetSession_set_remotePublicKey(struct NetSession *session, struct NetContext *ctx, const struct ByteArrayNetSerializable *in, bool client);
 uint32_t NetSession_get_lastKeepAlive(struct NetSession *session);
 const struct SS *NetSession_get_addr(struct NetSession *session);
+uint32_t NetSession_decrypt(struct NetSession *session, const uint8_t packet[static 1536], uint32_t packet_len, uint8_t out[static 1536]);
 
 bool net_init(struct NetContext *ctx, uint16_t port, bool filterUnencrypted, uint32_t tcpBacklog);
 void net_stop(struct NetContext *ctx);
 void net_cleanup(struct NetContext *ctx);
 void net_lock(struct NetContext *ctx);
 void net_unlock(struct NetContext *ctx);
-void net_session_init(struct NetContext *ctx, struct NetSession *session, struct SS addr);
-void net_session_free(struct NetSession *session);
+void NetSession_init(struct NetContext *ctx, struct NetSession *session, struct SS addr);
+void NetSession_free(struct NetSession *session);
 bool net_add_remote(struct NetContext *ctx, mbedtls_ssl_context *link);
 bool net_remove_remote(struct NetContext *ctx, mbedtls_ssl_context *link);
 uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSession **session, void **userdata_out);

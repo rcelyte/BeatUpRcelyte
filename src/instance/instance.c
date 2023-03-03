@@ -1474,9 +1474,9 @@ static void handle_ConnectRequest(struct InstanceContext *ctx, struct Room *room
 	session_set_state(ctx, room, session, ServerState_Synchronizing);
 }
 
-static void log_players(const struct Room *room, struct InstanceSession *session, const char *prefix) {
+static void log_players(const struct Room *room, const struct SS *addr, const char *prefix) {
 	char addrstr[INET6_ADDRSTRLEN + 8], bitText[sizeof(room->playerSort) * 3], *bitText_end = bitText;
-	net_tostr(NetSession_get_addr(&session->net), addrstr);
+	net_tostr(addr, addrstr);
 	uint32_t playerCount = 0;
 	for(uint32_t offset = 0; offset < (uint32_t)room->configuration.maxPlayerCount; offset += 8) {
 		uint8_t byte = CounterP_byte(room->playerSort, offset);
@@ -1508,7 +1508,7 @@ static void room_free(struct InstanceContext *ctx, struct Room **room) {
 static void room_disconnect(struct InstanceContext *ctx, struct Room **room, struct InstanceSession *session, bool hold) {
 	playerid_t id = (playerid_t)indexof((*room)->players, session);
 	CounterP_clear(&(*room)->playerSort, id);
-	log_players(*room, session, hold ? "reconnect" : "disconnect");
+	log_players(*room, NetSession_get_addr(&session->net), hold ? "reconnect" : "disconnect");
 
 	if(id == (*room)->serverOwner) {
 		(*room)->serverOwner = 0;
@@ -1547,7 +1547,7 @@ static void room_disconnect(struct InstanceContext *ctx, struct Room **room, str
 	}
 
 	instance_channels_reset(&session->channels);
-	net_session_free(&session->net);
+	NetSession_free(&session->net);
 	if(hold)
 		return;
 
@@ -1676,13 +1676,29 @@ static void *instance_handler(struct InstanceContext *ctx) {
 }
 
 // TODO: clients aren't guaranteed to use the same IP address when deeplinking from the master server to instances
-static struct NetSession *instance_onResolve(struct InstanceContext *ctx, struct SS addr, void **userdata_out) {
+static struct NetSession *instance_onResolve(struct InstanceContext *ctx, struct SS addr, const uint8_t packet[static 1536], uint32_t packet_len, uint8_t out[static 1536], uint32_t *out_len, void **userdata_out) {
 	FOR_ALL_ROOMS(ctx, room) {
 		FOR_SOME_PLAYERS(id, (*room)->playerSort,) {
-			if(SS_equal(&addr, NetSession_get_addr(&(*room)->players[id].net))) {
-				*userdata_out = room;
-				return &(*room)->players[id].net;
-			}
+			if(!SS_equal(&addr, &(*room)->players[id].net.addr))
+				continue;
+			*out_len = NetSession_decrypt(&(*room)->players[id].net, packet, packet_len, out);
+			*userdata_out = room;
+			return &(*room)->players[id].net;
+		}
+	}
+	FOR_ALL_ROOMS(ctx, room) {
+		FOR_SOME_PLAYERS(id, (*room)->playerSort,) {
+			if((*room)->players[id].net.addr.ss.ss_family != AF_UNSPEC)
+				continue;
+			*out_len = NetSession_decrypt(&(*room)->players[id].net, packet, packet_len, out);
+			if(!*out_len)
+				continue;
+			char addrstr[INET6_ADDRSTRLEN + 8];
+			net_tostr(&addr, addrstr);
+			uprintf("resolve %s -> (%zu,%hu)@%hhu\n", addrstr, indexof(contexts, ctx), indexof(*ctx->rooms, room), id);
+			(*room)->players[id].net.addr = addr;
+			*userdata_out = room;
+			return &(*room)->players[id].net;
 		}
 	}
 	return NULL;
@@ -1841,7 +1857,7 @@ static struct WireSessionAllocResp room_resolve_session(struct InstanceContext *
 		session = &room->players[id];
 		room->playerSort = tmp;
 	}
-	net_session_init(&ctx->net, &session->net, addr);
+	NetSession_init(&ctx->net, &session->net, (struct SS){.ss.ss_family = AF_UNSPEC});
 	session->net.version.protocolVersion = (uint8_t)req->protocolVersion;
 	session->net.clientRandom = req->random;
 	*session = (struct InstanceSession){
@@ -1870,7 +1886,7 @@ static struct WireSessionAllocResp room_resolve_session(struct InstanceContext *
 		uprintf("Connect to Server Error: NetSession_set_remotePublicKey() failed\n");
 		return (struct WireSessionAllocResp){.result = ConnectToServerResponse_Result_UnknownError};
 	}
-	log_players(room, session, "connect");
+	log_players(room, &addr, "connect");
 	return resp;
 }
 
@@ -1942,7 +1958,7 @@ bool instance_init(const char *domainIPv4, const char *domain, const char *remot
 			return true;
 		}
 		ctx->net.userptr = &contexts[threads_len];
-		ctx->net.onResolve = (struct NetSession *(*)(void*, struct SS, void**))instance_onResolve;
+		ctx->net.onResolve = (struct NetSession *(*)(void*, struct SS, const uint8_t*, uint32_t, uint8_t*, uint32_t*, void**))instance_onResolve;
 		ctx->net.onResend = (uint32_t (*)(void*, uint32_t))instance_onResend;
 		ctx->net.onWireMessage = (void (*)(void*, union WireLink*, const struct WireMessage*))instance_onWireMessage;
 		ctx->roomMask = COUNTER64_CLEAR;
@@ -1971,7 +1987,7 @@ void instance_cleanup() {
 			FOR_ALL_ROOMS(ctx, room) {
 				FOR_SOME_PLAYERS(id, (*room)->playerSort,) {
 					instance_channels_reset(&(*room)->players[id].channels);
-					net_session_free(&(*room)->players[id].net);
+					NetSession_free(&(*room)->players[id].net);
 				}
 				room_free(ctx, room);
 			}

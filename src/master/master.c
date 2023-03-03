@@ -56,26 +56,27 @@ static struct MasterSession *master_lookup_session(struct Context *ctx, struct S
 	return NULL;
 }
 
-static struct NetSession *master_onResolve(struct Context *ctx, struct SS addr, void**) {
+static struct NetSession *master_onResolve(struct Context *ctx, struct SS addr, const uint8_t packet[static 1536], uint32_t packet_len, uint8_t out[static 1536], uint32_t *out_len, void**) {
 	struct MasterSession *session = master_lookup_session(ctx, addr);
-	if(session)
-			return &session->net;
-	session = malloc(sizeof(struct MasterSession));
-	if(!session) {
-		uprintf("alloc error\n");
-		abort();
-	}
-	net_session_init(&ctx->net, &session->net, addr);
-	session->lastSentRequestId = 0;
-	session->handshake.step = HandshakeMessageType_ClientHelloRequest;
-	session->resend.set = COUNTER64_CLEAR;
-	session->multipartList = NULL;
-	session->next = ctx->sessionList;
-	ctx->sessionList = session;
+	if(session == NULL) {
+		session = malloc(sizeof(struct MasterSession));
+		if(!session) {
+			uprintf("alloc error\n");
+			abort();
+		}
+		NetSession_init(&ctx->net, &session->net, addr);
+		session->lastSentRequestId = 0;
+		session->handshake.step = HandshakeMessageType_ClientHelloRequest;
+		session->resend.set = COUNTER64_CLEAR;
+		session->multipartList = NULL;
+		session->next = ctx->sessionList;
+		ctx->sessionList = session;
 
-	char addrstr[INET6_ADDRSTRLEN + 8];
-	net_tostr(&addr, addrstr);
-	uprintf("connect %s\n", addrstr);
+		char addrstr[INET6_ADDRSTRLEN + 8];
+		net_tostr(&addr, addrstr);
+		uprintf("connect %s\n", addrstr);
+	}
+	*out_len = NetSession_decrypt(&session->net, packet, packet_len, out);
 	return &session->net;
 }
 
@@ -89,7 +90,7 @@ static struct MasterSession *master_disconnect(struct MasterSession *session) {
 		session->multipartList = session->multipartList->next;
 		free(e);
 	}
-	net_session_free(&session->net);
+	NetSession_free(&session->net);
 	free(session);
 	return next;
 }
@@ -240,8 +241,8 @@ static void handle_ClientHelloRequest(struct Context *ctx, struct MasterSession 
 		if(net_time() - NetSession_get_lastKeepAlive(&session->net) < 5000) // 5 second timeout to prevent clients from getting "locked out" if their previous session hasn't closed or timed out yet
 			return;
 		struct SS addr = *NetSession_get_addr(&session->net);
-		net_session_free(&session->net);
-		net_session_init(&ctx->net, &session->net, addr); // security or something idk
+		NetSession_free(&session->net);
+		NetSession_init(&ctx->net, &session->net, addr); // security or something idk
 		session->resend.set = COUNTER64_CLEAR;
 	}
 	session->epoch = req->base.requestId & 0xff000000;
@@ -741,7 +742,7 @@ struct NetContext *master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_co
 	ctx.cert = cert;
 	ctx.key = key;
 	ctx.net.userptr = &ctx;
-	ctx.net.onResolve = (struct NetSession *(*)(void*, struct SS, void**))master_onResolve;
+	ctx.net.onResolve = (struct NetSession *(*)(void*, struct SS, const uint8_t*, uint32_t, uint8_t*, uint32_t*, void**))master_onResolve;
 	ctx.net.onResend = (uint32_t (*)(void*, uint32_t))master_onResend;
 	ctx.net.onWireLink = (void (*)(void*, union WireLink*))master_onWireLink;
 	ctx.net.onWireMessage = (void (*)(void*, union WireLink*, const struct WireMessage*))master_onWireMessage;
