@@ -78,12 +78,6 @@ enum {
 		default: return "???";
 	}
 }
-struct PacketContext {
-	uint8_t netVersion;
-	uint8_t protocolVersion;
-	uint8_t beatUpVersion;
-	uint32_t windowSize;
-};
 struct ByteArrayNetSerializable {
 	uint32_t length;
 	uint8_t data[8192];
@@ -187,7 +181,7 @@ static const struct PacketContext PV_LEGACY_DEFAULT = {
 	.netVersion = 11,
 	.protocolVersion = 6,
 	.beatUpVersion = 0,
-	.windowSize = 64,
+	.windowSize = 0,
 };
 void _pkt_BeatUpMessage_read(struct BeatUpMessage *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 void _pkt_BeatUpMessage_write(const struct BeatUpMessage *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
@@ -202,6 +196,8 @@ typedef void (*PacketReadFunc)(void *restrict, const uint8_t**, const uint8_t*, 
 size_t _pkt_try_read(PacketReadFunc inner, void *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 size_t _pkt_try_write(PacketWriteFunc inner, const void *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 #define pkt_write_c(pkt, end, ctx, type, ...) _pkt_try_write((PacketWriteFunc)_pkt_##type##_write, &(struct type)__VA_ARGS__, pkt, end, ctx)
-#define pkt_read(data, ...) _pkt_try_read((PacketReadFunc)_Generic(*(data), struct BeatUpMessage: _pkt_BeatUpMessage_read, struct ServerConnectInfo: _pkt_ServerConnectInfo_read, struct ModConnectHeader: _pkt_ModConnectHeader_read), data, __VA_ARGS__)
-#define pkt_write(data, ...) _pkt_try_write((PacketWriteFunc)_Generic(*(data), struct BeatUpMessage: _pkt_BeatUpMessage_write, struct ServerConnectInfo: _pkt_ServerConnectInfo_write, struct ModConnectHeader: _pkt_ModConnectHeader_write, struct ServerConnectInfo_Prefixed: _pkt_ServerConnectInfo_Prefixed_write), data, __VA_ARGS__)
+#define _pkt_read_func(data) ((PacketReadFunc)_Generic(*(data), struct BeatUpMessage: _pkt_BeatUpMessage_read, struct ServerConnectInfo: _pkt_ServerConnectInfo_read, struct ModConnectHeader: _pkt_ModConnectHeader_read))
+#define _pkt_write_func(data) ((PacketWriteFunc)_Generic(*(data), struct BeatUpMessage: _pkt_BeatUpMessage_write, struct ServerConnectInfo: _pkt_ServerConnectInfo_write, struct ModConnectHeader: _pkt_ModConnectHeader_write, struct ServerConnectInfo_Prefixed: _pkt_ServerConnectInfo_Prefixed_write))
+#define pkt_read(data, ...) _pkt_try_read(_pkt_read_func(data), data, __VA_ARGS__)
+#define pkt_write(data, ...) _pkt_try_write(_pkt_write_func(data), data, __VA_ARGS__)
 size_t pkt_write_bytes(const uint8_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx, size_t count);

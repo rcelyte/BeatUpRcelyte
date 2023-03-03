@@ -21,7 +21,7 @@ static partial class BeatUpClient {
 	}
 
 	[Patch(PatchType.Postfix, typeof(LiteNetLib.ReliableChannel), ".ctor")]
-	public static void ReliableChannel_ctor(LiteNetLib.NetPacket ____outgoingAcks, ref LiteNetLib.ReliableChannel.PendingPacket[] ____pendingPackets, ref LiteNetLib.NetPacket[] ____receivedPackets, ref bool[] ____earlyReceived, ref int ____windowSize) {
+	public static void ReliableChannel_ctor(byte id, LiteNetLib.NetPacket ____outgoingAcks, ref LiteNetLib.ReliableChannel.PendingPacket[] ____pendingPackets, ref LiteNetLib.NetPacket[] ____receivedPackets, ref bool[] ____earlyReceived, ref int ____windowSize) {
 		int windowSize = (int)connectInfo.windowSize;
 		if(connectInfo.@base.protocolId == 0 || windowSize == ____windowSize) {
 			Log.Debug("ReliableChannel_ctor(default)");
@@ -37,6 +37,7 @@ static partial class BeatUpClient {
 		if(____earlyReceived != null)
 			System.Array.Resize(ref ____earlyReceived, windowSize);
 		typeof(LiteNetLib.NetPacket).GetConstructors()[1].Invoke(____outgoingAcks, new object[] {LiteNetLib.PacketProperty.Ack, (windowSize - 1) / 8 + 2}); // TODO: test this
+		____outgoingAcks.ChannelId = id;
 		Log.Debug($"ReliableChannel_ctor({windowSize}) end");
 	}
 }

@@ -66,5 +66,6 @@ BSC_MAKE_HOOK_MATCH(LiteNetLib_ReliableChannel_ctor, void, LiteNetLib::ReliableC
 	if(self->earlyReceived)
 		System::Array::Resize(ByRef(self->earlyReceived), windowSize);
 	il2cpp_utils::RunMethod(self->outgoingAcks, ".ctor", LiteNetLib::PacketProperty(LiteNetLib::PacketProperty::Ack), int((windowSize - 1) / 8 + 2));
+	self->outgoingAcks->set_ChannelId(id);
 	logger->info("ReliableChannel_ctor(%d) end", windowSize);
 }

@@ -1,10 +1,10 @@
 static void _pkt_ByteArrayNetSerializable_read(struct ByteArrayNetSerializable *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_vu32_read(&data->length, pkt, end, ctx);
-	_pkt_raw_read(data->data, pkt, end, ctx, check_overflow(data->length, 8192, "ByteArrayNetSerializable.data"));
+	_pkt_raw_read(data->data, pkt, end, ctx, check_overflow((uint32_t)(data->length), 8192, "ByteArrayNetSerializable.data"));
 }
 static void _pkt_ByteArrayNetSerializable_write(const struct ByteArrayNetSerializable *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_vu32_write(&data->length, pkt, end, ctx);
-	_pkt_raw_write(data->data, pkt, end, ctx, check_overflow(data->length, 8192, "ByteArrayNetSerializable.data"));
+	_pkt_raw_write(data->data, pkt, end, ctx, check_overflow((uint32_t)(data->length), 8192, "ByteArrayNetSerializable.data"));
 }
 static void _pkt_ConnectInfo_read(struct ConnectInfo *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_read(&data->protocolId, pkt, end, ctx);
@@ -17,13 +17,13 @@ static void _pkt_ConnectInfo_write(const struct ConnectInfo *restrict data, uint
 static void _pkt_PreviewDifficultyBeatmapSet_read(struct PreviewDifficultyBeatmapSet *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_String_read(&data->characteristic, pkt, end, ctx);
 	_pkt_u8_read(&data->difficulties_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->difficulties_len, 5, "PreviewDifficultyBeatmapSet.difficulties"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->difficulties_len), 5, "PreviewDifficultyBeatmapSet.difficulties"); i < count; ++i)
 		_pkt_vu32_read(&data->difficulties[i], pkt, end, ctx);
 }
 static void _pkt_PreviewDifficultyBeatmapSet_write(const struct PreviewDifficultyBeatmapSet *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_String_write(&data->characteristic, pkt, end, ctx);
 	_pkt_u8_write(&data->difficulties_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->difficulties_len, 5, "PreviewDifficultyBeatmapSet.difficulties"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->difficulties_len), 5, "PreviewDifficultyBeatmapSet.difficulties"); i < count; ++i)
 		_pkt_vu32_write(&data->difficulties[i], pkt, end, ctx);
 }
 static void _pkt_PreviewBeatmapLevel_read(struct PreviewBeatmapLevel *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -42,7 +42,7 @@ static void _pkt_PreviewBeatmapLevel_read(struct PreviewBeatmapLevel *restrict d
 	_pkt_String_read(&data->environmentInfo, pkt, end, ctx);
 	_pkt_String_read(&data->allDirectionsEnvironmentInfo, pkt, end, ctx);
 	_pkt_u8_read(&data->beatmapSets_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->beatmapSets_len, 8, "PreviewBeatmapLevel.beatmapSets"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->beatmapSets_len), 8, "PreviewBeatmapLevel.beatmapSets"); i < count; ++i)
 		_pkt_PreviewDifficultyBeatmapSet_read(&data->beatmapSets[i], pkt, end, ctx);
 	_pkt_ByteArrayNetSerializable_read(&data->cover, pkt, end, ctx);
 }
@@ -62,40 +62,40 @@ static void _pkt_PreviewBeatmapLevel_write(const struct PreviewBeatmapLevel *res
 	_pkt_String_write(&data->environmentInfo, pkt, end, ctx);
 	_pkt_String_write(&data->allDirectionsEnvironmentInfo, pkt, end, ctx);
 	_pkt_u8_write(&data->beatmapSets_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->beatmapSets_len, 8, "PreviewBeatmapLevel.beatmapSets"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->beatmapSets_len), 8, "PreviewBeatmapLevel.beatmapSets"); i < count; ++i)
 		_pkt_PreviewDifficultyBeatmapSet_write(&data->beatmapSets[i], pkt, end, ctx);
 	_pkt_ByteArrayNetSerializable_write(&data->cover, pkt, end, ctx);
 }
 static void _pkt_CustomLabelSet_read(struct CustomLabelSet *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u8_read(&data->difficulties_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->difficulties_len, 5, "CustomLabelSet.difficulties"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->difficulties_len), 5, "CustomLabelSet.difficulties"); i < count; ++i)
 		_pkt_LongString_read(&data->difficulties[i], pkt, end, ctx);
 }
 static void _pkt_CustomLabelSet_write(const struct CustomLabelSet *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u8_write(&data->difficulties_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->difficulties_len, 5, "CustomLabelSet.difficulties"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->difficulties_len), 5, "CustomLabelSet.difficulties"); i < count; ++i)
 		_pkt_LongString_write(&data->difficulties[i], pkt, end, ctx);
 }
 static void _pkt_RecommendPreview_read(struct RecommendPreview *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_PreviewBeatmapLevel_read(&data->base, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->base.beatmapSets_len, 8, "RecommendPreview.labelSets"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->base.beatmapSets_len), 8, "RecommendPreview.labelSets"); i < count; ++i)
 		_pkt_CustomLabelSet_read(&data->labelSets[i], pkt, end, ctx);
 	_pkt_vu32_read(&data->requirements_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->requirements_len, 16, "RecommendPreview.requirements"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->requirements_len), 16, "RecommendPreview.requirements"); i < count; ++i)
 		_pkt_String_read(&data->requirements[i], pkt, end, ctx);
 	_pkt_vu32_read(&data->suggestions_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->suggestions_len, 16, "RecommendPreview.suggestions"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->suggestions_len), 16, "RecommendPreview.suggestions"); i < count; ++i)
 		_pkt_String_read(&data->suggestions[i], pkt, end, ctx);
 }
 static void _pkt_RecommendPreview_write(const struct RecommendPreview *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_PreviewBeatmapLevel_write(&data->base, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->base.beatmapSets_len, 8, "RecommendPreview.labelSets"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->base.beatmapSets_len), 8, "RecommendPreview.labelSets"); i < count; ++i)
 		_pkt_CustomLabelSet_write(&data->labelSets[i], pkt, end, ctx);
 	_pkt_vu32_write(&data->requirements_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->requirements_len, 16, "RecommendPreview.requirements"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->requirements_len), 16, "RecommendPreview.requirements"); i < count; ++i)
 		_pkt_String_write(&data->requirements[i], pkt, end, ctx);
 	_pkt_vu32_write(&data->suggestions_len, pkt, end, ctx);
-	for(uint32_t i = 0, count = check_overflow(data->suggestions_len, 16, "RecommendPreview.suggestions"); i < count; ++i)
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->suggestions_len), 16, "RecommendPreview.suggestions"); i < count; ++i)
 		_pkt_String_write(&data->suggestions[i], pkt, end, ctx);
 }
 static void _pkt_ShareMeta_read(struct ShareMeta *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {

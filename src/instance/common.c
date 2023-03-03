@@ -126,17 +126,25 @@ void instance_send_channeled(struct NetSession *session, struct Channels *channe
 	instance_send_backlog(session->version, channels, buf, (uint16_t)len, channelId, fragmentHeader);
 }
 
-static void ReliableChannel_setWindow(struct ReliableChannel *channel, struct PacketContext version, DeliveryMethod channelId) {
-	while(RelativeSequenceNumber(channel->outboundSequence, channel->outboundWindowStart) < version.windowSize && channel->backlog != NULL) {
-		// TODO: deduplicate? It's only two lines...
-		struct InstancePacket *resend = resend_add(version, channel, channelId, channel->backlog->isFragmented);
-		resend->len += pkt_write_bytes(channel->backlog->pkt.data, (uint8_t*[]){&resend->data[resend->len]}, endof(resend->data), version, channel->backlog->pkt.len);
-	}
+static void ReliableChannel_popBacklog(struct ReliableChannel *channel, struct PacketContext version, DeliveryMethod channelId) {
+	struct InstancePacket *resend = resend_add(version, channel, channelId, channel->backlog->isFragmented);
+	resend->len += pkt_write_bytes(channel->backlog->pkt.data, (uint8_t*[]){&resend->data[resend->len]}, endof(resend->data), version, channel->backlog->pkt.len);
+
+	struct InstancePacketList *e = channel->backlog;
+	channel->backlog = e->next;
+	free(e);
+	if(!channel->backlog)
+		channel->backlogEnd = &channel->backlog;
 }
 
-void instance_channels_setWindow(struct Channels *channels, struct NetSession *session) {
-	ReliableChannel_setWindow(&channels->ru.base, session->version, DeliveryMethod_ReliableUnordered);
-	ReliableChannel_setWindow(&channels->ro.base, session->version, DeliveryMethod_ReliableOrdered);
+static void ReliableChannel_flushBacklog(struct ReliableChannel *channel, struct PacketContext version, DeliveryMethod channelId) {
+	while(RelativeSequenceNumber(channel->outboundSequence, channel->outboundWindowStart) < version.windowSize && channel->backlog != NULL)
+		ReliableChannel_popBacklog(channel, version, channelId);
+}
+
+void instance_channels_flushBacklog(struct Channels *channels, struct NetSession *session) {
+	ReliableChannel_flushBacklog(&channels->ru.base, session->version, DeliveryMethod_ReliableUnordered);
+	ReliableChannel_flushBacklog(&channels->ro.base, session->version, DeliveryMethod_ReliableOrdered);
 }
 
 void handle_Ack(struct NetSession *session, struct Channels *channels, const struct Ack *ack) {
@@ -159,16 +167,8 @@ void handle_Ack(struct NetSession *session, struct Channels *channels, const str
 		if(channel->resend[pendingIdx].pkt.len || sequence != channel->outboundWindowStart)
 			continue;
 		channel->outboundWindowStart = (channel->outboundWindowStart + 1) % NET_MAX_SEQUENCE;
-		if(channel->backlog == NULL)
-			continue;
-		struct InstancePacket *resend = resend_add(session->version, channel, ack->channelId, channel->backlog->isFragmented);
-		resend->len += pkt_write_bytes(channel->backlog->pkt.data, (uint8_t*[]){&resend->data[resend->len]}, endof(resend->data), session->version, channel->backlog->pkt.len);
-
-		struct InstancePacketList *e = channel->backlog;
-		channel->backlog = e->next;
-		free(e);
-		if(!channel->backlog)
-			channel->backlogEnd = &channel->backlog;
+		if(channel->backlog != NULL)
+			ReliableChannel_popBacklog(channel, session->version, ack->channelId);
 	}
 }
 
@@ -366,7 +366,7 @@ static void Ack_flush(struct Ack *ack, struct NetContext *net, struct NetSession
 uint32_t instance_channels_tick(struct Channels *channels, struct NetContext *net, struct NetSession *session, uint32_t currentTime) {
 	if(!session->version.windowSize) {
 		uint8_t resp[65536];
-		size_t length = pkt_write_c((uint8_t*[]){resp}, endof(resp), session->version, NetPacketHeader, {
+		uint16_t length = (uint16_t)pkt_write_c((uint8_t*[]){resp}, endof(resp), session->version, NetPacketHeader, {
 			.property = PacketProperty_Channeled,
 			.channeled.channelId = DeliveryMethod_ReliableOrdered,
 		});

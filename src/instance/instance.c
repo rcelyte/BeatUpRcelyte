@@ -1260,7 +1260,7 @@ static bool handle_RoutingHeader(struct InstanceContext *ctx, struct Room *room,
 		FOR_EXCLUDING_PLAYER(id, mask, (uint32_t)indexof(room->players, session)) {
 			// TODO: investigate fast paths? This block could theoretically be hit upwards of 1.2 million times per second in a fully saturated 254 player lobby
 			if(!room->players[id].channels.ro.base.backlog) // unreliable transport is only used for sync state deltas, which are safe to drop if rate limiting is needed
-				net_queue_merged(&ctx->net, &room->players[id].net, resp, (uint32_t)(resp_end - resp));
+				net_queue_merged(&ctx->net, &room->players[id].net, resp, (uint16_t)(resp_end - resp));
 		}
 	}
 	return routing.connectionId != 127 || routing.encrypted;
@@ -1599,8 +1599,9 @@ static inline void handle_packet(struct InstanceContext *ctx, struct Room **room
 						room_disconnect(ctx, room, session, false);
 						return;
 					}
-					session->net.version.windowSize = length * 8;
-					instance_channels_setWindow(&session->channels, &session->net);
+					uprintf("probed window size %u from %.*s (%.*s)\n", length * 8, session->userName.length, session->userName.data, session->userId.length, session->userId.data);
+					session->net.version.windowSize = (uint16_t)(length * 8);
+					instance_channels_flushBacklog(&session->channels, &session->net);
 					memcpy(header.ack.data, sub - sizeof(header.ack._pad0), length);
 					sub += length;
 				}
