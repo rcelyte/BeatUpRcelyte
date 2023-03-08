@@ -6,7 +6,6 @@ public class BeatUpClient_Config { // global to avoid `MethodAccessException` in
 	public virtual bool PerPlayerDifficulty {get; set;} = false;
 	public virtual bool PerPlayerModifiers {get; set;} = false;
 	public virtual bool HideOtherLevels {get; set;} = false;
-	public ushort WindowSize {get; set;} = LiteNetLib.NetConstants.DefaultWindowSize;
 	public virtual bool DirectDownloads {get; set;} = false;
 	[IPA.Config.Stores.Attributes.NonNullable]
 	[IPA.Config.Stores.Attributes.UseConverter(typeof(IPA.Config.Stores.Converters.DictionaryConverter<string>))]

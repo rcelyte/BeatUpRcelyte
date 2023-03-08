@@ -19,11 +19,10 @@ static partial class BeatUpClient {
 		if(packet.Size == LiteNetLib.NetConnectAcceptPacket.Size + ServerConnectInfo.Size) {
 			packet.Size = LiteNetLib.NetConnectAcceptPacket.Size;
 			ServerConnectInfo info = new ServerConnectInfo(new LiteNetLib.Utils.NetDataReader(packet.RawData, packet.Size));
-			if(info.windowSize < 32 || info.windowSize > 512)
-				return (LiteNetLib.NetConnectAcceptPacket)Base(packet);
 			connectInfo = info;
 			infoText.SetActive(true);
-			Log.Info($"Overriding window size - {info.windowSize}");
+			if(info.windowSize != 0)
+				Log.Info($"Overriding window size - {info.windowSize}");
 		} else if(packet.Size != LiteNetLib.NetConnectAcceptPacket.Size) {
 			Log.Error($"Bad NetConnectAcceptPacket length: {packet.Size} != {LiteNetLib.NetConnectAcceptPacket.Size}");
 		}

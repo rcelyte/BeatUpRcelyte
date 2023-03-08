@@ -186,22 +186,23 @@ static uint32_t status_status(char *buf, bool isGame) {
 	char msg[65536], *msg_end = msg;
 	#define PUT(...) (msg_end += (uint32_t)snprintf(msg_end, (msg_end >= endof(msg)) ? 0 : (uint32_t)(endof(msg) - msg_end), __VA_ARGS__))
 	PUT("{\"minimumAppVersion\":\"1.19.0%s\"", isGame ? "b2147483647" : "");
-	PUT(",\"status\":%u", TEST_maintenanceStartTime != 0);
+	PUT(",\"maximumAppVersion\":\"1.28.0_🅱️\""
+	    ",\"status\":%u", TEST_maintenanceStartTime != 0);
 	if(TEST_maintenanceStartTime) {
 		PUT(",\"maintenanceStartTime\":%" PRIu64, TEST_maintenanceStartTime);
 		PUT(",\"maintenanceEndTime\":%" PRIu64, TEST_maintenanceEndTime);
 		PUT(",\"userMessage\":{\"localizations\":[{\"language\":0,\"message\":\"%s\"}]}", TEST_maintenanceMessage);
 	}
 	PUT(",\"requiredMods\": ["
-		"{\"id\":\"BeatUpClient\",\"version\":\"0.4.0\"},"
-		"{\"id\":\"MultiplayerCore\",\"version\":\"1.1.1\"},"
-		"{\"id\":\"BeatTogether\",\"version\":\"2.0.1\"},"
-		"{\"id\":\"BeatSaberPlus_SongOverlay\",\"version\":\"4.6.1\"},"
-		"{\"id\":\"_Heck\",\"version\":\"1.4.1\"},"
-		"{\"id\":\"NoodleExtensions\",\"version\":\"1.5.1\"},"
-		"{\"id\":\"Chroma\",\"version\":\"2.6.1\"},"
-		"{\"id\":\"EditorEX\",\"version\":\"1.2.0\"},"
-		"{\"id\":\"LeaderboardCore\",\"version\":\"1.2.2\"}"
+	    "{\"id\":\"BeatUpClient\",\"version\":\"0.4.6\"},"
+	    "{\"id\":\"MultiplayerCore\",\"version\":\"1.1.1\"},"
+	    "{\"id\":\"BeatTogether\",\"version\":\"2.0.1\"},"
+	    "{\"id\":\"BeatSaberPlus_SongOverlay\",\"version\":\"4.6.1\"},"
+	    "{\"id\":\"_Heck\",\"version\":\"1.4.1\"},"
+	    "{\"id\":\"NoodleExtensions\",\"version\":\"1.5.1\"},"
+	    "{\"id\":\"Chroma\",\"version\":\"2.6.1\"},"
+	    "{\"id\":\"EditorEX\",\"version\":\"1.2.0\"},"
+	    "{\"id\":\"LeaderboardCore\",\"version\":\"1.2.2\"}"
 	"]}");
 	if(msg_end >= endof(msg))
 		return status_text(buf, "500 Internal Server Error", "text/plain", "");
@@ -223,7 +224,8 @@ uint32_t status_resp(const char *source, const char *path, char *buf, uint32_t b
 		if(!startsWithBytes(req, req_end, path, path_len * sizeof(*path)))
 			return status_text(buf, "404 Not Found", "text/plain", "");
 		req += path_len;
-		if(startsWith(req, req_end, "mp_override.json "))
+		req += (req < req_end && *req == '/'); // some clients appear to be sending "GET //mp_override.json" requests
+		if(startsWith(req, req_end, "mp_override.json"))
 			return status_text(buf, "200 OK", "application/json", "{\"quickPlayAvailablePacksOverride\":{\"predefinedPackIds\":[{\"order\":0,\"packId\":\"ALL_LEVEL_PACKS\"},{\"order\":1,\"packId\":\"BUILT_IN_LEVEL_PACKS\"}],\"localizedCustomPacks\":[{\"serializedName\":\"customlevels\",\"order\":2,\"localizedNames\":[{\"language\":0,\"packName\":\"Custom\"}],\"packIds\":[\"custom_levelpack_CustomLevels\"]}]}}");
 		return status_status(buf, userAgent == UserAgent_Game);
 	}

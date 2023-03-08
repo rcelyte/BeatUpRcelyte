@@ -23,7 +23,7 @@ static partial class BeatUpClient {
 	[Patch(PatchType.Postfix, typeof(LiteNetLib.ReliableChannel), ".ctor")]
 	public static void ReliableChannel_ctor(byte id, LiteNetLib.NetPacket ____outgoingAcks, ref LiteNetLib.ReliableChannel.PendingPacket[] ____pendingPackets, ref LiteNetLib.NetPacket[] ____receivedPackets, ref bool[] ____earlyReceived, ref int ____windowSize) {
 		int windowSize = (int)connectInfo.windowSize;
-		if(connectInfo.@base.protocolId == 0 || windowSize == ____windowSize) {
+		if(windowSize == 0 || windowSize == ____windowSize) {
 			Log.Debug("ReliableChannel_ctor(default)");
 			return;
 		}
