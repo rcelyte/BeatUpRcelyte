@@ -19,3 +19,5 @@
 /build.sh
 /makefile.user
 /test
+.idea
+.vs
