@@ -71,11 +71,11 @@ Requirements:
 1. Compile the server application with make
 2. Start the application on the target system, a default `beatupserver.json` will be created
 3. Edit this config 
-   1. Change the address to your public ipv4 or domain name with an A Record (IPV4 is recommended, even though IPV6 is supported)
+   1. Change the address to your public ipv4 or domain name with an A Record (AAAA Records should not be present for this domain, as it will most likely make problems for some players)
    2. In `status` add the Keys `cert` and `key`, and change the value to the path of your ssl cert
    3. in `master` this can be done as well, but currently is not required, because Beat Saber protocol is currently bypassing the check on client-side by MultiplayerCore and BeatUpClient. 
 4. Start the server or create a service for autostart. The parameter `--deamon` is required, when running as a service and no input is available.
-5. Add your new server into the `UserData\BeatTogether.json`
+5. Follow the steps from [Ways to Join](#ways-to-join)
 
 ### Hosting with docker (Reverse Proxy expected)
 For hosting the server inside of docker, you have to follow the following steps:
@@ -131,11 +131,11 @@ For hosting the server inside of docker, you have to follow the following steps:
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto https;
    ```
-9. Add your new server into the `UserData\BeatTogether.json`
+9. Follow the steps from [Ways to Join](#ways-to-join)
 
 #### Troubleshooting
-1. The Server is not reachable from beatsaber
-   1. Try to call the domain directly in a browser, you should be able to see the website where a list of currently running games will be displayed.
+1. The Server is not reachable from Beat Saber
+   1. Try to call the domain directly in a browser, you should be able to see the BeatUpServer website. If that isn't the case, check the port forwarding, firewall configs and ip address.
 2. Server is reachable, but the icons look regular and I can't set the custom settings like per user difficulty
    1. Most likely happends when hosting inside docker, try to check if your reverse proxy adds headers and if so, try to get rid of the additional headers.
 3. I can see the server, but after trying to connect I get a connection error
