@@ -10,7 +10,7 @@ Ways to Join
 ### Beat Saber Server Browser \[[PC](https://github.com/roydejong/BeatSaberServerBrowser#installation)\]
 ServerBrowser lets hosts publicly list their lobbies for other ServerBrowser users to join, regardless of server.
 
-### BeatUpClient | BETA \[[PC](https://github.com/rcelyte/BeatUpRcelyte/releases/tag/0.3.1)\]
+### BeatUpClient | BETA \[[PC](https://github.com/rcelyte/BeatUpRcelyte/releases/tag/0.4.7)\]
 BeatUpClient enables custom servers to be added in-game from the multiplayer menu using the `+` button, or directly in the config located at `UserData\BeatUpClient.json`. Using BeatUpClient will additionally enable the following features in BeatUpServer lobbies:
 * Downloading of levels not available on BeatSaver
 * Per-player difficulty
