@@ -75,7 +75,7 @@ static int status_ssl_sni(struct Context *ctx, mbedtls_ssl_context *ssl, const u
 static pthread_t status_thread = NET_THREAD_INVALID;
 bool status_ssl_init(mbedtls_x509_crt certs[2], mbedtls_pk_context keys[2], const char *domain, const char *path, uint16_t port) {
 	ctx.base = (struct ContextBase){
-		.listenfd = net_bind_tcp(port, 128),
+		.listenfd = status_bind_tcp(port, 128),
 		.handleClient = handle_client_https,
 	};
 	if(ctx.base.listenfd == -1)

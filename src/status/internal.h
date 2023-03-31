@@ -6,6 +6,7 @@ struct ContextBase {
 	void *(*handleClient)(void*);
 };
 
+int32_t status_bind_tcp(uint16_t port, uint32_t backlog);
 void *status_handler(struct ContextBase *ctx);
 uint32_t status_resp(const char *source, const char *path, char *buf, uint32_t buf_len);
 

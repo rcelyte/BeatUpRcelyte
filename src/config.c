@@ -173,7 +173,7 @@ bool config_load(struct Config *out, const char *path) {
 			uprintf("Failed to write default config to %s: %s\n", path, strerror(errno));
 			goto fail;
 		}
-		char publicIP[] = "[\"127.0.0.1\", \"[::]\"]"; // TODO: resolve actual public IP
+		char publicIP[] = "\"127.0.0.1\""; // TODO: resolve actual public IP
 		uprintf("Writing default config to %s\n", path);
 		fprintf(def,
 			"{" NEWLINE

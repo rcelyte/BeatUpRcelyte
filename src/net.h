@@ -1,9 +1,9 @@
 #pragma once
-#include "wire.h"
 #include "encryption.h"
 #include "perf.h"
 #include "../common/packets.h"
 #include <mbedtls/entropy.h>
+#include <mbedtls/pk.h>
 #include <stdatomic.h>
 #include <pthread.h>
 
@@ -40,7 +40,7 @@ struct SS {
 
 bool SS_equal(const struct SS *a0, const struct SS *a1);
 void net_tostr(const struct SS *a, char out[static INET6_ADDRSTRLEN + 8]);
-int32_t net_bind_tcp(uint16_t port, uint32_t backlog);
+const char *net_strerror(int32_t err);
 void net_close(int32_t sockfd);
 
 struct NetKeypair {
@@ -66,31 +66,21 @@ struct NetSession {
 };
 
 struct NetContext {
-	WireLinkType _typeid; // used to distinguish between local (struct NetContext) and remote (mbedtls_ssl_context) connections
-	int32_t NET_H_PRIVATE(sockfd), NET_H_PRIVATE(listenfd);
+	int32_t NET_H_PRIVATE(sockfd);
 	atomic_bool NET_H_PRIVATE(run);
 	bool NET_H_PRIVATE(filterUnencrypted);
 	pthread_mutex_t NET_H_PRIVATE(mutex);
 	mbedtls_ctr_drbg_context ctr_drbg;
 	mbedtls_entropy_context NET_H_PRIVATE(entropy);
 	mbedtls_ecp_group NET_H_PRIVATE(grp);
-	uint32_t NET_H_PRIVATE(remoteLinks_len);
-	uint32_t NET_H_PRIVATE(cookies_len);
-	union {
-		mbedtls_ssl_context *single;
-		mbedtls_ssl_context **list;
-	} NET_H_PRIVATE(remoteLinks);
-	struct WireCookie *NET_H_PRIVATE(cookies);
 	void *userptr;
 	struct NetSession *(*onResolve)(void *userptr, struct SS addr, const uint8_t packet[static 1536], uint32_t packet_len, uint8_t out[static 1536], uint32_t *out_len, void **userdata_out);
 	uint32_t (*onResend)(void *userptr, uint32_t currentTime);
-	void (*onWireLink)(void *userptr, union WireLink *link);
-	void (*onWireMessage)(void *userptr, union WireLink *link, const struct WireMessage *message);
 	struct Performance NET_H_PRIVATE(perf);
 };
 
 // Initialize memory such that calling `net_cleanup()` without a prior `net_init()` is well defined
-#define CLEAR_NETCONTEXT {._typeid = WireLinkType_INVALID}
+#define CLEAR_NETCONTEXT {0}
 
 struct ByteArrayNetSerializable;
 void net_keypair_init(struct NetContext *ctx, struct NetKeypair *keys);
@@ -105,15 +95,13 @@ uint32_t NetSession_get_lastKeepAlive(struct NetSession *session);
 const struct SS *NetSession_get_addr(struct NetSession *session);
 uint32_t NetSession_decrypt(struct NetSession *session, const uint8_t packet[static 1536], uint32_t packet_len, uint8_t out[static 1536]);
 
-bool net_init(struct NetContext *ctx, uint16_t port, bool filterUnencrypted, uint32_t tcpBacklog);
+bool net_init(struct NetContext *ctx, uint16_t port, bool filterUnencrypted);
 void net_stop(struct NetContext *ctx);
 void net_cleanup(struct NetContext *ctx);
 void net_lock(struct NetContext *ctx);
 void net_unlock(struct NetContext *ctx);
 void NetSession_init(struct NetContext *ctx, struct NetSession *session, struct SS addr);
 void NetSession_free(struct NetSession *session);
-bool net_add_remote(struct NetContext *ctx, mbedtls_ssl_context *link);
-bool net_remove_remote(struct NetContext *ctx, mbedtls_ssl_context *link);
 uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSession **session, void **userdata_out);
 void net_flush_merged(struct NetContext *ctx, struct NetSession *session);
 void net_queue_merged(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint16_t len);

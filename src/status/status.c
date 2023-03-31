@@ -43,7 +43,7 @@ void *status_handler(struct ContextBase *ctx) {
 static pthread_t status_thread = NET_THREAD_INVALID;
 bool status_init(const char *path, uint16_t port) {
 	ctx.base = (struct ContextBase){
-		.listenfd = net_bind_tcp(port, 128),
+		.listenfd = status_bind_tcp(port, 128),
 		.handleClient = handle_client_http,
 	};
 	if(ctx.base.listenfd == -1)

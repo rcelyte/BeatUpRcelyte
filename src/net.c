@@ -5,6 +5,7 @@
 #include "packets.h"
 #include <mbedtls/error.h>
 #include <mbedtls/sha256.h>
+#include <mbedtls/ecdh.h>
 
 #ifdef WINDOWS
 #define net_error() WSAGetLastError()
@@ -191,9 +192,8 @@ void net_send_internal(struct NetContext *ctx, struct NetSession *session, const
 
 static struct NetSession *onResolve_stub(void*, struct SS, const uint8_t*, uint32_t, uint8_t*, uint32_t*, void**) {return NULL;}
 static uint32_t onResend_stub(void*, uint32_t) {return 180000;}
-static void onWireMessage_stub(void*, union WireLink*, const struct WireMessage*) {}
 
-static const char *net_strerror(int32_t err) {
+const char *net_strerror(int32_t err) {
 	static _Thread_local char message[1024];
 	*message = 0;
 	#if defined(WINDOWS)
@@ -253,46 +253,6 @@ static int32_t net_bind_udp(uint16_t port) {
 	return sockfd;
 }
 
-int32_t net_bind_tcp(uint16_t port, uint32_t backlog) {
-	#ifdef WINDOWS
-	int err = WSAStartup(MAKEWORD(2,0), &(WSADATA){0});
-	if(err) {
-		uprintf("WSAStartup failed: %s\n", port, net_strerror(err));
-		return -1;
-	}
-	#else
-	signal(SIGPIPE, SIG_IGN);
-	#endif
-	int32_t listenfd = socket(AF_INET6, SOCK_STREAM, 0);
-	if(listenfd == -1) {
-		uprintf("Failed to open TCP socket: %s\n", net_strerror(net_error()));
-		#ifdef WINDOWS
-		WSACleanup();
-		#endif
-		return -1;
-	}
-	setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, (char*)(int32_t[]){1}, sizeof(int32_t));
-	struct sockaddr_in6 addr = {
-		.sin6_family = AF_INET6,
-		.sin6_port = htons(port),
-		.sin6_flowinfo = 0,
-		.sin6_addr = IN6ADDR_ANY_INIT,
-		.sin6_scope_id = 0,
-	};
-	if(bind(listenfd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-		uprintf("Cannot bind socket to port %hu: %s\n", port, net_strerror(net_error()));
-		goto fail;
-	}
-	if(listen(listenfd, (int)backlog) < 0) {
-		uprintf("listen() failed: %s\n", net_strerror(net_error()));
-		goto fail;
-	}
-	return listenfd;
-	fail:
-	net_close(listenfd);
-	return -1;
-}
-
 void net_close(int32_t sockfd) {
 	if(sockfd == -1)
 		return;
@@ -302,26 +262,18 @@ void net_close(int32_t sockfd) {
 	#endif
 }
 
-bool net_init(struct NetContext *ctx, uint16_t port, bool filterUnencrypted, uint32_t tcpBacklog) {
+bool net_init(struct NetContext *ctx, uint16_t port, bool filterUnencrypted) {
 	*ctx = (struct NetContext){
-		._typeid = WireLinkType_LOCAL,
 		.sockfd = net_bind_udp(port),
-		.listenfd = tcpBacklog ? net_bind_tcp(port, tcpBacklog) : -1,
 		.run = false,
 		.filterUnencrypted = filterUnencrypted,
 		.mutex = PTHREAD_MUTEX_INITIALIZER,
 		// .ctr_drbg = {},
 		// .entropy = {},
 		// .grp = {},
-		.remoteLinks_len = 0,
-		.cookies_len = 0,
-		.remoteLinks = {NULL},
-		.cookies = NULL,
 		.userptr = NULL,
 		.onResolve = onResolve_stub,
 		.onResend = onResend_stub,
-		.onWireLink = NULL,
-		.onWireMessage = onWireMessage_stub,
 		.perf = perf_init(),
 	};
 	mbedtls_ctr_drbg_init(&ctx->ctr_drbg);
@@ -334,7 +286,7 @@ bool net_init(struct NetContext *ctx, uint16_t port, bool filterUnencrypted, uin
 		uprintf("pthread_mutex_init() failed\n");
 		goto fail;
 	}
-	if(ctx->sockfd == -1 || (tcpBacklog && ctx->listenfd == -1)) {
+	if(ctx->sockfd == -1) {
 		uprintf("Socket creation failed\n");
 		goto fail;
 	}
@@ -414,30 +366,13 @@ void net_stop(struct NetContext *ctx) {
 	shutdown(ctx->sockfd, SHUT_RDWR);
 }
 
-static mbedtls_ssl_context **NetContext_remoteLinks(struct NetContext *ctx) {
-	return (ctx->remoteLinks_len == 1) ? &ctx->remoteLinks.single : ctx->remoteLinks.list;
-}
-
 void net_cleanup(struct NetContext *ctx) {
-	if(ctx->_typeid != WireLinkType_LOCAL)
-		return;
-	while(ctx->remoteLinks_len) {
-		union WireLink *link = (union WireLink*)*NetContext_remoteLinks(ctx);
-		if(WireLink_cast_remote(link)) {
-			wire_disconnect(ctx, link);
-		} else {
-			uprintf("WireLink_cast_remote() failed\n");
-			net_remove_remote(ctx, (mbedtls_ssl_context*)link);
-		}
-	}
+	// TODO: guard early return from `net_init()`?
 	if(pthread_mutex_destroy(&ctx->mutex)) // TODO: ensure unlock
 		uprintf("pthread_mutex_destroy() failed\n");
-	free(ctx->cookies);
 	mbedtls_entropy_free(&ctx->entropy);
 	mbedtls_ctr_drbg_free(&ctx->ctr_drbg);
-	net_close(ctx->listenfd);
 	net_close(ctx->sockfd);
-	ctx->_typeid = WireLinkType_INVALID;
 }
 
 void net_lock(struct NetContext *ctx) {
@@ -453,75 +388,10 @@ void net_unlock(struct NetContext *ctx) {
 	pthread_mutex_unlock(&ctx->mutex);
 }
 
-bool net_add_remote(struct NetContext *ctx, mbedtls_ssl_context *link) {
-	uprintf("net_add_remote(%p) %u -> %u\n", link, ctx->remoteLinks_len, ctx->remoteLinks_len + 1);
-	mbedtls_ssl_context **list;
-	switch(ctx->remoteLinks_len) {
-		case 0: {
-			ctx->remoteLinks.single = link;
-			++ctx->remoteLinks_len;
-			return false;
-		}
-		case 1: {
-			list = malloc((ctx->remoteLinks_len + 1) * sizeof(*list));
-			if(list)
-				list[0] = ctx->remoteLinks.single;
-			break;
-		}
-		default: list = realloc(ctx->remoteLinks.list, (ctx->remoteLinks_len + 1) * sizeof(*list));
-	}
-	if(!list) {
-		uprintf("alloc error\n");
-		return true;
-	}
-	list[ctx->remoteLinks_len++] = link;
-	ctx->remoteLinks.list = list;
-	return false;
-}
-
-// TODO: Invalidating the `remoteLinks` causes pain elsewhere (see hacks at `wire_recv()` callsite)
-// Entries should be set to NULL here, and the array should be left sparse until it is safe to resize
-bool net_remove_remote(struct NetContext *ctx, mbedtls_ssl_context *link) {
-	mbedtls_ssl_context **list = NetContext_remoteLinks(ctx), **it = list;
-	for(mbedtls_ssl_context *const *end = &list[ctx->remoteLinks_len]; it < end; ++it)
-		if(*it == link)
-			goto found;
-	uprintf("net_remove_remote(): no match found\n");
-	return true;
-	found:
-	uprintf("net_remove_remote(%p) %u -> %u\n", link, ctx->remoteLinks_len, ctx->remoteLinks_len - 1);
-	*it = list[--ctx->remoteLinks_len];
-	switch(ctx->remoteLinks_len) {
-		case 0: ctx->remoteLinks.single = NULL; break;
-		case 1: {
-			ctx->remoteLinks.single = list[0];
-			free(list);
-			break;
-		}
-		default: {
-			list = realloc(ctx->remoteLinks.list, ctx->remoteLinks_len * sizeof(*list));
-			if(list)
-				ctx->remoteLinks.list = list;
-		}
-	}
-	return false;
-}
-
-static inline int32_t max32(int32_t a, int32_t b) {
-	return a > b ? a : b;
-}
-
 static bool net_poll(struct NetContext *ctx, fd_set *fdSet, uint32_t timeout) {
 	FD_ZERO(fdSet);
 	FD_SET(ctx->sockfd, fdSet);
-	if(ctx->listenfd != -1)
-		FD_SET(ctx->listenfd, fdSet);
-	int32_t fdMax = max32(ctx->sockfd, ctx->listenfd);
-	for(mbedtls_ssl_context **link = NetContext_remoteLinks(ctx), **end = &link[ctx->remoteLinks_len]; link < end; ++link) {
-		int32_t remotefd = (int32_t)(intptr_t)(*link)->MBEDTLS_PRIVATE(p_bio);
-		FD_SET(remotefd, fdSet);
-		fdMax = max32(fdMax, remotefd);
-	}
+	const int32_t fdMax = ctx->sockfd;
 	net_unlock(ctx);
 	[[maybe_unused]] struct timespec sleepStart = GetTime();
 	int nfd = select(fdMax + 1, fdSet, NULL, NULL, &(struct timeval){
@@ -547,20 +417,6 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSe
 	fd_set fdSet;
 	for(uint32_t nextTick = 0; net_poll(ctx, &fdSet, nextTick); nextTick = (nextTick >= 2) ? nextTick : 2)
 		nextTick = ctx->onResend(ctx->userptr, net_time());
-	for(uint32_t i = 0, len = ctx->remoteLinks_len; i < len; ++i) {
-		mbedtls_ssl_context *link = NetContext_remoteLinks(ctx)[i];
-		if(!FD_ISSET((intptr_t)link->MBEDTLS_PRIVATE(p_bio), &fdSet))
-			continue;
-		wire_recv(ctx, link); // May invalidate `link` AND `ctx->remoteLinks`
-
-		// TODO: This is a really bad hack to check for disconnects, expoliting the fact that the current link is the only one disconnected in any wire handler
-		if(ctx->remoteLinks_len < len) {
-			len = ctx->remoteLinks_len;
-			--i;
-		}
-	}
-	if(ctx->listenfd != -1 && FD_ISSET(ctx->listenfd, &fdSet))
-		wire_accept(ctx, ctx->listenfd);
 	if(!FD_ISSET(ctx->sockfd, &fdSet))
 		goto retry;
 	struct SS addr = {.len = sizeof(struct sockaddr_storage)};

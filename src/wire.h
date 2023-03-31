@@ -1,33 +1,34 @@
 #pragma once
-#include <mbedtls/ssl.h>
+#include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
-typedef uintptr_t WireLinkType;
-enum { // Take advantage of the first entry in `struct mbedtls_ssl_context` being an aligned pointer
-	WireLinkType_INVALID,
-	WireLinkType_LOCAL,
-	WireLinkType_REMOTE_START,
+typedef uint32_t WireCookie;
+
+struct WireLink;
+struct WireMessage;
+struct WireContext {
+	void *userptr;
+	void (*onMessage)(struct WireContext *ctx, struct WireLink *link, const struct WireMessage *message);
 };
 
-struct WireCookie {
+struct DataView {
 	void *data;
 	size_t length;
 };
 
-union WireLink;
-struct NetContext *WireLink_cast_local(union WireLink *link);
-mbedtls_ssl_context *WireLink_cast_remote(union WireLink *link);
+void wire_init(uint8_t remoteKey[32], uint8_t remoteKey_len);
+void wire_cleanup();
 
-struct NetContext;
-struct WireMessage;
-void wire_set_key(uint8_t key[static 32], uint8_t key_len);
-union WireLink *wire_connect_local(struct NetContext *self, struct NetContext *link);
-union WireLink *wire_connect_remote(struct NetContext *self, const char *address);
-void wire_disconnect(struct NetContext *self, union WireLink *link);
-void wire_accept(struct NetContext *self, int32_t listenfd);
-bool wire_send(struct NetContext *self, union WireLink *link, const struct WireMessage *message);
-void wire_recv(struct NetContext *self, mbedtls_ssl_context *link);
-uint32_t wire_reserveCookie(struct NetContext *self, void *data, size_t length);
-void *wire_getCookie(struct NetContext *self, uint32_t cookie);
-uint32_t wire_nextCookie(struct NetContext *self, uint32_t start);
-void wire_releaseCookie(struct NetContext *self, uint32_t cookie);
+bool WireContext_init(struct WireContext *self, void *userptr, uint32_t tcpBacklog);
+void WireContext_cleanup(struct WireContext *self);
+struct WireLink *WireContext_attach(struct WireContext *self, struct WireContext *peer, const struct WireMessage *message);
+struct WireLink *WireContext_connect(struct WireContext *self, const char address[], const struct WireMessage *message);
+
+void WireLink_free(struct WireLink *self);
+void **WireLink_userptr(struct WireLink *self);
+bool WireLink_send(struct WireLink *self, const struct WireMessage *message);
+WireCookie WireLink_makeCookie(struct WireLink *self, const void *data, size_t length);
+struct DataView WireLink_getCookie(struct WireLink *self, WireCookie cookie);
+void WireLink_freeCookie(struct WireLink *self, WireCookie cookie);
+WireCookie WireLink_lastCookieIndex(struct WireLink *self);

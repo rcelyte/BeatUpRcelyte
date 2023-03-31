@@ -5,68 +5,61 @@
 #include <pthread.h>
 
 struct PoolHost {
-	union WireLink *link;
+	struct PoolHost *next;
+	struct WireLink *link;
 	bool discover;
 	uint32_t capacity;
 	struct Counter64 blocks;
 	ServerCode *codes;
 };
 
-static uint32_t hosts_len = 0, nextSlot = 0;
-static struct PoolHost *hosts = NULL;
+static struct PoolHost *firstHost = NULL;
 
-static bool pool_grow(uint32_t newLength) {
-	struct PoolHost *newHosts = realloc(hosts, newLength * sizeof(*hosts));
-	if(!newHosts) {
-		uprintf("realloc error\n");
-		return true;
+void pool_reset() {
+	while(firstHost != NULL) {
+		WireLink_free(firstHost->link); // TODO: this doesn't belong here
+		pool_host_detach(firstHost);
 	}
-	hosts = newHosts;
-	while(hosts_len < newLength)
-		hosts[hosts_len++] = (struct PoolHost){0};
-	return false;
 }
 
-void pool_reset(struct NetContext *self) {
-	for(uint32_t i = 0; i < hosts_len; ++i)
-		wire_disconnect(self, hosts[i].link);
-	free(hosts);
-	hosts_len = 0;
-	nextSlot = 0;
-	hosts = NULL;
-}
-
-struct PoolHost *pool_host_attach(union WireLink *link) {
-	if(nextSlot >= hosts_len)
-		if(pool_grow(hosts_len ? (hosts_len * 2) : 8))
-			return NULL;
-	struct PoolHost *host = &hosts[nextSlot];
+struct PoolHost *pool_host_attach(struct WireLink *link) {
+	struct PoolHost *const host = malloc(sizeof(struct PoolHost));
+	if(host == NULL)
+		return NULL;
 	*host = (struct PoolHost){
+		.next = firstHost,
 		.link = link,
 	};
-	while(++nextSlot < hosts_len)
-		if(hosts[nextSlot].link == NULL)
-			break;
-	uprintf("pool_host_attach(): nextSlot %zd -> %u\n", host - hosts, nextSlot);
+	firstHost = host;
+	uprintf("pool_host_attach()\n");
 	return host;
 }
 
 void pool_host_detach(struct PoolHost *host) {
-	if(host >= &hosts[hosts_len] || host->link == NULL)
+	for(struct PoolHost **it = &firstHost; *it != NULL; it = &(*it)->next) {
+		if(*it != host)
+			continue;
+		struct PoolHost *const host = *it;
+		*it = host->next;
+		free(host->codes);
+		free(host);
 		return;
-	free(host->codes);
-	*host = (struct PoolHost){0};
-	if((uint32_t)(host - hosts) < nextSlot)
-		nextSlot = (uint32_t)(host - hosts);
+	}
 }
 
 void TEMPpool_host_setAttribs(struct PoolHost *host, uint32_t capacity, bool discover) { // TODO: `TEMP` since calling multiple times for the same host will break things
-	host->discover = discover;
-	host->capacity = capacity;
-	host->blocks.bits = ~UINT64_C(0);
-	host->codes = malloc(capacity * sizeof(*hosts->codes));
-	if(!host->codes) {
-		*host = (struct PoolHost){0};
+	free(host->codes);
+	*host = (struct PoolHost){
+		.next = host->next,
+		.link = host->link,
+		.discover = discover,
+		.capacity = capacity,
+		.blocks.bits = ~UINT64_C(0),
+		.codes = malloc(capacity * sizeof(*host->codes)),
+	};
+	if(host->codes == NULL) {
+		host->discover = false;
+		host->capacity = 0;
 		uprintf("alloc error\n");
 		return;
 	}
@@ -74,21 +67,13 @@ void TEMPpool_host_setAttribs(struct PoolHost *host, uint32_t capacity, bool dis
 		*it = ServerCode_NONE;
 }
 
-union WireLink *pool_host_wire(struct PoolHost *host) {
+struct WireLink *pool_host_wire(struct PoolHost *host) {
 	return host->link;
 }
 
-struct PoolHost *pool_host_lookup(union WireLink *link) {
-	for(struct PoolHost *host = hosts; host < &hosts[hosts_len]; ++host)
-		if(host->link == link)
-			return host;
-	return NULL;
-}
-
 static uint32_t globalRoomCount = 0;
-
 static struct PoolHost *_pool_handle_new(uint32_t *room_out, ServerCode code) {
-	struct PoolHost *host = &hosts[0]; // TODO: multiple hosts + load balancing
+	struct PoolHost *host = firstHost; // TODO: multiple hosts + load balancing
 	uint32_t block = Counter64_get_next(host->blocks), freeCount = 0;
 	if(!host->discover || block == COUNTER64_INVALID) {
 		uprintf("Error: instance not available\n");
@@ -142,7 +127,7 @@ ServerCode pool_handle_code(struct PoolHost *host, uint32_t room) {
 }
 
 struct PoolHost *pool_handle_lookup(uint32_t *room_out, ServerCode code) { // TODO: use a hash table for this
-	for(struct PoolHost *host = hosts; host < &hosts[hosts_len]; ++host) {
+	for(struct PoolHost *host = firstHost; host != NULL; host = host->next) {
 		for(ServerCode *room = host->codes, *codes_end = &host->codes[host->capacity]; room < codes_end; ++room) {
 			if(*room != code)
 				continue;

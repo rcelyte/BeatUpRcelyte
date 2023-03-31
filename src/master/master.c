@@ -44,6 +44,7 @@ struct MasterSession {
 
 struct Context {
 	struct NetContext net;
+	struct WireContext wire;
 	const mbedtls_x509_crt *cert;
 	const mbedtls_pk_context *key;
 	struct MasterSession *sessionList;
@@ -410,9 +411,10 @@ struct ConnectToServerCookie {
 	struct BeatmapLevelSelectionMask selectionMask;
 };
 
-static void handle_WireSessionAllocResp(struct Context *ctx, struct PoolHost *host, uint32_t cookie, const struct WireSessionAllocResp *sessionAlloc, bool spawn) {
-	const struct ConnectToServerCookie *state = wire_getCookie(&ctx->net, cookie);
-	if(state == NULL || state->cookieType != MasterCookieType_ConnectToServer) {
+static void handle_WireSessionAllocResp(struct Context *ctx, struct WireLink *link, struct PoolHost *host, WireCookie cookie, const struct WireSessionAllocResp *sessionAlloc, bool spawn) {
+	const struct DataView cookieView = WireLink_getCookie(link, cookie);
+	const struct ConnectToServerCookie *state = (struct ConnectToServerCookie*)cookieView.data;
+	if(cookieView.length != sizeof(*state) || state->cookieType != MasterCookieType_ConnectToServer) {
 		uprintf("Connect to Server Error: Malformed wire cookie\n");
 		return;
 	}
@@ -457,35 +459,44 @@ static void handle_WireSessionAllocResp(struct Context *ctx, struct PoolHost *ho
 		master_send(&ctx->net, session, MessageType_UserMessage, resp, resp_end);
 }
 
-static void master_onWireMessage(struct Context *ctx, union WireLink *link, const struct WireMessage *message) {
-	struct PoolHost *host = pool_host_lookup(link);
-	if(!host) {
-		uprintf("pool_host_lookup() failed\n"); // If we hit this, something went horribly wrong
-		if(message) {
-			wire_disconnect(&ctx->net, link);
-		} else {
-			for(uint32_t cookie = 0; (cookie = wire_nextCookie(&ctx->net, cookie));)
-				wire_releaseCookie(&ctx->net, cookie);
+static void master_onWireMessage(struct WireContext *wire, struct WireLink *link, const struct WireMessage *message) {
+	struct Context *const ctx = (struct Context*)wire->userptr;
+	net_lock(&ctx->net);
+	struct PoolHost **const host = (struct PoolHost**)WireLink_userptr(link);
+	if(*host == NULL) {
+		if(message == NULL)
+			goto unlock;
+		if(message->type != WireMessageType_WireSetAttribs) {
+			uprintf("untracked link\n");
+			goto unlock;
 		}
-		return;
+		*host = pool_host_attach(link);
+		if(*host == NULL) {
+			uprintf("pool_host_attach() failed\n");
+			goto unlock;
+		}
 	}
-	if(!message) {
-		for(uint32_t cookie = 0; (cookie = wire_nextCookie(&ctx->net, cookie));) {
-			if(cookie == MasterCookieType_ConnectToServer) // TODO: retry with a different instance if any are still alive
-				handle_WireSessionAllocResp(ctx, host, cookie, NULL, false);
-			wire_releaseCookie(&ctx->net, cookie);
+	if(message == NULL) {
+		for(WireCookie cookie = 1; cookie <= WireLink_lastCookieIndex(link); ++cookie) {
+			const struct DataView cookieView = WireLink_getCookie(link, cookie);
+			if(cookieView.length == sizeof(struct ConnectToServerCookie) && ((struct ConnectToServerCookie*)cookieView.data)->cookieType == MasterCookieType_ConnectToServer)
+				handle_WireSessionAllocResp(ctx, link, *host, cookie, NULL, false); // TODO: retry with a different instance if any are still alive
+			WireLink_freeCookie(link, cookie);
 		}
-		pool_host_detach(host);
-		return;
+		pool_host_detach(*host);
+		*host = NULL;
+		goto unlock;
 	}
 	switch(message->type) {
-		case WireMessageType_WireSetAttribs: TEMPpool_host_setAttribs(host, message->setAttribs.capacity, message->setAttribs.discover); break;
-		case WireMessageType_WireRoomSpawnResp: handle_WireSessionAllocResp(ctx, host, message->cookie, &message->roomSpawnResp.base, true); break;
-		case WireMessageType_WireRoomJoinResp: handle_WireSessionAllocResp(ctx, host, message->cookie, &message->roomJoinResp.base, false); break;
-		case WireMessageType_WireRoomCloseNotify: pool_handle_free(host, message->roomCloseNotify.room); break;
+		case WireMessageType_WireSetAttribs: TEMPpool_host_setAttribs(*host, message->setAttribs.capacity, message->setAttribs.discover); break;
+		case WireMessageType_WireRoomSpawnResp: handle_WireSessionAllocResp(ctx, link, *host, message->cookie, &message->roomSpawnResp.base, true); break;
+		case WireMessageType_WireRoomJoinResp: handle_WireSessionAllocResp(ctx, link, *host, message->cookie, &message->roomJoinResp.base, false); break;
+		case WireMessageType_WireRoomCloseNotify: pool_handle_free(*host, message->roomCloseNotify.room); break;
 		default: uprintf("UNHANDLED WIRE MESSAGE [%s]\n", reflect(WireMessageType, message->type));
 	}
-	wire_releaseCookie(&ctx->net, message->cookie);
+	WireLink_freeCookie(link, message->cookie);
+	unlock:
+	net_unlock(&ctx->net);
 }
 
 // TODO: more consistent naming
@@ -533,8 +544,9 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		.protocolVersion = session->net.version.protocolVersion,
 	};
 	memcpy(sessionAllocData.address.data, &state.addr.ss, state.addr.len);
-	uint32_t cookie;
-	bool failed;
+	WireCookie cookie = 0;
+	bool failed = true;
+	struct WireLink *link = NULL;
 	if(req->code == ServerCode_NONE) {
 		if(!req->secret.length) {
 			uprintf("Connect to Server Error: Quickplay not supported\n");
@@ -548,8 +560,9 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 			return;
 		}
 		sessionAllocData.room = state.room;
-		cookie = wire_reserveCookie(&ctx->net, &state, sizeof(state));
-		failed = wire_send(&ctx->net, pool_host_wire(host), &(struct WireMessage){
+		link = pool_host_wire(host);
+		cookie = WireLink_makeCookie(link, &state, sizeof(state));
+		failed = WireLink_send(link, &(struct WireMessage){
 			.type = WireMessageType_WireRoomSpawn,
 			.cookie = cookie,
 			.roomSpawn = {
@@ -559,21 +572,22 @@ static void handle_ConnectToServerRequest(struct Context *ctx, struct MasterSess
 		});
 	} else {
 		struct PoolHost *host = pool_handle_lookup(&state.room, req->code);
-		if(!host) {
+		if(host == NULL) {
 			uprintf("Connect to Server Error: Room code does not exist\n");
 			SendConnectError(ctx, session, state.request, ConnectToServerResponse_Result_InvalidCode);
 			return;
 		}
 		sessionAllocData.room = state.room;
-		cookie = wire_reserveCookie(&ctx->net, &state, sizeof(state));
-		failed = wire_send(&ctx->net, pool_host_wire(host), &(struct WireMessage){
+		link = pool_host_wire(host);
+		cookie = WireLink_makeCookie(link, &state, sizeof(state));
+		failed = WireLink_send(link, &(struct WireMessage){
 			.type = WireMessageType_WireRoomJoin,
 			.cookie = cookie,
 			.roomJoin.base = sessionAllocData,
 		});
 	}
 	if(failed) {
-		wire_releaseCookie(&ctx->net, cookie);
+		WireLink_freeCookie(link, cookie);
 		SendConnectError(ctx, session, state.request, ConnectToServerResponse_Result_UnknownError);
 	}
 	/*struct BitMask128 customs = get_mask("custom_levelpack_CustomLevels");
@@ -715,42 +729,43 @@ static void *master_handler(struct Context *ctx) {
 	return 0;
 }
 
-static void master_onWireLink(struct Context*, union WireLink *link) {
-	struct PoolHost *host = pool_host_attach((union WireLink*)link);
-	if(!host)
-		uprintf("TEMPwire_attach_local() failed\n");
-}
-
 static pthread_t master_thread = NET_THREAD_INVALID;
-static struct Context ctx = {CLEAR_NETCONTEXT, NULL, NULL, NULL}; // TODO: This "singleton" can't actually scale up due to the pool API no longer being threadsafe
-struct NetContext *master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_context *key, uint16_t port) {
-	if(net_init(&ctx.net, port, false, 16)) {
+static struct Context ctx = {CLEAR_NETCONTEXT, {0}, NULL, NULL, NULL}; // TODO: This "singleton" can't actually scale up due to the pool API no longer being threadsafe
+struct WireContext *master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_context *key, uint16_t port) {
+	if(net_init(&ctx.net, port, false)) {
 		uprintf("net_init() failed\n");
 		return NULL;
 	}
+	if(WireContext_init(&ctx.wire, &ctx.net, 16)) {
+		uprintf("WireContext_init() failed\n");
+		goto fail0;
+	}
+	
 	uint_fast8_t count = 0;
 	for(const mbedtls_x509_crt *it = cert; it; it = it->next, ++count) {
 		if(it->raw.len > 4096) {
 			uprintf("Host certificate too large\n");
-			return NULL;
+			goto fail1;
 		}
 	}
 	if(count > lengthof(((struct ServerCertificateRequest*)NULL)->certificateList)) {
 		uprintf("Host certificate chain too long\n");
-		return NULL;
+		goto fail1;
 	}
 	ctx.cert = cert;
 	ctx.key = key;
 	ctx.net.userptr = &ctx;
 	ctx.net.onResolve = (struct NetSession *(*)(void*, struct SS, const uint8_t*, uint32_t, uint8_t*, uint32_t*, void**))master_onResolve;
 	ctx.net.onResend = (uint32_t (*)(void*, uint32_t))master_onResend;
-	ctx.net.onWireLink = (void (*)(void*, union WireLink*))master_onWireLink;
-	ctx.net.onWireMessage = (void (*)(void*, union WireLink*, const struct WireMessage*))master_onWireMessage;
+	ctx.wire.onMessage = master_onWireMessage;
 	if(pthread_create(&master_thread, NULL, (void *(*)(void*))master_handler, &ctx)) {
 		master_thread = NET_THREAD_INVALID;
-		return NULL;
+		goto fail1;
 	}
-	return &ctx.net;
+	return &ctx.wire;
+	fail1: WireContext_cleanup(&ctx.wire);
+	fail0: net_cleanup(&ctx.net);
+	return NULL;
 }
 
 void master_cleanup() {
@@ -762,6 +777,7 @@ void master_cleanup() {
 		while(ctx.sessionList)
 			ctx.sessionList = master_disconnect(ctx.sessionList);
 	}
-	pool_reset(&ctx.net);
+	pool_reset();
+	WireContext_cleanup(&ctx.wire);
 	net_cleanup(&ctx.net);
 }

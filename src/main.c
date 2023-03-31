@@ -37,7 +37,7 @@ int main(int argc, const char *argv[]) {
 	memset(&cfg, 0, sizeof(cfg));
 	if(config_load(&cfg, config_path)) // TODO: live config reloading
 		goto fail0;
-	wire_set_key(cfg.wireKey, cfg.wireKey_len);
+	wire_init(cfg.wireKey, cfg.wireKey_len);
 	if(cfg.statusPort) {
 		status_internal_init();
 		if(mbedtls_pk_get_type(&cfg.statusKey) != MBEDTLS_PK_NONE) {
@@ -48,10 +48,10 @@ int main(int argc, const char *argv[]) {
 				goto fail1;
 		}
 	}
-	struct NetContext *localMaster = NULL;
+	struct WireContext *localMaster = NULL;
 	if(cfg.masterPort) {
 		localMaster = master_init(cfg.certs, cfg.keys, cfg.masterPort);
-		if(!localMaster)
+		if(localMaster == NULL)
 			goto fail3;
 	}
 	if(instance_init(cfg.instanceAddress[0], cfg.instanceAddress[1], cfg.instanceParent, localMaster, cfg.instanceMapPool, cfg.instanceCount))
@@ -83,6 +83,7 @@ int main(int argc, const char *argv[]) {
 		else
 			status_cleanup();
 	}
+	wire_cleanup();
 	fail0:
 	config_free(&cfg);
 	return 0;
