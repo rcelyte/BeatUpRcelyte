@@ -1,5 +1,6 @@
 static partial class BeatUpClient {
 	public enum PatchType : byte {
+		None,
 		Prefix,
 		Postfix,
 		Transpiler,
@@ -22,12 +23,18 @@ static partial class BeatUpClient {
 			public Generic(PatchType patchType, System.Type type, string fn, params System.Type[] generics) =>
 				(this.patchType, method) = (patchType, HarmonyLib.AccessTools.DeclaredMethod(type, fn, null, generics));
 		}
-		System.Reflection.MethodBase? method;
-		PatchType patchType;
+		System.Reflection.MethodBase? method = null;
+		PatchType patchType = PatchType.None;
 		Patch() {}
-		public Patch(PatchType patchType, System.Type type, string fn) =>
-			(this.patchType, method) = (patchType, fn == ".ctor" ? (System.Reflection.MethodBase)type.GetConstructors()[0] : HarmonyLib.AccessTools.DeclaredMethod(type, fn));
+		public Patch(PatchType patchType, System.Type? type, string fn) {
+			if(type != null)
+				(this.patchType, method) = (patchType, fn == ".ctor" ? (System.Reflection.MethodBase)type.GetConstructors()[0] : HarmonyLib.AccessTools.DeclaredMethod(type, fn));
+		}
+		public Patch(PatchType patchType, string type, string fn) : // TODO: specify assembly to search in
+			this(patchType, typeof(GameLiftConnectionManager).Assembly.GetType(type, false), fn) {}
 		public System.Action Bind(System.Reflection.MethodInfo self) {
+			if(patchType == PatchType.None)
+				return () => {};
 			if(method == null)
 				throw new System.ArgumentException($"Missing original method for `{self}`");
 			return () => {

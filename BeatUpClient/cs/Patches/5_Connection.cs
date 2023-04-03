@@ -1,16 +1,21 @@
 static partial class BeatUpClient {
 	static bool enableCustomLevels = false;
-	[Patch(PatchType.Prefix, typeof(MasterServerConnectionManager), "HandleConnectToServerSuccess")]
-	[Patch(PatchType.Prefix, typeof(GameLiftConnectionManager), "HandleConnectToServerSuccess")]
-	public static void ConnectionManager_HandleConnectToServerSuccess(object __1, BeatmapLevelSelectionMask selectionMask, GameplayServerConfiguration configuration) {
-		Log.Debug("ConnectionManager_HandleConnectToServerSuccess()");
-		enableCustomLevels = (__1 is string) && selectionMask.songPacks.Contains("custom_levelpack_CustomLevels");
-		playerData = new PlayerData(configuration.maxPlayerCount);
+	static void HandleConnectToServerSuccess(bool enableCustomLevels, int maxPlayerCount) {
+		Log.Debug($"HandleConnectToServerSuccess(enableCustomLevels={enableCustomLevels}, maxPlayerCount={maxPlayerCount})");
+		BeatUpClient.enableCustomLevels = enableCustomLevels;
+		playerData = new PlayerData(maxPlayerCount);
 		lobbyDifficultyPanel.Clear();
 		connectInfo = ServerConnectInfo.Default;
-		infoText.SetActive(false);
-		Log.Debug("ConnectionManager_HandleConnectToServerSuccess() end");
+		infoText?.SetActive(false);
 	}
+
+	[Patch(PatchType.Prefix, typeof(GameLiftConnectionManager), nameof(GameLiftConnectionManager.HandleConnectToServerSuccess))]
+	static void GameLiftConnectionManager_HandleConnectToServerSuccess(string playerSessionId, GameplayServerConfiguration configuration) =>
+		HandleConnectToServerSuccess(!playerSessionId.StartsWith("psess-"), configuration.maxPlayerCount); // TODO: disable customs on official
+
+	[Patch(PatchType.Prefix, "MasterServerConnectionManager", nameof(MasterServerConnectionManager.HandleConnectToServerSuccess))]
+	static void MasterServerConnectionManager_HandleConnectToServerSuccess(GameplayServerConfiguration configuration) =>
+		HandleConnectToServerSuccess(true, configuration.maxPlayerCount);
 
 	[Patch(PatchType.Prefix, typeof(LevelSelectionNavigationController), nameof(LevelSelectionNavigationController.Setup))]
 	public static void LevelSelectionNavigationController_Setup(ref BeatmapCharacteristicSO[] notAllowedCharacteristics, string actionButtonText, ref bool enableCustomLevels) {
@@ -36,7 +41,7 @@ static partial class BeatUpClient {
 			System.Array.Resize(ref ____receivedPackets, windowSize);
 		if(____earlyReceived != null)
 			System.Array.Resize(ref ____earlyReceived, windowSize);
-		typeof(LiteNetLib.NetPacket).GetConstructors()[1].Invoke(____outgoingAcks, new object[] {LiteNetLib.PacketProperty.Ack, (windowSize - 1) / 8 + 2}); // TODO: test this
+		typeof(LiteNetLib.NetPacket).GetConstructors()[1].Invoke(____outgoingAcks, new object[] {LiteNetLib.PacketProperty.Ack, (windowSize - 1) / 8 + 2});
 		____outgoingAcks.ChannelId = id;
 		Log.Debug($"ReliableChannel_ctor({windowSize}) end");
 	}

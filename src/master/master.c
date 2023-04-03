@@ -560,6 +560,7 @@ static bool handle_WireSessionAllocResp_graph(struct LocalMasterContext *ctx, st
 				.playerSlot = sessionAlloc->playerSlot,
 				.code = pool_handle_code(host, state->base.room),
 			};
+			uprintf("Sending player to room `%s`\n", ServerCodeToString((char[8]){0}, resp.code));
 			break;
 		}
 		case ConnectToServerResponse_Result_InvalidSecret: [[fallthrough]];

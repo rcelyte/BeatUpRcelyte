@@ -23,11 +23,17 @@ static partial class BeatUpClient {
 			UnityEngine.Transform hideLevels = UI.CreateToggle(MultiplayerSettingsPanel, "HideLevels", "BEATUP_HIDE_OTHER_LEVELS", new Property<bool>(BeatUpClient_Config.Instance, nameof(BeatUpClient_Config.HideOtherLevels)));
 			AddHoverHint(hideLevels.gameObject, "BEATUP_MAY_IMPROVE_PERFORMANCE");
 		}
-		infoText = UnityEngine.Object.Instantiate(MultiplayerSettingsPanel.parent.Find("PlayerOptions/ViewPort/Content/SinglePlayerOnlyTitle").gameObject, MultiplayerSettingsPanel);
-		infoText.name = "BeatUpClient_Info";
-		Polyglot.LocalizedTextMeshProUGUI text = infoText.GetComponentInChildren<Polyglot.LocalizedTextMeshProUGUI>();
-		text.localizedComponent.richText = true;
-		text.Key = "BEATUP_INFO";
+		UnityEngine.Transform CommonSection = UnityEngine.Resources.FindObjectsOfTypeAll<PlayerHeightSettingsController>()[0].transform.parent;
+		UnityEngine.Transform? SinglePlayerOnlyTitle = CommonSection.Find("SinglePlayerOnlyTitle") ?? CommonSection.parent.Find("SinglePlayerOnlyTitle");
+		if(SinglePlayerOnlyTitle == null) {
+			Log.Warn("SinglePlayerOnlyTitle not found");
+		} else {
+			infoText = UnityEngine.Object.Instantiate(SinglePlayerOnlyTitle.gameObject, MultiplayerSettingsPanel);
+			infoText.name = "BeatUpClient_Info";
+			Polyglot.LocalizedTextMeshProUGUI text = infoText.GetComponentInChildren<Polyglot.LocalizedTextMeshProUGUI>();
+			text.localizedComponent.richText = true;
+			text.Key = "BEATUP_INFO";
+		}
 
 		DifficultyPanel.Init();
 		lobbyDifficultyPanel = new DifficultyPanel(UnityEngine.Resources.FindObjectsOfTypeAll<LobbySetupViewController>()[0].transform.GetChild(0), 2, 90);

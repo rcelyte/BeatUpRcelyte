@@ -36,7 +36,7 @@ static partial class BeatUpClient {
 		public static void SendUnreliableToPlayer<T>(T message, IConnectedPlayer player) where T : LiteNetLib.Utils.INetSerializable {
 			ConnectedPlayerManager? connectedPlayerManager = Resolve<MultiplayerSessionManager>()?.connectedPlayerManager;
 			if(connectedPlayerManager?.isConnected == true && player is ConnectedPlayerManager.ConnectedPlayer connectedPlayer)
-				connectedPlayer.connection.Send(connectedPlayerManager.WriteOne(((ConnectedPlayerManager.ConnectedPlayer)connectedPlayerManager.localPlayer).connectionId, connectedPlayer.remoteConnectionId, message), LiteNetLib.DeliveryMethod.Unreliable);
+				IConnection_SendUnreliable(connectedPlayer.connection, connectedPlayerManager.WriteOne(((ConnectedPlayerManager.ConnectedPlayer)connectedPlayerManager.localPlayer).connectionId, connectedPlayer.remoteConnectionId, message));
 			else if(message is IPoolablePacket poolable)
 				poolable.Release();
 		}

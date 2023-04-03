@@ -1724,7 +1724,7 @@ static struct NetSession *instance_onResolve(struct NetContext *net, struct SS a
 				continue;
 			char addrstr[INET6_ADDRSTRLEN + 8];
 			net_tostr(&addr, addrstr);
-			uprintf("resolve %s -> (%zu,%hu)@%hhu\n", addrstr, indexof(contexts, ctx), indexof(*ctx->rooms, room), id);
+			uprintf("resolve{Legacy} %s -> (%zu,%hu)@%hhu\n", addrstr, indexof(contexts, ctx), indexof(*ctx->rooms, room), id);
 			session->addr = addr;
 			*userdata_out = room;
 			return session;
@@ -1966,6 +1966,9 @@ static void instance_onGraphAuth(struct NetContext *net, struct NetSession *mast
 	}
 	NetSession_free(&session->net);
 	NetSession_initFrom(&session->net, masterSession);
+	char addrstr[INET6_ADDRSTRLEN + 8];
+	net_tostr(NetSession_get_addr(&session->net), addrstr);
+	uprintf("resolve{Graph} %s -> (%zu,%hu)@%hhu\n", addrstr, indexof(contexts, ctx), roomID, id);
 }
 
 static void instance_room_spawn(struct InstanceContext *ctx, struct WireLink *link, uint32_t cookie, const struct WireRoomSpawn *req) {

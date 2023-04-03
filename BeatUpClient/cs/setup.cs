@@ -46,7 +46,7 @@ static partial class BeatUpClient {
 		}
 		Hive.Versioning.Version? mpCoreVersion = modVersion("MultiplayerCore");
 		if(!SupportedMpCoreVersion(mpCoreVersion?.ToString())) {
-			BeatUpClient_Error.Init("Incompatible BeatUpClient Version", $"This version of BeatUpClient only supports MultiplayerCore 1.1.2");
+			BeatUpClient_Error.Init("Incompatible BeatUpClient Version", $"This version of BeatUpClient only supports MultiplayerCore 1.1.2 to 1.2.0");
 			return;
 		}
 		string? err = BeatUpClient_Beta.CheckVersion(version);

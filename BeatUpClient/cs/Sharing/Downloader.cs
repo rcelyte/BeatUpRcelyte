@@ -147,7 +147,7 @@ static partial class BeatUpClient {
 							count = segmentTree.Recurse(pos, count, block => {
 								pos = block;
 								if(writer.Length + requestLength >= writer.Capacity) {
-									source.connection.Send(writer, LiteNetLib.DeliveryMethod.Unreliable);
+									IConnection_SendUnreliable(source.connection, writer);
 									writer._position = headerEnd;
 								}
 								connectedPlayerManager.Write(writer, new DataFragmentRequest(blockStart + (uint)block).Wrap());
@@ -156,7 +156,7 @@ static partial class BeatUpClient {
 								break;
 							pos = 0;
 						}
-						source.connection.Send(writer, LiteNetLib.DeliveryMethod.Unreliable);
+						IConnection_SendUnreliable(source.connection, writer);
 					}
 					await System.Threading.Tasks.Task.Delay(20, cancellationToken);
 					cancellationToken.ThrowIfCancellationRequested();

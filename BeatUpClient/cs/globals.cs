@@ -12,8 +12,13 @@ static partial class BeatUpClient {
 	static bool haveSiraUtil = false, haveSongCore = false, haveMpCore = false, haveMpEx = false;
 	static UnityEngine.Sprite defaultPackCover = null!;
 
-	static UnityEngine.GameObject infoText = null!;
+	static UnityEngine.GameObject? infoText = null;
 	static StringSO customServerHostName = null!;
 	static DifficultyPanel lobbyDifficultyPanel = null!;
 	internal static PlayerData playerData = new PlayerData(0);
+
+	static void IConnection_SendUnreliable(IConnection connection, LiteNetLib.Utils.NetDataWriter writer) { // avoids referencing `BGNet.Core.DeliveryMethod` for backwards compatibility
+		if(connection is LiteNetLibConnectionManager.NetPeerConnection peerConn)
+			peerConn.netPeer.Send(writer, LiteNetLib.DeliveryMethod.Unreliable);
+	}
 }

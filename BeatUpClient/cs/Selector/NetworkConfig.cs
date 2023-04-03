@@ -1,15 +1,15 @@
 static partial class BeatUpClient {
 	struct VanillaConfig : INetworkConfig {
-		public int maxPartySize {get;}
+		public int maxPartySize {get; set;}
 		public int discoveryPort {get;}
 		public int partyPort {get;}
 		public int multiplayerPort {get;}
-		public DnsEndPoint masterServerEndPoint {get;}
-		public string multiplayerStatusUrl {get;}
+		public DnsEndPoint masterServerEndPoint {get; set;}
+		public string multiplayerStatusUrl {get; set;}
 		public string quickPlaySetupUrl {get;}
-		public string graphUrl {get;}
+		public string graphUrl {get; set;}
 		public string graphAccessToken {get;}
-		public bool forceGameLift {get;}
+		public bool forceGameLift {get; set;}
 		public ServiceEnvironment serviceEnvironment {get;}
 		public VanillaConfig(NetworkConfigSO from) => // Bypass all getters other mods might patch
 			(this.maxPartySize, this.discoveryPort, this.partyPort, this.multiplayerPort, this.masterServerEndPoint, this.multiplayerStatusUrl, this.quickPlaySetupUrl, this.graphUrl, this.graphAccessToken, this.forceGameLift, this.serviceEnvironment) = 
@@ -27,34 +27,28 @@ static partial class BeatUpClient {
 		CustomNetworkConfig? customNetworkConfig = Resolve<CustomNetworkConfig>();
 		if(customNetworkConfig == null)
 			return false;
-		int port = officialConfig.masterServerEndPoint.port;
-		bool forceGameLift = true;
-		string? multiplayerStatusUrl = officialConfig.multiplayerStatusUrl;
-		bool custom = !string.IsNullOrEmpty(hostname);
-		if(custom) {
+		VanillaConfig newConfig = officialConfig;
+		if(!string.IsNullOrEmpty(hostname)) {
 			string[] splitHostname = hostname.ToLower().Split(new[] {':'});
-			hostname = splitHostname[0];
+			int port = officialConfig.masterServerEndPoint.port;
 			if(splitHostname.Length >= 2)
 				if(int.TryParse(splitHostname[1], out int customPort) && customPort > 0)
 					port = customPort;
-			forceGameLift = false;
-		} else {
-			hostname = officialConfig.masterServerEndPoint.hostName;
+			newConfig.maxPartySize = 254;
+			newConfig.masterServerEndPoint = new DnsEndPoint(splitHostname[0], port);
+			newConfig.multiplayerStatusUrl = string.IsNullOrEmpty(statusUrl) ? "https://status." + splitHostname[0] : statusUrl;
+			newConfig.graphUrl = hostname;
+			newConfig.forceGameLift = hostname.StartsWith("http://") || hostname.StartsWith("https://");
+			if(typeof(GameLiftConnectionManager).Assembly.GetType("MasterServerConnectionManager", false) == null && !newConfig.forceGameLift) {
+				newConfig.graphUrl = newConfig.multiplayerStatusUrl;
+				newConfig.forceGameLift = true;
+			}
 		}
-		string oldHostname = customNetworkConfig.masterServerEndPoint.hostName;
-		int oldPort = customNetworkConfig.masterServerEndPoint.port;
-		string oldMultiplayerStatusUrl = customNetworkConfig.multiplayerStatusUrl;
-		Log.Debug($"CustomNetworkConfig(customServerHostName=\"{hostname}\", port={port}, forceGameLift={forceGameLift}), multiplayerStatusUrl={statusUrl}");
-		typeof(CustomNetworkConfig).GetConstructors()[0].Invoke(customNetworkConfig, new object[] {officialConfig, hostname, port, forceGameLift});
-		if(custom)
-			HarmonyLib.AccessTools.Field(typeof(CustomNetworkConfig), "<maxPartySize>k__BackingField").SetValue(customNetworkConfig, (int)254);
-		if(!string.IsNullOrEmpty(statusUrl))
-			HarmonyLib.AccessTools.Field(typeof(CustomNetworkConfig), "<multiplayerStatusUrl>k__BackingField").SetValue(customNetworkConfig, (string)statusUrl);
-		if(!forceGameLift)
-			HarmonyLib.AccessTools.Field(typeof(CustomNetworkConfig), "<serviceEnvironment>k__BackingField").SetValue(customNetworkConfig, officialConfig.serviceEnvironment);
-		if(customNetworkConfig.multiplayerStatusUrl == oldMultiplayerStatusUrl)
-			return hostname != oldHostname || port != oldPort;
-
+		string oldGraphUrl = customNetworkConfig.graphUrl, oldStatusUrl = customNetworkConfig.multiplayerStatusUrl;
+		typeof(CustomNetworkConfig).GetConstructors()[0].Invoke(customNetworkConfig, new object[] {newConfig, "", 0, true});
+		HarmonyLib.AccessTools.Field(typeof(CustomNetworkConfig), "<forceGameLift>k__BackingField").SetValue(customNetworkConfig, (bool)newConfig.forceGameLift);
+		if(customNetworkConfig.multiplayerStatusUrl == oldStatusUrl)
+			return newConfig.graphUrl != oldGraphUrl;
 		if(Resolve<IMultiplayerStatusModel>() is MultiplayerStatusModel multiplayerStatusModel)
 			multiplayerStatusModel._request = null;
 		if(Resolve<IQuickPlaySetupModel>() is QuickPlaySetupModel quickPlaySetupModel)
@@ -71,7 +65,7 @@ static partial class BeatUpClient {
 
 	[Detour(typeof(ClientCertificateValidator), nameof(ClientCertificateValidator.ValidateCertificateChainInternal))]
 	static void ClientCertificateValidator_ValidateCertificateChainInternal(ClientCertificateValidator self, DnsEndPoint endPoint, System.Security.Cryptography.X509Certificates.X509Certificate2 certificate, byte[][] certificateChain) {
-		if(Resolve<CustomNetworkConfig>() is CustomNetworkConfig networkConfig && networkConfig.masterServerEndPoint.hostName != officialConfig.masterServerEndPoint.hostName)
+		if(Resolve<CustomNetworkConfig>() is CustomNetworkConfig networkConfig && networkConfig.graphUrl != officialConfig.graphUrl)
 			return;
 		Base(self, endPoint, certificate, certificateChain);
 	}

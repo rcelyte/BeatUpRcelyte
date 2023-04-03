@@ -1,16 +1,17 @@
 static partial class BeatUpClient {
 	static ServerConnectInfo connectInfo = ServerConnectInfo.Default;
 
-	[Detour(typeof(BasicConnectionRequestHandler), nameof(BasicConnectionRequestHandler.GetConnectionMessage))]
-	static void BasicConnectionRequestHandler_GetConnectionMessage(BasicConnectionRequestHandler self, LiteNetLib.Utils.NetDataWriter writer, string userId, string userName, bool isConnectionOwner) {
-		Base(self, writer, userId, userName, isConnectionOwner);
-		Log.Debug("BasicConnectionRequestHandler_GetConnectionMessage()");
+	[Detour(typeof(LiteNetLibConnectionManager), nameof(LiteNetLibConnectionManager.GetConnectionMessage))]
+	static LiteNetLib.Utils.NetDataWriter LiteNetLibConnectionManager_GetConnectionMessage(LiteNetLibConnectionManager self) {
+		Log.Debug("LiteNetLibConnectionManager_GetConnectionMessage()");
+		LiteNetLib.Utils.NetDataWriter writer = (LiteNetLib.Utils.NetDataWriter)Base(self);
 		LiteNetLib.Utils.NetDataWriter sub = new LiteNetLib.Utils.NetDataWriter(false, (int)ServerConnectInfo.Size);
 		new ServerConnectInfo(LocalBlockSize, BeatUpClient_Config.Instance).Serialize(sub);
 		writer.PutVarUInt((uint)sub.Length);
 		writer.Put("BeatUpClient beta1");
 		writer.Put(sub.CopyData());
-		Log.Debug("BasicConnectionRequestHandler_GetConnectionMessage() end");
+		Log.Debug("LiteNetLibConnectionManager_GetConnectionMessage() end");
+		return writer;
 	}
 
 	// `windowSize` MUST be set before LiteNetLib constructs any `ReliableChannel`s
@@ -20,7 +21,7 @@ static partial class BeatUpClient {
 			packet.Size = LiteNetLib.NetConnectAcceptPacket.Size;
 			ServerConnectInfo info = new ServerConnectInfo(new LiteNetLib.Utils.NetDataReader(packet.RawData, packet.Size));
 			connectInfo = info;
-			infoText.SetActive(true);
+			infoText?.SetActive(true);
 			if(info.windowSize != 0)
 				Log.Info($"Overriding window size - {info.windowSize}");
 		} else if(packet.Size != LiteNetLib.NetConnectAcceptPacket.Size) {
