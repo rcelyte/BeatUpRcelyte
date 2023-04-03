@@ -1,6 +1,6 @@
 #include "internal.h"
 #include "status.h"
-#include <string.h>
+#include "json.h"
 #include <inttypes.h>
 
 #define READ_SYM(dest, sym) _read_sym(dest, sym, (uint32_t)(sym##_end - sym))
@@ -36,7 +36,8 @@ void status_internal_init() {
 	}
 }
 
-StatusHandle status_entry_new(ServerCode code, uint8_t playerCap) {
+// TODO: migrate to wire protocol
+/*StatusHandle status_entry_new(ServerCode code, uint8_t playerCap) {
 	StatusHandle index = alloc[count++];
 	list[index].code = code;
 	list[index].playerNPms = 0;
@@ -59,26 +60,7 @@ void status_entry_set_level(StatusHandle index, const char *name, float nps) {
 void status_entry_free(StatusHandle index) {
 	list[index].code = ServerCode_NONE;
 	alloc[--count] = index;
-}
-
-static uint32_t status_head(char *buf, const char *code, const char *mime, size_t len) {
-	return (uint32_t)sprintf(buf,
-		"HTTP/1.1 %s\r\n"
-		"Connection: close\r\n"
-		"Content-Length: %zd\r\n"
-		"X-Frame-Options: DENY\r\n"
-		"X-Content-Type-Options: nosniff\r\n"
-		"Content-Type: %s; charset=utf-8\r\n"
-		"X-DNS-Prefetch-Control: off\r\n"
-		"X-Robots-Tag: noindex\r\n"
-		"\r\n", code, len, mime);
-}
-static uint32_t status_bin(char *buf, const char *code, const char *mime, const uint8_t *resp, uint32_t resp_len) {
-	uint32_t head_len = status_head(buf, code, mime, resp_len);
-	memcpy(&buf[head_len], resp, resp_len);
-	return head_len + resp_len;
-}
-#define status_text(buf, code, mime, resp) status_bin(buf, code, mime, (const uint8_t*)resp, sizeof(resp)-sizeof(char))
+}*/
 
 static uint32_t escape(uint8_t *out, size_t limit, const uint8_t *in, size_t in_len) {
 	uint8_t *start = out;
@@ -104,7 +86,7 @@ static uint32_t escape(uint8_t *out, size_t limit, const uint8_t *in, size_t in_
 	return (uint32_t)(out - start);
 }
 
-static uint32_t status_web(char *buf, ServerCode code) {
+static void status_web(struct HttpContext *http, ServerCode code) {
 	bool index = (code == ServerCode_NONE);
 	list[0].code = StringToServerCode("INDEX", 5);
 	char page[65536];
@@ -139,15 +121,15 @@ static uint32_t status_web(char *buf, ServerCode code) {
 	} else {
 		uprintf("TODO: room status page\n");
 	}
-	return status_bin(buf, "200 OK", "text/html", (const uint8_t*)page, len);
+	HttpContext_respond(http, 200, "text/html; charset=utf-8", page, len);
 }
 
 #define startsWithBytes(start, end, str, len) ((uintptr_t)((end) - (start)) >= (len) && memcmp((start), (str), (len)) == 0)
 #define startsWith(start, end, str) startsWithBytes(start, end, str, sizeof(str) - sizeof(""))
 
 static const char *nextLine(const char *start, const char *end) {
-	for(; &start[5] < end; ++start)
-		if(start[0] == '\r' && start[1] == '\n')
+	for(end -= 5 /* "\n\r\n\r\n" */; (start = memchr(start, '\r', end - start)) != NULL; ++start)
+		if(start[1] == '\n')
 			return &start[2];
 	return NULL;
 }
@@ -165,29 +147,33 @@ static const char *UserAgent_ToString[] = {
 	[UserAgent_BSSB] = "bssb",
 };
 
-static UserAgent identify(const char *buf, const char *end) {
-	UserAgent userAgent = UserAgent_Game;
+static UserAgent ProbeHeaders(const char *buf, const char *end, size_t *contentLength_out) {
 	uint32_t lineCount = 0;
 	for(; (buf = nextLine(buf, end)); ++lineCount) {
-		if(startsWith(buf, end, "Host: "))
+		if(startsWith(buf, end, "Host: ") || startsWith(buf, end, "Connection: ") || startsWith(buf, end, "Content-Type: application/json"))
 			continue;
-		if(startsWith(buf, end, "Connection: "))
-			continue;
-		if(startsWith(buf, end, "User-Agent: BeatSaberServerBrowser")) {
-			userAgent = UserAgent_BSSB;
+		if(startsWith(buf, end, "Content-Length: ")) {
+			size_t length = 0;
+			for(const char *it = &buf[16]; it < end && *it >= '0' && *it <= '9'; ++it)
+				length = length * 10 + (*it - '0');
+			*contentLength_out = length;
 			continue;
 		}
-		return UserAgent_Web;
+		return startsWith(buf, end, "User-Agent: BeatSaberServerBrowser") ? UserAgent_BSSB : UserAgent_Web;
 	}
-	return (lineCount >= 1) ? userAgent : UserAgent_Web;
+	return lineCount ? UserAgent_Game : UserAgent_Web;
 }
 
-static uint32_t status_status(char *buf, bool isGame) {
+#ifndef STATUS_APPVER_POSTFIX
+#define STATUS_APPVER_POSTFIX ""
+#endif
+
+#define PUT(...) (msg_end += (uint32_t)snprintf(msg_end, (msg_end >= endof(msg)) ? 0 : (uint32_t)(endof(msg) - msg_end), __VA_ARGS__))
+static void status_status(struct HttpContext *http, bool isGame) {
 	char msg[65536], *msg_end = msg;
-	#define PUT(...) (msg_end += (uint32_t)snprintf(msg_end, (msg_end >= endof(msg)) ? 0 : (uint32_t)(endof(msg) - msg_end), __VA_ARGS__))
-	PUT("{\"minimumAppVersion\":\"1.19.0%s\"", isGame ? "b2147483647" : "");
-	PUT(",\"maximumAppVersion\":\"1.28.0_🅱️\""
-	    ",\"status\":%u", TEST_maintenanceStartTime != 0);
+	PUT("{\"minimumAppVersion\":\"1.19.0%s\""
+	    ",\"maximumAppVersion\":\"1.29.0_🅱️\""
+	    ",\"status\":%u", isGame ? "b2147483647" : STATUS_APPVER_POSTFIX, TEST_maintenanceStartTime != 0);
 	if(TEST_maintenanceStartTime) {
 		PUT(",\"maintenanceStartTime\":%" PRIu64, TEST_maintenanceStartTime);
 		PUT(",\"maintenanceEndTime\":%" PRIu64, TEST_maintenanceEndTime);
@@ -205,39 +191,191 @@ static uint32_t status_status(char *buf, bool isGame) {
 	    "{\"id\":\"LeaderboardCore\",\"version\":\"1.2.2\"}"
 	"]}");
 	if(msg_end >= endof(msg))
-		return status_text(buf, "500 Internal Server Error", "text/plain", "");
-	return status_bin(buf, "200 OK", "application/json", (const uint8_t*)msg, (uint32_t)(msg_end - msg));
+		HttpContext_respond(http, 500, "text/plain; charset=utf-8", NULL, 0);
+	else
+		HttpContext_respond(http, 200, "application/json; charset=utf-8", msg, msg_end - msg);
 }
 
-uint32_t status_resp(const char *source, const char *path, char *buf, uint32_t buf_len) {
-	const char *req = buf, *const req_end = &buf[buf_len];
-	if(!startsWith(req, req_end, "GET /"))
-		return status_text(buf, "404 Not Found", "text/plain", "");
-	req += 5;
-	UserAgent userAgent = identify(req, req_end);
+static void status_graph(struct HttpContext *http, struct HttpRequest req, struct WireLink *master) {
+	struct GraphConnectCookie state = {
+		.cookieType = StatusCookieType_GraphConnect,
+		.http = http,
+	};
+	struct WireGraphConnect connectInfo = {0};
+	struct JsonIterator iter = {(const char*)req.body, (const char*)&req.body[req.body_len], false, {0}};
+	JSON_ITER_OBJECT(&iter, key0) {
+		if(String_is(key0, "beatmap_level_selection_mask")) {
+			JSON_ITER_OBJECT(&iter, key1) {
+				if(String_is(key1, "difficulties")) {
+					state.selectionMask.difficulties = json_read_uint64(&iter);
+				} else if(String_is(key1, "modifiers")) {
+					state.selectionMask.modifiers = json_read_uint64(&iter);
+				} else if(String_is(key1, "song_packs")) {
+					const struct String songPacks = json_read_string(&iter);
+					// state.selectionMask.songPacks = ...
+					uprintf("TODO: parse songPackMask\n");
+					(void)songPacks;
+				} else {
+					json_skip_any(&iter);
+				}
+			}
+		} else if(String_is(key0, "gameplay_server_configuration")) {
+			JSON_ITER_OBJECT(&iter, key1) {
+				if(String_is(key1, "max_player_count"))
+					connectInfo.configuration.maxPlayerCount = json_read_uint64(&iter);
+				else if(String_is(key1, "discovery_policy"))
+					connectInfo.configuration.discoveryPolicy = json_read_uint64(&iter);
+				else if(String_is(key1, "invite_policy"))
+					connectInfo.configuration.invitePolicy = json_read_uint64(&iter);
+				else if(String_is(key1, "gameplay_server_mode"))
+					connectInfo.configuration.gameplayServerMode = json_read_uint64(&iter);
+				else if(String_is(key1, "song_selection_mode"))
+					connectInfo.configuration.songSelectionMode = json_read_uint64(&iter);
+				else if(String_is(key1, "gameplay_server_control_settings"))
+					connectInfo.configuration.gameplayServerControlSettings = json_read_uint64(&iter);
+				else
+					json_skip_any(&iter);
+			}
+		} else if(String_is(key0, "user_id")) {
+			connectInfo.userId = json_read_string(&iter);
+		} else if(String_is(key0, "private_game_secret")) {
+			connectInfo.secret = state.secret = json_read_string(&iter);
+		} else if(String_is(key0, "private_game_code")) {
+			const struct String code = json_read_string(&iter);
+			connectInfo.code = StringToServerCode(code.data, code.length);
+		} else {
+			json_skip_any(&iter);
+		}
+	}
+	if(iter.fault || !connectInfo.userId.length || !connectInfo.configuration.maxPlayerCount) {
+		status_graph_resp((struct DataView){&state, sizeof(state)}, &(struct WireGraphConnectResp){
+			.result = MultiplayerPlacementErrorCode_Unknown,
+		});
+		return;
+	}
+	const WireCookie cookie = WireLink_makeCookie(master, &state, sizeof(state));
+	const bool failed = WireLink_send(master, &(struct WireMessage){
+		.type = WireMessageType_WireGraphConnect,
+		.cookie = cookie,
+		.graphConnect = connectInfo,
+	});
+	if(failed) {
+		WireLink_freeCookie(master, cookie);
+		status_graph_resp((struct DataView){&state, sizeof(state)}, NULL);
+	}
+}
+
+void status_graph_resp(struct DataView cookieView, const struct WireGraphConnectResp *resp) {
+	const struct GraphConnectCookie *state = (struct GraphConnectCookie*)cookieView.data;
+	if(cookieView.length != sizeof(*state) || state->cookieType != StatusCookieType_GraphConnect) {
+		uprintf("Graph Connect Error: Malformed wire cookie\n");
+		return;
+	}
+	char msg[65536], *msg_end = msg;
+	const MultiplayerPlacementErrorCode result = (resp != NULL) ? resp->result : MultiplayerPlacementErrorCode_MatchmakingTimeout;
+	if(result != MultiplayerPlacementErrorCode_Success) {
+		PUT("{\"error_code\":%hhu,\"player_session_info\":{\"game_session_id\":\"\",\"port\":-1,\"dns_name\":\"\",\"player_session_id\":\"\","
+		    "\"private_game_code\":\"\",\"gameplay_server_configuration\":{\"max_player_count\":5,\"discovery_policy\":1,\"invite_policy\":0,"
+		    "\"gameplay_server_mode\":1,\"song_selection_mode\":2,\"gameplay_server_control_settings\":3},\"beatmap_level_selection_mask\":{"
+		    "\"difficulties\":31,\"modifiers\":65535,\"song_packs\":\"/////////////////////w\"},\"private_game_secret\":\"\"},\"poll_interval_ms\":-1}",
+		    result);
+	} else {
+		uprintf("TODO: encode songPackMask\n");
+		PUT("{"
+				"\"error_code\":0," // resp->result
+				"\"player_session_info\":{"
+					"\"game_session_id\":\"beatupserver:%08x\"," // resp->hostId
+					"\"port\":%u," // resp->endPoint.port
+					"\"dns_name\":\"%.*s\"," // resp->endPoint.address.length, resp->endPoint.address.data
+					"\"player_session_id\":\"pslot$%u,%03u\"," // resp->roomSlot, resp->playerSlot
+					"\"private_game_code\":\"%s\"," // ServerCodeToString((char[8]){0}, resp->code)
+					"\"private_game_secret\":\"%.*s\"," // state->secret.length, state->secret.data
+					"\"beatmap_level_selection_mask\":{"
+						"\"difficulties\":%hhu," // state->selectionMask.difficulties
+						"\"modifiers\":%u," // state->selectionMask.modifiers
+						"\"song_packs\":\"/////////////////////w\""
+					"},"
+					"\"gameplay_server_configuration\":{"
+						"\"max_player_count\":%d," // resp->configuration.maxPlayerCount
+						"\"discovery_policy\":%d," // resp->configuration.discoveryPolicy
+						"\"invite_policy\":%d," // resp->configuration.invitePolicy
+						"\"gameplay_server_mode\":%d," // resp->configuration.gameplayServerMode
+						"\"song_selection_mode\":%d," // resp->configuration.songSelectionMode
+						"\"gameplay_server_control_settings\":%d" // resp->configuration.gameplayServerControlSettings
+					"}"
+				"},"
+				"\"poll_interval_ms\":-1"
+			"}",
+			resp->hostId,
+			resp->endPoint.port,
+			resp->endPoint.address.length, resp->endPoint.address.data,
+			resp->roomSlot, resp->playerSlot,
+			ServerCodeToString((char[8]){0}, resp->code),
+			state->secret.length, state->secret.data,
+			state->selectionMask.difficulties,
+			state->selectionMask.modifiers,
+			resp->configuration.maxPlayerCount,
+			resp->configuration.discoveryPolicy,
+			resp->configuration.invitePolicy,
+			resp->configuration.gameplayServerMode,
+			resp->configuration.songSelectionMode,
+			resp->configuration.gameplayServerControlSettings);
+	}
+	if(msg_end >= endof(msg))
+		HttpContext_respond(state->http, 500, "text/plain; charset=utf-8", NULL, 0);
+	else
+		HttpContext_respond(state->http, 200, "application/json; charset=utf-8", msg, msg_end - msg);
+}
+
+void status_resp(struct HttpContext *http, const char path[], struct HttpRequest httpRequest, struct WireLink *master) {
+	const char *req = httpRequest.header, *const req_end = &httpRequest.header[httpRequest.header_len];
+	bool post = false;
+	if(startsWith(req, req_end, "GET /")) {
+		req += 5;
+	} else if(startsWith(req, req_end, "POST /")) {
+		req += 6;
+		post = true;
+	} else {
+		HttpContext_respond(http, 404, "text/plain; charset=utf-8", NULL, 0);
+		return;
+	}
+	size_t contentLength = 0;
+	UserAgent userAgent = ProbeHeaders(req, req_end, &contentLength);
 	const char *reqPath_end = (char*)memchr(req, ' ', (uint32_t)(req_end - req));
-	uprintf("(%s,%s): /%.*s\n", source, UserAgent_ToString[userAgent], (int32_t)(reqPath_end - req), req);
-	if(startsWith(req, req_end, "robots.txt "))
-		return status_text(buf, "200 OK", "text/plain", "User-agent: *\nDisallow: /\n");
-	if(userAgent != UserAgent_Web) {
+	uprintf("(%s,%s): %.*s\n", http->encrypt ? "HTTPS" : "HTTP", UserAgent_ToString[userAgent],
+		(reqPath_end != NULL) ? (int)(reqPath_end - httpRequest.header) : (int)(httpRequest.header_len), httpRequest.header);
+	if(!post && startsWith(req, req_end, "robots.txt")) {
+		static const char robots_txt[] = "User-agent: *\nDisallow: /\n";
+		HttpContext_respond(http, 200, "text/plain", robots_txt, sizeof(robots_txt));
+	} else if(userAgent != UserAgent_Web) {
 		size_t path_len = strlen(path);
-		if(!startsWithBytes(req, req_end, path, path_len * sizeof(*path)))
-			return status_text(buf, "404 Not Found", "text/plain", "");
+		if(!startsWithBytes(req, req_end, path, path_len * sizeof(*path))) {
+			HttpContext_respond(http, 404, "text/plain; charset=utf-8", NULL, 0);
+			return;
+		}
 		req += path_len;
 		req += (req < req_end && *req == '/'); // some clients appear to be sending "GET //mp_override.json" requests
-		if(startsWith(req, req_end, "mp_override.json"))
-			return status_text(buf, "200 OK", "application/json", "{\"quickPlayAvailablePacksOverride\":{\"predefinedPackIds\":[{\"order\":0,\"packId\":\"ALL_LEVEL_PACKS\"},{\"order\":1,\"packId\":\"BUILT_IN_LEVEL_PACKS\"}],\"localizedCustomPacks\":[{\"serializedName\":\"customlevels\",\"order\":2,\"localizedNames\":[{\"language\":0,\"packName\":\"Custom\"}],\"packIds\":[\"custom_levelpack_CustomLevels\"]}]}}");
-		return status_status(buf, userAgent == UserAgent_Game);
-	}
-	if(startsWith(req, req_end, "favicon.ico ")) {
+		if(post) {
+			if(userAgent == UserAgent_Game && startsWith(req, req_end, "beat_saber_get_multiplayer_instance"))
+				status_graph(http, httpRequest, master);
+			else
+				HttpContext_respond(http, 404, "text/plain; charset=utf-8", NULL, 0);
+		} else {
+			static const char mp_override_json[] = "{\"quickPlayAvailablePacksOverride\":{\"predefinedPackIds\":[{\"order\":0,\"packId\":\"ALL_LEVEL_PACKS\"},"
+				"{\"order\":1,\"packId\":\"BUILT_IN_LEVEL_PACKS\"}],\"localizedCustomPacks\":[{\"serializedName\":\"customlevels\",\"order\":2,"
+				"\"localizedNames\":[{\"language\":0,\"packName\":\"Custom\"}],\"packIds\":[\"custom_levelpack_CustomLevels\"]}]}}";
+			if(startsWith(req, req_end, "mp_override.json"))
+				HttpContext_respond(http, 200, "application/json; charset=utf-8", mp_override_json, sizeof(mp_override_json));
+			else
+				status_status(http, userAgent == UserAgent_Game);
+		}
+	} else if(post) {
+		HttpContext_respond(http, 404, "text/plain; charset=utf-8", NULL, 0);
+	} else if(startsWith(req, req_end, "favicon.ico")) {
 		static const uint8_t favicon[] = {0,0,1,0,2,0,32,32,0,0,1,0,24,0,168,12,0,0,38,0,0,0,32,32,2,0,1,0,1,0,48,1,0,0,206,12,0,0,40,0,0,0,32,0,0,0,64,0,0,0,1,0,24,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,158,48,255,158,48,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,158,48,255,158,48,255,255,255,255,255,255,255,158,48,255,158,48,255,255,255,255,255,255,255,255,255,255,158,48,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,158,48,255,255,255,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,158,48,255,255,255,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,158,48,255,255,255,255,255,255,255,158,48,255,255,255,255,255,255,255,255,255,255,158,48,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,255,255,255,255,255,255,255,255,255,255,255,255,158,48,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,255,255,255,158,48,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,158,48,255,158,48,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,158,48,255,158,48,255,255,255,255,255,255,255,158,48,255,158,48,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,158,48,255,255,255,255,158,48,255,158,48,255,158,48,255,158,48,255,252,31,255,255,240,3,255,255,192,0,255,254,3,240,31,252,15,252,7,240,63,255,131,224,255,255,227,193,255,255,241,199,255,255,241,207,255,255,249,143,255,255,249,143,255,255,249,143,255,255,249,143,255,255,249,142,7,255,249,136,199,255,241,137,143,255,241,143,24,63,241,140,96,7,241,145,131,128,241,158,31,240,49,152,127,254,17,144,255,255,145,139,255,255,227,143,255,255,227,199,255,255,135,193,255,254,15,224,63,248,31,248,7,224,127,255,0,1,255,255,224,7,255,255,252,31,255,40,0,0,0,32,0,0,0,64,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255};
-		return status_bin(buf, "200 OK", "image/x-icon", favicon, sizeof(favicon));
-	} else if(buf_len > 10 && memcmp(buf, "GET /", 5) == 0) {
-		uint32_t len = 0;
-		for(; len < 5; ++len)
-			if(buf[5 + len] == ' ')
-				break;
-		return status_web(buf, StringToServerCode(&buf[5], len));
+		HttpContext_respond(http, 200, "image/x-icon", favicon, sizeof(favicon));
+	} else if(httpRequest.header_len > 10) {
+		const char *const code_end = memchr(&httpRequest.header[5], ' ', 5);
+		status_web(http, StringToServerCode(&httpRequest.header[5], (code_end != NULL) ? code_end - &httpRequest.header[5] : 5));
 	}
-	return 0;
 }

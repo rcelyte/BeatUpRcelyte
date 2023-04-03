@@ -36,7 +36,7 @@ static const uint16_t PossibleMtu[] = {
 const struct Cookie32 *NetKeypair_get_random(const struct NetKeypair *keys) {
 	return &keys->random;
 }
-static uint32_t NetKeypair_write_key_internal(const struct NetKeypair *keys, struct NetContext *ctx, uint8_t *out, size_t out_len) {
+static uint32_t NetKeypair_write_key_internal(const struct NetKeypair *keys, const struct NetContext *ctx, uint8_t *out, size_t out_len) {
 	size_t keylen = 0;
 	int32_t err = mbedtls_ecp_tls_write_point(&ctx->grp, &keys->public, MBEDTLS_ECP_PF_UNCOMPRESSED, &keylen, out, out_len);
 	if(err) {
@@ -52,7 +52,7 @@ bool NetKeypair_write_key(const struct NetKeypair *keys, struct NetContext *ctx,
 const struct Cookie32 *NetSession_get_cookie(const struct NetSession *session) {
 	return &session->cookie;
 }
-bool NetSession_signature(struct NetSession *session, struct NetContext *ctx, const mbedtls_pk_context *key, struct ByteArrayNetSerializable *out) {
+bool NetSession_signature(const struct NetSession *session, struct NetContext *ctx, const mbedtls_pk_context *key, struct ByteArrayNetSerializable *out) {
 	out->length = 0;
 	if(mbedtls_pk_get_type(key) != MBEDTLS_PK_RSA) {
 		uprintf("Key should be RSA\n");
@@ -85,7 +85,8 @@ bool NetSession_signature(struct NetSession *session, struct NetContext *ctx, co
 	return false;
 }
 bool NetSession_set_remotePublicKey(struct NetSession *session, struct NetContext *ctx, const struct ByteArrayNetSerializable *in, bool client) {
-	bool res = true;
+	EncryptionState_unref(session->encryptionState);
+	session->encryptionState = NULL;
 	mbedtls_ecp_point clientPublicKey;
 	mbedtls_mpi sharedSecret;
 	mbedtls_ecp_point_init(&clientPublicKey);
@@ -100,11 +101,13 @@ bool NetSession_set_remotePublicKey(struct NetSession *session, struct NetContex
 		uprintf("mbedtls_ecdh_compute_shared() failed: %s\n", mbedtls_high_level_strerr(err));
 		goto fail;
 	}
-	res = EncryptionState_init(&session->encryptionState, &sharedSecret, (struct Cookie32[]){session->keys.random, session->clientRandom}, client);
+	session->encryptionState = EncryptionState_init(&sharedSecret, (struct Cookie32[]){session->keys.random, session->clientRandom}, client);
+	if(session->encryptionState == NULL)
+		uprintf("EncryptionState_init() failed\n");
 	fail:
 	mbedtls_mpi_free(&sharedSecret);
 	mbedtls_ecp_point_free(&clientPublicKey);
-	return res;
+	return session->encryptionState == NULL;
 }
 uint32_t NetSession_get_lastKeepAlive(struct NetSession *session) {
 	return session->lastKeepAlive;
@@ -114,7 +117,7 @@ const struct SS *NetSession_get_addr(struct NetSession *session) {
 }
 
 uint32_t NetSession_decrypt(struct NetSession *session, const uint8_t packet[static 1536], uint32_t packet_len, uint8_t out[static 1536]) {
-	return EncryptionState_decrypt(&session->encryptionState, packet, &packet[packet_len], out);
+	return EncryptionState_decrypt(session->encryptionState, packet, &packet[packet_len], out);
 }
 
 int32_t net_get_sockfd(struct NetContext *ctx) {
@@ -186,12 +189,12 @@ uint32_t net_time() {
 
 void net_send_internal(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint32_t len, bool encrypt) {
 	uint8_t body[1536];
-	uint32_t body_len = EncryptionState_encrypt(encrypt ? &session->encryptionState : NULL, &ctx->ctr_drbg, buf, len, body);
+	uint32_t body_len = EncryptionState_encrypt(encrypt ? session->encryptionState : NULL, &ctx->ctr_drbg, buf, len, body);
 	sendto(ctx->sockfd, (char*)body, body_len, 0, &session->addr.sa, session->addr.len);
 }
 
-static struct NetSession *onResolve_stub(void*, struct SS, const uint8_t*, uint32_t, uint8_t*, uint32_t*, void**) {return NULL;}
-static uint32_t onResend_stub(void*, uint32_t) {return 180000;}
+static struct NetSession *onResolve_stub(struct NetContext*, struct SS, const uint8_t*, uint32_t, uint8_t*, uint32_t*, void**) {return NULL;}
+static uint32_t onResend_stub(struct NetContext*, uint32_t) {return 180000;}
 
 const char *net_strerror(int32_t err) {
 	static _Thread_local char message[1024];
@@ -262,11 +265,10 @@ void net_close(int32_t sockfd) {
 	#endif
 }
 
-bool net_init(struct NetContext *ctx, uint16_t port, bool filterUnencrypted) {
+bool net_init(struct NetContext *ctx, uint16_t port) {
 	*ctx = (struct NetContext){
 		.sockfd = net_bind_udp(port),
 		.run = false,
-		.filterUnencrypted = filterUnencrypted,
 		.mutex = PTHREAD_MUTEX_INITIALIZER,
 		// .ctr_drbg = {},
 		// .entropy = {},
@@ -323,24 +325,43 @@ static void net_set_mtu(struct NetSession *session, uint8_t idx) {
 	session->maxFragmentSize = session->maxChanneledSize - (uint16_t)pkt_write_c(&buf_end, endof(buf), session->version, FragmentedHeader, {0});
 }
 
-void NetSession_init(struct NetContext *ctx, struct NetSession *session, struct SS addr) {
+void NetSession_init(struct NetSession *session, struct NetContext *ctx, struct SS addr) {
 	*session = (struct NetSession){
 		.version = PV_LEGACY_DEFAULT,
 		.cookie = net_cookie(&ctx->ctr_drbg),
 		.addr = addr,
 		.lastKeepAlive = net_time(),
-		.mtu = 0,
 		.alive = true,
-		.fragmentId = 0,
 		.mergeData_end = session->mergeData,
+		.encryptionState = NULL,
 	};
 	net_keypair_init(ctx, &session->keys);
 	net_set_mtu(session, 0);
 	net_flush_merged(ctx, session);
 }
 
+void NetSession_initFrom(struct NetSession *session, const struct NetSession *from) {
+	*session = (struct NetSession){
+		.keys.random = from->keys.random,
+		.version = from->version,
+		.clientRandom = from->clientRandom,
+		.cookie = from->cookie,
+		.addr = from->addr,
+		.lastKeepAlive = net_time(),
+		.alive = true,
+		.mergeData_end = session->mergeData,
+		.encryptionState = EncryptionState_ref(from->encryptionState),
+	};
+	mbedtls_mpi_init(&session->keys.secret);
+	mbedtls_ecp_point_init(&session->keys.public);
+	mbedtls_mpi_copy(&session->keys.secret, &from->keys.secret);
+	mbedtls_ecp_copy(&session->keys.public, &from->keys.public);
+	net_set_mtu(session, from->mtuIdx);
+}
+
 void NetSession_free(struct NetSession *session) {
-	EncryptionState_free(&session->encryptionState);
+	EncryptionState_unref(session->encryptionState);
+	session->encryptionState = NULL;
 	net_keypair_free(&session->keys);
 }
 
@@ -416,7 +437,7 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSe
 	retry:; // __attribute__((musttail)) not available in all compilers
 	fd_set fdSet;
 	for(uint32_t nextTick = 0; net_poll(ctx, &fdSet, nextTick); nextTick = (nextTick >= 2) ? nextTick : 2)
-		nextTick = ctx->onResend(ctx->userptr, net_time());
+		nextTick = ctx->onResend(ctx, net_time());
 	if(!FD_ISSET(ctx->sockfd, &fdSet))
 		goto retry;
 	struct SS addr = {.len = sizeof(struct sockaddr_storage)};
@@ -445,7 +466,7 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSe
 		goto retry;
 	}
 	uint32_t length = 0;
-	*session = ctx->onResolve(ctx->userptr, addr, raw, (uint32_t)raw_len, out, &length, userdata_out);
+	*session = ctx->onResolve(ctx, addr, raw, (uint32_t)raw_len, out, &length, userdata_out);
 	if(!*session)
 		goto retry;
 	if(!length) {
@@ -457,8 +478,6 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSe
 			(*session)->lastKeepAlive = net_time();
 		while((*session)->mtu < length && (*session)->mtuIdx < lengthof(PossibleMtu) - 1)
 			net_set_mtu(*session, (*session)->mtuIdx + 1);
-	} else if(ctx->filterUnencrypted) {
-		goto retry;
 	}
 	return length;
 }

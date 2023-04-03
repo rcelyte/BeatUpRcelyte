@@ -1,6 +1,7 @@
 #include "instance.h"
 #include "common.h"
 #include "../wire.h"
+#include "../master/master.h"
 #include "../counter.h"
 #include <mbedtls/error.h>
 #include <stdio.h>
@@ -112,6 +113,7 @@ struct Room {
 };
 
 struct InstanceContext {
+	struct MasterContext base;
 	struct NetContext net;
 	struct WireContext wire;
 	struct WireLink *master;
@@ -245,7 +247,7 @@ static void mapPool_init(const char *filename) {
 	}
 	const uint8_t *raw_it = &raw[6];
 	for(instance_mapPool_len = 0; raw_it < raw_end; ++instance_mapPool_len)
-		if(!pkt_read(&(struct MpBeatmapPacket){.difficulty=0}, &raw_it, raw_end, (struct PacketContext){12, 6, 0, 64}))
+		if(!pkt_read(&(struct MpBeatmapPacket){.difficulty=0}, &raw_it, raw_end, (struct PacketContext){12, 6, 0, false, 64}))
 			break;
 	if(raw_it != raw_end) {
 		uprintf("Failed to read %s: corrupt data\n", filename);
@@ -258,7 +260,7 @@ static void mapPool_init(const char *filename) {
 	}
 	raw_it = &raw[6];
 	for(uint32_t i = 0; i < instance_mapPool_len; ++i)
-		pkt_read(&instance_mapPool[i], &raw_it, raw_end, (struct PacketContext){12, 6, 0, 64});
+		pkt_read(&instance_mapPool[i], &raw_it, raw_end, (struct PacketContext){12, 6, 0, false, 64});
 	return;
 	fail:
 	fclose(file);
@@ -1342,11 +1344,12 @@ static void handle_ConnectRequest(struct InstanceContext *ctx, struct Room *room
 	struct String baseUserId = session->userId;
 	if(req->userId.length < baseUserId.length && baseUserId.data[req->userId.length] == '$') // fast path for annotation stripping
 		baseUserId.length = req->userId.length;
-	if(!(String_eq(req->secret, session->secret) && String_eq(req->userId, baseUserId))) {
+	if(!((session->net.version.direct || String_eq(req->secret, session->secret)) && String_eq(req->userId, baseUserId))) {
 		*data = end;
 		return;
 	}
 	session->net.version.netVersion = (uint8_t)req->protocolId;
+	session->userName = req->userName;
 	bool directDownloads = false;
 	while(*data < end) {
 		struct ModConnectHeader mod;
@@ -1477,8 +1480,9 @@ static void handle_ConnectRequest(struct InstanceContext *ctx, struct Room *room
 }
 
 static void log_players(const struct Room *room, const struct SS *addr, const char *prefix) {
-	char addrstr[INET6_ADDRSTRLEN + 8], bitText[sizeof(room->playerSort) * 3], *bitText_end = bitText;
-	net_tostr(addr, addrstr);
+	char addrstr[INET6_ADDRSTRLEN + 8] = {0}, bitText[sizeof(room->playerSort) * 3], *bitText_end = bitText;
+	if(addr != NULL)
+		net_tostr(addr, addrstr);
 	uint32_t playerCount = 0;
 	for(uint32_t offset = 0; offset < (uint32_t)room->configuration.maxPlayerCount; offset += 8) {
 		uint8_t byte = CounterP_byte(room->playerSort, offset);
@@ -1491,6 +1495,8 @@ static void log_players(const struct Room *room, const struct SS *addr, const ch
 }
 
 static inline struct Room **instance_get_room(struct InstanceContext *ctx, uint32_t roomID) {
+	if(roomID >= sizeof(ctx->rooms) / sizeof(struct Room*))
+		return NULL;
 	return &ctx->rooms[0][roomID];
 }
 
@@ -1633,7 +1639,7 @@ static inline void handle_packet(struct InstanceContext *ctx, struct Room **room
 			case PacketProperty_ConnectRequest: handle_ConnectRequest(ctx, *room, session, &header.connectRequest, &sub, &sub[length]); break;
 			case PacketProperty_ConnectAccept: uprintf("BAD PROPERTY: PacketProperty_ConnectAccept\n"); break;
 			case PacketProperty_Disconnect: room_disconnect(ctx, room, session, false); return;
-			case PacketProperty_UnconnectedMessage: uprintf("BAD PROPERTY: PacketProperty_UnconnectedMessage\n"); break;
+			case PacketProperty_UnconnectedMessage: uprintf("TODO: route PacketProperty_UnconnectedMessage to direct master using master_lookup_session()\n"); break;
 			case PacketProperty_MtuCheck: handle_MtuCheck(&ctx->net, &session->net, &header.mtuCheck); break;
 			case PacketProperty_Merged: uprintf("BAD PROPERTY: PacketProperty_Merged\n"); break;
 			default: uprintf("BAD PACKET PROPERTY\n");
@@ -1654,7 +1660,6 @@ static void *instance_handler(struct InstanceContext *ctx) {
 	net_lock(&ctx->net);
 	{
 		const struct WireMessage connectMessage = {
-			.cookie = 0,
 			.type = WireMessageType_WireSetAttribs,
 			.setAttribs = {
 				.capacity = sizeof(ctx->rooms) / sizeof(**ctx->rooms),
@@ -1674,19 +1679,29 @@ static void *instance_handler(struct InstanceContext *ctx) {
 	uint8_t pkt[1536];
 	memset(pkt, 0, sizeof(pkt));
 	uint32_t len;
-	struct Room **room;
-	struct InstanceSession *session;
-	while((len = net_recv(&ctx->net, pkt, (struct NetSession**)&session, (void**)&room)))
-		handle_packet(ctx, room, session, pkt, &pkt[len]);
+	union {
+		struct NetSession *base;
+		struct InstanceSession *instance;
+		struct MasterSession *master;
+	} session;
+	for(struct Room **room = NULL; (len = net_recv(&ctx->net, pkt, &session.base, (void**)&room)); room = NULL) {
+		if(room != NULL)
+			handle_packet(ctx, room, session.instance, pkt, &pkt[len]);
+		else
+			MasterContext_handle(&ctx->base, &ctx->net, session.master, pkt, &pkt[len]);
+	}
 	WireLink_free(ctx->master);
 	ctx->master = NULL;
-	unlock:
-	net_unlock(&ctx->net);
+	unlock: net_unlock(&ctx->net);
 	return 0;
 }
 
 // TODO: clients aren't guaranteed to use the same IP address when deeplinking from the master server to instances
-static struct NetSession *instance_onResolve(struct InstanceContext *ctx, struct SS addr, const uint8_t packet[static 1536], uint32_t packet_len, uint8_t out[static 1536], uint32_t *out_len, void **userdata_out) {
+static struct NetSession *instance_onResolve(struct NetContext *net, struct SS addr, const uint8_t packet[static 1536], uint32_t packet_len, uint8_t out[static 1536], uint32_t *out_len, void **userdata_out) {
+	*userdata_out = NULL;
+	struct InstanceContext *const ctx = (struct InstanceContext*)net->userptr;
+	if(!packet_len || *packet != 1) // instance filters unencrypted packets
+		return MasterContext_onResolve(&ctx->base, net, addr, packet, packet_len, out, out_len);
 	FOR_ALL_ROOMS(ctx, room) {
 		FOR_SOME_PLAYERS(id, (*room)->playerSort,) {
 			if(!SS_equal(&addr, &(*room)->players[id].net.addr))
@@ -1696,26 +1711,31 @@ static struct NetSession *instance_onResolve(struct InstanceContext *ctx, struct
 			return &(*room)->players[id].net;
 		}
 	}
+	struct NetSession *const masterSession = MasterContext_onResolve(&ctx->base, net, addr, packet, packet_len, out, out_len);
+	if(masterSession != NULL)
+		return masterSession;
 	FOR_ALL_ROOMS(ctx, room) {
 		FOR_SOME_PLAYERS(id, (*room)->playerSort,) {
-			if((*room)->players[id].net.addr.ss.ss_family != AF_UNSPEC)
+			struct NetSession *const session = &(*room)->players[id].net;
+			if(session->addr.ss.ss_family != AF_UNSPEC || session->version.direct)
 				continue;
-			*out_len = NetSession_decrypt(&(*room)->players[id].net, packet, packet_len, out);
+			*out_len = NetSession_decrypt(session, packet, packet_len, out);
 			if(!*out_len)
 				continue;
 			char addrstr[INET6_ADDRSTRLEN + 8];
 			net_tostr(&addr, addrstr);
 			uprintf("resolve %s -> (%zu,%hu)@%hhu\n", addrstr, indexof(contexts, ctx), indexof(*ctx->rooms, room), id);
-			(*room)->players[id].net.addr = addr;
+			session->addr = addr;
 			*userdata_out = room;
-			return &(*room)->players[id].net;
+			return session;
 		}
 	}
 	return NULL;
 }
 
-static uint32_t instance_onResend(struct InstanceContext *ctx, uint32_t currentTime) {
-	int32_t nextTick = 180000;
+static uint32_t instance_onResend(struct NetContext *net, uint32_t currentTime) {
+	struct InstanceContext *const ctx = (struct InstanceContext*)net->userptr;
+	int32_t nextTick = MasterContext_onResend(&ctx->base, net, currentTime);
 	FOR_ALL_ROOMS(ctx, room) {
 		FOR_SOME_PLAYERS(id, (*room)->playerSort,) {
 			struct InstanceSession *session = &(*room)->players[id];
@@ -1771,8 +1791,8 @@ static struct IPEndPoint instance_get_endpoint(struct NetContext *net, bool ipv4
 
 static struct Room **room_open(struct InstanceContext *ctx, uint32_t roomID, struct GameplayServerConfiguration configuration) {
 	uprintf("opening room (%zu,%hu)\n", indexof(contexts, ctx), roomID);
-	if(*instance_get_room(ctx, roomID)) {
-		uprintf("Room already open!\n");
+	if(instance_get_room(ctx, roomID) == NULL || *instance_get_room(ctx, roomID) != NULL) {
+		uprintf("\tBad room ID\n");
 		return NULL;
 	}
 	#ifdef FORCE_LOBBY_SIZE
@@ -1798,7 +1818,7 @@ static struct Room **room_open(struct InstanceContext *ctx, uint32_t roomID, str
 	}
 	// Allocate extra slot for fake player in `SongSelectionMode_Random`
 	struct Room *room = malloc(sizeof(struct Room) + ((uint32_t)configuration.maxPlayerCount + (configuration.songSelectionMode == SongSelectionMode_Random)) * sizeof(*room->players));
-	if(!room) {
+	if(room == NULL) {
 		uprintf("alloc error\n");
 		return NULL;
 	}
@@ -1839,65 +1859,113 @@ static struct String instance_room_get_managerId(struct Room *room, struct Insta
 
 static struct PacketContext instance_room_get_protocol(struct InstanceContext *ctx, uint32_t roomID) {
 	struct PacketContext version = PV_LEGACY_DEFAULT;
-	struct Room *room = *instance_get_room(ctx, roomID);
-	struct CounterP ct = room->playerSort;
+	struct Room **room = instance_get_room(ctx, roomID);
+	if(room == NULL)
+		return (struct PacketContext){0};
+	struct CounterP ct = (*room)->playerSort;
 	uint32_t id = 0;
 	if(CounterP_clear_next(&ct, &id))
-		version = room->players[id].net.version;
+		version = (*room)->players[id].net.version;
 	return version;
 }
 
 static struct WireSessionAllocResp room_resolve_session(struct InstanceContext *ctx, const struct WireSessionAlloc *req) {
-	struct Room *room = *instance_get_room(ctx, req->room);
+	struct Room **const roomPtr = instance_get_room(ctx, req->room);
+	struct Room *const room = (roomPtr != NULL) ? *roomPtr : NULL;
 	if(room == NULL)
 		return (struct WireSessionAllocResp){.result = ConnectToServerResponse_Result_UnknownError};
-	struct SS addr = {.len = req->address.length};
-	memcpy(&addr.ss, req->address.data, req->address.length);
-	FOR_SOME_PLAYERS(id, room->playerSort,)
-		if(SS_equal(NetSession_get_addr(&room->players[id].net), &addr))
-			room_disconnect(ctx, &room, &room->players[id], true);
+	if(!AnnotateIDs) {
+		FOR_SOME_PLAYERS(id, room->playerSort,)
+			if(String_eq(room->players[id].userId, req->userId))
+				room_disconnect(ctx, roomPtr, &room->players[id], true);
+	}
 	struct InstanceSession *session = NULL;
 	{
 		struct CounterP tmp = room->playerSort;
 		uint32_t id = 0;
-		if((!CounterP_set_next(&tmp, &id)) || (int32_t)id >= room->configuration.maxPlayerCount) {
+		if((!CounterP_set_next(&tmp, &id)) || id >= (uint32_t)room->configuration.maxPlayerCount) {
 			uprintf("ROOM FULL: %u >= %d\n", id ? id : (uint32_t)bitsize(tmp), room->configuration.maxPlayerCount);
 			return (struct WireSessionAllocResp){.result = ConnectToServerResponse_Result_ServerAtCapacity};
 		}
 		session = &room->players[id];
 		room->playerSort = tmp;
 	}
-	NetSession_init(&ctx->net, &session->net, (struct SS){.ss.ss_family = AF_UNSPEC});
-	session->net.version.protocolVersion = (uint8_t)req->protocolVersion;
-	session->net.clientRandom = req->random;
+	NetSession_init(&session->net, &ctx->net, (struct SS){.ss.ss_family = AF_UNSPEC});
+	session->net.version.direct = req->direct;
+	if(!req->direct) {
+		session->net.version.protocolVersion = (uint8_t)req->protocolVersion;
+		session->net.clientRandom = req->random;
+	}
 	*session = (struct InstanceSession){
 		.net = session->net,
 		.secret = req->secret,
-		.userName = req->userName,
 		.userId = AnnotateIDs ? String_fmt("%.*s$%u", req->userId.length, req->userId.data, (uint32_t)indexof(room->players, session)) : req->userId,
 		.joinOrder = ++room->joinCount,
 		.avatar = CLEAR_AVATARDATA,
 	};
 	instance_channels_init(&session->channels);
 
-	bool ipv4 = (addr.ss.ss_family != AF_INET6 || memcmp(addr.in6.sin6_addr.s6_addr, (const uint16_t[]){0,0,0,0,0,0xffff}, 12) == 0);
 	struct WireSessionAllocResp resp = {
 		.result = ConnectToServerResponse_Result_Success,
-		.random = *NetKeypair_get_random(&session->net.keys),
 		.configuration = room->configuration,
 		.managerId = instance_room_get_managerId(room, session),
-		.endPoint = instance_get_endpoint(&ctx->net, ipv4),
+		.endPoint = instance_get_endpoint(&ctx->net, req->ipv4),
+		.playerSlot = (uint32_t)indexof(room->players, session),
 	};
-	if(NetKeypair_write_key(&session->net.keys, &ctx->net, &resp.publicKey)) {
-		uprintf("Connect to Server Error: NetKeypair_write_key() failed\n");
-		return (struct WireSessionAllocResp){.result = ConnectToServerResponse_Result_UnknownError}; // TODO: clean up and remove session data if either of these errors is hit
+	if(!req->direct) {
+		resp.random = *NetKeypair_get_random(&session->net.keys);
+		if(NetKeypair_write_key(&session->net.keys, &ctx->net, &resp.publicKey)) {
+			uprintf("Connect to Server Error: NetKeypair_write_key() failed\n");
+			return (struct WireSessionAllocResp){.result = ConnectToServerResponse_Result_UnknownError}; // TODO: clean up and remove session data if either of these errors is hit
+		}
+		if(NetSession_set_remotePublicKey(&session->net, &ctx->net, &req->publicKey, false)) {
+			uprintf("Connect to Server Error: NetSession_set_remotePublicKey() failed\n");
+			return (struct WireSessionAllocResp){.result = ConnectToServerResponse_Result_UnknownError};
+		}
 	}
-	if(NetSession_set_remotePublicKey(&session->net, &ctx->net, &req->publicKey, false)) {
-		uprintf("Connect to Server Error: NetSession_set_remotePublicKey() failed\n");
-		return (struct WireSessionAllocResp){.result = ConnectToServerResponse_Result_UnknownError};
-	}
-	log_players(room, &addr, "connect");
+	log_players(room, NULL, "connect");
 	return resp;
+}
+
+// TODO: can errors here be reported back to the client?
+static void instance_onGraphAuth(struct NetContext *net, struct NetSession *masterSession, const struct AuthenticateGameLiftUserRequest *req) {
+	struct InstanceContext *const ctx = (struct InstanceContext*)net->userptr;
+	const char *const sep = memchr(req->playerSessionId.data, ',', req->playerSessionId.length);
+	if(req->playerSessionId.length < 11 || memcmp(req->playerSessionId.data, "pslot$", 6) || sep == NULL || &req->playerSessionId.data[req->playerSessionId.length] - sep != 4) {
+		uprintf("Auth failed: bad playerSessionId \"%.*s\"\n", req->playerSessionId.length, req->playerSessionId.data);
+		return;
+	}
+	uint32_t roomID = 0;
+	for(const char *it = &req->playerSessionId.data[6]; it < sep; ++it) {
+		if(*it < '0' || *it > '9') {
+			uprintf("Auth failed: bad room ID\n");
+			return;
+		}
+		roomID = roomID * 10 + (*it - '0');
+	}
+	struct Room **const roomPtr = instance_get_room(ctx, roomID);
+	struct Room *const room = (roomPtr != NULL) ? *roomPtr : NULL;
+	if(room == NULL) {
+		uprintf("Auth failed: room closed\n");
+		return;
+	}
+	const playerid_t id = (sep[1] - '0') * 100 | (sep[2] - '0') * 10 | (sep[3] - '0');
+	if(id >= (uint32_t)room->configuration.maxPlayerCount) {
+		uprintf("Auth failed: player slot out of range\n");
+		return;
+	}
+	struct InstanceSession *const session = &room->players[id];
+	if(session->net.addr.ss.ss_family != AF_UNSPEC || !session->net.version.direct) {
+		uprintf("Auth failed: bad target (%zu,%hu)@%hhu\n", indexof(contexts, ctx), roomID, id);
+		return;
+	}
+	const struct String targetId = OwnUserId(session->userId);
+	if(!String_eq(req->userId, targetId)) {
+		uprintf("Auth failed: bad user ID (\"%.*s\" != \"%.*s\")\n", req->userId.length, req->userId.data, targetId.length, targetId.data);
+		return;
+	}
+	NetSession_free(&session->net);
+	NetSession_initFrom(&session->net, masterSession);
 }
 
 static void instance_room_spawn(struct InstanceContext *ctx, struct WireLink *link, uint32_t cookie, const struct WireRoomSpawn *req) {
@@ -1923,7 +1991,7 @@ static void instance_room_join(struct InstanceContext *ctx, struct WireLink *lin
 		.cookie = cookie,
 	};
 	uint32_t roomProtocol = instance_room_get_protocol(ctx, req->base.room).protocolVersion;
-	if(roomProtocol != req->base.protocolVersion) {
+	if(roomProtocol != req->base.protocolVersion && !req->base.direct) { // TODO: send protocolVersion for graph requests
 		uprintf("Connect to Server Error: Version mismatch (room=%u, client=%u)\n", roomProtocol, req->base.protocolVersion);
 		r_alloc.roomJoinResp.base.result = ConnectToServerResponse_Result_VersionMismatch;
 	} else {
@@ -1946,13 +2014,13 @@ static void instance_onWireMessage(struct WireContext *wire, struct WireLink *li
 		case WireMessageType_WireRoomJoin: instance_room_join(ctx, link, message->cookie, &message->roomJoin); break;
 		default: uprintf("UNHANDLED WIRE MESSAGE [%s]\n", reflect(WireMessageType, message->type));
 	}
-	unlock:
-	net_unlock(&ctx->net);
+	unlock: net_unlock(&ctx->net);
 }
 
 static uint32_t threads_len = 0;
 static pthread_t *threads = NULL;
-bool instance_init(const char *domainIPv4, const char *domain, const char *remoteMaster, struct WireContext *localMaster, const char *mapPoolFile, uint32_t count) {
+bool instance_init(const char *domainIPv4, const char *domain, const mbedtls_x509_crt *cert, const mbedtls_pk_context *key, const char *remoteMaster, struct WireContext *localMaster, const char *mapPoolFile, uint32_t count) {
+	(void)cert; (void)key;
 	if(mapPoolFile && *mapPoolFile)
 		mapPool_init(mapPoolFile);
 	instance_domainIPv4 = domainIPv4;
@@ -1970,29 +2038,36 @@ bool instance_init(const char *domainIPv4, const char *domain, const char *remot
 		return true;
 	}
 	for(; threads_len < count; ++threads_len) {
-		struct InstanceContext *ctx = &contexts[threads_len];
-		if(net_init(&ctx->net, (uint16_t)(5000 + threads_len), true)) {
+		struct InstanceContext *const ctx = &contexts[threads_len];
+		MasterContext_init(&ctx->base);
+		ctx->base.onGraphAuth = instance_onGraphAuth;
+		ctx->base.userptr = ctx;
+		if(MasterContext_setCertificate(&ctx->base, cert, key))
+			return true;
+		if(net_init(&ctx->net, (uint16_t)(8106 + threads_len))) {
+			MasterContext_cleanup(&ctx->base);
 			uprintf("net_init() failed\n");
 			return true;
 		}
-		if(WireContext_init(&ctx->wire, &ctx->net, 0)) {
+		if(WireContext_init(&ctx->wire, ctx, 0)) {
 			net_cleanup(&ctx->net);
+			MasterContext_cleanup(&ctx->base);
 			uprintf("WireContext_init() failed\n");
 			return true;
 		}
-		ctx->net.userptr = &contexts[threads_len];
-		ctx->net.onResolve = (struct NetSession *(*)(void*, struct SS, const uint8_t*, uint32_t, uint8_t*, uint32_t*, void**))instance_onResolve;
-		ctx->net.onResend = (uint32_t (*)(void*, uint32_t))instance_onResend;
+		ctx->net.userptr = ctx;
+		ctx->net.onResolve = instance_onResolve;
+		ctx->net.onResend = instance_onResend;
 		ctx->wire.onMessage = instance_onWireMessage;
 		ctx->roomMask = COUNTER64_CLEAR;
 		ctx->master = NULL;
 		memset(ctx->rooms, 0, sizeof(ctx->rooms));
 
-		if(pthread_create(&threads[threads_len], NULL, (void *(*)(void*))instance_handler, ctx))
-			threads[threads_len] = 0;
-		if(!threads[threads_len]) {
+		if(pthread_create(&threads[threads_len], NULL, (void *(*)(void*))instance_handler, ctx)) {
+			threads[threads_len] = NET_THREAD_INVALID;
 			WireContext_cleanup(&ctx->wire);
 			net_cleanup(&ctx->net);
+			MasterContext_cleanup(&ctx->base);
 			uprintf("Instance thread creation failed\n");
 			return true;
 		}
@@ -2002,7 +2077,7 @@ bool instance_init(const char *domainIPv4, const char *domain, const char *remot
 
 void instance_cleanup() {
 	for(uint32_t i = 0; i < threads_len; ++i) {
-		if(!threads[i])
+		if(threads[i] == NET_THREAD_INVALID)
 			continue;
 		struct InstanceContext *ctx = &contexts[i];
 		net_stop(&ctx->net);
@@ -2020,6 +2095,7 @@ void instance_cleanup() {
 		memset(ctx->rooms, 0, sizeof(ctx->rooms));
 		WireContext_cleanup(&ctx->wire);
 		net_cleanup(&ctx->net);
+		MasterContext_cleanup(&ctx->base);
 	}
 	free(instance_mapPool);
 	free(threads);

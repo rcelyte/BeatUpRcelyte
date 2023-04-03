@@ -1,14 +1,25 @@
 #include "../global.h"
+#include "../wire.h"
+#include "../packets.h"
+#include "http.h"
 #include <stdint.h>
 
-struct ContextBase {
-	int32_t listenfd;
-	void *(*handleClient)(void*);
+typedef uint8_t StatusCookieType;
+enum {
+	StatusCookieType_INVALID,
+	StatusCookieType_GraphConnect,
+};
+
+struct GraphConnectCookie {
+	StatusCookieType cookieType;
+	struct HttpContext *http;
+	struct String secret;
+	struct BeatmapLevelSelectionMask selectionMask;
 };
 
 int32_t status_bind_tcp(uint16_t port, uint32_t backlog);
-void *status_handler(struct ContextBase *ctx);
-uint32_t status_resp(const char *source, const char *path, char *buf, uint32_t buf_len);
+void status_resp(struct HttpContext *http, const char path[], struct HttpRequest httpRequest, struct WireLink *master);
+void status_graph_resp(struct DataView cookieView, const struct WireGraphConnectResp *resp);
 
 /*static tempList[2] = {{
 	.playerNPms = 0,

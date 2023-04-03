@@ -2196,6 +2196,38 @@ void _pkt_UserMessage_write(const struct UserMessage *restrict data, uint8_t **p
 		default: uprintf("Invalid value for enum `UserMessageType`\n"); longjmp(fail, 1);
 	}
 }
+static void _pkt_AuthenticateGameLiftUserRequest_read(struct AuthenticateGameLiftUserRequest *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_BaseMasterServerReliableResponse_read(&data->base, pkt, end, ctx);
+	_pkt_String_read(&data->userId, pkt, end, ctx);
+	_pkt_String_read(&data->userName, pkt, end, ctx);
+	_pkt_String_read(&data->playerSessionId, pkt, end, ctx);
+}
+static void _pkt_AuthenticateGameLiftUserRequest_write(const struct AuthenticateGameLiftUserRequest *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_BaseMasterServerReliableResponse_write(&data->base, pkt, end, ctx);
+	_pkt_String_write(&data->userId, pkt, end, ctx);
+	_pkt_String_write(&data->userName, pkt, end, ctx);
+	_pkt_String_write(&data->playerSessionId, pkt, end, ctx);
+}
+void _pkt_GameLiftMessage_read(struct GameLiftMessage *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u8_read(&data->type, pkt, end, ctx);
+	switch(data->type) {
+		case GameLiftMessageType_AuthenticateGameLiftUserRequest: _pkt_AuthenticateGameLiftUserRequest_read(&data->authenticateGameLiftUserRequest, pkt, end, ctx); break;
+		case GameLiftMessageType_AuthenticateUserResponse: _pkt_AuthenticateUserResponse_read(&data->authenticateUserResponse, pkt, end, ctx); break;
+		case GameLiftMessageType_MessageReceivedAcknowledge: _pkt_MessageReceivedAcknowledge_read(&data->messageReceivedAcknowledge, pkt, end, ctx); break;
+		case GameLiftMessageType_MultipartMessage: _pkt_MultipartMessage_read(&data->multipartMessage, pkt, end, ctx); break;
+		default: uprintf("Invalid value for enum `GameLiftMessageType`\n"); longjmp(fail, 1);
+	}
+}
+void _pkt_GameLiftMessage_write(const struct GameLiftMessage *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u8_write(&data->type, pkt, end, ctx);
+	switch(data->type) {
+		case GameLiftMessageType_AuthenticateGameLiftUserRequest: _pkt_AuthenticateGameLiftUserRequest_write(&data->authenticateGameLiftUserRequest, pkt, end, ctx); break;
+		case GameLiftMessageType_AuthenticateUserResponse: _pkt_AuthenticateUserResponse_write(&data->authenticateUserResponse, pkt, end, ctx); break;
+		case GameLiftMessageType_MessageReceivedAcknowledge: _pkt_MessageReceivedAcknowledge_write(&data->messageReceivedAcknowledge, pkt, end, ctx); break;
+		case GameLiftMessageType_MultipartMessage: _pkt_MultipartMessage_write(&data->multipartMessage, pkt, end, ctx); break;
+		default: uprintf("Invalid value for enum `GameLiftMessageType`\n"); longjmp(fail, 1);
+	}
+}
 static void _pkt_ClientHelloRequest_read(struct ClientHelloRequest *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_BaseMasterServerReliableRequest_read(&data->base, pkt, end, ctx);
 	_pkt_Cookie32_read(&data->random, pkt, end, ctx);
@@ -2358,10 +2390,15 @@ static void _pkt_ConnectRequest_read(struct ConnectRequest *restrict data, const
 	}
 	_pkt_u8_read(&data->addrlen, pkt, end, ctx);
 	_pkt_raw_read(data->address, pkt, end, ctx, check_overflow((uint32_t)(data->addrlen), 38, "ConnectRequest.address"));
-	_pkt_String_read(&data->secret, pkt, end, ctx);
+	if(!ctx.direct) {
+		_pkt_String_read(&data->secret, pkt, end, ctx);
+	}
 	_pkt_String_read(&data->userId, pkt, end, ctx);
 	_pkt_String_read(&data->userName, pkt, end, ctx);
 	_pkt_b_read(&data->isConnectionOwner, pkt, end, ctx);
+	if(ctx.direct) {
+		_pkt_String_read(&data->playerSessionId, pkt, end, ctx);
+	}
 }
 static void _pkt_ConnectRequest_write(const struct ConnectRequest *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_write(&data->protocolId, pkt, end, ctx);
@@ -2371,10 +2408,15 @@ static void _pkt_ConnectRequest_write(const struct ConnectRequest *restrict data
 	}
 	_pkt_u8_write(&data->addrlen, pkt, end, ctx);
 	_pkt_raw_write(data->address, pkt, end, ctx, check_overflow((uint32_t)(data->addrlen), 38, "ConnectRequest.address"));
-	_pkt_String_write(&data->secret, pkt, end, ctx);
+	if(!ctx.direct) {
+		_pkt_String_write(&data->secret, pkt, end, ctx);
+	}
 	_pkt_String_write(&data->userId, pkt, end, ctx);
 	_pkt_String_write(&data->userName, pkt, end, ctx);
 	_pkt_b_write(&data->isConnectionOwner, pkt, end, ctx);
+	if(ctx.direct) {
+		_pkt_String_write(&data->playerSessionId, pkt, end, ctx);
+	}
 }
 static void _pkt_ConnectAccept_read(struct ConnectAccept *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u64_read(&data->connectTime, pkt, end, ctx);
@@ -2509,14 +2551,6 @@ void _pkt_PacketEncryptionLayer_write(const struct PacketEncryptionLayer *restri
 		_pkt_raw_write(data->iv, pkt, end, ctx, 16);
 	}
 }
-static void _pkt_WireAddress_read(struct WireAddress *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_vu32_read(&data->length, pkt, end, ctx);
-	_pkt_raw_read(data->data, pkt, end, ctx, check_overflow((uint32_t)(data->length), 128, "WireAddress.data"));
-}
-static void _pkt_WireAddress_write(const struct WireAddress *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_vu32_write(&data->length, pkt, end, ctx);
-	_pkt_raw_write(data->data, pkt, end, ctx, check_overflow((uint32_t)(data->length), 128, "WireAddress.data"));
-}
 static void _pkt_WireSetAttribs_read(struct WireSetAttribs *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_read(&data->capacity, pkt, end, ctx);
 	_pkt_b_read(&data->discover, pkt, end, ctx);
@@ -2527,39 +2561,49 @@ static void _pkt_WireSetAttribs_write(const struct WireSetAttribs *restrict data
 }
 static void _pkt_WireSessionAlloc_read(struct WireSessionAlloc *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_read(&data->room, pkt, end, ctx);
-	_pkt_WireAddress_read(&data->address, pkt, end, ctx);
 	_pkt_String_read(&data->secret, pkt, end, ctx);
 	_pkt_String_read(&data->userId, pkt, end, ctx);
-	_pkt_String_read(&data->userName, pkt, end, ctx);
-	_pkt_Cookie32_read(&data->random, pkt, end, ctx);
-	_pkt_ByteArrayNetSerializable_read(&data->publicKey, pkt, end, ctx);
-	_pkt_u32_read(&data->protocolVersion, pkt, end, ctx);
+	_pkt_b_read(&data->ipv4, pkt, end, ctx);
+	_pkt_b_read(&data->direct, pkt, end, ctx);
+	if(!data->direct) {
+		_pkt_Cookie32_read(&data->random, pkt, end, ctx);
+		_pkt_ByteArrayNetSerializable_read(&data->publicKey, pkt, end, ctx);
+		_pkt_u32_read(&data->protocolVersion, pkt, end, ctx);
+	}
 }
 static void _pkt_WireSessionAlloc_write(const struct WireSessionAlloc *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_write(&data->room, pkt, end, ctx);
-	_pkt_WireAddress_write(&data->address, pkt, end, ctx);
 	_pkt_String_write(&data->secret, pkt, end, ctx);
 	_pkt_String_write(&data->userId, pkt, end, ctx);
-	_pkt_String_write(&data->userName, pkt, end, ctx);
-	_pkt_Cookie32_write(&data->random, pkt, end, ctx);
-	_pkt_ByteArrayNetSerializable_write(&data->publicKey, pkt, end, ctx);
-	_pkt_u32_write(&data->protocolVersion, pkt, end, ctx);
+	_pkt_b_write(&data->ipv4, pkt, end, ctx);
+	_pkt_b_write(&data->direct, pkt, end, ctx);
+	if(!data->direct) {
+		_pkt_Cookie32_write(&data->random, pkt, end, ctx);
+		_pkt_ByteArrayNetSerializable_write(&data->publicKey, pkt, end, ctx);
+		_pkt_u32_write(&data->protocolVersion, pkt, end, ctx);
+	}
 }
 static void _pkt_WireSessionAllocResp_read(struct WireSessionAllocResp *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u8_read(&data->result, pkt, end, ctx);
-	_pkt_Cookie32_read(&data->random, pkt, end, ctx);
-	_pkt_ByteArrayNetSerializable_read(&data->publicKey, pkt, end, ctx);
-	_pkt_GameplayServerConfiguration_read(&data->configuration, pkt, end, ctx);
-	_pkt_String_read(&data->managerId, pkt, end, ctx);
-	_pkt_IPEndPoint_read(&data->endPoint, pkt, end, ctx);
+	if(data->result == ConnectToServerResponse_Result_Success) {
+		_pkt_GameplayServerConfiguration_read(&data->configuration, pkt, end, ctx);
+		_pkt_String_read(&data->managerId, pkt, end, ctx);
+		_pkt_IPEndPoint_read(&data->endPoint, pkt, end, ctx);
+		_pkt_u32_read(&data->playerSlot, pkt, end, ctx);
+		_pkt_Cookie32_read(&data->random, pkt, end, ctx);
+		_pkt_ByteArrayNetSerializable_read(&data->publicKey, pkt, end, ctx);
+	}
 }
 static void _pkt_WireSessionAllocResp_write(const struct WireSessionAllocResp *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u8_write(&data->result, pkt, end, ctx);
-	_pkt_Cookie32_write(&data->random, pkt, end, ctx);
-	_pkt_ByteArrayNetSerializable_write(&data->publicKey, pkt, end, ctx);
-	_pkt_GameplayServerConfiguration_write(&data->configuration, pkt, end, ctx);
-	_pkt_String_write(&data->managerId, pkt, end, ctx);
-	_pkt_IPEndPoint_write(&data->endPoint, pkt, end, ctx);
+	if(data->result == ConnectToServerResponse_Result_Success) {
+		_pkt_GameplayServerConfiguration_write(&data->configuration, pkt, end, ctx);
+		_pkt_String_write(&data->managerId, pkt, end, ctx);
+		_pkt_IPEndPoint_write(&data->endPoint, pkt, end, ctx);
+		_pkt_u32_write(&data->playerSlot, pkt, end, ctx);
+		_pkt_Cookie32_write(&data->random, pkt, end, ctx);
+		_pkt_ByteArrayNetSerializable_write(&data->publicKey, pkt, end, ctx);
+	}
 }
 static void _pkt_WireRoomSpawn_read(struct WireRoomSpawn *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_WireSessionAlloc_read(&data->base, pkt, end, ctx);
@@ -2593,6 +2637,44 @@ static void _pkt_WireRoomCloseNotify_read(struct WireRoomCloseNotify *restrict d
 static void _pkt_WireRoomCloseNotify_write(const struct WireRoomCloseNotify *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_write(&data->room, pkt, end, ctx);
 }
+static void _pkt_WireStatusHook_read(struct WireStatusHook *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+}
+static void _pkt_WireStatusHook_write(const struct WireStatusHook *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+}
+static void _pkt_WireGraphConnect_read(struct WireGraphConnect *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u32_read(&data->code, pkt, end, ctx);
+	_pkt_String_read(&data->secret, pkt, end, ctx);
+	_pkt_String_read(&data->userId, pkt, end, ctx);
+	_pkt_GameplayServerConfiguration_read(&data->configuration, pkt, end, ctx);
+}
+static void _pkt_WireGraphConnect_write(const struct WireGraphConnect *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u32_write(&data->code, pkt, end, ctx);
+	_pkt_String_write(&data->secret, pkt, end, ctx);
+	_pkt_String_write(&data->userId, pkt, end, ctx);
+	_pkt_GameplayServerConfiguration_write(&data->configuration, pkt, end, ctx);
+}
+static void _pkt_WireGraphConnectResp_read(struct WireGraphConnectResp *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u8_read(&data->result, pkt, end, ctx);
+	if(data->result == MultiplayerPlacementErrorCode_Success) {
+		_pkt_GameplayServerConfiguration_read(&data->configuration, pkt, end, ctx);
+		_pkt_u32_read(&data->hostId, pkt, end, ctx);
+		_pkt_IPEndPoint_read(&data->endPoint, pkt, end, ctx);
+		_pkt_u32_read(&data->roomSlot, pkt, end, ctx);
+		_pkt_u32_read(&data->playerSlot, pkt, end, ctx);
+		_pkt_u32_read(&data->code, pkt, end, ctx);
+	}
+}
+static void _pkt_WireGraphConnectResp_write(const struct WireGraphConnectResp *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u8_write(&data->result, pkt, end, ctx);
+	if(data->result == MultiplayerPlacementErrorCode_Success) {
+		_pkt_GameplayServerConfiguration_write(&data->configuration, pkt, end, ctx);
+		_pkt_u32_write(&data->hostId, pkt, end, ctx);
+		_pkt_IPEndPoint_write(&data->endPoint, pkt, end, ctx);
+		_pkt_u32_write(&data->roomSlot, pkt, end, ctx);
+		_pkt_u32_write(&data->playerSlot, pkt, end, ctx);
+		_pkt_u32_write(&data->code, pkt, end, ctx);
+	}
+}
 void _pkt_WireMessage_read(struct WireMessage *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_read(&data->cookie, pkt, end, ctx);
 	_pkt_u8_read(&data->type, pkt, end, ctx);
@@ -2603,6 +2685,9 @@ void _pkt_WireMessage_read(struct WireMessage *restrict data, const uint8_t **pk
 		case WireMessageType_WireRoomSpawnResp: _pkt_WireRoomSpawnResp_read(&data->roomSpawnResp, pkt, end, ctx); break;
 		case WireMessageType_WireRoomJoinResp: _pkt_WireRoomJoinResp_read(&data->roomJoinResp, pkt, end, ctx); break;
 		case WireMessageType_WireRoomCloseNotify: _pkt_WireRoomCloseNotify_read(&data->roomCloseNotify, pkt, end, ctx); break;
+		case WireMessageType_WireStatusHook: _pkt_WireStatusHook_read(&data->statusHook, pkt, end, ctx); break;
+		case WireMessageType_WireGraphConnect: _pkt_WireGraphConnect_read(&data->graphConnect, pkt, end, ctx); break;
+		case WireMessageType_WireGraphConnectResp: _pkt_WireGraphConnectResp_read(&data->graphConnectResp, pkt, end, ctx); break;
 		default: uprintf("Invalid value for enum `WireMessageType`\n"); longjmp(fail, 1);
 	}
 }
@@ -2616,6 +2701,9 @@ void _pkt_WireMessage_write(const struct WireMessage *restrict data, uint8_t **p
 		case WireMessageType_WireRoomSpawnResp: _pkt_WireRoomSpawnResp_write(&data->roomSpawnResp, pkt, end, ctx); break;
 		case WireMessageType_WireRoomJoinResp: _pkt_WireRoomJoinResp_write(&data->roomJoinResp, pkt, end, ctx); break;
 		case WireMessageType_WireRoomCloseNotify: _pkt_WireRoomCloseNotify_write(&data->roomCloseNotify, pkt, end, ctx); break;
+		case WireMessageType_WireStatusHook: _pkt_WireStatusHook_write(&data->statusHook, pkt, end, ctx); break;
+		case WireMessageType_WireGraphConnect: _pkt_WireGraphConnect_write(&data->graphConnect, pkt, end, ctx); break;
+		case WireMessageType_WireGraphConnectResp: _pkt_WireGraphConnectResp_write(&data->graphConnectResp, pkt, end, ctx); break;
 		default: uprintf("Invalid value for enum `WireMessageType`\n"); longjmp(fail, 1);
 	}
 }

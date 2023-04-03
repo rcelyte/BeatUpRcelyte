@@ -4,6 +4,7 @@
 #include <mbedtls/ssl.h>
 #include <mbedtls/error.h>
 #include <mbedtls/sha256.h>
+#include <stdlib.h>
 
 static uint32_t min32(uint32_t a, uint32_t b) {
 	return a < b ? a : b;
@@ -28,21 +29,26 @@ static void PRF(uint8_t out[restrict static 510], uint8_t out_len, uint8_t *key,
 	}
 }
 
-bool EncryptionState_init(struct EncryptionState *state, const mbedtls_mpi *secret, const struct Cookie32 random[static 2], bool client) {
+struct EncryptionState *EncryptionState_init(const mbedtls_mpi *secret, const struct Cookie32 random[static 2], bool client) {
 	if(!mbedtls_md_info_from_type(MBEDTLS_MD_SHA256)) {
 		uprintf("mbedtls_md_info_from_type(MBEDTLS_MD_SHA256) failed\n");
-		return true;
+		return NULL;
 	}
 	uint8_t sourceArray[510], scratch[510];
 	size_t secret_len = mbedtls_mpi_size(secret);
 	if(secret_len > sizeof(sourceArray)) {
 		uprintf("secret too big\n");
-		return true;
+		return NULL;
 	}
 	int32_t res = mbedtls_mpi_write_binary(secret, sourceArray, secret_len);
 	if(res) {
 		uprintf("mbedtls_mpi_write_binary() failed: %s\n", mbedtls_high_level_strerr(res));
-		return true;
+		return NULL;
+	}
+	struct EncryptionState *const state = calloc(1, sizeof(*state));
+	if(state == NULL) {
+		uprintf("alloc error\n");
+		return NULL;
 	}
 	PRF(scratch, 48, sourceArray, secret_len, "master secret", random);
 	PRF(sourceArray, 192, scratch, 48, "key expansion", random);
@@ -54,15 +60,21 @@ bool EncryptionState_init(struct EncryptionState *state, const mbedtls_mpi *secr
 	state->receiveWindowEnd = 0;
 	state->receiveWindow = 0;
 	mbedtls_aes_init(&state->aes);
-	state->initialized = true;
-	return false;
+	EncryptionState_ref(state);
+	return state;
 }
 
-void EncryptionState_free(struct EncryptionState *state) {
-	if(!state->initialized)
-		return;
+struct EncryptionState *EncryptionState_ref(struct EncryptionState *state) {
+	if(state != NULL)
+		++state->refCount;
+	return state;
+}
+struct EncryptionState *EncryptionState_unref(struct EncryptionState *state) {
+	if(state == NULL || --state->refCount)
+		return state;
 	mbedtls_aes_free(&state->aes);
-	state->initialized = false;
+	free(state);
+	return NULL;
 }
 
 static bool InvalidSequenceNum(struct EncryptionState *state, uint32_t sequenceNum) {
@@ -148,7 +160,7 @@ uint32_t EncryptionState_decrypt(struct EncryptionState *state, const uint8_t ra
 		memcpy(out, raw, length);
 		return length;
 	}
-	if(!state->initialized || header.encrypted != 1 || length == 0 || length % 16 || InvalidSequenceNum(state, header.sequenceId))
+	if(state == NULL || header.encrypted != 1 || length == 0 || length % 16 || InvalidSequenceNum(state, header.sequenceId))
 		return 0;
 	mbedtls_aes_setkey_dec(&state->aes, state->receiveKey, sizeof(state->receiveKey) * 8);
 	mbedtls_aes_crypt_cbc(&state->aes, MBEDTLS_AES_DECRYPT, length, header.iv, raw, out);
@@ -169,7 +181,7 @@ uint32_t EncryptionState_decrypt(struct EncryptionState *state, const uint8_t ra
 }
 
 uint32_t EncryptionState_encrypt(struct EncryptionState *state, mbedtls_ctr_drbg_context *ctr_drbg, const uint8_t *restrict buf, uint32_t buf_len, uint8_t out[static 1536]) {
-	if(state != NULL && state->initialized) {
+	if(state != NULL) {
 		struct PacketEncryptionLayer header = {
 			.encrypted = true,
 			.sequenceId = ++state->outboundSequence,

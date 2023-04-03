@@ -258,7 +258,7 @@ bool config_load(struct Config *out, const char *path) {
 	if(!*out->instanceAddress[1])
 		memcpy(out->instanceAddress[1], out->instanceAddress[0], sizeof(out->instanceAddress[0]));
 
-	if(enableMaster) {
+	if(enableMaster || enableInstance) { // TODO: use separate certs for master and instance OR move options out to global
 		if(mbedtls_pk_get_type(&out->masterKey) == MBEDTLS_PK_NONE) {
 			if(out->masterCert.version) {
 				uprintf("Missing required value \"key\" for master\n");

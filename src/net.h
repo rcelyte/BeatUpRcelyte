@@ -54,7 +54,7 @@ struct NetSession {
 	struct PacketContext version;
 	struct Cookie32 clientRandom;
 	struct Cookie32 NET_H_PRIVATE(cookie);
-	struct EncryptionState NET_H_PRIVATE(encryptionState);
+	struct EncryptionState *NET_H_PRIVATE(encryptionState);
 	struct SS addr;
 	uint32_t lastKeepAlive;
 	uint16_t NET_H_PRIVATE(mtu);
@@ -68,14 +68,13 @@ struct NetSession {
 struct NetContext {
 	int32_t NET_H_PRIVATE(sockfd);
 	atomic_bool NET_H_PRIVATE(run);
-	bool NET_H_PRIVATE(filterUnencrypted);
 	pthread_mutex_t NET_H_PRIVATE(mutex);
 	mbedtls_ctr_drbg_context ctr_drbg;
 	mbedtls_entropy_context NET_H_PRIVATE(entropy);
 	mbedtls_ecp_group NET_H_PRIVATE(grp);
 	void *userptr;
-	struct NetSession *(*onResolve)(void *userptr, struct SS addr, const uint8_t packet[static 1536], uint32_t packet_len, uint8_t out[static 1536], uint32_t *out_len, void **userdata_out);
-	uint32_t (*onResend)(void *userptr, uint32_t currentTime);
+	struct NetSession *(*onResolve)(struct NetContext *net, struct SS addr, const uint8_t packet[static 1536], uint32_t packet_len, uint8_t out[static 1536], uint32_t *out_len, void **userdata_out);
+	uint32_t (*onResend)(struct NetContext *net, uint32_t currentTime);
 	struct Performance NET_H_PRIVATE(perf);
 };
 
@@ -87,7 +86,7 @@ void net_keypair_init(struct NetContext *ctx, struct NetKeypair *keys);
 void net_keypair_free(struct NetKeypair *keys);
 const struct Cookie32 *NetKeypair_get_random(const struct NetKeypair *keys);
 bool NetKeypair_write_key(const struct NetKeypair *keys, struct NetContext *ctx, struct ByteArrayNetSerializable *out);
-bool NetSession_signature(struct NetSession *session, struct NetContext *ctx, const mbedtls_pk_context *key, struct ByteArrayNetSerializable *out);
+bool NetSession_signature(const struct NetSession *session, struct NetContext *ctx, const mbedtls_pk_context *key, struct ByteArrayNetSerializable *out);
 
 const struct Cookie32 *NetSession_get_cookie(const struct NetSession *session);
 bool NetSession_set_remotePublicKey(struct NetSession *session, struct NetContext *ctx, const struct ByteArrayNetSerializable *in, bool client);
@@ -95,12 +94,13 @@ uint32_t NetSession_get_lastKeepAlive(struct NetSession *session);
 const struct SS *NetSession_get_addr(struct NetSession *session);
 uint32_t NetSession_decrypt(struct NetSession *session, const uint8_t packet[static 1536], uint32_t packet_len, uint8_t out[static 1536]);
 
-bool net_init(struct NetContext *ctx, uint16_t port, bool filterUnencrypted);
+bool net_init(struct NetContext *ctx, uint16_t port);
 void net_stop(struct NetContext *ctx);
 void net_cleanup(struct NetContext *ctx);
 void net_lock(struct NetContext *ctx);
 void net_unlock(struct NetContext *ctx);
-void NetSession_init(struct NetContext *ctx, struct NetSession *session, struct SS addr);
+void NetSession_init(struct NetSession *session, struct NetContext *ctx, struct SS addr);
+void NetSession_initFrom(struct NetSession *session, const struct NetSession *from);
 void NetSession_free(struct NetSession *session);
 uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSession **session, void **userdata_out);
 void net_flush_merged(struct NetContext *ctx, struct NetSession *session);

@@ -996,6 +996,18 @@ d UserMessage
 		SessionKeepaliveMessage sessionKeepaliveMessage
 		GetPublicServersRequest getPublicServersRequest
 		GetPublicServersResponse getPublicServersResponse
+n AuthenticateGameLiftUserRequest
+	BaseMasterServerReliableResponse base
+	String userId
+	String userName
+	String playerSessionId
+d GameLiftMessage
+	GameLiftMessageType type
+	u8 GameLiftMessageType(.type)
+		AuthenticateGameLiftUserRequest authenticateGameLiftUserRequest
+		AuthenticateUserResponse authenticateUserResponse
+		MessageReceivedAcknowledge messageReceivedAcknowledge
+		MultipartMessage multipartMessage
 n ClientHelloRequest
 	BaseMasterServerReliableRequest base
 	Cookie32 random
@@ -1037,8 +1049,7 @@ d SerializeHeader
 	vu32 length
 u32 MessageType
 	UserMessage 1
-	DedicatedServerMessage
-	GameLiftMessage
+	GameLiftMessage 3
 	HandshakeMessage 3192347326
 d FragmentedHeader
 	u16 fragmentId
@@ -1071,10 +1082,13 @@ n ConnectRequest
 		i32 peerId
 	u8 addrlen
 	u8 address[38, .addrlen]
-	String secret
+	if(!$direct)
+		String secret
 	String userId
 	String userName
 	b isConnectionOwner
+	if($direct)
+		String playerSessionId
 n ConnectAccept
 	u64 connectTime
 	u8 connectNum

@@ -1,6 +1,5 @@
 #include "status.h"
 #include "../net.h"
-#include "../ssl.h"
 #include "internal.h"
 #include <mbedtls/ssl.h>
 #include <mbedtls/ctr_drbg.h>
@@ -9,120 +8,209 @@
 #include <unistd.h>
 #include <string.h>
 
-struct Context {
-	struct ContextBase base;
+struct StatusContext {
+	int32_t listenfd;
+	void *(*handleClient)(void*);
+	const char *path;
 	mbedtls_ssl_config conf;
 	mbedtls_entropy_context entropy;
 	mbedtls_ctr_drbg_context ctr_drbg;
 	mbedtls_x509_crt *certs;
 	mbedtls_pk_context *keys;
 	const char *domain;
-	const char *path;
+	pthread_mutex_t mutex;
+	struct WireContext wire;
+	struct WireLink *master;
 };
-static struct Context ctx = {
-	.base.listenfd = -1,
+static struct StatusContext ctx = {
+	.listenfd = -1,
 };
 
-static void *handle_client_https(void *fd) {
-	mbedtls_ssl_context ssl;
-	mbedtls_ssl_init(&ssl);
-	int res = mbedtls_ssl_setup(&ssl, &ctx.conf);
-	if(res) {
-		uprintf("mbedtls_ssl_setup() failed: %s\n", mbedtls_high_level_strerr(res));
-		goto reset;
-	}
-	mbedtls_ssl_set_bio(&ssl, fd, ssl_send, ssl_recv, NULL);
-	while((res = mbedtls_ssl_handshake(&ssl)) != 0) {
-		if(res == MBEDTLS_ERR_SSL_WANT_READ || res == MBEDTLS_ERR_SSL_WANT_WRITE)
-			continue;
-		uprintf("mbedtls_ssl_handshake() failed: %s\n", mbedtls_high_level_strerr(res));
-		goto reset;
-	}
-	uint8_t buf[65536];
-	do {
-		memset(buf, 0, sizeof(buf)); // TODO: this doesn't look right
-		res = mbedtls_ssl_read(&ssl, buf, sizeof(buf) - 1);
-	} while(res == MBEDTLS_ERR_SSL_WANT_READ);
-	if(res < 0) {
-		uprintf("mbedtls_ssl_read() failed: %s\n", mbedtls_high_level_strerr(res));
-	} else {
-		size_t len = status_resp("HTTPS", ctx.path, (char*)buf, (uint32_t)res);
-		if(len) {
-			while((res = mbedtls_ssl_write(&ssl, buf, len)) <= 0) { // TODO: len > 16384 support
-				if(res == MBEDTLS_ERR_SSL_WANT_WRITE)
-					continue;
-				if(res != MBEDTLS_ERR_NET_CONN_RESET)
-					uprintf("mbedtls_ssl_write() failed: %s\n", mbedtls_high_level_strerr(res));
-				goto reset;
-			}
+static void status_onWireMessage(struct WireContext *wire, struct WireLink *link, const struct WireMessage *message) {
+	struct StatusContext *const ctx = (struct StatusContext*)wire->userptr;
+	pthread_mutex_lock(&ctx->mutex);
+	if(link != ctx->master)
+		goto unlock;
+	if(message == NULL) {
+		for(WireCookie cookie = 1; cookie <= WireLink_lastCookieIndex(link); ++cookie) {
+			const struct DataView cookieView = WireLink_getCookie(link, cookie);
+			if(cookieView.length == sizeof(struct GraphConnectCookie) && ((struct GraphConnectCookie*)cookieView.data)->cookieType == StatusCookieType_GraphConnect)
+				status_graph_resp(cookieView, NULL);
+			WireLink_freeCookie(link, cookie);
 		}
+		ctx->master = NULL;
+		goto unlock;
 	}
-	do {
-		res = mbedtls_ssl_close_notify(&ssl);
-	} while(res == MBEDTLS_ERR_SSL_WANT_READ || res == MBEDTLS_ERR_SSL_WANT_WRITE);
-	reset:;
-	mbedtls_ssl_free(&ssl);
-	close((int)(uintptr_t)fd);
-	return 0;
+	switch(message->type) {
+		case WireMessageType_WireGraphConnectResp: status_graph_resp(WireLink_getCookie(link, message->cookie), &message->graphConnectResp); break;
+		default: uprintf("UNHANDLED WIRE MESSAGE [%s]\n", reflect(WireMessageType, message->type));
+	}
+	WireLink_freeCookie(link, message->cookie);
+	unlock: pthread_mutex_unlock(&ctx->mutex);
 }
 
-static int status_ssl_sni(struct Context *ctx, mbedtls_ssl_context *ssl, const unsigned char *name, size_t name_len) {
+static void handle_client(int fd, mbedtls_ssl_config *config) {
+	struct HttpContext http;
+	if(HttpContext_init(&http, fd, config))
+		goto fail0;
+	const struct HttpRequest req = HttpContext_recieve(&http, (uint8_t[65536]){0}, 65536);
+	if(req.header_len)
+		status_resp(&http, ctx.path, req, ctx.master);
+	// TODO: wait for `status_graph_resp()` to finish asynchronously
+	HttpContext_cleanup(&http);
+	fail0: close(fd);
+}
+
+static void *handle_client_http(void *fd) {
+	handle_client((int)(uintptr_t)fd, NULL);
+	return NULL;
+}
+
+static void *handle_client_https(void *fd) {
+	handle_client((int)(uintptr_t)fd, &ctx.conf);
+	return NULL;
+}
+
+static int status_accept(struct StatusContext *ctx, struct SS *addr_out) {
+	const int listenfd = ctx->listenfd;
+	pthread_mutex_unlock(&ctx->mutex);
+	const int clientfd = accept(listenfd, &addr_out->sa, &addr_out->len);
+	pthread_mutex_lock(&ctx->mutex);
+	return clientfd;
+}
+
+static struct {
+	bool isRemote;
+	union {
+		struct WireContext *local;
+		const char *remote;
+	};
+} status_master = {0};
+static void *status_handler(struct StatusContext *ctx) {
+	pthread_attr_t attr;
+	if(pthread_attr_init(&attr)) {
+		uprintf("pthread_attr_init() failed\n");
+		return NULL;
+	}
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+	pthread_mutex_lock(&ctx->mutex);
+	{
+		const struct WireMessage connectMessage = {
+			.type = WireMessageType_WireStatusHook,
+		};
+		if(status_master.isRemote) {
+			uprintf("TODO: async wire support\n");
+			// ctx->master = WireContext_connect(&ctx->wire, status_master.remote, &connectMessage);
+		} else if(status_master.local != NULL) {
+			ctx->master = WireContext_attach(&ctx->wire, status_master.local, &connectMessage);
+		}
+	}
+	if(ctx->master == NULL) {
+		uprintf("WireContext_connect() failed\n");
+		goto unlock;
+	}
+	uprintf("Started HTTP%s\n", (ctx->handleClient == handle_client_http) ? "" : "S");
+	struct SS addr = {.len = sizeof(struct sockaddr_storage)};
+	for(int clientfd; (clientfd = status_accept(ctx, &addr)) != -1;) {
+		// TODO: shared poll thread (current system is NOT threadsafe); non-blocking I/O
+		if(pthread_create((pthread_t[]){NET_THREAD_INVALID}, &attr, ctx->handleClient, (void*)(uintptr_t)clientfd))
+			uprintf("pthread_create() failed\n");
+	}
+	WireLink_free(ctx->master);
+	ctx->master = NULL;
+	unlock: pthread_mutex_unlock(&ctx->mutex);
+	if(pthread_attr_destroy(&attr))
+		uprintf("pthread_attr_destroy() failed\n");
+	return NULL;
+}
+
+static int status_ssl_sni(struct StatusContext *ctx, mbedtls_ssl_context *ssl, const unsigned char *name, size_t name_len) {
 	uint8_t i = (name_len == strlen(ctx->domain) && memcmp(name, ctx->domain, name_len) == 0);
 	mbedtls_ssl_set_hs_ca_chain(ssl, ctx->certs[i].next, NULL);
 	return mbedtls_ssl_set_hs_own_cert(ssl, &ctx->certs[i], &ctx->keys[i]);
 }
 
 static pthread_t status_thread = NET_THREAD_INVALID;
-bool status_ssl_init(mbedtls_x509_crt certs[2], mbedtls_pk_context keys[2], const char *domain, const char *path, uint16_t port) {
-	ctx.base = (struct ContextBase){
+bool status_ssl_init(const char *path, uint16_t port, mbedtls_x509_crt certs[2], mbedtls_pk_context keys[2], const char *domain, const char *remoteMaster, struct WireContext *localMaster) {
+	status_master.isRemote = (*remoteMaster != 0);
+	if(status_master.isRemote)
+		status_master.remote = remoteMaster;
+	else
+		status_master.local = localMaster;
+	ctx = (struct StatusContext){
 		.listenfd = status_bind_tcp(port, 128),
-		.handleClient = handle_client_https,
+		.handleClient = handle_client_http,
+		.path = path,
 	};
-	if(ctx.base.listenfd == -1)
+	if(ctx.listenfd == -1)
 		return true;
-	mbedtls_ssl_config_init(&ctx.conf);
-	mbedtls_entropy_init(&ctx.entropy);
-	mbedtls_ctr_drbg_init(&ctx.ctr_drbg);
-	int res = mbedtls_ctr_drbg_seed(&ctx.ctr_drbg, mbedtls_entropy_func, &ctx.entropy, (const unsigned char*)"ssl_server", 10);
-	if(res) {
-		uprintf("mbedtls_ctr_drbg_seed() failed: %s\n", mbedtls_high_level_strerr(res));
-		return true;
+	if(mbedtls_pk_get_type(&keys[1]) != MBEDTLS_PK_NONE) {
+		mbedtls_ssl_config_init(&ctx.conf);
+		mbedtls_entropy_init(&ctx.entropy);
+		mbedtls_ctr_drbg_init(&ctx.ctr_drbg);
+		int res = mbedtls_ctr_drbg_seed(&ctx.ctr_drbg, mbedtls_entropy_func, &ctx.entropy, (const unsigned char*)"ssl_server", 10);
+		if(res) {
+			uprintf("mbedtls_ctr_drbg_seed() failed: %s\n", mbedtls_high_level_strerr(res));
+			goto fail0;
+		}
+		res = mbedtls_ssl_config_defaults(&ctx.conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT);
+		if(res) {
+			uprintf("mbedtls_ssl_config_defaults() failed: %s\n", mbedtls_high_level_strerr(res));
+			goto fail0;
+		}
+		mbedtls_ssl_conf_rng(&ctx.conf, mbedtls_ctr_drbg_random, &ctx.ctr_drbg);
+		mbedtls_ssl_conf_sni(&ctx.conf, (int (*)(void*, mbedtls_ssl_context*, const unsigned char*, size_t))status_ssl_sni, &ctx);
+		/*mbedtls_ssl_conf_ca_chain(&ctx.conf, certs[1].MBEDTLS_PRIVATE(next), NULL);
+		if((res = mbedtls_ssl_conf_own_cert(&ctx.conf, &certs[1], &keys[1])) != 0) {
+			uprintf("mbedtls_ssl_conf_own_cert() failed: %s\n", mbedtls_high_level_strerr(res));
+			goto fail0;
+		}*/
+		ctx.certs = certs;
+		ctx.keys = keys;
+		ctx.domain = domain;
+		ctx.handleClient = handle_client_https;
 	}
-	res = mbedtls_ssl_config_defaults(&ctx.conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT);
-	if(res) {
-		uprintf("mbedtls_ssl_config_defaults() failed: %s\n", mbedtls_high_level_strerr(res));
-		return true;
+	pthread_mutexattr_t mutexAttribs;
+	if(pthread_mutexattr_init(&mutexAttribs) ||
+	   pthread_mutexattr_settype(&mutexAttribs, PTHREAD_MUTEX_RECURSIVE) ||
+	   pthread_mutex_init(&ctx.mutex, &mutexAttribs)) {
+		uprintf("pthread_mutex_init() failed\n");
+		goto fail0;
 	}
-	mbedtls_ssl_conf_rng(&ctx.conf, mbedtls_ctr_drbg_random, &ctx.ctr_drbg);
-	mbedtls_ssl_conf_sni(&ctx.conf, (int (*)(void*, mbedtls_ssl_context*, const unsigned char*, size_t))status_ssl_sni, &ctx);
-	/*mbedtls_ssl_conf_ca_chain(&ctx.conf, certs[1].MBEDTLS_PRIVATE(next), NULL);
-	if((res = mbedtls_ssl_conf_own_cert(&ctx.conf, &certs[1], &keys[1])) != 0) {
-		uprintf("mbedtls_ssl_conf_own_cert() failed: %s\n", mbedtls_high_level_strerr(res));
-		return true;
-	}*/
-	ctx.certs = certs;
-	ctx.keys = keys;
-	ctx.domain = domain;
-	ctx.path = path;
-	if(pthread_create(&status_thread, NULL, (void *(*)(void*))status_handler, &ctx.base)) {
+	if(WireContext_init(&ctx.wire, &ctx, 0)) {
+		uprintf("WireContext_init() failed\n");
+		goto fail1;
+	}
+	ctx.wire.onMessage = status_onWireMessage;
+	if(pthread_create(&status_thread, NULL, (void *(*)(void*))status_handler, &ctx)) {
 		status_thread = NET_THREAD_INVALID;
-		return true;
+		goto fail2;
 	}
 	return false;
+	fail2: WireContext_cleanup(&ctx.wire);
+	fail1: pthread_mutex_destroy(&ctx.mutex);
+	fail0:
+	net_close(ctx.listenfd);
+	ctx.listenfd = -1;
+	return true;
 }
 
 void status_ssl_cleanup() {
-	if(ctx.base.listenfd == -1)
+	if(ctx.listenfd == -1)
 		return;
 	uprintf("Stopping HTTPS\n");
-	mbedtls_ctr_drbg_free(&ctx.ctr_drbg);
-	mbedtls_entropy_free(&ctx.entropy);
-	mbedtls_ssl_config_free(&ctx.conf);
-	shutdown(ctx.base.listenfd, SHUT_RD);
-	net_close(ctx.base.listenfd);
-	ctx.base.listenfd = -1;
+	shutdown(ctx.listenfd, SHUT_RD);
 	if(status_thread != NET_THREAD_INVALID) {
-		pthread_join(status_thread, NULL);
+		pthread_join(status_thread, NULL); // TODO: ensure all active connections are closed as well
 		status_thread = NET_THREAD_INVALID;
+	}
+	net_close(ctx.listenfd);
+	ctx.listenfd = -1;
+	WireContext_cleanup(&ctx.wire);
+	pthread_mutex_destroy(&ctx.mutex);
+	if(ctx.handleClient == handle_client_https) {
+		mbedtls_ctr_drbg_free(&ctx.ctr_drbg);
+		mbedtls_entropy_free(&ctx.entropy);
+		mbedtls_ssl_config_free(&ctx.conf);
 	}
 }

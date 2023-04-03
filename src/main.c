@@ -38,23 +38,18 @@ int main(int argc, const char *argv[]) {
 	if(config_load(&cfg, config_path)) // TODO: live config reloading
 		goto fail0;
 	wire_init(cfg.wireKey, cfg.wireKey_len);
-	if(cfg.statusPort) {
-		status_internal_init();
-		if(mbedtls_pk_get_type(&cfg.statusKey) != MBEDTLS_PK_NONE) {
-			if(status_ssl_init(cfg.certs, cfg.keys, cfg.statusAddress, cfg.statusPath, cfg.statusPort))
-				goto fail1;
-		} else {
-			if(status_init(cfg.statusPath, cfg.statusPort))
-				goto fail1;
-		}
-	}
 	struct WireContext *localMaster = NULL;
 	if(cfg.masterPort) {
 		localMaster = master_init(cfg.certs, cfg.keys, cfg.masterPort);
 		if(localMaster == NULL)
-			goto fail3;
+			goto fail1;
 	}
-	if(instance_init(cfg.instanceAddress[0], cfg.instanceAddress[1], cfg.instanceParent, localMaster, cfg.instanceMapPool, cfg.instanceCount))
+	if(cfg.statusPort) {
+		status_internal_init();
+		if(status_ssl_init(cfg.statusPath, cfg.statusPort, cfg.certs, cfg.keys, cfg.statusAddress, "", localMaster)) // TODO: remote master config
+			goto fail2;
+	}
+	if(instance_init(cfg.instanceAddress[0], cfg.instanceAddress[1], cfg.certs, cfg.keys, cfg.instanceParent, localMaster, cfg.instanceMapPool, cfg.instanceCount))
 		goto fail4;
 	if(headless) {
 		#ifndef WINDOWS
@@ -71,20 +66,12 @@ int main(int argc, const char *argv[]) {
 		fprintf(stderr, "Press [enter] to exit\n");
 		getchar();
 	}
-	fail4:
-	instance_cleanup();
-	fail3:
+	fail4: instance_cleanup();
+	fail2: status_ssl_cleanup();
+	fail1:
 	if(cfg.masterPort) // TODO: unconditional cleanup
 		master_cleanup();
-	fail1:
-	if(cfg.statusPort) {
-		if(mbedtls_pk_get_type(&cfg.statusKey) != MBEDTLS_PK_NONE)
-			status_ssl_cleanup();
-		else
-			status_cleanup();
-	}
 	wire_cleanup();
-	fail0:
-	config_free(&cfg);
+	fail0: config_free(&cfg);
 	return 0;
 }

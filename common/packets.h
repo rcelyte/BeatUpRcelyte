@@ -9,6 +9,7 @@ struct PacketContext {
 	uint8_t netVersion;
 	uint8_t protocolVersion;
 	uint8_t beatUpVersion;
+	bool direct;
 	uint16_t windowSize;
 };
 struct String {

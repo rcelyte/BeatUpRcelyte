@@ -6,20 +6,23 @@ n WireSetAttribs
 	b discover
 n WireSessionAlloc
 	u32 room
-	WireAddress address
 	String secret
 	String userId
-	String userName
-	Cookie32 random
-	ByteArrayNetSerializable publicKey
-	u32 protocolVersion
+	b ipv4
+	b direct
+	if(!.direct)
+		Cookie32 random
+		ByteArrayNetSerializable publicKey
+		u32 protocolVersion
 n WireSessionAllocResp
 	ConnectToServerResponse_Result result
-	Cookie32 random
-	ByteArrayNetSerializable publicKey
-	GameplayServerConfiguration configuration
-	String managerId
-	IPEndPoint endPoint
+	if(.result == ConnectToServerResponse_Result_Success)
+		GameplayServerConfiguration configuration
+		String managerId
+		IPEndPoint endPoint
+		u32 playerSlot
+		Cookie32 random
+		ByteArrayNetSerializable publicKey
 n WireRoomSpawn
 	WireSessionAlloc base
 	GameplayServerConfiguration configuration
@@ -31,6 +34,30 @@ n WireRoomJoinResp
 	WireSessionAllocResp base
 n WireRoomCloseNotify
 	u32 room
+n WireStatusHook
+u8 MultiplayerPlacementErrorCode
+	Success
+	Unknown
+	ConnectionCanceled
+	ServerDoesNotExist
+	ServerAtCapacity
+	AuthenticationFailed
+	RequestTimeout
+	MatchmakingTimeout
+n WireGraphConnect
+	u32 code
+	String secret
+	String userId
+	GameplayServerConfiguration configuration
+n WireGraphConnectResp
+	MultiplayerPlacementErrorCode result
+	if(.result == MultiplayerPlacementErrorCode_Success)
+		GameplayServerConfiguration configuration
+		u32 hostId
+		IPEndPoint endPoint
+		u32 roomSlot
+		u32 playerSlot
+		u32 code
 d WireMessage
 	u32 cookie
 	WireMessageType type
@@ -41,3 +68,6 @@ d WireMessage
 		WireRoomSpawnResp roomSpawnResp
 		WireRoomJoinResp roomJoinResp
 		WireRoomCloseNotify roomCloseNotify
+		WireStatusHook statusHook
+		WireGraphConnect graphConnect
+		WireGraphConnectResp graphConnectResp
