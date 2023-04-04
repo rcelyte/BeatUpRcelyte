@@ -2482,9 +2482,33 @@ void _pkt_MergedHeader_read(struct MergedHeader *restrict data, const uint8_t **
 void _pkt_MergedHeader_write(const struct MergedHeader *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u16_write(&data->length, pkt, end, ctx);
 }
+static void _pkt_Broadcast_read(struct Broadcast *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+}
+static void _pkt_Broadcast_write(const struct Broadcast *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+}
 static void _pkt_Merged_read(struct Merged *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 }
 static void _pkt_Merged_write(const struct Merged *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+}
+static void _pkt_ShutdownOk_read(struct ShutdownOk *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+}
+static void _pkt_ShutdownOk_write(const struct ShutdownOk *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+}
+static void _pkt_PeerNotFound_read(struct PeerNotFound *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+}
+static void _pkt_PeerNotFound_write(const struct PeerNotFound *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+}
+static void _pkt_InvalidProtocol_read(struct InvalidProtocol *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+}
+static void _pkt_InvalidProtocol_write(const struct InvalidProtocol *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+}
+static void _pkt_NatMessage_read(struct NatMessage *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+}
+static void _pkt_NatMessage_write(const struct NatMessage *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+}
+static void _pkt_Empty_read(struct Empty *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+}
+static void _pkt_Empty_write(const struct Empty *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 }
 void _pkt_NetPacketHeader_read(struct NetPacketHeader *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	uint8_t bitfield0;
@@ -2504,7 +2528,13 @@ void _pkt_NetPacketHeader_read(struct NetPacketHeader *restrict data, const uint
 		case PacketProperty_UnconnectedMessage: _pkt_UnconnectedMessage_read(&data->unconnectedMessage, pkt, end, ctx); break;
 		case PacketProperty_MtuCheck: _pkt_MtuCheck_read(&data->mtuCheck, pkt, end, ctx); break;
 		case PacketProperty_MtuOk: _pkt_MtuOk_read(&data->mtuOk, pkt, end, ctx); break;
+		case PacketProperty_Broadcast: _pkt_Broadcast_read(&data->broadcast, pkt, end, ctx); break;
 		case PacketProperty_Merged: _pkt_Merged_read(&data->merged, pkt, end, ctx); break;
+		case PacketProperty_ShutdownOk: _pkt_ShutdownOk_read(&data->shutdownOk, pkt, end, ctx); break;
+		case PacketProperty_PeerNotFound: _pkt_PeerNotFound_read(&data->peerNotFound, pkt, end, ctx); break;
+		case PacketProperty_InvalidProtocol: _pkt_InvalidProtocol_read(&data->invalidProtocol, pkt, end, ctx); break;
+		case PacketProperty_NatMessage: _pkt_NatMessage_read(&data->natMessage, pkt, end, ctx); break;
+		case PacketProperty_Empty: _pkt_Empty_read(&data->empty, pkt, end, ctx); break;
 		default: uprintf("Invalid value for enum `PacketProperty`\n"); longjmp(fail, 1);
 	}
 }
@@ -2526,7 +2556,13 @@ void _pkt_NetPacketHeader_write(const struct NetPacketHeader *restrict data, uin
 		case PacketProperty_UnconnectedMessage: _pkt_UnconnectedMessage_write(&data->unconnectedMessage, pkt, end, ctx); break;
 		case PacketProperty_MtuCheck: _pkt_MtuCheck_write(&data->mtuCheck, pkt, end, ctx); break;
 		case PacketProperty_MtuOk: _pkt_MtuOk_write(&data->mtuOk, pkt, end, ctx); break;
+		case PacketProperty_Broadcast: _pkt_Broadcast_write(&data->broadcast, pkt, end, ctx); break;
 		case PacketProperty_Merged: _pkt_Merged_write(&data->merged, pkt, end, ctx); break;
+		case PacketProperty_ShutdownOk: _pkt_ShutdownOk_write(&data->shutdownOk, pkt, end, ctx); break;
+		case PacketProperty_PeerNotFound: _pkt_PeerNotFound_write(&data->peerNotFound, pkt, end, ctx); break;
+		case PacketProperty_InvalidProtocol: _pkt_InvalidProtocol_write(&data->invalidProtocol, pkt, end, ctx); break;
+		case PacketProperty_NatMessage: _pkt_NatMessage_write(&data->natMessage, pkt, end, ctx); break;
+		case PacketProperty_Empty: _pkt_Empty_write(&data->empty, pkt, end, ctx); break;
 		default: uprintf("Invalid value for enum `PacketProperty`\n"); longjmp(fail, 1);
 	}
 }

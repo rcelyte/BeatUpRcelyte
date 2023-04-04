@@ -15,7 +15,7 @@ struct HandshakeState {
 	HandshakeMessageType step;
 };
 struct MasterPacket {
-	uint32_t timeStamp;
+	uint32_t firstSend, lastSend;
 	uint16_t length;
 	bool encrypt;
 	uint8_t data[512];
@@ -49,7 +49,7 @@ struct LocalMasterContext {
 	struct WireLink *status;
 };
 
-static struct MasterSession *master_lookup_session(struct MasterContext *ctx, struct SS addr) {
+struct MasterSession *MasterContext_lookup(struct MasterContext *ctx, struct SS addr) {
 	for(struct MasterSession *session = ctx->sessionList; session; session = session->next)
 		if(SS_equal(&addr, NetSession_get_addr(&session->net)))
 			return session;
@@ -57,7 +57,7 @@ static struct MasterSession *master_lookup_session(struct MasterContext *ctx, st
 }
 
 struct NetSession *MasterContext_onResolve(struct MasterContext *ctx, struct NetContext *net, struct SS addr, const uint8_t packet[static 1536], uint32_t packet_len, uint8_t out[static 1536], uint32_t *out_len) {
-	struct MasterSession *session = master_lookup_session(ctx, addr);
+	struct MasterSession *session = MasterContext_lookup(ctx, addr);
 	if(session != NULL) {
 		*out_len = NetSession_decrypt(&session->net, packet, packet_len, out);
 		return &session->net;
@@ -116,18 +116,23 @@ uint32_t MasterContext_onResend(struct MasterContext *ctx, struct NetContext *ne
 			nextTick = kickTime;
 		struct MasterSession *session = *sp;
 		struct Counter64 iter = session->resend.set;
+		bool unresponsive = false;
 		for(uint32_t i; (i = Counter64_clear_next(&iter)) != COUNTER64_INVALID;) {
 			struct MasterPacket *slot = &session->resend.slots[i];
 			if(!slot->length)
 				continue;
-			if((int32_t)(slot->timeStamp - currentTime) <= 0) {
+			if((int32_t)(slot->lastSend - currentTime) <= 0) {
+				unresponsive |= (slot->lastSend - slot->firstSend) > IDLE_TIMEOUT_MS;
 				net_send_internal(net, &session->net, slot->data, slot->length, slot->encrypt);
-				slot->timeStamp = currentTime + NET_RESEND_DELAY - (currentTime - slot->timeStamp) % NET_RESEND_DELAY;
+				slot->lastSend = currentTime + NET_RESEND_DELAY - (currentTime - slot->lastSend) % NET_RESEND_DELAY;
 			}
-			if(slot->timeStamp - currentTime < nextTick)
-				nextTick = slot->timeStamp - currentTime;
+			if(slot->lastSend - currentTime < nextTick)
+				nextTick = slot->lastSend - currentTime;
 		}
-		sp = &(*sp)->next;
+		if(unresponsive) // avoids spamming resends for the full 3 minute timeout if the client isn't handling them
+			*sp = master_disconnect(*sp);
+		else
+			sp = &(*sp)->next;
 	}
 	return nextTick;
 }
@@ -158,7 +163,7 @@ static void master_send_internal(struct NetContext *net, struct MasterSession *s
 	uint32_t i = Counter64_set_next(&session->resend.set);
 	if(i != COUNTER64_INVALID) {
 		struct MasterPacket *slot = &session->resend.slots[i];
-		slot->timeStamp = net_time();
+		slot->firstSend = slot->lastSend = net_time();
 		slot->length = length;
 		slot->encrypt = encrypt;
 		memcpy(slot->data, buf, length);
@@ -176,7 +181,7 @@ static uint32_t read_requestId(const uint8_t *data, const uint8_t *data_end, str
 	return out.value.requestId;
 }
 
-static uint32_t master_send(struct NetContext *net, struct MasterSession *session, MessageType type, const uint8_t *data, const uint8_t *data_end) {
+static uint32_t master_send(struct NetContext *net, struct MasterSession *session, MessageType type, const uint8_t *data, const uint8_t *data_end, bool reliable) {
 	uint8_t buf[data_end + 64 - data], *buf_end = buf;
 	struct UnconnectedMessage header = {
 		.type = type,
@@ -187,8 +192,12 @@ static uint32_t master_send(struct NetContext *net, struct MasterSession *sessio
 			.property = PacketProperty_UnconnectedMessage,
 			.unconnectedMessage = header,
 		}) && pkt_write_bytes(data, &buf_end, endof(buf), PV_LEGACY_DEFAULT, (size_t)(data_end - data));
-		if(res)
+		if(!res)
+			return 1;
+		if(reliable)
 			master_send_internal(net, session, buf, (uint16_t)(buf_end - buf), read_requestId(data, data_end, PV_LEGACY_DEFAULT), type != MessageType_HandshakeMessage);
+		else
+			net_send_internal(net, &session->net, buf, (uint16_t)(buf_end - buf), type != MessageType_HandshakeMessage);
 		return 1;
 	}
 	if(!(pkt_write(&header, &buf_end, endof(buf), PV_LEGACY_DEFAULT) &&
@@ -257,10 +266,11 @@ static void master_send_ack(struct NetContext *net, struct MasterSession *sessio
 		net_send_internal(net, &session->net, resp, (uint32_t)(resp_end - resp), type != MessageType_HandshakeMessage);
 }
 
-static void handle_ClientHelloRequest(struct NetContext *net, struct MasterSession *session, const struct ClientHelloRequest *req) {
+static inline bool InitializeConnection(struct NetContext *net, struct MasterSession *session, const struct ClientHelloRequest *req) {
 	if(session->handshake.step != HandshakeMessageType_ClientHelloRequest) {
-		if(net_time() - NetSession_get_lastKeepAlive(&session->net) < 5000) // 5 second timeout to prevent clients from getting "locked out" if their previous session hasn't closed or timed out yet
-			return;
+		// 5 second timeout to prevent clients from getting "locked out" if their previous session hasn't closed or timed out yet
+		if(net_time() - NetSession_get_lastKeepAlive(&session->net) < 5000)
+			return session->handshake.step == HandshakeMessageType_ClientHelloWithCookieRequest;
 		struct SS addr = *NetSession_get_addr(&session->net);
 		NetSession_free(&session->net);
 		NetSession_init(&session->net, net, addr); // security or something idk
@@ -268,16 +278,24 @@ static void handle_ClientHelloRequest(struct NetContext *net, struct MasterSessi
 	}
 	session->epoch = req->base.requestId & 0xff000000;
 	session->net.clientRandom = req->random;
+	session->handshake.step = HandshakeMessageType_ClientHelloWithCookieRequest;
+	return true;
+}
+
+static void handle_ClientHelloRequest(struct NetContext *net, struct MasterSession *session, const struct ClientHelloRequest *req) {
+	if(!InitializeConnection(net, session, req))
+		return;
 	struct HandshakeMessage r_hello = {
 		.type = HandshakeMessageType_HelloVerifyRequest,
-		.helloVerifyRequest.base.responseId = req->base.requestId,
+		.helloVerifyRequest.base = {
+			.requestId = master_getNextRequestId(session),
+			.responseId = req->base.requestId,
+		},
 	};
 	r_hello.helloVerifyRequest.cookie = *NetSession_get_cookie(&session->net);
 	uint8_t resp[65536], *resp_end = resp;
-	if(!MASTER_SERIALIZE(&r_hello, &resp_end, endof(resp)))
-		return;
-	master_send(net, session, MessageType_HandshakeMessage, resp, resp_end); // TODO: this should not be sent reliably
-	session->handshake.step = HandshakeMessageType_ClientHelloWithCookieRequest;
+	if(MASTER_SERIALIZE(&r_hello, &resp_end, endof(resp)))
+		master_send(net, session, MessageType_HandshakeMessage, resp, resp_end, false);
 }
 
 static void handle_ClientHelloWithCookieRequest(struct MasterContext *ctx, struct NetContext *net, struct MasterSession *session, const struct ClientHelloWithCookieRequest *req) {
@@ -308,7 +326,7 @@ static void handle_ClientHelloWithCookieRequest(struct MasterContext *ctx, struc
 	session->handshake = (struct HandshakeState){
 		.certificateRequestId = r_cert.serverCertificateRequest.base.requestId,
 		.helloResponseId = req->base.requestId,
-		.certificateOutboundCount = master_send(net, session, MessageType_HandshakeMessage, resp, resp_end),
+		.certificateOutboundCount = master_send(net, session, MessageType_HandshakeMessage, resp, resp_end, true),
 		.step = HandshakeMessageType_ServerCertificateRequest,
 	};
 }
@@ -333,7 +351,7 @@ static void handle_ServerCertificateRequest_sent(struct MasterContext *ctx, stru
 	uint8_t resp[65536], *resp_end = resp;
 	if(!MASTER_SERIALIZE(&r_hello, &resp_end, endof(resp)))
 		return;
-	master_send(net, session, MessageType_HandshakeMessage, resp, resp_end);
+	master_send(net, session, MessageType_HandshakeMessage, resp, resp_end, true);
 	session->handshake.step = HandshakeMessageType_ClientKeyExchangeRequest;
 }
 
@@ -353,7 +371,7 @@ static void handle_ClientKeyExchangeRequest(struct NetContext *net, struct Maste
 	uint8_t resp[65536], *resp_end = resp;
 	if(!MASTER_SERIALIZE(&r_spec, &resp_end, endof(resp)))
 		return;
-	master_send(net, session, MessageType_HandshakeMessage, resp, resp_end);
+	master_send(net, session, MessageType_HandshakeMessage, resp, resp_end, true);
 	session->handshake.step = HandshakeMessageType_ChangeCipherSpecRequest;
 }
 
@@ -371,9 +389,8 @@ static void handle_BaseAuthenticate(struct NetContext *net, struct MasterSession
 		},
 	};
 	uint8_t resp[65536], *resp_end = resp;
-	if(!MASTER_SERIALIZE(&r_auth, &resp_end, endof(resp)))
-		return;
-	master_send(net, session, gamelift ? MessageType_GameLiftMessage : MessageType_UserMessage, resp, resp_end);
+	if(MASTER_SERIALIZE(&r_auth, &resp_end, endof(resp)))
+		master_send(net, session, gamelift ? MessageType_GameLiftMessage : MessageType_UserMessage, resp, resp_end, true);
 }
 
 static void handle_AuthenticateUserRequest(struct NetContext *net, struct MasterSession *session, const struct AuthenticateUserRequest *req) {
@@ -468,7 +485,7 @@ static ConnectToServerResponse_Result SendWireSessionAlloc(struct WireSessionAll
 			return ConnectToServerResponse_Result_NoAvailableDedicatedServers;
 		}
 		struct PoolHost *host = pool_handle_new(&state->room, false);
-		if(!host) {
+		if(host == NULL) {
 			uprintf("Connect to Server Error: pool_handle_new() failed\n");
 			return ConnectToServerResponse_Result_NoAvailableDedicatedServers;
 		}
@@ -505,6 +522,14 @@ static ConnectToServerResponse_Result SendWireSessionAlloc(struct WireSessionAll
 	return ConnectToServerResponse_Result_Success;
 }
 
+static uint32_t shuffle(uint32_t num, bool dir) {
+	static const uint32_t magic[2] = {0x45d9f3b, 0x119de1f3};
+	num = ((num >> 16) ^ num) * magic[dir];
+	num = ((num >> 16) ^ num) * magic[dir];
+	num = (num >> 16) ^ num;
+	return num;
+}
+
 static bool handle_WireSessionAllocResp_local(struct NetContext *net, struct MasterSession *session, struct PoolHost *host, const struct LocalConnectCookie *state, const struct WireSessionAllocResp *sessionAlloc) {
 	struct UserMessage r_conn = {
 		.type = UserMessageType_ConnectToServerResponse,
@@ -521,7 +546,7 @@ static bool handle_WireSessionAllocResp_local(struct NetContext *net, struct Mas
 		r_conn.connectToServerResponse = (struct ConnectToServerResponse){
 			.base = r_conn.connectToServerResponse.base,
 			.result = ConnectToServerResponse_Result_Success,
-			.userId = String_fmt("beatupserver:%08x", rand()), // TODO: use meaningful id here
+			.userId = String_fmt("beatupserver:%08x", shuffle((pool_host_ident(host) << 14) | (state->base.room + 1), false)),
 			.userName = String_from(""),
 			.secret = state->secret,
 			.selectionMask = state->selectionMask,
@@ -539,7 +564,7 @@ static bool handle_WireSessionAllocResp_local(struct NetContext *net, struct Mas
 
 	uint8_t resp[65536], *resp_end = resp;
 	if(session && MASTER_SERIALIZE(&r_conn, &resp_end, endof(resp)))
-		master_send(net, session, MessageType_UserMessage, resp, resp_end);
+		master_send(net, session, MessageType_UserMessage, resp, resp_end, true);
 	return r_conn.connectToServerResponse.result != ConnectToServerResponse_Result_Success;
 }
 
@@ -554,7 +579,7 @@ static bool handle_WireSessionAllocResp_graph(struct LocalMasterContext *ctx, st
 			resp = (struct WireGraphConnectResp){
 				.result = MultiplayerPlacementErrorCode_Success,
 				.configuration = sessionAlloc->configuration,
-				.hostId = rand(), // TODO: use meaningful id here
+				.hostId = shuffle((pool_host_ident(host) << 14) | (state->base.room + 1), false),
 				.endPoint = sessionAlloc->endPoint,
 				.roomSlot = state->base.room,
 				.playerSlot = sessionAlloc->playerSlot,
@@ -608,7 +633,7 @@ static void handle_WireSessionAllocResp(struct LocalMasterContext *ctx, struct W
 			if(cookieView.length != sizeof(struct LocalConnectCookie))
 				break;
 			const struct LocalConnectCookie *const localState = (const struct LocalConnectCookie*)state;
-			dropped &= handle_WireSessionAllocResp_local(&ctx->net, master_lookup_session(&ctx->base, localState->addr), host, localState, sessionAlloc);
+			dropped &= handle_WireSessionAllocResp_local(&ctx->net, MasterContext_lookup(&ctx->base, localState->addr), host, localState, sessionAlloc);
 			return;
 		}
 		case MasterCookieType_GraphConnect: {
@@ -640,7 +665,7 @@ static void master_onWireMessage_status(struct LocalMasterContext *ctx, struct W
 	}
 	switch(message->type) {
 		case WireMessageType_WireGraphConnect: handle_WireGraphConnect(ctx, message->cookie, &message->graphConnect); break;
-		default: uprintf("UNHANDLED WIRE MESSAGE [%s]\n", reflect(WireMessageType, message->type));
+		default: uprintf("Unhandled wire message [%s]\n", reflect(WireMessageType, message->type));
 	}
 }
 
@@ -681,7 +706,7 @@ static void master_onWireMessage(struct WireContext *wire, struct WireLink *link
 			break;
 		}
 		case WireMessageType_WireRoomCloseNotify: pool_handle_free(*host, message->roomCloseNotify.room); break;
-		default: uprintf("UNHANDLED WIRE MESSAGE [%s]\n", reflect(WireMessageType, message->type));
+		default: uprintf("Unhandled wire message [%s]\n", reflect(WireMessageType, message->type));
 	}
 	unlock: net_unlock(&ctx->net);
 }
@@ -716,7 +741,6 @@ static void handle_ConnectToServerRequest(struct NetContext *net, struct MasterS
 	});
 }
 
-static void handle_UnconnectedMessage(struct MasterContext *ctx, struct NetContext *net, struct MasterSession *session, struct UnconnectedMessage header, const uint8_t *data, const uint8_t *end);
 static void handle_MultipartMessage(struct MasterContext *ctx, struct NetContext *net, struct MasterSession *session, const struct MultipartMessage *msg) {
 	if(!msg->totalLength) {
 		uprintf("INVALID MULTIPART LENGTH\n");
@@ -753,7 +777,7 @@ static void handle_MultipartMessage(struct MasterContext *ctx, struct NetContext
 		const uint8_t *data = (*multipart)->data, *end = &(*multipart)->data[msg->totalLength];
 		struct UnconnectedMessage header;
 		if(pkt_read(&header, &data, end, session->net.version))
-			handle_UnconnectedMessage(ctx, net, session, header, data, end);
+			MasterContext_handleMessage(ctx, net, session, header, data, end);
 		struct MasterMultipartList *e = *multipart;
 		*multipart = (*multipart)->next;
 		free(e);
@@ -764,7 +788,7 @@ static pthread_t master_thread = NET_THREAD_INVALID;
 static struct LocalMasterContext localMaster = {
 	.net = CLEAR_NETCONTEXT,
 }; // TODO: This "singleton" can't scale up due to pool API thread safety
-static void handle_UnconnectedMessage(struct MasterContext *ctx, struct NetContext *net, struct MasterSession *session, struct UnconnectedMessage header, const uint8_t *data, const uint8_t *end) {
+void MasterContext_handleMessage(struct MasterContext *ctx, struct NetContext *net, struct MasterSession *session, struct UnconnectedMessage header, const uint8_t *data, const uint8_t *end) {
 	while(data < end) {
 		struct SerializeHeader serial;
 		if(!pkt_read(&serial, &data, end, session->net.version))
@@ -858,9 +882,9 @@ void MasterContext_handle(struct MasterContext *ctx, struct NetContext *net, str
 	if(!pkt_read(&header, &data, end, session->net.version))
 		return;
 	if(header.property == PacketProperty_UnconnectedMessage)
-		handle_UnconnectedMessage(ctx, net, session, header.unconnectedMessage, data, end);
-	else
-		uprintf("Unsupported packet type: %s\n", reflect(PacketProperty, header.property));
+		MasterContext_handleMessage(ctx, net, session, header.unconnectedMessage, data, end);
+	else if(header.property != PacketProperty_Disconnect)
+		uprintf("Unhandled property [%s]\n", reflect(PacketProperty, header.property));
 }
 
 static void *master_handler(struct LocalMasterContext *ctx) {

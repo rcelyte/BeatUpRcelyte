@@ -5,7 +5,6 @@
 #endif
 
 #define LOAD_TIMEOUT 15
-#define IDLE_TIMEOUT_MS 10000
 #define KICK_TIMEOUT_MS 3000
 
 #define NET_MAX_WINDOW_SIZE 256

@@ -1008,7 +1008,13 @@ enum {
 	PacketProperty_UnconnectedMessage,
 	PacketProperty_MtuCheck,
 	PacketProperty_MtuOk,
-	PacketProperty_Merged = 12,
+	PacketProperty_Broadcast,
+	PacketProperty_Merged,
+	PacketProperty_ShutdownOk,
+	PacketProperty_PeerNotFound,
+	PacketProperty_InvalidProtocol,
+	PacketProperty_NatMessage,
+	PacketProperty_Empty,
 };
 [[maybe_unused]] static const char *_reflect_PacketProperty(PacketProperty value) {
 	switch(value) {
@@ -1023,7 +1029,13 @@ enum {
 		case PacketProperty_UnconnectedMessage: return "UnconnectedMessage";
 		case PacketProperty_MtuCheck: return "MtuCheck";
 		case PacketProperty_MtuOk: return "MtuOk";
+		case PacketProperty_Broadcast: return "Broadcast";
 		case PacketProperty_Merged: return "Merged";
+		case PacketProperty_ShutdownOk: return "ShutdownOk";
+		case PacketProperty_PeerNotFound: return "PeerNotFound";
+		case PacketProperty_InvalidProtocol: return "InvalidProtocol";
+		case PacketProperty_NatMessage: return "NatMessage";
+		case PacketProperty_Empty: return "Empty";
 		default: return "???";
 	}
 }
@@ -2145,7 +2157,25 @@ struct MtuOk {
 struct MergedHeader {
 	uint16_t length;
 };
+struct Broadcast {
+	uint8_t _empty;
+};
 struct Merged {
+	uint8_t _empty;
+};
+struct ShutdownOk {
+	uint8_t _empty;
+};
+struct PeerNotFound {
+	uint8_t _empty;
+};
+struct InvalidProtocol {
+	uint8_t _empty;
+};
+struct NatMessage {
+	uint8_t _empty;
+};
+struct Empty {
 	uint8_t _empty;
 };
 struct NetPacketHeader {
@@ -2164,7 +2194,13 @@ struct NetPacketHeader {
 		struct UnconnectedMessage unconnectedMessage;
 		struct MtuCheck mtuCheck;
 		struct MtuOk mtuOk;
+		struct Broadcast broadcast;
 		struct Merged merged;
+		struct ShutdownOk shutdownOk;
+		struct PeerNotFound peerNotFound;
+		struct InvalidProtocol invalidProtocol;
+		struct NatMessage natMessage;
+		struct Empty empty;
 	};
 };
 struct MultipartMessageReadbackProxy {

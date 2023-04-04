@@ -1587,13 +1587,13 @@ static inline void handle_packet(struct InstanceContext *ctx, struct Room **room
 	struct NetPacketHeader header;
 	if(!pkt_read(&header, &data, end, session->net.version))
 		return;
+	if(session->state == 0 && header.property != PacketProperty_ConnectRequest && header.property != PacketProperty_UnconnectedMessage)
+		return;
 	size_t length = (size_t)(end - data);
 	if(header.property == PacketProperty_Merged /*&& !header.isFragmented*/)
 		if(!handle_Merged(&data, end, &header, &length, session->net.version))
 			return;
 	do {
-		if(session->state == 0 && header.property != PacketProperty_ConnectRequest)
-			return;
 		if(header.isFragmented && header.property != PacketProperty_Channeled) {
 			uprintf("MALFORMED HEADER\n");
 			return;
@@ -1637,12 +1637,16 @@ static inline void handle_packet(struct InstanceContext *ctx, struct Room **room
 				break;
 			}
 			case PacketProperty_ConnectRequest: handle_ConnectRequest(ctx, *room, session, &header.connectRequest, &sub, &sub[length]); break;
-			case PacketProperty_ConnectAccept: uprintf("BAD PROPERTY: PacketProperty_ConnectAccept\n"); break;
 			case PacketProperty_Disconnect: room_disconnect(ctx, room, session, false); return;
-			case PacketProperty_UnconnectedMessage: uprintf("TODO: route PacketProperty_UnconnectedMessage to direct master using master_lookup_session()\n"); break;
+			case PacketProperty_UnconnectedMessage: {
+				struct MasterSession *const masterSession = MasterContext_lookup(&ctx->base, *NetSession_get_addr(&session->net));
+				if(masterSession != NULL)
+					MasterContext_handleMessage(&ctx->base, &ctx->net, masterSession, header.unconnectedMessage, sub, &sub[length]);
+				sub += length;
+				break;
+			}
 			case PacketProperty_MtuCheck: handle_MtuCheck(&ctx->net, &session->net, &header.mtuCheck); break;
-			case PacketProperty_Merged: uprintf("BAD PROPERTY: PacketProperty_Merged\n"); break;
-			default: uprintf("BAD PACKET PROPERTY\n");
+			default: uprintf("Unhandled property [%s]\n", reflect(PacketProperty, header.property));
 		}
 		data += length;
 		pkt_debug("BAD PACKET LENGTH", sub, data, length, session->net.version);
@@ -2015,7 +2019,7 @@ static void instance_onWireMessage(struct WireContext *wire, struct WireLink *li
 	switch(message->type) {
 		case WireMessageType_WireRoomSpawn: instance_room_spawn(ctx, link, message->cookie, &message->roomSpawn); break;
 		case WireMessageType_WireRoomJoin: instance_room_join(ctx, link, message->cookie, &message->roomJoin); break;
-		default: uprintf("UNHANDLED WIRE MESSAGE [%s]\n", reflect(WireMessageType, message->type));
+		default: uprintf("Unhandled wire message [%s]\n", reflect(WireMessageType, message->type));
 	}
 	unlock: net_unlock(&ctx->net);
 }

@@ -2,17 +2,19 @@
 #include "../counter.h"
 #include <stddef.h>
 #include <stdlib.h>
-#include <pthread.h>
+#include <assert.h>
 
 struct PoolHost {
 	struct PoolHost *next;
 	struct WireLink *link;
+	HostCode ident;
 	bool discover;
 	uint32_t capacity;
 	struct Counter64 blocks;
 	ServerCode *codes;
 };
 
+static uint16_t lastId = 0;
 static struct PoolHost *firstHost = NULL;
 
 void pool_reset() {
@@ -22,13 +24,24 @@ void pool_reset() {
 	}
 }
 
+static bool ReservedId(uint16_t ident) {
+	for(struct PoolHost *it = firstHost; it != NULL; it = it->next)
+		if(it->ident == ident)
+			return true;
+	return false;
+}
+
 struct PoolHost *pool_host_attach(struct WireLink *link) {
 	struct PoolHost *const host = malloc(sizeof(struct PoolHost));
 	if(host == NULL)
 		return NULL;
+	for(uint32_t i = 0; i < 65536; ++i)
+		if(!ReservedId(++lastId))
+			break;
 	*host = (struct PoolHost){
 		.next = firstHost,
 		.link = link,
+		.ident = lastId,
 	};
 	firstHost = host;
 	uprintf("pool_host_attach()\n");
@@ -71,6 +84,10 @@ struct WireLink *pool_host_wire(struct PoolHost *host) {
 	return host->link;
 }
 
+HostCode pool_host_ident(struct PoolHost *host) {
+	return host->ident;
+}
+
 static uint32_t globalRoomCount = 0;
 static struct PoolHost *_pool_handle_new(uint32_t *room_out, ServerCode code) {
 	struct PoolHost *host = firstHost; // TODO: multiple hosts + load balancing
@@ -93,17 +110,16 @@ static struct PoolHost *_pool_handle_new(uint32_t *room_out, ServerCode code) {
 	return host;
 }
 
-struct PoolHost *pool_handle_new(uint32_t *room_out, bool random) { // TODO: fix performance here utilizing hash lookups
+// TODO: hash table lookups
+struct PoolHost *pool_handle_new(uint32_t *room_out, bool random) {
 	if(random) {
 		uprintf("TODO: randomized room codes\n");
 		return NULL;
 	}
-	for(ServerCode code = 0; code < 16; ++code) {
-		if(code == ServerCode_NONE) // `ServerCode_NONE` is an assumed opaque value
-			continue;
+	assert(ServerCode_NONE == 0);
+	for(ServerCode code = 1; code < 257; ++code)
 		if(!pool_handle_lookup((uint32_t[]){0}, code))
 			return _pool_handle_new(room_out, code);
-	}
 	return NULL;
 }
 

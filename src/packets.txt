@@ -1112,7 +1112,13 @@ n MtuOk
 	Mtu base
 d MergedHeader
 	u16 length
+n Broadcast
 n Merged
+n ShutdownOk
+n PeerNotFound
+n InvalidProtocol
+n NatMessage
+n Empty
 d NetPacketHeader
 	PacketProperty property:5
 	u8 connectionNumber:2
@@ -1129,7 +1135,13 @@ d NetPacketHeader
 		UnconnectedMessage unconnectedMessage
 		MtuCheck mtuCheck
 		MtuOk mtuOk
-		Merged merged 12
+		Broadcast broadcast
+		Merged merged
+		ShutdownOk shutdownOk
+		PeerNotFound peerNotFound
+		InvalidProtocol invalidProtocol
+		NatMessage natMessage
+		Empty empty
 r MultipartMessageReadbackProxy
 	NetPacketHeader header
 	SerializeHeader serial

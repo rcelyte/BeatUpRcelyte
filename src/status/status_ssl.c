@@ -43,7 +43,7 @@ static void status_onWireMessage(struct WireContext *wire, struct WireLink *link
 	}
 	switch(message->type) {
 		case WireMessageType_WireGraphConnectResp: status_graph_resp(WireLink_getCookie(link, message->cookie), &message->graphConnectResp); break;
-		default: uprintf("UNHANDLED WIRE MESSAGE [%s]\n", reflect(WireMessageType, message->type));
+		default: uprintf("Unhandled wire message [%s]\n", reflect(WireMessageType, message->type));
 	}
 	WireLink_freeCookie(link, message->cookie);
 	unlock: pthread_mutex_unlock(&ctx->mutex);
