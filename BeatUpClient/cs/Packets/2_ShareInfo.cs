@@ -74,6 +74,6 @@ static partial class BeatUpClient {
 		public ShareData(ShareId id, Hash256 hash, System.ArraySegment<byte> data, uint offset) =>
 			(this.info, this.data) = (new ShareInfo(offset, new ShareMeta((ulong)data.Count, hash), id), data);
 		public static ShareData New() =>
-			new ShareData(new ShareId {mimeType = string.Empty, name = string.Empty}, new Hash256(), new System.ArraySegment<byte>(), 0);
+			new ShareData(new ShareId {mimeType = string.Empty, name = string.Empty}, default, new System.ArraySegment<byte>(), 0);
 	}
 }

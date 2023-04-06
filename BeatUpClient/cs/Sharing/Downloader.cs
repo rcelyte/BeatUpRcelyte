@@ -173,11 +173,7 @@ static partial class BeatUpClient {
 				Net.onDataFragment -= HandleData;
 				onProgress = null;
 			}
-			Hash256 hash = new Hash256(await System.Threading.Tasks.Task.Run(() => {
-				using System.Security.Cryptography.SHA256 sha256 = System.Security.Cryptography.SHA256.Create();
-				return sha256.ComputeHash(buffer);
-			}));
-			if(!hash.Equals(meta.hash)) {
+			if(!(await Hash256.ComputeAsync(new(buffer))).Equals(meta.hash)) {
 				Log.Error("Download failed: Hash mismatch");
 				return null;
 			}

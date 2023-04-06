@@ -3,7 +3,7 @@ using static System.Linq.Enumerable;
 static partial class BeatUpClient {
 	class CallbackStream : System.IO.Stream {
 		readonly System.IO.Stream stream;
-		readonly System.Action<int> onProgress;
+		readonly System.Action<uint> onProgress;
 		public override bool CanRead => stream.CanRead;
 		public override bool CanSeek => stream.CanSeek;
 		public override bool CanWrite => stream.CanWrite;
@@ -13,10 +13,10 @@ static partial class BeatUpClient {
 			set => stream.Position = value;
 		}
 		int UpdateProgress(int count) {
-			onProgress(count);
+			onProgress((uint)count);
 			return count;
 		}
-		public CallbackStream(System.IO.Stream stream, System.Action<int> onProgress) =>
+		public CallbackStream(System.IO.Stream stream, System.Action<uint> onProgress) =>
 			(this.stream, this.onProgress) = (stream, onProgress);
 		public override void Flush() => stream.Flush();
 		public override long Seek(long offset, System.IO.SeekOrigin origin) => stream.Seek(offset, origin);
@@ -42,41 +42,31 @@ static partial class BeatUpClient {
 			Log.Warn("Level too large for sharing!");
 			return (default, default);
 		}
-		ulong progress = 0, progressLength = 53738, progressOffset = 0;
+		ulong progressOffset = 0, progressLength = 53738;
 		System.Diagnostics.Stopwatch rateLimit = System.Diagnostics.Stopwatch.StartNew();
-		System.Collections.IEnumerator SetProgressSafe(ushort percent) {
-			yield return null;
-			onProgress?.Invoke(percent);
-		}
-		void HandleProgress(int delta) {
-			progress += (ulong)delta;
+		void UpdateProgress(ulong progress) {
 			if(rateLimit.ElapsedMilliseconds < 28)
 				return;
 			rateLimit.Restart();
 			ushort percent = (ushort)(progress * progressLength / totalLength + progressOffset);
-			PersistentSingleton<SharedCoroutineStarter>.instance.StartCoroutine(SetProgressSafe(percent));
+			onProgress?.Invoke(percent);
 		}
 		using System.IO.MemoryStream memoryStream = new System.IO.MemoryStream();
 		using(System.IO.Compression.ZipArchive archive = new System.IO.Compression.ZipArchive(memoryStream, System.IO.Compression.ZipArchiveMode.Create, true)) {
+			ulong progress = 0;
 			foreach((string path, string name) file in files) {
 				Log.Debug($"    Compressing `{file.path}`");
 				using System.IO.Stream fileStream = System.IO.File.Open(file.path, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read);
 				using System.IO.Stream entry = archive.CreateEntry(file.name).Open();
-				await fileStream.CopyToAsync(new CallbackStream(entry, HandleProgress), 81920, cancellationToken);
+				await fileStream.CopyToAsync(new CallbackStream(entry, delta => UpdateProgress(progress += delta)), 81920, cancellationToken);
 			}
 		}
-		(Hash256 hash, System.ArraySegment<byte> buffer) res = (new Hash256(), default);
+		(Hash256 hash, System.ArraySegment<byte> buffer) res = (default, default);
 		if(!memoryStream.TryGetBuffer(out res.buffer))
 			return res;
-		progress = 0;
 		totalLength = (ulong)res.buffer.Count;
-		progressOffset = progressLength;
-		progressLength = 65535 - progressOffset;
-		memoryStream.Seek(0, System.IO.SeekOrigin.Begin);
-		res.hash = new(await System.Threading.Tasks.Task.Run(() => {
-			using System.Security.Cryptography.SHA256 sha256 = System.Security.Cryptography.SHA256.Create();
-			return sha256.ComputeHash(new CallbackStream(memoryStream, HandleProgress)); // TODO: need `cancellationToken` here
-		}));
+		(progressOffset, progressLength) = (progressLength, 65535 - progressLength);
+		res.hash = await Hash256.ComputeAsync(res.buffer, UpdateProgress);
 		Log.Debug($"    Hashed {totalLength} bytes");
 		return res;
 	}
