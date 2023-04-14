@@ -104,7 +104,8 @@ static partial class BeatUpClient {
 			altCreateButtonSprites = (sprites[0], sprites[1], sprites[1], sprites[0]);
 			Log.Debug($"Applying {patchCount} patches");
 			applyPatches();
-			BeatUpClient_Migration.Init();
+			if(GameLiftRequired)
+				BeatUpClient_Migration.Init();
 			UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnSceneLoaded;
 		} catch(System.Exception ex) {
 			Log.Error($"Error applying patches: {ex}");

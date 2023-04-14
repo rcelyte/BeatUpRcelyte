@@ -39,7 +39,7 @@ static partial class BeatUpClient {
 			newConfig.multiplayerStatusUrl = string.IsNullOrEmpty(statusUrl) ? "https://status." + splitHostname[0] : statusUrl;
 			newConfig.graphUrl = hostname;
 			newConfig.forceGameLift = hostname.StartsWith("http://") || hostname.StartsWith("https://");
-			if(typeof(GameLiftConnectionManager).Assembly.GetType("MasterServerConnectionManager", false) == null && !newConfig.forceGameLift) {
+			if(GameLiftRequired && !newConfig.forceGameLift) {
 				newConfig.graphUrl = newConfig.multiplayerStatusUrl;
 				newConfig.forceGameLift = true;
 			}
