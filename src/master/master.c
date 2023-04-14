@@ -569,7 +569,7 @@ static bool handle_WireSessionAllocResp_local(struct NetContext *net, struct Mas
 }
 
 static bool handle_WireSessionAllocResp_graph(struct LocalMasterContext *ctx, struct PoolHost *host, const struct GraphConnectCookie *state, const struct WireSessionAllocResp *sessionAlloc) {
-	if(state->status != ctx->status)
+	if(state->status != ctx->status || state->status == NULL)
 		return true;
 	struct WireGraphConnectResp resp = {
 		.result = MultiplayerPlacementErrorCode_Unknown,
@@ -625,19 +625,19 @@ static void handle_WireGraphConnect(struct LocalMasterContext *ctx, WireCookie c
 }
 
 static void handle_WireSessionAllocResp(struct LocalMasterContext *ctx, struct WireLink *link, struct PoolHost *host, WireCookie cookie, const struct WireSessionAllocResp *sessionAlloc, bool spawn) {
-	const struct DataView cookieView = WireLink_getCookie(link, cookie);
-	const struct ConnectCookie *state = (struct ConnectCookie*)cookieView.data;
+	const struct DataView view = WireLink_getCookie(link, cookie);
+	const struct ConnectCookie *state = (struct ConnectCookie*)view.data;
 	bool dropped = spawn;
-	switch((cookieView.length >= sizeof(*state)) ? state->cookieType : MasterCookieType_INVALID) {
+	switch((view.length >= sizeof(*state)) ? state->cookieType : MasterCookieType_INVALID) {
 		case MasterCookieType_LocalConnect: {
-			if(cookieView.length != sizeof(struct LocalConnectCookie))
+			if(view.length != sizeof(struct LocalConnectCookie))
 				break;
 			const struct LocalConnectCookie *const localState = (const struct LocalConnectCookie*)state;
 			dropped &= handle_WireSessionAllocResp_local(&ctx->net, MasterContext_lookup(&ctx->base, localState->addr), host, localState, sessionAlloc);
 			return;
 		}
 		case MasterCookieType_GraphConnect: {
-			if(cookieView.length != sizeof(struct GraphConnectCookie))
+			if(view.length != sizeof(struct GraphConnectCookie))
 				break;
 			dropped &= handle_WireSessionAllocResp_graph(ctx, host, (const struct GraphConnectCookie*)state, sessionAlloc);
 			return;
@@ -651,7 +651,17 @@ static void handle_WireSessionAllocResp(struct LocalMasterContext *ctx, struct W
 
 static void master_onWireMessage_status(struct LocalMasterContext *ctx, struct WireLink *link, const struct WireMessage *message) {
 	if(message == NULL) {
-		if(link == ctx->status)
+		for(struct PoolHost *host = pool_host_iter_start(); host != NULL; host = pool_host_iter_next(host)) {
+			struct WireLink *const hostLink = pool_host_wire(host);
+			for(WireCookie cookie = 1; cookie <= WireLink_lastCookieIndex(hostLink); ++cookie) {
+				const struct DataView view = WireLink_getCookie(hostLink, cookie);
+				if(view.length != sizeof(struct GraphConnectCookie) || ((struct GraphConnectCookie*)view.data)->base.cookieType != MasterCookieType_GraphConnect)
+					continue;
+				if(((struct GraphConnectCookie*)view.data)->status == link)
+					((struct GraphConnectCookie*)view.data)->status = NULL;
+			}
+		}
+		if(ctx->status == link)
 			ctx->status = NULL;
 		return;
 	}
@@ -686,8 +696,8 @@ static void master_onWireMessage(struct WireContext *wire, struct WireLink *link
 	}
 	if(message == NULL) {
 		for(WireCookie cookie = 1; cookie <= WireLink_lastCookieIndex(link); ++cookie) {
-			const struct DataView cookieView = WireLink_getCookie(link, cookie);
-			const MasterCookieType cookieType = (cookieView.length >= sizeof(cookieType)) ? *(MasterCookieType*)cookieView.data : MasterCookieType_INVALID;
+			const struct DataView view = WireLink_getCookie(link, cookie);
+			const MasterCookieType cookieType = (view.length >= sizeof(cookieType)) ? *(MasterCookieType*)view.data : MasterCookieType_INVALID;
 			if(cookieType == MasterCookieType_LocalConnect || cookieType == MasterCookieType_GraphConnect)
 				handle_WireSessionAllocResp(ctx, link, *host, cookie, NULL, false); // TODO: retry with a different instance if any are still alive
 			WireLink_freeCookie(link, cookie);

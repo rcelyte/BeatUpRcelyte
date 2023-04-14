@@ -13,7 +13,7 @@ static partial class BeatUpClient {
 	static UnityEngine.Sprite defaultPackCover = null!;
 
 	static UnityEngine.GameObject? infoText = null;
-	static StringSO customServerHostName = null!;
+	internal static StringSO customServerHostName = null!;
 	static DifficultyPanel lobbyDifficultyPanel = null!;
 	internal static PlayerData playerData = new PlayerData(0);
 

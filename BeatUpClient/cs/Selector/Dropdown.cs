@@ -55,6 +55,7 @@ static partial class BeatUpClient {
 			removeButton.transform.localPosition = new UnityEngine.Vector3(-40.5f, 0, 0);
 
 			onNetworkConfigChanged += SetServer;
+			BeatUpClient_Config.onReload += () => Refresh(false);
 		}
 		void OnDestroy() =>
 			onNetworkConfigChanged -= SetServer;
@@ -111,7 +112,6 @@ static partial class BeatUpClient {
 			Entry entry = ephemeralEntry.GetValueOrDefault();
 			BeatUpClient_Config.Instance.Servers[entry.name] = entry.status;
 			BeatUpClient_Config.Instance.Changed();
-			Refresh(false);
 		}
 		void RefreshStyle(int idx) {
 			bool existing = options[idx].Existing();

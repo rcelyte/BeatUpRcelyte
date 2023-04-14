@@ -29,17 +29,21 @@ static partial class BeatUpClient_MpCore {
 
 	static System.Diagnostics.Stopwatch rateLimit = System.Diagnostics.Stopwatch.StartNew();
 	[Patch(PatchType.Postfix, typeof(MultiplayerCore.Objects.MpLevelLoader), nameof(MultiplayerCore.Objects.MpLevelLoader.Report))]
-	public static void MpLevelLoader_Report(double value) {
+	static void MpLevelLoader_Report(double value) {
 		if(rateLimit.ElapsedMilliseconds < 28)
 			return;
 		rateLimit.Restart();
 		Net.SetLocalProgressUnreliable(new LoadProgress(LoadState.Downloading, (ushort)(value * 65535)));
 	}
 
-	[Patch.Overload(PatchType.Postfix, typeof(MultiplayerCore.Patchers.NetworkConfigPatcher), nameof(MultiplayerCore.Patchers.NetworkConfigPatcher.UseMasterServer), new[] {typeof(DnsEndPoint), typeof(string), typeof(System.Nullable<int>)})]
-	[Patch.Overload(PatchType.Postfix, typeof(MultiplayerCore.Patchers.NetworkConfigPatcher), nameof(MultiplayerCore.Patchers.NetworkConfigPatcher.UseMasterServer), new[] {typeof(DnsEndPoint), typeof(string), typeof(System.Nullable<int>), typeof(string)})]
-	public static void NetworkConfigPatcher_UseMasterServer(DnsEndPoint endPoint, string statusUrl) =>
+	[Patch.Overload(PatchType.Postfix, typeof(MultiplayerCore.Patchers.NetworkConfigPatcher), "UseMasterServer", true, new[] {typeof(DnsEndPoint), typeof(string), typeof(System.Nullable<int>)})]
+	[Patch.Overload(PatchType.Postfix, typeof(MultiplayerCore.Patchers.NetworkConfigPatcher), "UseMasterServer", true, new[] {typeof(DnsEndPoint), typeof(string), typeof(System.Nullable<int>), typeof(string)})]
+	static void NetworkConfigPatcher_UseMasterServer(DnsEndPoint endPoint, string statusUrl) =>
 		UpdateNetworkConfig(endPoint.ToString(), statusUrl);
+
+	[Patch(PatchType.Postfix, typeof(MultiplayerCore.Patchers.NetworkConfigPatcher), nameof(MultiplayerCore.Patchers.NetworkConfigPatcher.UseCustomApiServer), true)]
+	static void NetworkConfigPatcher_UseCustomApiServer(string graphUrl, string statusUrl, int? maxPartySize, string? quickPlaySetupUrl) =>
+		UpdateNetworkConfig(graphUrl, statusUrl); // TODO: respect `maxPartySize`, `quickPlaySetupUrl`
 
 	[Patch(PatchType.Postfix, typeof(MultiplayerCore.Patchers.NetworkConfigPatcher), nameof(MultiplayerCore.Patchers.NetworkConfigPatcher.UseOfficialServer))]
 	public static void NetworkConfigPatcher_UseOfficialServer() =>

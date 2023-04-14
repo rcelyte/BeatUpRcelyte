@@ -13,7 +13,7 @@ static partial class BeatUpClient {
 	static void GameLiftConnectionManager_HandleConnectToServerSuccess(string playerSessionId, GameplayServerConfiguration configuration) =>
 		HandleConnectToServerSuccess(!playerSessionId.StartsWith("psess-"), configuration.maxPlayerCount); // TODO: disable customs on official
 
-	[Patch(PatchType.Prefix, "MasterServerConnectionManager", nameof(MasterServerConnectionManager.HandleConnectToServerSuccess))]
+	[Patch(PatchType.Prefix, "BGNet", "MasterServerConnectionManager", nameof(MasterServerConnectionManager.HandleConnectToServerSuccess))]
 	static void MasterServerConnectionManager_HandleConnectToServerSuccess(GameplayServerConfiguration configuration) =>
 		HandleConnectToServerSuccess(true, configuration.maxPlayerCount);
 

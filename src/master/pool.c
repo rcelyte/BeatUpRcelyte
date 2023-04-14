@@ -88,6 +88,14 @@ HostCode pool_host_ident(struct PoolHost *host) {
 	return host->ident;
 }
 
+struct PoolHost *pool_host_iter_start(void) {
+	return firstHost;
+}
+
+struct PoolHost *pool_host_iter_next(struct PoolHost *current) {
+	return current->next;
+}
+
 static uint32_t globalRoomCount = 0;
 static struct PoolHost *_pool_handle_new(uint32_t *room_out, ServerCode code) {
 	struct PoolHost *host = firstHost; // TODO: multiple hosts + load balancing

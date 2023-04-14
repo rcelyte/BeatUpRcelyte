@@ -169,6 +169,7 @@ var refs = new (string path, string name, string[]? overrides)[] {
 	(managed, "Colors.dll", null),
 	(managed, "GameplayCore.dll", null),
 	(managed, "IPA.Loader.dll", null),
+	(managed, "System.Net.Http.dll", null),
 	(managed, "Unity.ResourceManager.dll", new[] {
 		"MonoBehaviourCallbackHooks",
 	}),

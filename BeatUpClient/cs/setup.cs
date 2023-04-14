@@ -2,7 +2,7 @@ using static System.Linq.Enumerable;
 
 static partial class BeatUpClient {
 	static bool SupportedMpCoreVersion(string? v) =>
-		v == null || v == "1.1.2" || v == "1.2.0";
+		v == null || v == "1.1.2" || v == "1.2.0" || v == "1.3.0";
 
 	[System.AttributeUsage(System.AttributeTargets.Method)]
 	internal class InitAttribute : System.Attribute {}
@@ -46,7 +46,7 @@ static partial class BeatUpClient {
 		}
 		Hive.Versioning.Version? mpCoreVersion = modVersion("MultiplayerCore");
 		if(!SupportedMpCoreVersion(mpCoreVersion?.ToString())) {
-			BeatUpClient_Error.Init("Incompatible BeatUpClient Version", $"This version of BeatUpClient only supports MultiplayerCore 1.1.2 to 1.2.0");
+			BeatUpClient_Error.Init("Incompatible BeatUpClient Version", $"This version of BeatUpClient only supports MultiplayerCore 1.1.2 to 1.3.0");
 			return;
 		}
 		string? err = BeatUpClient_Beta.CheckVersion(version);
@@ -104,6 +104,7 @@ static partial class BeatUpClient {
 			altCreateButtonSprites = (sprites[0], sprites[1], sprites[1], sprites[0]);
 			Log.Debug($"Applying {patchCount} patches");
 			applyPatches();
+			BeatUpClient_Migration.Init();
 			UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnSceneLoaded;
 		} catch(System.Exception ex) {
 			Log.Error($"Error applying patches: {ex}");
