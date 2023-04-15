@@ -10,7 +10,7 @@ Ways to Join
 ### Beat Saber Server Browser \[[PC](https://github.com/roydejong/BeatSaberServerBrowser#installation)\]
 ServerBrowser lets hosts publicly list their lobbies for other ServerBrowser users to join, regardless of server.
 
-### BeatUpClient | BETA \[[PC](https://github.com/rcelyte/BeatUpRcelyte/releases/tag/0.5.0)\]
+### BeatUpClient | BETA \[[PC](https://github.com/rcelyte/BeatUpRcelyte/releases/tag/0.5.1)\]
 BeatUpClient enables custom servers to be added in-game from the multiplayer menu using the `+` button, or directly in the config located at `UserData\BeatUpClient.json`. Using BeatUpClient will additionally enable the following features in BeatUpServer lobbies:
 * Downloading of levels not available on BeatSaver
 * Per-player difficulty
@@ -19,8 +19,8 @@ BeatUpClient enables custom servers to be added in-game from the multiplayer men
 * Skipping the end-of-level podium
 
 
-### BeatTogether Mod \[[PC](https://github.com/pythonology/BeatTogether#installation)\]
-To access a custom server through the BeatTogether mod on PC, add its hostname, port, and status URL to your BeatTogether config (located at `UserData\BeatTogether.json` in the game folder). As an example, here's what the file would look like with rcelyte's `master.battletrains.org` instance added:
+### BeatTogether Mod \[[PC](https://github.com/BeatTogether/BeatTogether#installation)\]
+To access a custom server through the BeatTogether mod on PC, add its status URL to your BeatTogether config (located at `UserData\BeatTogether.json` in the game folder). As an example, here's what the file would look like with rcelyte's `master.battletrains.org` instance added:
 ```json
 {
   "SelectedServer": "BeatUpServer",
@@ -28,14 +28,15 @@ To access a custom server through the BeatTogether mod on PC, add its hostname, 
     {
       "ServerName": "BeatTogether",
       "HostName": "master.beattogether.systems",
-      "Port": 2328,
-      "StatusUri": "http://master.beattogether.systems/status"
+      "ApiUrl": "http://master.beattogether.systems:8989",
+      "StatusUri": "http://master.beattogether.systems/status",
+      "MaxPartySize": 100
     },
     {
       "ServerName": "BeatUpServer",
-      "HostName": "master.battletrains.org",
-      "Port": 2328,
-      "StatusUri": "https://status.master.battletrains.org"
+      "ApiUrl": "https://status.master.battletrains.org",
+      "StatusUri": "https://status.master.battletrains.org",
+      "MaxPartySize": 126
     }
   ]
 }
