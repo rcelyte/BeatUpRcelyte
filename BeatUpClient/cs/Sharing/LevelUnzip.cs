@@ -21,32 +21,36 @@ static partial class BeatUpClient {
 			}).ToArray());
 		}).Where(preview => preview != null).Select(preview => preview!).ToArray();
 		try {
-			using System.IO.MemoryStream? stream = archive.GetEntry(info.coverImageFilename)?.UncompressedData;
-			if(stream != null && stream.Length >= 1)
-				fallbackCover = stream.GetBuffer();
+			System.IO.Compression.ZipArchiveEntry? cover = archive.GetEntry(info.coverImageFilename);
+			if(cover != null && cover.Length >= 1) {
+				using System.IO.Stream stream = cover.Open();
+				fallbackCover = new byte[cover.Length];
+				stream.Read(fallbackCover, 0, fallbackCover.Length);
+			}
 		} catch(System.Exception) {}
 		MemorySpriteLoader sprite = new MemorySpriteLoader(fallbackCover);
 		return new CustomPreviewBeatmapLevel(defaultPackCover, info, string.Empty, sprite, levelId, info.songName, info.songSubName, info.songAuthorName, info.levelAuthorName, info.beatsPerMinute, info.songTimeOffset, info.shuffle, info.shufflePeriod, info.previewStartTime, info.previewDuration, envInfo, envInfo360, sets);
 	}
 	static async System.Threading.Tasks.Task<UnityEngine.AudioClip?> DecodeAudio(System.IO.Compression.ZipArchiveEntry song, UnityEngine.AudioType type) {
+		using System.IO.Stream stream = song.Open();
 		byte[] songData = new byte[song.Length];
-		song.Open().Read(songData, 0, songData.Length);
+		stream.Read(songData, 0, songData.Length);
 		System.Net.Sockets.TcpListener host = new System.Net.Sockets.TcpListener(new System.Net.IPEndPoint(System.Net.IPAddress.Any, 0));
 		host.Start(1);
 		using UnityEngine.Networking.UnityWebRequest www = UnityEngine.Networking.UnityWebRequestMultimedia.GetAudioClip("http://127.0.0.1:" + ((System.Net.IPEndPoint)host.LocalEndpoint).Port, type);
 		((UnityEngine.Networking.DownloadHandlerAudioClip)www.downloadHandler).streamAudio = true;
 		UnityEngine.AsyncOperation request = www.SendWebRequest();
 		System.Net.Sockets.TcpClient client = host.AcceptTcpClient();
-		System.Net.Sockets.NetworkStream stream = client.GetStream();
+		System.Net.Sockets.NetworkStream netStream = client.GetStream();
 		byte[] resp = System.Text.Encoding.ASCII.GetBytes($"HTTP/1.1 200 \r\naccept-ranges: bytes\r\ncontent-length: {songData.Length}\r\ncontent-type: audio/ogg\r\n\r\n");
-		stream.Write(resp, 0, resp.Length);
-		stream.Write(songData, 0, songData.Length);
+		netStream.Write(resp, 0, resp.Length);
+		netStream.Write(songData, 0, songData.Length);
 		while(!request.isDone)
 			await System.Threading.Tasks.Task.Delay(100);
 		client.Close();
 		host.Stop();
-		if(www.isNetworkError || www.isHttpError) {
-			UnityEngine.Debug.Log($"Audio load error: {www.error}");
+		if(www.error is string error) {
+			UnityEngine.Debug.Log($"Audio load error: {error}");
 			return null;
 		}
 		return UnityEngine.Networking.DownloadHandlerAudioClip.GetContent(www);

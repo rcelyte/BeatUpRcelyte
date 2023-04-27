@@ -1,5 +1,5 @@
 #!/bin/make
-VERSION := 0.5.1
+VERSION := 0.5.2
 
 .SILENT:
 
@@ -75,7 +75,7 @@ AudioPluginMsHRTF.dll: cs/loader.c BeatUpClient.dll
 	@echo "[cc $@]"
 	@mkdir -p .obj/
 	printf "\t.global BeatUpClient_dll\nBeatUpClient_dll:\n\t.incbin \"BeatUpClient.dll\"\n\t.global BeatUpClient_dll_end\nBeatUpClient_dll_end:\n" > .obj/BeatUpClient.dll.S
-	$(CC) -mwindows -m64 -static -static-libgcc -shared -s -Wl,--gc-sections,--no-undefined -L$(BSINSTALL)/MonoBleedingEdge/EmbedRuntime -l:mono-2.0-bdwgc.dll "$<" .obj/BeatUpClient.dll.S -o "$@"
+	$(CC) -mwindows -m64 -static -static-libgcc -shared -s -Wl,--gc-sections,--no-undefined -L$(BSINSTALL)/MonoBleedingEdge/EmbedRuntime -l:mono-2.0-bdwgc.dll "$<" .obj/BeatUpClient.dll.S -o "$@" -DMOD_VERSION=\"$(VERSION)\"
 
 clean:
 	@echo "[cleaning]"

@@ -15,11 +15,10 @@ static partial class BeatUpClient {
 		}
 	}
 
-	[Detour(typeof(MainSystemInit), nameof(MainSystemInit.InstallBindings))]
-	static void MainSystemInit_InstallBindings_post(MainSystemInit self, Zenject.DiContainer container) {
-		Base(self, container);
-		customServerHostName = self._mainSettingsModel.customServerHostName;
-		NetworkConfigSetup(self._networkConfig);
+	[Patch(PatchType.Postfix, typeof(MainSystemInit), nameof(MainSystemInit.InstallBindings))]
+	static void MainSystemInit_InstallBindings_post(MainSystemInit __instance, Zenject.DiContainer container) {
+		customServerHostName = __instance._mainSettingsModel.customServerHostName;
+		NetworkConfigSetup(__instance._networkConfig);
 		Injected<BeatmapCharacteristicCollectionSO>.Resolve(container);
 		Injected<BeatmapLevelsModel>.Resolve(container);
 		Injected<CustomLevelLoader>.Resolve(container);

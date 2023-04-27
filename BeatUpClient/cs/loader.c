@@ -65,7 +65,7 @@ static void *LateLoad(void *sceneName, int32_t sceneBuildIndex, void *parameters
 		fprintf(stderr, "[BeatUpClient|Native] mono_method_desc_search_in_image(\"BeatUpClient:NativeEnable\") failed\n");
 		goto end;
 	}
-	void *version = mono_string_new_len(domain, "0.5.1", sizeof("0.5.1") - 1);
+	void *version = mono_string_new_len(domain, MOD_VERSION, sizeof(MOD_VERSION) - sizeof(""));
 	mono_runtime_invoke(run, NULL, &version, NULL);
 	end:
 	return LoadSceneAsyncNameIndexInternal_Injected(sceneName, sceneBuildIndex, parameters, mustCompleteNextFrame);

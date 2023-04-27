@@ -99,6 +99,7 @@ var refs = new (string path, string name, string[]? overrides)[] {
 		"MultiplayerController::_playersManager",
 		"MultiplayerController::_songStartSyncController",
 		"MultiplayerLevelLoader::_getBeatmapCancellationTokenSource",
+		"MultiplayerLevelLoader::_loaderState",
 		"MultiplayerLocalActivePlayerFacade::_gameSongController",
 		"MultiplayerLocalActivePlayerInGameMenuViewController::_levelBar",
 		"MultiplayerLocalActivePlayerInGameMenuViewController::_localPlayerInGameMenuInitData",
@@ -151,9 +152,6 @@ var refs = new (string path, string name, string[]? overrides)[] {
 	("Plugins", "SiraUtil.dll", new[] {
 		"SiraUtil.Affinity.Harmony.HarmonyAffinityPatcher",
 	}),
-	(managed, "System.IO.Compression.dll", new[] {
-		"System.IO.Compression.ZipArchiveEntry::get_UncompressedData",
-	}),
 	(managed, "Zenject.dll", new[] {
 		"Zenject.Context::InstallInstallers",
 		"Zenject.MonoInstallerBase::get_Container",
@@ -169,6 +167,7 @@ var refs = new (string path, string name, string[]? overrides)[] {
 	(managed, "Colors.dll", null),
 	(managed, "GameplayCore.dll", null),
 	(managed, "IPA.Loader.dll", null),
+	(managed, "System.IO.Compression.dll", null),
 	(managed, "System.Net.Http.dll", null),
 	(managed, "Unity.ResourceManager.dll", new[] {
 		"MonoBehaviourCallbackHooks",

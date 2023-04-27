@@ -1,6 +1,6 @@
 static partial class BeatUpClient {
 	class CellProgressBar : UnityEngine.MonoBehaviour { // MultiplayerLobbyGameServerConnectedPlayerTableCellProgressBarControllerController
-		static System.ReadOnlySpan<(UnityEngine.Color bg, UnityEngine.Color fg)> ColorScheme => new[] {
+		static (UnityEngine.Color bg, UnityEngine.Color fg)[] ColorScheme => new[] {
 			/*LoadState.None*/ (UnityEngine.Color.clear, UnityEngine.Color.clear),
 			/*LoadState.Failed*/ (new UnityEngine.Color(0.7173913f, 0.2608696f, 0.02173913f, 0.7490196f), UnityEngine.Color.clear),
 			/*LoadState.Exporting*/ (new UnityEngine.Color(0.2608696f, 0.7173913f, 0.02173913f, 0.2509804f), new UnityEngine.Color(0.9130435f, 1, 0.1521739f, 0.5434783f)),

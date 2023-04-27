@@ -20,7 +20,7 @@ static partial class BeatUpClient {
 						Net.SetLocalProgressUnreliable(new LoadProgress(LoadState.Exporting, progress)));
 					announceTask = zipTask;
 					(Hash256 hash, System.ArraySegment<byte> data) = await zipTask;
-					if(data != null)
+					if(data.Count != 0)
 						info = ShareProvider.Set(levelId, hash, data);
 				}
 			}
