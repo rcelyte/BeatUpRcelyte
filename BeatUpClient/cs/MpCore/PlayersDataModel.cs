@@ -3,10 +3,8 @@ using static BeatUpClient;
 using static System.Linq.Enumerable;
 
 static partial class BeatUpClient_MpCore {
-	[Detour(typeof(MainSystemInit), nameof(MainSystemInit.InstallBindings))]
-	static void MainSystemInit_InstallBindings(MainSystemInit self, Zenject.DiContainer container) {
-		Base(self, container);
-		// TODO: learn how to zenject
+	[Patch(PatchType.Postfix, typeof(MainSystemInit), nameof(MainSystemInit.InstallBindings))]
+	static void MainSystemInit_InstallBindings(Zenject.DiContainer container) {
 		Injected<MultiplayerCore.Networking.MpPacketSerializer>.Resolve(container);
 		Injected<MultiplayerCore.Beatmaps.Providers.MpBeatmapLevelProvider>.Resolve(container);
 	}

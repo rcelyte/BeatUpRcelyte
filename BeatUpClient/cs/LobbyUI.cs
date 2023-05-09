@@ -1,6 +1,6 @@
 static partial class BeatUpClient {
-	class InstantHoverHint : HMUI.HoverHint {
-		public override void OnPointerEnter(UnityEngine.EventSystems.PointerEventData eventData) {
+	class InstantHoverHint : HMUI.HoverHint, UnityEngine.EventSystems.IPointerEnterHandler {
+		void UnityEngine.EventSystems.IPointerEnterHandler.OnPointerEnter(UnityEngine.EventSystems.PointerEventData eventData) {
 			_hoverHintController._isHiding = false;
 			_hoverHintController.StopAllCoroutines();
 			_hoverHintController.SetupAndShowHintPanel(this);

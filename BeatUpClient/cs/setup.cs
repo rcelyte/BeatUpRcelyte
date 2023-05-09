@@ -17,8 +17,14 @@ static partial class BeatUpClient {
 		foreach(System.Reflection.MethodInfo method in type.GetMethods(System.Reflection.BindingFlags.DeclaredOnly | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static)) {
 			if(method.IsAbstract)
 				continue;
-			if(!method.ContainsGenericParameters)
-				method.MethodHandle.GetFunctionPointer(); // Force JIT compilation
+			if(!method.ContainsGenericParameters) {
+				try {
+					method.MethodHandle.GetFunctionPointer(); // Force JIT compilation
+				} catch(System.Exception) {
+					Log.Error($"Failed to preload {method.DeclaringType.FullName} :: {method}");
+					throw;
+				}
+			}
 			foreach(IPatch patch in method.GetCustomAttributes(typeof(IPatch), false)) {
 				// Log.Debug($"    {method}");
 				applyMethods += patch.Bind(method);
