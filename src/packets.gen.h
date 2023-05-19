@@ -650,15 +650,19 @@ enum {
 }
 typedef uint8_t MpCoreType;
 enum {
+	MpCoreType_MpcTextChatPacket,
 	MpCoreType_MpBeatmapPacket,
-	MpCoreType_MpPlayerData,
 	MpCoreType_CustomAvatarPacket,
+	MpCoreType_MpcCapabilitiesPacket,
+	MpCoreType_MpPlayerData,
 };
 [[maybe_unused]] static const char *_reflect_MpCoreType(MpCoreType value) {
 	switch(value) {
+		case MpCoreType_MpcTextChatPacket: return "MpcTextChatPacket";
 		case MpCoreType_MpBeatmapPacket: return "MpBeatmapPacket";
-		case MpCoreType_MpPlayerData: return "MpPlayerData";
 		case MpCoreType_CustomAvatarPacket: return "CustomAvatarPacket";
+		case MpCoreType_MpcCapabilitiesPacket: return "MpcCapabilitiesPacket";
+		case MpCoreType_MpPlayerData: return "MpPlayerData";
 		default: return "???";
 	}
 }
@@ -1784,12 +1788,22 @@ struct CustomAvatarPacket {
 	float scale;
 	float floor;
 };
+struct MpcCapabilitiesPacket {
+	uint32_t protocolVersion;
+	bool canText;
+};
+struct MpcTextChatPacket {
+	uint32_t protocolVersion;
+	struct LongString text;
+};
 struct MpCore {
 	struct String type;
 	union {
+		struct MpcTextChatPacket mpcTextChatPacket;
 		struct MpBeatmapPacket mpBeatmapPacket;
-		struct MpPlayerData mpPlayerData;
 		struct CustomAvatarPacket customAvatarPacket;
+		struct MpcCapabilitiesPacket mpcCapabilitiesPacket;
+		struct MpPlayerData mpPlayerData;
 	};
 };
 struct SyncTime {

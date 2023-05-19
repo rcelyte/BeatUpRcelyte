@@ -738,12 +738,22 @@ n CustomAvatarPacket
 	String hash
 	f32 scale
 	f32 floor
+n MpcCapabilitiesPacket
+	vu32 protocolVersion
+	if(.protocolVersion == 1)
+		b canText
+n MpcTextChatPacket
+	vu32 protocolVersion
+	if(.protocolVersion == 1)
+		LongString text
 n MpCore
 	String type
 	u8 MpCoreType(MpCoreType_From(&.type))
+		MpcTextChatPacket mpcTextChatPacket
 		MpBeatmapPacket mpBeatmapPacket
-		MpPlayerData mpPlayerData
 		CustomAvatarPacket customAvatarPacket
+		MpcCapabilitiesPacket mpcCapabilitiesPacket
+		MpPlayerData mpPlayerData
 n SyncTime
 	f32 syncTime
 n PlayerConnected

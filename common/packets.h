@@ -45,3 +45,12 @@ static inline bool LongString_eq(struct LongString a, struct LongString b) {retu
 	va_end(args);
 	return out;
 }
+
+[[gnu::format(printf, 1, 2)]] static inline struct LongString LongString_fmt(const char *format, ...) {
+	va_list args;
+	va_start(args, format);
+	struct LongString out = {.isNull = false};
+	out.length = (uint32_t)vsnprintf(out.data, sizeof(out.data) / sizeof(*out.data), format, args);
+	va_end(args);
+	return out;
+}

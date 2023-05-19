@@ -53,6 +53,7 @@ struct InstanceSession {
 	} identity;
 	#endif
 	bool sentIdentity;
+	bool greeted;
 	uint32_t joinOrder;
 
 	ServerState state;
@@ -1089,14 +1090,44 @@ static void handle_GameplayRpc(struct InstanceContext *ctx, struct Room *room, s
 	}
 }
 
-/*static void handle_MpCore(struct InstanceContext *ctx, struct Room *room, struct InstanceSession *session, const struct MpCore *mpCore) {
+static void handle_MpCore(const struct Room *const room, struct InstanceSession *const session, const struct MpCore *const mpCore) {
 	switch(MpCoreType_From(&mpCore->type)) {
-		case MpCoreType_MpBeatmapPacket: break;
-		case MpCoreType_MpPlayerData: break;
-		case MpCoreType_CustomAvatarPacket: break;
-		default: uprintf("BAD MPCORE MESSAGE TYPE: '%.*s'\n", mpCore->type.length, mpCore->type.data);
+		case MpCoreType_MpcCapabilitiesPacket: {
+			if(session->greeted || !mpCore->mpcCapabilitiesPacket.canText)
+				break;
+			session->greeted = true;
+			uint8_t resp[65536], *resp_end = resp;
+			pkt_write_c(&resp_end, endof(resp), session->net.version, RoutingHeader, {0, 0, false});
+			SERIALIZE_MPCORE(&resp_end, endof(resp), session->net.version, {
+				.type = String_from("MpcTextChatPacket"),
+				.mpcTextChatPacket = {
+					.protocolVersion = mpCore->mpcCapabilitiesPacket.protocolVersion,
+					.text = LongString_fmt(
+						"Welcome to BeatUpServer | BETA!\n* Per-player difficulty is %s\n* Per-player modifiers are %s",
+						room->perPlayerDifficulty ? "enabled" : "disabled", room->perPlayerModifiers ? "enabled" : "disabled"),
+				},
+			});
+			instance_send_channeled(&session->net, &session->channels, resp, (uint32_t)(resp_end - resp), DeliveryMethod_ReliableOrdered);
+			break;
+		}
+		case MpCoreType_MpcTextChatPacket: {
+			if(!mpCore->mpcTextChatPacket.text.length || mpCore->mpcTextChatPacket.text.data[0] != '/')
+				break;
+			uint8_t resp[65536], *resp_end = resp;
+			pkt_write_c(&resp_end, endof(resp), session->net.version, RoutingHeader, {0, 0, false});
+			SERIALIZE_MPCORE(&resp_end, endof(resp), session->net.version, {
+				.type = String_from("MpcTextChatPacket"),
+				.mpcTextChatPacket = {
+					.protocolVersion = mpCore->mpcTextChatPacket.protocolVersion,
+					.text = LongString_from("Slash commands are not currently supported"),
+				},
+			});
+			instance_send_channeled(&session->net, &session->channels, resp, (uint32_t)(resp_end - resp), DeliveryMethod_ReliableOrdered);
+			break;
+		}
+		default:;
 	}
-}*/
+}
 
 static bool handle_BeatUpMessage(const struct BeatUpMessage *message) {
 	switch(message->type) {
@@ -1111,7 +1142,7 @@ static bool handle_BeatUpMessage(const struct BeatUpMessage *message) {
 	return true;
 }
 
-static bool handle_MultiplayerSession(struct InstanceContext *ctx, struct Room *room, struct InstanceSession *session, const struct MultiplayerSession *message) {
+static bool handle_MultiplayerSession(struct InstanceContext *ctx, struct Room *const room, struct InstanceSession *session, const struct MultiplayerSession *message) {
 	switch(message->type) {
 		case MultiplayerSessionMessageType_MenuRpc: handle_MenuRpc(ctx, room, session, &message->menuRpc); break;
 		case MultiplayerSessionMessageType_GameplayRpc: handle_GameplayRpc(ctx, room, session, &message->gameplayRpc); break;
@@ -1119,7 +1150,7 @@ static bool handle_MultiplayerSession(struct InstanceContext *ctx, struct Room *
 		case MultiplayerSessionMessageType_ScoreSyncState: break;
 		case MultiplayerSessionMessageType_NodePoseSyncStateDelta: uprintf("BAD TYPE: MultiplayerSessionMessageType_NodePoseSyncStateDelta\n"); break;
 		case MultiplayerSessionMessageType_ScoreSyncStateDelta: uprintf("BAD TYPE: MultiplayerSessionMessageType_ScoreSyncStateDelta\n"); break;
-		case MultiplayerSessionMessageType_MpCore: /*handle_MpCore(ctx, room, session, &message->mpCore);*/ break;
+		case MultiplayerSessionMessageType_MpCore: handle_MpCore(room, session, &message->mpCore); return false;
 		case MultiplayerSessionMessageType_BeatUpMessage: return handle_BeatUpMessage(&message->beatUpMessage);
 		default: uprintf("BAD MULTIPLAYER SESSION MESSAGE TYPE\n");
 	}
@@ -2027,7 +2058,6 @@ static void instance_onWireMessage(struct WireContext *wire, struct WireLink *li
 static uint32_t threads_len = 0;
 static pthread_t *threads = NULL;
 bool instance_init(const char *domainIPv4, const char *domain, const mbedtls_x509_crt *cert, const mbedtls_pk_context *key, const char *remoteMaster, struct WireContext *localMaster, const char *mapPoolFile, uint32_t count) {
-	(void)cert; (void)key;
 	if(mapPoolFile && *mapPoolFile)
 		mapPool_init(mapPoolFile);
 	instance_domainIPv4 = domainIPv4;

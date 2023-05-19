@@ -1700,21 +1700,49 @@ static void _pkt_CustomAvatarPacket_write(const struct CustomAvatarPacket *restr
 	_pkt_f32_write(&data->scale, pkt, end, ctx);
 	_pkt_f32_write(&data->floor, pkt, end, ctx);
 }
+static void _pkt_MpcCapabilitiesPacket_read(struct MpcCapabilitiesPacket *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_vu32_read(&data->protocolVersion, pkt, end, ctx);
+	if(data->protocolVersion == 1) {
+		_pkt_b_read(&data->canText, pkt, end, ctx);
+	}
+}
+static void _pkt_MpcCapabilitiesPacket_write(const struct MpcCapabilitiesPacket *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_vu32_write(&data->protocolVersion, pkt, end, ctx);
+	if(data->protocolVersion == 1) {
+		_pkt_b_write(&data->canText, pkt, end, ctx);
+	}
+}
+static void _pkt_MpcTextChatPacket_read(struct MpcTextChatPacket *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_vu32_read(&data->protocolVersion, pkt, end, ctx);
+	if(data->protocolVersion == 1) {
+		_pkt_LongString_read(&data->text, pkt, end, ctx);
+	}
+}
+static void _pkt_MpcTextChatPacket_write(const struct MpcTextChatPacket *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_vu32_write(&data->protocolVersion, pkt, end, ctx);
+	if(data->protocolVersion == 1) {
+		_pkt_LongString_write(&data->text, pkt, end, ctx);
+	}
+}
 static void _pkt_MpCore_read(struct MpCore *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_String_read(&data->type, pkt, end, ctx);
 	switch(MpCoreType_From(&data->type)) {
+		case MpCoreType_MpcTextChatPacket: _pkt_MpcTextChatPacket_read(&data->mpcTextChatPacket, pkt, end, ctx); break;
 		case MpCoreType_MpBeatmapPacket: _pkt_MpBeatmapPacket_read(&data->mpBeatmapPacket, pkt, end, ctx); break;
-		case MpCoreType_MpPlayerData: _pkt_MpPlayerData_read(&data->mpPlayerData, pkt, end, ctx); break;
 		case MpCoreType_CustomAvatarPacket: _pkt_CustomAvatarPacket_read(&data->customAvatarPacket, pkt, end, ctx); break;
+		case MpCoreType_MpcCapabilitiesPacket: _pkt_MpcCapabilitiesPacket_read(&data->mpcCapabilitiesPacket, pkt, end, ctx); break;
+		case MpCoreType_MpPlayerData: _pkt_MpPlayerData_read(&data->mpPlayerData, pkt, end, ctx); break;
 		default: uprintf("Invalid value for enum `MpCoreType`\n"); longjmp(fail, 1);
 	}
 }
 static void _pkt_MpCore_write(const struct MpCore *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_String_write(&data->type, pkt, end, ctx);
 	switch(MpCoreType_From(&data->type)) {
+		case MpCoreType_MpcTextChatPacket: _pkt_MpcTextChatPacket_write(&data->mpcTextChatPacket, pkt, end, ctx); break;
 		case MpCoreType_MpBeatmapPacket: _pkt_MpBeatmapPacket_write(&data->mpBeatmapPacket, pkt, end, ctx); break;
-		case MpCoreType_MpPlayerData: _pkt_MpPlayerData_write(&data->mpPlayerData, pkt, end, ctx); break;
 		case MpCoreType_CustomAvatarPacket: _pkt_CustomAvatarPacket_write(&data->customAvatarPacket, pkt, end, ctx); break;
+		case MpCoreType_MpcCapabilitiesPacket: _pkt_MpcCapabilitiesPacket_write(&data->mpcCapabilitiesPacket, pkt, end, ctx); break;
+		case MpCoreType_MpPlayerData: _pkt_MpPlayerData_write(&data->mpPlayerData, pkt, end, ctx); break;
 		default: uprintf("Invalid value for enum `MpCoreType`\n"); longjmp(fail, 1);
 	}
 }

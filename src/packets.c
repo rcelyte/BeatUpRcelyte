@@ -84,12 +84,11 @@ char *ServerCodeToString(char *out, ServerCode in) {
 	}
 }
 MpCoreType MpCoreType_From(const struct String *type) {
-	if(String_is(*type, "MpBeatmapPacket"))
-		return MpCoreType_MpBeatmapPacket;
-	if(String_is(*type, "MpPlayerData"))
-		return MpCoreType_MpPlayerData;
-	if(String_is(*type, "CustomAvatarPacket"))
-		return MpCoreType_CustomAvatarPacket;
+	if(String_is(*type, "MpcTextChatPacket")) return MpCoreType_MpcTextChatPacket;
+	if(String_is(*type, "MpBeatmapPacket")) return MpCoreType_MpBeatmapPacket;
+	if(String_is(*type, "CustomAvatarPacket")) return MpCoreType_CustomAvatarPacket;
+	if(String_is(*type, "MpcCapabilitiesPacket")) return MpCoreType_MpcCapabilitiesPacket;
+	if(String_is(*type, "MpPlayerData")) return MpCoreType_MpPlayerData;
 	uprintf("Unsupported MpCore custom packet: %.*s\n", type->length, type->data);
 	return (MpCoreType)0xffffffff;
 }
