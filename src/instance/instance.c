@@ -1289,7 +1289,7 @@ static void process_message(struct InstanceContext *ctx, struct Room *room, stru
 		}
 		struct InternalMessage message;
 		if(!pkt_read(&message, &sub, *data, session->net.version)) // TODO: experiment with packet dropping and reserialization for better bandwidth usage
-			return;
+			continue;
 		bool validateLength = true;
 		switch(message.type) {
 			case InternalMessageType_SyncTime: uprintf("BAD TYPE: InternalMessageType_SyncTime\n"); break;
