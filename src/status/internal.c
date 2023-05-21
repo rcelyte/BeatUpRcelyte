@@ -128,7 +128,7 @@ static void status_web(struct HttpContext *http, ServerCode code) {
 #define startsWith(start, end, str) startsWithBytes(start, end, str, sizeof(str) - sizeof(""))
 
 static const char *nextLine(const char *start, const char *end) {
-	for(end -= 5 /* "\n\r\n\r\n" */; (start = memchr(start, '\r', end - start)) != NULL; ++start)
+	for(end -= 5 /* "\n\r\n\r\n" */; (start = memchr(start, '\r', (size_t)(end - start))) != NULL; ++start)
 		if(start[1] == '\n')
 			return &start[2];
 	return NULL;
@@ -155,7 +155,7 @@ static UserAgent ProbeHeaders(const char *buf, const char *end, size_t *contentL
 		if(startsWith(buf, end, "Content-Length: ")) {
 			size_t length = 0;
 			for(const char *it = &buf[16]; it < end && *it >= '0' && *it <= '9'; ++it)
-				length = length * 10 + (*it - '0');
+				length = length * 10 + ((size_t)*it - '0');
 			*contentLength_out = length;
 			continue;
 		}
@@ -193,7 +193,7 @@ static void status_status(struct HttpContext *http, bool isGame) {
 	if(msg_end >= endof(msg))
 		HttpContext_respond(http, 500, "text/plain; charset=utf-8", NULL, 0);
 	else
-		HttpContext_respond(http, 200, "application/json; charset=utf-8", msg, msg_end - msg);
+		HttpContext_respond(http, 200, "application/json; charset=utf-8", msg, (size_t)(msg_end - msg));
 }
 
 static void status_graph(struct HttpContext *http, struct HttpRequest req, struct WireLink *master) {
@@ -207,9 +207,9 @@ static void status_graph(struct HttpContext *http, struct HttpRequest req, struc
 		if(String_is(key0, "beatmap_level_selection_mask")) {
 			JSON_ITER_OBJECT(&iter, key1) {
 				if(String_is(key1, "difficulties")) {
-					state.selectionMask.difficulties = json_read_uint64(&iter);
+					state.selectionMask.difficulties = (BeatmapDifficultyMask)json_read_uint64(&iter);
 				} else if(String_is(key1, "modifiers")) {
-					state.selectionMask.modifiers = json_read_uint64(&iter);
+					state.selectionMask.modifiers = (GameplayModifierMask)json_read_uint64(&iter);
 				} else if(String_is(key1, "song_packs")) {
 					const struct String songPacks = json_read_string(&iter);
 					// state.selectionMask.songPacks = ...
@@ -222,17 +222,17 @@ static void status_graph(struct HttpContext *http, struct HttpRequest req, struc
 		} else if(String_is(key0, "gameplay_server_configuration")) {
 			JSON_ITER_OBJECT(&iter, key1) {
 				if(String_is(key1, "max_player_count"))
-					connectInfo.configuration.maxPlayerCount = json_read_uint64(&iter);
+					connectInfo.configuration.maxPlayerCount = (int32_t)json_read_uint64(&iter);
 				else if(String_is(key1, "discovery_policy"))
-					connectInfo.configuration.discoveryPolicy = json_read_uint64(&iter);
+					connectInfo.configuration.discoveryPolicy = (DiscoveryPolicy)json_read_uint64(&iter);
 				else if(String_is(key1, "invite_policy"))
-					connectInfo.configuration.invitePolicy = json_read_uint64(&iter);
+					connectInfo.configuration.invitePolicy = (InvitePolicy)json_read_uint64(&iter);
 				else if(String_is(key1, "gameplay_server_mode"))
-					connectInfo.configuration.gameplayServerMode = json_read_uint64(&iter);
+					connectInfo.configuration.gameplayServerMode = (GameplayServerMode)json_read_uint64(&iter);
 				else if(String_is(key1, "song_selection_mode"))
-					connectInfo.configuration.songSelectionMode = json_read_uint64(&iter);
+					connectInfo.configuration.songSelectionMode = (SongSelectionMode)json_read_uint64(&iter);
 				else if(String_is(key1, "gameplay_server_control_settings"))
-					connectInfo.configuration.gameplayServerControlSettings = json_read_uint64(&iter);
+					connectInfo.configuration.gameplayServerControlSettings = (GameplayServerControlSettings)json_read_uint64(&iter);
 				else
 					json_skip_any(&iter);
 			}
@@ -324,7 +324,7 @@ void status_graph_resp(struct DataView cookieView, const struct WireGraphConnect
 	if(msg_end >= endof(msg))
 		HttpContext_respond(state->http, 500, "text/plain; charset=utf-8", NULL, 0);
 	else
-		HttpContext_respond(state->http, 200, "application/json; charset=utf-8", msg, msg_end - msg);
+		HttpContext_respond(state->http, 200, "application/json; charset=utf-8", msg, (size_t)(msg_end - msg));
 }
 
 void status_resp(struct HttpContext *http, const char path[], struct HttpRequest httpRequest, struct WireLink *master) {
@@ -376,6 +376,6 @@ void status_resp(struct HttpContext *http, const char path[], struct HttpRequest
 		HttpContext_respond(http, 200, "image/x-icon", favicon, sizeof(favicon));
 	} else if(httpRequest.header_len > 10) {
 		const char *const code_end = memchr(&httpRequest.header[5], ' ', 5);
-		status_web(http, StringToServerCode(&httpRequest.header[5], (code_end != NULL) ? code_end - &httpRequest.header[5] : 5));
+		status_web(http, StringToServerCode(&httpRequest.header[5], (code_end != NULL) ? (uint32_t)(code_end - &httpRequest.header[5]) : 5));
 	}
 }

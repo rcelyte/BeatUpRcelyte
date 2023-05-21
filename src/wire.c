@@ -5,7 +5,7 @@
 
 struct WireLink {
 	void *userptr;
-	size_t cookies_len;
+	uint32_t cookies_len;
 	struct DataView *cookies;
 	union {
 		struct {

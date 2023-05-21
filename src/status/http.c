@@ -82,7 +82,7 @@ static bool ReadUntil(struct HttpContext *const self, uint8_t **head, const uint
 	if(target > end)
 		return true;
 	while(*head < target) {
-		size_t limit = end - *head;
+		size_t limit = (size_t)(end - *head);
 		if(limit > sizeof(self->overflow))
 			limit = sizeof(self->overflow);
 		const int res = self->encrypt ? mbedtls_ssl_read(&self->ssl, *head, limit) : ssl_recv_internal(self->fd, *head, limit);
@@ -103,7 +103,7 @@ struct HttpRequest HttpContext_recieve(struct HttpContext *self, uint8_t buffer[
 	while(true) {
 		if(ReadUntil(self, &head, end, &data_end[4]))
 			return (struct HttpRequest){0};
-		data_end = memchr(data_end, '\r', head - 3 - data_end);
+		data_end = memchr(data_end, '\r', (size_t)(head - 3 - data_end));
 		if(data_end == NULL) {
 			data_end = head - 3;
 		} else if(memcmp(++data_end, "\n\r\n", 3) == 0) {
@@ -112,7 +112,7 @@ struct HttpRequest HttpContext_recieve(struct HttpContext *self, uint8_t buffer[
 		}
 	}
 	struct HttpRequest request = {
-		.header_len = data_end - buffer,
+		.header_len = (size_t)(data_end - buffer),
 		.header = (char*)buffer,
 	};
 	*head = 0;
@@ -126,14 +126,14 @@ struct HttpRequest HttpContext_recieve(struct HttpContext *self, uint8_t buffer[
 		if(ReadUntil(self, &head, end, data_end))
 			return (struct HttpRequest){0};
 	}
-	self->overflow_len = head - data_end;
+	self->overflow_len = (uint16_t)(head - data_end);
 	memcpy(self->overflow, data_end, self->overflow_len);
 	return request;
 }
 
 static bool SendData(struct HttpContext *self, const uint8_t *data, size_t data_len) {
 	for(const uint8_t *const end = &data[data_len]; data < end;) {
-		const int res = self->encrypt ? mbedtls_ssl_write(&self->ssl, data, end - data) : ssl_send_internal(self->fd, data, end - data);
+		const int res = self->encrypt ? mbedtls_ssl_write(&self->ssl, data, (size_t)(end - data)) : ssl_send_internal(self->fd, data, (size_t)(end - data));
 		if(res > 0)
 			data += res;
 		else if(res != MBEDTLS_ERR_SSL_WANT_WRITE)
@@ -151,7 +151,7 @@ void HttpContext_respond(struct HttpContext *self, uint16_t code, const char *mi
 		default: uprintf("unexpected HTTP response code: %hu\n", code); abort();
 	}
 	char header[384] = {0};
-	const uint32_t header_len = snprintf(header, sizeof(header), "HTTP/1.1 %s\r\nConnection: close\r\nContent-Length: %zu\r\nContent-Type: %s\r\n"
+	const uint32_t header_len = (uint32_t)snprintf(header, sizeof(header), "HTTP/1.1 %s\r\nConnection: close\r\nContent-Length: %zu\r\nContent-Type: %s\r\n"
 		"X-Frame-Options: DENY\r\nX-Content-Type-Options: nosniff\r\nX-DNS-Prefetch-Control: off\r\nX-Robots-Tag: noindex\r\n\r\n", codeText, data_len, mime);
 	if(!SendData(self, (const uint8_t*)header, header_len))
 		SendData(self, data, data_len);

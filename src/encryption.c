@@ -103,7 +103,8 @@ static bool PutSequenceNum(struct EncryptionState *state, uint32_t sequenceNum) 
 	return false;
 }
 
-[[maybe_unused]] static bool SafeValidateHMAC(const uint8_t key[restrict static 64], const uint8_t *restrict data, size_t data_len, uint32_t sequence, uint8_t hash[restrict static 32]) {
+#ifdef DEBUG
+static bool SafeValidateHMAC(const uint8_t key[restrict static 64], const uint8_t *restrict data, size_t data_len, uint32_t sequence, uint8_t hash[restrict static 32]) {
 	uint8_t comp[data_len + 4];
 	memcpy(comp, data, data_len);
 	comp[data_len++] = sequence & 255;
@@ -120,6 +121,7 @@ static bool PutSequenceNum(struct EncryptionState *state, uint32_t sequenceNum) 
 	}
 	return false;
 }
+#endif
 
 static bool FastHMAC(const uint8_t key[restrict static 64], const uint8_t *restrict data, size_t data_len, uint32_t sequence, uint8_t hash_out[restrict static 32]) {
 	uint8_t sequenceLE[4] = {sequence & 255, sequence >> 8 & 255, sequence >> 16 & 255, sequence >> 24 & 255};

@@ -6,8 +6,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MASTER_SERIALIZE(data, pkt, end) pkt_serialize(data, pkt, end, PV_LEGACY_DEFAULT)
-
 struct HandshakeState {
 	uint32_t certificateRequestId;
 	uint32_t helloResponseId;
@@ -141,14 +139,18 @@ static uint32_t master_onResend(struct NetContext *net, uint32_t currentTime) {
 	return MasterContext_onResend(&((struct LocalMasterContext*)net->userptr)->base, net, currentTime);
 }
 
-static uint32_t master_getNextRequestId(struct MasterSession *session) {
-	++session->lastSentRequestId;
+static uint32_t master_prevRequestId(const struct MasterSession *const session) {
 	return (session->lastSentRequestId & 63) | session->epoch;
+}
+
+static uint32_t master_nextRequestId(struct MasterSession *session) {
+	++session->lastSentRequestId;
+	return master_prevRequestId(session);
 }
 
 // return is valid until the next call to `master_send()`
 static const struct MasterPacket *master_handle_ack(struct MasterSession *session, const struct MessageReceivedAcknowledge *ack) {
-	uint32_t requestId = ack->base.responseId;
+	const uint32_t requestId = ack->base.responseId;
 	struct Counter64 iter = session->resend.set;
 	for(uint32_t i; (i = Counter64_clear_next(&iter)) != COUNTER64_INVALID;) {
 		if(requestId != session->resend.requestIds[i])
@@ -159,7 +161,7 @@ static const struct MasterPacket *master_handle_ack(struct MasterSession *sessio
 	return NULL;
 }
 
-static void master_send_internal(struct NetContext *net, struct MasterSession *session, const uint8_t *buf, uint16_t length, uint32_t requestId, bool encrypt) {
+static void master_send_internal(struct NetContext *net, struct MasterSession *session, const uint8_t *buf, uint16_t length, bool encrypt) {
 	uint32_t i = Counter64_set_next(&session->resend.set);
 	if(i != COUNTER64_INVALID) {
 		struct MasterPacket *slot = &session->resend.slots[i];
@@ -167,76 +169,72 @@ static void master_send_internal(struct NetContext *net, struct MasterSession *s
 		slot->length = length;
 		slot->encrypt = encrypt;
 		memcpy(slot->data, buf, length);
-		session->resend.requestIds[i] = requestId;
+		session->resend.requestIds[i] = master_prevRequestId(session);
 	} else {
 		uprintf("RESEND BUFFER FULL\n");
 		net_send_internal(net, &session->net, buf, length, encrypt);
 	}
 }
 
-static uint32_t read_requestId(const uint8_t *data, const uint8_t *data_end, struct PacketContext version) {
-	struct MasterServerReliableRequestProxy out = {0};
-	pkt_read(&(struct SerializeHeader){0}, &data, data_end, version);
-	pkt_read(&out, &data, data_end, version);
-	return out.value.requestId;
-}
-
-static uint32_t master_send(struct NetContext *net, struct MasterSession *session, MessageType type, const uint8_t *data, const uint8_t *data_end, bool reliable) {
-	uint8_t buf[data_end + 64 - data], *buf_end = buf;
-	struct UnconnectedMessage header = {
-		.type = type,
-		.protocolVersion = session->net.version.protocolVersion,
-	};
-	if(data_end - data <= 414) {
-		bool res = pkt_write_c(&buf_end, endof(buf), PV_LEGACY_DEFAULT, NetPacketHeader, {
-			.property = PacketProperty_UnconnectedMessage,
-			.unconnectedMessage = header,
-		}) && pkt_write_bytes(data, &buf_end, endof(buf), PV_LEGACY_DEFAULT, (size_t)(data_end - data));
-		if(!res)
-			return 1;
-		if(reliable)
-			master_send_internal(net, session, buf, (uint16_t)(buf_end - buf), read_requestId(data, data_end, PV_LEGACY_DEFAULT), type != MessageType_HandshakeMessage);
+#define master_send(net, session, ...) _master_send(net, session, _Generic(*(__VA_ARGS__), \
+	struct UserMessage: MessageType_UserMessage, \
+	struct GameLiftMessage: MessageType_GameLiftMessage, \
+	struct HandshakeMessage: MessageType_HandshakeMessage), __VA_ARGS__)
+static uint32_t _master_send(struct NetContext *const net, struct MasterSession *const session, const MessageType type, const void *const message) {
+	uint8_t resp[65536], *resp_end = resp;
+	bool res = pkt_write_c(&resp_end, endof(resp), session->net.version, NetPacketHeader, {
+		.property = PacketProperty_UnconnectedMessage,
+		.unconnectedMessage = {
+			.type = type,
+			.protocolVersion = session->net.version.protocolVersion,
+		},
+	});
+	switch(type) {
+		case MessageType_UserMessage: res = res && pkt_serialize((const struct UserMessage*)message, &resp_end, endof(resp), session->net.version); break;
+		case MessageType_GameLiftMessage: res = res && pkt_serialize((const struct GameLiftMessage*)message, &resp_end, endof(resp), session->net.version); break;
+		case MessageType_HandshakeMessage: res = res && pkt_serialize((const struct HandshakeMessage*)message, &resp_end, endof(resp), session->net.version); break;
+		default: uprintf("Bad MessageType in master_send()\n"); return 0;
+	}
+	if(!res)
+		return 0;
+	if(resp_end - resp <= 412) { // TODO: use `session->mtu` here?
+		if(type == MessageType_HandshakeMessage && ((const struct HandshakeMessage*)message)->type == HandshakeMessageType_HelloVerifyRequest)
+			net_send_internal(net, &session->net, resp, (uint16_t)(resp_end - resp), false);
 		else
-			net_send_internal(net, &session->net, buf, (uint16_t)(buf_end - buf), type != MessageType_HandshakeMessage);
+			master_send_internal(net, session, resp, (uint16_t)(resp_end - resp), type != MessageType_HandshakeMessage);
 		return 1;
 	}
-	if(!(pkt_write(&header, &buf_end, endof(buf), PV_LEGACY_DEFAULT) &&
-	     pkt_write_bytes(data, &buf_end, endof(buf), PV_LEGACY_DEFAULT, (size_t)(data_end - data))))
-		return 0;
-	struct MultipartMessageProxy mpp = {
+	struct MultipartMessageProxy mmp = {
 		.value = {
-			.multipartMessageId = read_requestId(data, data_end, PV_LEGACY_DEFAULT),
+			.multipartMessageId = master_prevRequestId(session),
 			.length = 384,
-			.totalLength = (uint32_t)(buf_end - buf),
+			.totalLength = (uint32_t)(resp_end - &resp[1]), // TODO: `_Static_assert()` offset of serialized `NetPacketHeader.unconnectedMessage` to warn on potential ABI breaks
 		},
 	};
 	switch(type) {
-		case MessageType_UserMessage: mpp.type = UserMessageType_MultipartMessage; break;
-		case MessageType_GameLiftMessage: mpp.type = GameLiftMessageType_MultipartMessage; break;
-		case MessageType_HandshakeMessage: mpp.type = HandshakeMessageType_MultipartMessage; break;
-		default: uprintf("Bad MessageType in master_send()\n"); return 0;
+		case MessageType_UserMessage: mmp.type = UserMessageType_MultipartMessage; break;
+		case MessageType_GameLiftMessage: mmp.type = GameLiftMessageType_MultipartMessage; break;
+		case MessageType_HandshakeMessage: mmp.type = HandshakeMessageType_MultipartMessage; break;
 	}
-	const uint8_t *buf_it = buf;
 	uint32_t partCount = 0;
 	do {
-		mpp.value.base.requestId = master_getNextRequestId(session);
-		mpp.value.offset = (uint32_t)(buf_it - buf);
-		if((uintptr_t)(buf_end - buf_it) < mpp.value.length)
-			mpp.value.length = (uint32_t)(buf_end - buf_it);
-		uint8_t mpbuf[512], *mpbuf_end = mpbuf;
-		memcpy(mpp.value.data, buf_it, mpp.value.length);
-		bool res = pkt_write_c(&mpbuf_end, endof(mpbuf), PV_LEGACY_DEFAULT, NetPacketHeader, {
+		mmp.value.base.requestId = master_nextRequestId(session);
+		if(mmp.value.length > mmp.value.totalLength - mmp.value.offset)
+			mmp.value.length = mmp.value.totalLength - mmp.value.offset;
+		uint8_t part[512], *part_end = part;
+		memcpy(mmp.value.data, &resp[1 + mmp.value.offset], mmp.value.length);
+		bool res = pkt_write_c(&part_end, endof(part), session->net.version, NetPacketHeader, {
 			.property = PacketProperty_UnconnectedMessage,
 			.unconnectedMessage = {
 				.type = type,
 				.protocolVersion = session->net.version.protocolVersion,
 			},
-		}) && MASTER_SERIALIZE(&mpp, &mpbuf_end, endof(mpbuf));
-		(void)res;
-		master_send_internal(net, session, mpbuf, (uint16_t)(mpbuf_end - mpbuf), mpp.value.base.requestId, type != MessageType_HandshakeMessage);
+		}) && pkt_serialize(&mmp, &part_end, endof(part), session->net.version);
+		if(res)
+			master_send_internal(net, session, part, (uint16_t)(part_end - part), type != MessageType_HandshakeMessage);
 		++partCount;
-		buf_it += mpp.value.length;
-	} while(buf_it < buf_end);
+		mmp.value.offset += mmp.value.length;
+	} while(mmp.value.offset < mmp.value.totalLength);
 	return partCount;
 }
 
@@ -249,19 +247,19 @@ static void master_send_ack(struct NetContext *net, struct MasterSession *sessio
 		case MessageType_HandshakeMessage: ackType = HandshakeMessageType_MessageReceivedAcknowledge; break;
 		default: uprintf("Bad MessageType in master_send_ack()\n"); return;
 	}
-	bool res = pkt_write_c(&resp_end, endof(resp), PV_LEGACY_DEFAULT, NetPacketHeader, {
+	bool res = pkt_write_c(&resp_end, endof(resp), session->net.version, NetPacketHeader, {
 		.property = PacketProperty_UnconnectedMessage,
 		.unconnectedMessage = {
 			.type = type,
 			.protocolVersion = session->net.version.protocolVersion,
 		},
-	}) && MASTER_SERIALIZE((&(struct MessageReceivedAcknowledgeProxy){ // TODO: gl
+	}) && pkt_serialize((&(struct MessageReceivedAcknowledgeProxy){ // TODO: gl
 		.type = ackType,
 		.value = {
 			.base.responseId = requestId,
 			.messageHandled = true,
 		},
-	}), &resp_end, endof(resp));
+	}), &resp_end, endof(resp), session->net.version);
 	if(res)
 		net_send_internal(net, &session->net, resp, (uint32_t)(resp_end - resp), type != MessageType_HandshakeMessage);
 }
@@ -285,17 +283,16 @@ static inline bool InitializeConnection(struct NetContext *net, struct MasterSes
 static void handle_ClientHelloRequest(struct NetContext *net, struct MasterSession *session, const struct ClientHelloRequest *req) {
 	if(!InitializeConnection(net, session, req))
 		return;
-	struct HandshakeMessage r_hello = {
+	master_send(net, session, &(const struct HandshakeMessage){
 		.type = HandshakeMessageType_HelloVerifyRequest,
-		.helloVerifyRequest.base = {
-			.requestId = master_getNextRequestId(session),
-			.responseId = req->base.requestId,
+		.helloVerifyRequest = {
+			.base = {
+				.requestId = master_nextRequestId(session),
+				.responseId = req->base.requestId,
+			},
+			.cookie = *NetSession_get_cookie(&session->net),
 		},
-	};
-	r_hello.helloVerifyRequest.cookie = *NetSession_get_cookie(&session->net);
-	uint8_t resp[65536], *resp_end = resp;
-	if(MASTER_SERIALIZE(&r_hello, &resp_end, endof(resp)))
-		master_send(net, session, MessageType_HandshakeMessage, resp, resp_end, false);
+	});
 }
 
 static void handle_ClientHelloWithCookieRequest(struct MasterContext *ctx, struct NetContext *net, struct MasterSession *session, const struct ClientHelloWithCookieRequest *req) {
@@ -310,7 +307,7 @@ static void handle_ClientHelloWithCookieRequest(struct MasterContext *ctx, struc
 	struct HandshakeMessage r_cert = {
 		.type = HandshakeMessageType_ServerCertificateRequest,
 		.serverCertificateRequest.base = {
-			.requestId = master_getNextRequestId(session),
+			.requestId = master_nextRequestId(session),
 			.responseId = req->certificateResponseId,
 		},
 	};
@@ -320,13 +317,13 @@ static void handle_ClientHelloWithCookieRequest(struct MasterContext *ctx, struc
 		++r_cert.serverCertificateRequest.certificateCount;
 	}
 
-	uint8_t resp[65536], *resp_end = resp;
-	if(!MASTER_SERIALIZE(&r_cert, &resp_end, endof(resp)))
+	const uint32_t packetCount = master_send(net, session, &r_cert);
+	if(!packetCount)
 		return;
 	session->handshake = (struct HandshakeState){
 		.certificateRequestId = r_cert.serverCertificateRequest.base.requestId,
 		.helloResponseId = req->base.requestId,
-		.certificateOutboundCount = master_send(net, session, MessageType_HandshakeMessage, resp, resp_end, true),
+		.certificateOutboundCount = packetCount,
 		.step = HandshakeMessageType_ServerCertificateRequest,
 	};
 }
@@ -338,7 +335,7 @@ static void handle_ServerCertificateRequest_sent(struct MasterContext *ctx, stru
 		.type = HandshakeMessageType_ServerHelloRequest,
 		.serverHelloRequest = {
 			.base = {
-				.requestId = master_getNextRequestId(session),
+				.requestId = master_nextRequestId(session),
 				.responseId = session->handshake.helloResponseId,
 			},
 			.random = *NetKeypair_get_random(&session->net.keys),
@@ -348,10 +345,7 @@ static void handle_ServerCertificateRequest_sent(struct MasterContext *ctx, stru
 		return;
 	if(ctx->key != NULL)
 		NetSession_signature(&session->net, net, ctx->key, &r_hello.serverHelloRequest.signature);
-	uint8_t resp[65536], *resp_end = resp;
-	if(!MASTER_SERIALIZE(&r_hello, &resp_end, endof(resp)))
-		return;
-	master_send(net, session, MessageType_HandshakeMessage, resp, resp_end, true);
+	master_send(net, session, &r_hello);
 	session->handshake.step = HandshakeMessageType_ClientKeyExchangeRequest;
 }
 
@@ -361,36 +355,36 @@ static void handle_ClientKeyExchangeRequest(struct NetContext *net, struct Maste
 		return;
 	if(NetSession_set_remotePublicKey(&session->net, net, &req->clientPublicKey, false))
 		return;
-	struct HandshakeMessage r_spec = {
+	master_send(net, session, &(const struct HandshakeMessage){
 		.type = HandshakeMessageType_ChangeCipherSpecRequest,
 		.changeCipherSpecRequest.base = {
-			.requestId = master_getNextRequestId(session),
+			.requestId = master_nextRequestId(session),
 			.responseId = req->base.requestId,
 		},
-	};
-	uint8_t resp[65536], *resp_end = resp;
-	if(!MASTER_SERIALIZE(&r_spec, &resp_end, endof(resp)))
-		return;
-	master_send(net, session, MessageType_HandshakeMessage, resp, resp_end, true);
+	});
 	session->handshake.step = HandshakeMessageType_ChangeCipherSpecRequest;
 }
 
 static void handle_BaseAuthenticate(struct NetContext *net, struct MasterSession *session, struct BaseMasterServerReliableResponse req, bool gamelift) {
 	_Static_assert((uint32_t)GameLiftMessageType_AuthenticateUserResponse == (uint32_t)UserMessageType_AuthenticateUserResponse, "ABI break");
 	master_send_ack(net, session, gamelift ? MessageType_GameLiftMessage : MessageType_UserMessage, req.requestId);
-	struct UserMessage r_auth = {
-		.type = UserMessageType_AuthenticateUserResponse,
-		.authenticateUserResponse = {
-			.base = {
-				.requestId = master_getNextRequestId(session),
-				.responseId = req.requestId,
-			},
-			.result = AuthenticateUserResponse_Result_Success,
+	const struct AuthenticateUserResponse r_auth = {
+		.base = {
+			.requestId = master_nextRequestId(session),
+			.responseId = req.requestId,
 		},
+		.result = AuthenticateUserResponse_Result_Success,
 	};
-	uint8_t resp[65536], *resp_end = resp;
-	if(MASTER_SERIALIZE(&r_auth, &resp_end, endof(resp)))
-		master_send(net, session, gamelift ? MessageType_GameLiftMessage : MessageType_UserMessage, resp, resp_end, true);
+	if(gamelift)
+		master_send(net, session, &(const struct GameLiftMessage){
+			.type = GameLiftMessageType_AuthenticateUserResponse,
+			.authenticateUserResponse = r_auth,
+		});
+	else
+		master_send(net, session, &(const struct UserMessage){
+			.type = UserMessageType_AuthenticateUserResponse,
+			.authenticateUserResponse = r_auth,
+		});
 }
 
 static void handle_AuthenticateUserRequest(struct NetContext *net, struct MasterSession *session, const struct AuthenticateUserRequest *req) {
@@ -535,7 +529,7 @@ static bool handle_WireSessionAllocResp_local(struct NetContext *net, struct Mas
 		.type = UserMessageType_ConnectToServerResponse,
 		.connectToServerResponse = {
 			.base = {
-				.requestId = session ? master_getNextRequestId(session) : 0,
+				.requestId = (session != NULL) ? master_nextRequestId(session) : 0,
 				.responseId = state->request.requestId,
 			},
 			.result = (sessionAlloc != NULL) ? sessionAlloc->result : ConnectToServerResponse_Result_UnknownError,
@@ -546,7 +540,7 @@ static bool handle_WireSessionAllocResp_local(struct NetContext *net, struct Mas
 		r_conn.connectToServerResponse = (struct ConnectToServerResponse){
 			.base = r_conn.connectToServerResponse.base,
 			.result = ConnectToServerResponse_Result_Success,
-			.userId = String_fmt("beatupserver:%08x", shuffle((pool_host_ident(host) << 14) | (state->base.room + 1), false)),
+			.userId = String_fmt("beatupserver:%08x", shuffle(((uint32_t)pool_host_ident(host) << 14) | (state->base.room + 1), false)),
 			.userName = String_from(""),
 			.secret = state->secret,
 			.selectionMask = state->selectionMask,
@@ -562,9 +556,8 @@ static bool handle_WireSessionAllocResp_local(struct NetContext *net, struct Mas
 		uprintf("Sending player to room `%s`\n", ServerCodeToString((char[8]){0}, r_conn.connectToServerResponse.code));
 	}
 
-	uint8_t resp[65536], *resp_end = resp;
-	if(session && MASTER_SERIALIZE(&r_conn, &resp_end, endof(resp)))
-		master_send(net, session, MessageType_UserMessage, resp, resp_end, true);
+	if(session != NULL)
+		master_send(net, session, &r_conn);
 	return r_conn.connectToServerResponse.result != ConnectToServerResponse_Result_Success;
 }
 
@@ -579,7 +572,7 @@ static bool handle_WireSessionAllocResp_graph(struct LocalMasterContext *ctx, st
 			resp = (struct WireGraphConnectResp){
 				.result = MultiplayerPlacementErrorCode_Success,
 				.configuration = sessionAlloc->configuration,
-				.hostId = shuffle((pool_host_ident(host) << 14) | (state->base.room + 1), false),
+				.hostId = shuffle(((uint32_t)pool_host_ident(host) << 14) | (state->base.room + 1), false),
 				.endPoint = sessionAlloc->endPoint,
 				.roomSlot = state->base.room,
 				.playerSlot = sessionAlloc->playerSlot,
@@ -626,20 +619,20 @@ static void handle_WireGraphConnect(struct LocalMasterContext *ctx, WireCookie c
 
 static void handle_WireSessionAllocResp(struct LocalMasterContext *ctx, struct WireLink *link, struct PoolHost *host, WireCookie cookie, const struct WireSessionAllocResp *sessionAlloc, bool spawn) {
 	const struct DataView view = WireLink_getCookie(link, cookie);
-	const struct ConnectCookie *state = (struct ConnectCookie*)view.data;
+	const struct ConnectCookie *const state = (struct ConnectCookie*)view.data;
 	bool dropped = spawn;
 	switch((view.length >= sizeof(*state)) ? state->cookieType : MasterCookieType_INVALID) {
 		case MasterCookieType_LocalConnect: {
 			if(view.length != sizeof(struct LocalConnectCookie))
 				break;
-			const struct LocalConnectCookie *const localState = (const struct LocalConnectCookie*)state;
+			const struct LocalConnectCookie *const localState = (const struct LocalConnectCookie*)view.data;
 			dropped &= handle_WireSessionAllocResp_local(&ctx->net, MasterContext_lookup(&ctx->base, localState->addr), host, localState, sessionAlloc);
 			return;
 		}
 		case MasterCookieType_GraphConnect: {
 			if(view.length != sizeof(struct GraphConnectCookie))
 				break;
-			dropped &= handle_WireSessionAllocResp_graph(ctx, host, (const struct GraphConnectCookie*)state, sessionAlloc);
+			dropped &= handle_WireSessionAllocResp_graph(ctx, host, (const struct GraphConnectCookie*)view.data, sessionAlloc);
 			return;
 		}
 		default: dropped = false;
@@ -868,7 +861,7 @@ void MasterContext_handleMessage(struct MasterContext *ctx, struct NetContext *n
 					if(sent == NULL)
 						break;
 					struct MultipartMessageReadbackProxy readback;
-					if(!pkt_read(&readback, (const uint8_t*[]){sent->data}, &sent->data[sent->length], PV_LEGACY_DEFAULT))
+					if(!pkt_read(&readback, (const uint8_t*[]){sent->data}, &sent->data[sent->length], session->net.version))
 						break;
 					if(readback.header.unconnectedMessage.type != MessageType_HandshakeMessage ||
 					   readback.type != HandshakeMessageType_MultipartMessage ||

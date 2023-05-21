@@ -120,7 +120,7 @@ static struct String json_read_string(struct JsonIterator *const iter) {
 		if(*iter->head != '"' || *(iter->head - 1) == '\\')
 			continue;
 		struct String out = {
-			.length = iter->head++ - start,
+			.length = (uint32_t)(iter->head++ - start),
 		};
 		if(out.length > sizeof(out.data))
 			out.length = sizeof(out.data);

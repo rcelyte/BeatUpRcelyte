@@ -40,7 +40,7 @@ int main(int argc, const char *argv[]) {
 	wire_init(cfg.wireKey, cfg.wireKey_len);
 	struct WireContext *localMaster = NULL;
 	if(cfg.masterPort) {
-		localMaster = master_init(cfg.certs, cfg.keys, cfg.masterPort);
+		localMaster = master_init(&cfg.masterCert, &cfg.masterKey, cfg.masterPort);
 		if(localMaster == NULL)
 			goto fail1;
 	}
@@ -49,7 +49,7 @@ int main(int argc, const char *argv[]) {
 		if(status_ssl_init(cfg.statusPath, cfg.statusPort, cfg.certs, cfg.keys, cfg.statusAddress, "", localMaster)) // TODO: remote master config
 			goto fail2;
 	}
-	if(instance_init(cfg.instanceAddress[0], cfg.instanceAddress[1], cfg.certs, cfg.keys, cfg.instanceParent, localMaster, cfg.instanceMapPool, cfg.instanceCount))
+	if(instance_init(cfg.instanceAddress[0], cfg.instanceAddress[1], &cfg.masterCert, &cfg.masterKey, cfg.instanceParent, localMaster, cfg.instanceMapPool, cfg.instanceCount))
 		goto fail4;
 	if(headless) {
 		#ifndef WINDOWS

@@ -207,16 +207,21 @@ static void process_Reliable(ChanneledHandler handler, struct PacketContext vers
 		*data = end;
 		return;
 	}
-	uint8_t pkt[(*incoming)->size], *pkt_end = pkt;
+	uint8_t *const pkt = malloc((*incoming)->size), *pkt_end = pkt;
+	if(pkt == NULL) {
+		uprintf("alloc error\n");
+		abort();
+	}
 	for(uint32_t i = 0; i < header.fragmentPart; ++i)
-		pkt_write_bytes((*incoming)->fragments[i].data, &pkt_end, endof(pkt), version, (*incoming)->fragments[i].len);
-	pkt_write_bytes(*data, &pkt_end, endof(pkt), version, (size_t)(end - *data));
+		pkt_write_bytes((*incoming)->fragments[i].data, &pkt_end, &pkt[(*incoming)->size], version, (*incoming)->fragments[i].len);
+	pkt_write_bytes(*data, &pkt_end, &pkt[(*incoming)->size], version, (size_t)(end - *data));
 	*data = end;
 	for(uint32_t i = header.fragmentPart + 1; i < (*incoming)->total; ++i)
-		pkt_write_bytes((*incoming)->fragments[i].data, &pkt_end, endof(pkt), version, (*incoming)->fragments[i].len);
+		pkt_write_bytes((*incoming)->fragments[i].data, &pkt_end, &pkt[(*incoming)->size], version, (*incoming)->fragments[i].len);
 	const uint8_t *pkt_it = pkt;
 	handler(userptr, &pkt_it, pkt_end, channelId);
 	pkt_debug("BAD FRAGMENTED PACKET LENGTH", pkt_it, pkt_end, (size_t)(pkt_end - pkt), version);
+	free(pkt);
 
 	struct IncomingFragments *e = *incoming;
 	*incoming = e->next;
