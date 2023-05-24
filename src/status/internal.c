@@ -150,7 +150,10 @@ static const char *UserAgent_ToString[] = {
 static UserAgent ProbeHeaders(const char *buf, const char *end, size_t *contentLength_out) {
 	uint32_t lineCount = 0;
 	for(; (buf = nextLine(buf, end)); ++lineCount) {
-		if(startsWith(buf, end, "Host: ") || startsWith(buf, end, "Connection: ") || startsWith(buf, end, "Content-Type: application/json"))
+		if(startsWith(buf, end, "Host: ") ||
+		   startsWith(buf, end, "Connection: ") ||
+		   startsWith(buf, end, "Content-Type: application/json") ||
+		   startsWith(buf, end, "Authorization: "))
 			continue;
 		if(startsWith(buf, end, "Content-Length: ")) {
 			size_t length = 0;
@@ -172,7 +175,7 @@ static UserAgent ProbeHeaders(const char *buf, const char *end, size_t *contentL
 static void status_status(struct HttpContext *http, bool isGame) {
 	char msg[65536], *msg_end = msg;
 	PUT("{\"minimumAppVersion\":\"1.19.0%s\""
-	    ",\"maximumAppVersion\":\"1.29.4_🅱️\""
+	    ",\"maximumAppVersion\":\"1.30.0_🅱️\""
 	    ",\"status\":%u", isGame ? "b2147483647" : STATUS_APPVER_POSTFIX, TEST_maintenanceStartTime != 0);
 	if(TEST_maintenanceStartTime) {
 		PUT(",\"maintenanceStartTime\":%" PRIu64, TEST_maintenanceStartTime);
