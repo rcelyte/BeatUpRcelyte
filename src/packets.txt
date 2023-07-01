@@ -749,10 +749,10 @@ n MpcTextChatPacket
 n MpCore
 	String type
 	u8 MpCoreType(MpCoreType_From(&.type))
-		MpcTextChatPacket mpcTextChatPacket
-		MpBeatmapPacket mpBeatmapPacket
-		CustomAvatarPacket customAvatarPacket
-		MpcCapabilitiesPacket mpcCapabilitiesPacket
+		MpcTextChatPacket mpcTextChat
+		MpBeatmapPacket mpBeatmap
+		CustomAvatarPacket customAvatar
+		MpcCapabilitiesPacket mpcCapabilities
 		MpPlayerData mpPlayerData
 n SyncTime
 	f32 syncTime
@@ -855,9 +855,6 @@ r BTRoutingHeader
 	u8 connectionId
 n BaseMasterServerReliableRequest
 	u32 requestId
-r MasterServerReliableRequestProxy
-	u8 type
-	BaseMasterServerReliableRequest value
 n BaseMasterServerResponse
 	u32 responseId
 n BaseMasterServerReliableResponse

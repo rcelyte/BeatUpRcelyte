@@ -74,6 +74,7 @@ static void *handle_client_https(void *fd) {
 static int status_accept(struct StatusContext *ctx, struct SS *addr_out) {
 	const int listenfd = ctx->listenfd;
 	pthread_mutex_unlock(&ctx->mutex);
+	addr_out->len = sizeof(struct sockaddr_storage);
 	const int clientfd = accept(listenfd, &addr_out->sa, &addr_out->len);
 	pthread_mutex_lock(&ctx->mutex);
 	return clientfd;
@@ -110,7 +111,7 @@ static void *status_handler(struct StatusContext *ctx) {
 		goto unlock;
 	}
 	uprintf("Started HTTP%s\n", (ctx->handleClient == handle_client_http) ? "" : "S");
-	struct SS addr = {.len = sizeof(struct sockaddr_storage)};
+	struct SS addr;
 	for(int clientfd; (clientfd = status_accept(ctx, &addr)) != -1;) {
 		// TODO: shared poll thread (current system is NOT threadsafe); non-blocking I/O
 		if(pthread_create((pthread_t[]){NET_THREAD_INVALID}, &attr, ctx->handleClient, (void*)(uintptr_t)clientfd))

@@ -70,7 +70,7 @@ bool NetSession_signature(const struct NetSession *session, struct NetContext *c
 	if(!publicKey_len)
 		return true;
 	uint8_t hash[32];
-	int32_t err = mbedtls_sha256((const uint8_t*)&input, publicKey_len + sizeof(struct Cookie32[2]), hash, 0);
+	int32_t err = mbedtls_sha256((const uint8_t*)&input, publicKey_len + sizeof(struct Cookie32[2]), hash, false);
 	if(err != 0) {
 		uprintf("mbedtls_sha256() failed: %s\n", mbedtls_high_level_strerr(err));
 		return true;
@@ -218,7 +218,7 @@ static int32_t net_bind_udp(uint16_t port) {
 	#ifdef WINDOWS
 	int err = WSAStartup(MAKEWORD(2,0), &(WSADATA){0});
 	if(err) {
-		uprintf("WSAStartup failed: %s\n", port, net_strerror(err));
+		uprintf("WSAStartup failed: %s\n", net_strerror(err));
 		return -1;
 	}
 	#endif
@@ -447,7 +447,7 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSe
 	#else
 	ssize_t raw_len = recvfrom(ctx->sockfd, raw, sizeof(raw), 0, &addr.sa, &addr.len);
 	#endif
-	if(raw_len <= 0) {
+	if(raw_len <= 0 || raw_len > sizeof(raw)) {
 		if(atomic_load(&ctx->run))
 			goto retry;
 		if(raw_len == -1)

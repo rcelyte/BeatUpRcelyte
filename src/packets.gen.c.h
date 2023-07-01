@@ -1727,10 +1727,10 @@ static void _pkt_MpcTextChatPacket_write(const struct MpcTextChatPacket *restric
 static void _pkt_MpCore_read(struct MpCore *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_String_read(&data->type, pkt, end, ctx);
 	switch(MpCoreType_From(&data->type)) {
-		case MpCoreType_MpcTextChatPacket: _pkt_MpcTextChatPacket_read(&data->mpcTextChatPacket, pkt, end, ctx); break;
-		case MpCoreType_MpBeatmapPacket: _pkt_MpBeatmapPacket_read(&data->mpBeatmapPacket, pkt, end, ctx); break;
-		case MpCoreType_CustomAvatarPacket: _pkt_CustomAvatarPacket_read(&data->customAvatarPacket, pkt, end, ctx); break;
-		case MpCoreType_MpcCapabilitiesPacket: _pkt_MpcCapabilitiesPacket_read(&data->mpcCapabilitiesPacket, pkt, end, ctx); break;
+		case MpCoreType_MpcTextChatPacket: _pkt_MpcTextChatPacket_read(&data->mpcTextChat, pkt, end, ctx); break;
+		case MpCoreType_MpBeatmapPacket: _pkt_MpBeatmapPacket_read(&data->mpBeatmap, pkt, end, ctx); break;
+		case MpCoreType_CustomAvatarPacket: _pkt_CustomAvatarPacket_read(&data->customAvatar, pkt, end, ctx); break;
+		case MpCoreType_MpcCapabilitiesPacket: _pkt_MpcCapabilitiesPacket_read(&data->mpcCapabilities, pkt, end, ctx); break;
 		case MpCoreType_MpPlayerData: _pkt_MpPlayerData_read(&data->mpPlayerData, pkt, end, ctx); break;
 		default: uprintf("Invalid value for enum `MpCoreType`\n"); longjmp(fail, 1);
 	}
@@ -1738,10 +1738,10 @@ static void _pkt_MpCore_read(struct MpCore *restrict data, const uint8_t **pkt, 
 static void _pkt_MpCore_write(const struct MpCore *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_String_write(&data->type, pkt, end, ctx);
 	switch(MpCoreType_From(&data->type)) {
-		case MpCoreType_MpcTextChatPacket: _pkt_MpcTextChatPacket_write(&data->mpcTextChatPacket, pkt, end, ctx); break;
-		case MpCoreType_MpBeatmapPacket: _pkt_MpBeatmapPacket_write(&data->mpBeatmapPacket, pkt, end, ctx); break;
-		case MpCoreType_CustomAvatarPacket: _pkt_CustomAvatarPacket_write(&data->customAvatarPacket, pkt, end, ctx); break;
-		case MpCoreType_MpcCapabilitiesPacket: _pkt_MpcCapabilitiesPacket_write(&data->mpcCapabilitiesPacket, pkt, end, ctx); break;
+		case MpCoreType_MpcTextChatPacket: _pkt_MpcTextChatPacket_write(&data->mpcTextChat, pkt, end, ctx); break;
+		case MpCoreType_MpBeatmapPacket: _pkt_MpBeatmapPacket_write(&data->mpBeatmap, pkt, end, ctx); break;
+		case MpCoreType_CustomAvatarPacket: _pkt_CustomAvatarPacket_write(&data->customAvatar, pkt, end, ctx); break;
+		case MpCoreType_MpcCapabilitiesPacket: _pkt_MpcCapabilitiesPacket_write(&data->mpcCapabilities, pkt, end, ctx); break;
 		case MpCoreType_MpPlayerData: _pkt_MpPlayerData_write(&data->mpPlayerData, pkt, end, ctx); break;
 		default: uprintf("Invalid value for enum `MpCoreType`\n"); longjmp(fail, 1);
 	}
@@ -1975,10 +1975,6 @@ static void _pkt_BaseMasterServerReliableRequest_read(struct BaseMasterServerRel
 }
 static void _pkt_BaseMasterServerReliableRequest_write(const struct BaseMasterServerReliableRequest *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_write(&data->requestId, pkt, end, ctx);
-}
-void _pkt_MasterServerReliableRequestProxy_read(struct MasterServerReliableRequestProxy *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_u8_read(&data->type, pkt, end, ctx);
-	_pkt_BaseMasterServerReliableRequest_read(&data->value, pkt, end, ctx);
 }
 static void _pkt_BaseMasterServerResponse_read(struct BaseMasterServerResponse *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_read(&data->responseId, pkt, end, ctx);

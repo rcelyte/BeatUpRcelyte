@@ -14,7 +14,7 @@ int32_t status_bind_tcp(uint16_t port, uint32_t backlog) {
 	#ifdef WINDOWS
 	int err = WSAStartup(MAKEWORD(2,0), &(WSADATA){0});
 	if(err) {
-		uprintf("WSAStartup failed: %s\n", port, net_strerror(err));
+		uprintf("WSAStartup failed: %s\n", net_strerror(err));
 		return -1;
 	}
 	#else

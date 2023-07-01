@@ -53,7 +53,7 @@ struct InstanceSession {
 	} identity;
 	#endif
 	bool sentIdentity;
-	bool greeted;
+	uint32_t chatProtocol;
 	uint32_t joinOrder;
 
 	ServerState state;
@@ -325,9 +325,7 @@ static void session_set_state(struct InstanceContext *ctx, struct Room *room, st
 			room->global.roundRobin = roundRobin_next(room->global.roundRobin, room->connected);
 		struct InternalMessage r_disconnect = {
 			.type = InternalMessageType_PlayerDisconnected,
-			.playerDisconnected = {
-				.disconnectedReason = DisconnectedReason_ClientConnectionClosed,
-			},
+			.playerDisconnected.disconnectedReason = DisconnectedReason_ClientConnectionClosed,
 		};
 		FOR_SOME_PLAYERS(id, room->connected,) {
 			uint8_t resp[65536], *resp_end = resp;
@@ -371,7 +369,7 @@ static void session_set_state(struct InstanceContext *ctx, struct Room *room, st
 			if(room->configuration.songSelectionMode == SongSelectionMode_Random && instance_mapPool) {
 				SERIALIZE_MPCORE(&resp_end, endof(resp), session->net.version, {
 					.type = String_from("MpBeatmapPacket"),
-					.mpBeatmapPacket = instance_mapPool[room->global.roundRobin],
+					.mpBeatmap = instance_mapPool[room->global.roundRobin],
 				});
 			}
 			SERIALIZE_MENURPC(&resp_end, endof(resp), session->net.version, {
@@ -596,7 +594,7 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 		case ServerState_Lobby_Entitlement: {
 			playerid_t select = ~UINT32_C(0);
 			switch(room->configuration.songSelectionMode) {
-				case SongSelectionMode_Vote: vote_beatmap: {
+				case SongSelectionMode_Vote: {
 					uint32_t max = 0;
 					FOR_SOME_PLAYERS(id, room->connected,) {
 						if(!room->players[id].recommendedBeatmap.characteristic.length)
@@ -621,17 +619,8 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 					break;
 				}
 				case SongSelectionMode_Random: select = (playerid_t)room->configuration.maxPlayerCount; break;
-				case SongSelectionMode_OwnerPicks: {
-					if(!CounterP_get(room->connected, room->serverOwner))
-						goto vote_beatmap;
-					select = room->serverOwner;
-					break;
-				}
-				case SongSelectionMode_RandomPlayerPicks: {
-					if(room->players[room->global.roundRobin].recommendedBeatmap.characteristic.length)
-						select = room->global.roundRobin;
-					break;
-				}
+				case SongSelectionMode_OwnerPicks: select = room->serverOwner; break;
+				case SongSelectionMode_RandomPlayerPicks: select = room->global.roundRobin; break;
 			}
 			room->lobby.requester = select;
 			if(select > (playerid_t)room->configuration.maxPlayerCount || room->players[select].recommendedBeatmap.characteristic.length == 0) {
@@ -1090,39 +1079,214 @@ static void handle_GameplayRpc(struct InstanceContext *ctx, struct Room *room, s
 	}
 }
 
-static void handle_MpCore(const struct Room *const room, struct InstanceSession *const session, const struct MpCore *const mpCore) {
+enum ChatCommand {
+	ChatCommand_Help_Short = 'h',
+	ChatCommand_Help_Long = 'h' | 'e' << 8 | 'l' << 16 | 'p' << 24,
+	ChatCommand_Countdown = 'c',
+	ChatCommand_PerPlayerDifficulty = 'p' | 'p' << 8 | 'd' << 16,
+	ChatCommand_PerPlayerModifiers = 'p' | 'p' << 8 | 'm' << 16,
+	ChatCommand_Host = 'h' | 'o' << 8 | 's' << 16 | 't' << 24,
+	ChatCommand_Mode = 'm',
+	ChatCommand_Skip = 's',
+	ChatCommand_Pool = 'p',
+};
+
+static enum ChatCommand ChatCommand_readVerb(const char **cmd, const char *const cmd_end) {
+	if(*cmd == cmd_end)
+		return ChatCommand_Help_Long;
+
+	const char *verb_end = memchr(*cmd, ' ', (size_t)(cmd_end - *cmd));
+	if(verb_end == NULL)
+		verb_end = cmd_end;
+	struct String verb = {0};
+	if((size_t)(verb_end - *cmd) < lengthof(verb.data)) {
+		verb.length = (uint32_t)(verb_end - *cmd);
+		memcpy(verb.data, *cmd, verb.length);
+	}
+	*cmd = verb_end;
+
+	if(String_is(verb, "mode")) return ChatCommand_Mode;
+	if(String_is(verb, "skip")) return ChatCommand_Skip;
+	if(String_is(verb, "pool")) return ChatCommand_Pool;
+	if(verb.length <= 4) return (uint32_t)verb.data[0] | (uint32_t)verb.data[1] << 8 | (uint32_t)verb.data[2] << 16 | (uint32_t)verb.data[3] << 24;
+	if(String_is(verb, "countdown")) return ChatCommand_Countdown;
+	if(String_is(verb, "perplayerdifficulty")) return ChatCommand_PerPlayerDifficulty;
+	if(String_is(verb, "perplayerdifficulties")) return ChatCommand_PerPlayerDifficulty;
+	if(String_is(verb, "perplayermodifiers")) return ChatCommand_PerPlayerModifiers;
+	return (enum ChatCommand)0;
+}
+
+static bool ChatCommand_readBool(const char **cmd, const char *const cmd_end, bool *value_out) {
+	struct String lower = {0};
+	if((size_t)(cmd_end - *cmd) >= lengthof(lower.data)) {
+		*cmd = cmd_end;
+		return false;
+	}
+	for(; *cmd < cmd_end; ++*cmd)
+		lower.data[lower.length++] = **cmd | (**cmd >> 1 & 0x20);
+	if(String_is(lower, "1") || String_is(lower, "t") || String_is(lower, "y") || String_is(lower, "on") || String_is(lower, "yes") ||
+	   String_is(lower, "true") || String_is(lower, "enable") || String_is(lower, "enabled"))
+		*value_out = true;
+	else if(String_is(lower, "0") || String_is(lower, "f") || String_is(lower, "n") || String_is(lower, "no") || String_is(lower, "off") ||
+	        String_is(lower, "false") || String_is(lower, "disable") || String_is(lower, "disabled"))
+		*value_out = false;
+	else
+		return false;
+	return true;
+}
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+static void chat(struct Room *const room, const struct InstanceSession *const session, const char *const format, ...) {
+	va_list args;
+	va_start(args, format);
+	struct LongString message = {.isNull = false};
+	message.length = (uint32_t)vsnprintf(message.data, sizeof(message.data) / sizeof(*message.data), format, args);
+	va_end(args);
+
+	struct InternalMessage r_message = {
+		.type = InternalMessageType_MultiplayerSession,
+		.multiplayerSession = {
+			.type = MultiplayerSessionMessageType_MpCore,
+			.mpCore = {
+				.type = String_from("MpcTextChatPacket"),
+				.mpcTextChat.text = message,
+			},
+		},
+	};
+	struct CounterP mask = COUNTERP_CLEAR;
+	if(session != NULL)
+		CounterP_set(&mask, (uint32_t)indexof(room->players, session));
+	else
+		mask = room->connected;
+	FOR_SOME_PLAYERS(id, mask,) {
+		if(!room->players[id].chatProtocol)
+			continue;
+		r_message.multiplayerSession.mpCore.mpcTextChat.protocolVersion = room->players[id].chatProtocol;
+		uint8_t resp[65536], *resp_end = resp;
+		pkt_write_c(&resp_end, endof(resp), room->players[id].net.version, RoutingHeader, {0, (session != NULL) ? 0 : 127, false});
+		pkt_serialize(&r_message, &resp_end, endof(resp), room->players[id].net.version);
+		instance_send_channeled(&room->players[id].net, &room->players[id].channels, resp, (uint32_t)(resp_end - resp), DeliveryMethod_ReliableOrdered);
+	}
+}
+#pragma GCC diagnostic pop
+
+static void handle_ChatCommand(struct InstanceContext *const ctx, struct Room *const room, const struct InstanceSession *session, const char *cmd, const char *const cmd_end) {
+	/* TODO: help + command details
+	 * /countdown, /c [wait time] [start time] - Get or set countdown duration
+	 * /perplayerdifficulties, /perplayerdifficulty, /ppd [true/false] - Toggle per-player difficulty
+	 *     Allows players to choose other difficulties of the selected beatmap
+	 *     BeatUpClient users may additionally switch difficulties mid-level
+	 * /perplayermodifiers, /ppm [true/false] - Toggle per-player modifiers
+	 *     Allows players to select different modifier combinations (not including speed modifiers)
+	 * /host [player] - Pass host to a different player
+	 * /mode, /m [vote/host/cycle/pool] - Get or set song selection mode
+	 *     Vote: Selects the beatmap suggested by the most players
+	 *     Host: Selects the host's suggestion
+	 *     Cycle: Cycles through each player
+	 *     Pool: Selects from a server-side beatmap pool
+	 * /skip, /s [player, beatmap, or index] - Skip to the specified player ('cycle' mode) or beatmap ('pool' mode)
+	 * /pool, /p [pool name] [beatmap or index] - Get or set the active map pool (setting this will automatically enable the 'pool' song selection mode)
+	 */
+
+	/*
+		break;*/
+	const enum ChatCommand verb = ChatCommand_readVerb(&cmd, cmd_end);
+	switch((uint32_t)verb) {
+		case ChatCommand_Help_Short: chat(room, session, "Command not yet implemented"); break;
+		case ChatCommand_Help_Long: chat(room, session, "Command not yet implemented"); break;
+		case ChatCommand_Countdown: {
+			if(cmd++ < cmd_end) { // skip ' '
+				if(indexof(room->players, session) != room->serverOwner) {
+					chat(room, session, "Error: unexpected argument");
+					break;
+				}
+				chat(room, session, "Command not yet implemented");
+				break;
+			}
+			chat(room, session, "Wait time is %.2f seconds; countdown is %.2f seconds", (double)room->longCountdown, (double)room->shortCountdown);
+			break;
+		}
+		case ChatCommand_PerPlayerDifficulty: [[fallthrough]];
+		case ChatCommand_PerPlayerModifiers: {
+			bool *const option = (verb == ChatCommand_PerPlayerDifficulty) ? &room->perPlayerDifficulty : &room->perPlayerModifiers, value = *option;
+			if(cmd++ < cmd_end) { // skip ' '
+				if(indexof(room->players, session) != room->serverOwner) {
+					chat(room, session, "Error: unexpected argument");
+					break;
+				}
+				if(!ChatCommand_readBool(&cmd, cmd_end, &value)) {
+					chat(room, session, "Error: expected 'true' or 'false'");
+					break;
+				}
+				if(value != *option) {
+					if(!(room->state & ServerState_Lobby)) {
+						chat(room, session, "Error: room must be in lobby");
+						break;
+					}
+					if(room->state & (ServerState_Countdown | ServerState_Lobby_Downloading)) {
+						chat(room, session, "Error: cannot configure during countdown");
+						break;
+					}
+					*option = value;
+					room_set_state(ctx, room, ServerState_Lobby_Entitlement);
+				}
+				session = NULL; // broadcast message
+			}
+			chat(room, session, "Per-player %s are %s", (verb == ChatCommand_PerPlayerDifficulty) ? "difficulty" : "modifiers", value ? "enabled" : "disabled");
+			break;
+		}
+		case ChatCommand_Host: {
+			if(cmd++ < cmd_end) { // skip ' '
+				if(indexof(room->players, session) != room->serverOwner) {
+					chat(room, session, "Error: unexpected argument");
+					break;
+				}
+			}
+			// Waiting for MultiplayerChat to implement a convention for referencing users
+			// chat(room, session, "The room host is: %.*s", /* ping... */);
+			chat(room, session, "Command not yet implemented");
+			break;
+		}
+		case ChatCommand_Mode: { // This can't update variables client-side, but the game doesn't seem to actually use the selection mode for anything so it's fine
+			if(cmd++ < cmd_end) { // skip ' '
+				if(indexof(room->players, session) != room->serverOwner) {
+					chat(room, session, "Error: unexpected argument");
+					break;
+				}
+				chat(room, session, "Command not yet implemented"); // TODO: Switching selection modes will break many assumptions in the code
+				break;
+			}
+			const char *mode = NULL;
+			switch(room->configuration.songSelectionMode) {
+				case SongSelectionMode_Vote: mode = "vote"; break;
+				case SongSelectionMode_Random: mode = "pool"; break;
+				case SongSelectionMode_OwnerPicks: mode = "host"; break;
+				case SongSelectionMode_RandomPlayerPicks: mode = "cycle"; break;
+				default: mode = reflect(SongSelectionMode, room->configuration.songSelectionMode);
+			}
+			chat(room, session, "Song selection mode is '%s'", mode);
+			break;
+		}
+		case ChatCommand_Skip: chat(room, session, "Command not yet implemented"); break;
+		case ChatCommand_Pool: chat(room, session, "Command not yet implemented"); break;
+		default: chat(room, session, "Unrecognized command"); break;
+	}
+}
+
+static void handle_MpCore(struct InstanceContext *const ctx, struct Room *const room, struct InstanceSession *const session, const struct MpCore *const mpCore) {
 	switch(MpCoreType_From(&mpCore->type)) {
 		case MpCoreType_MpcCapabilitiesPacket: {
-			if(session->greeted || !mpCore->mpcCapabilitiesPacket.canText)
+			if(session->chatProtocol != 0 || !mpCore->mpcCapabilities.canText)
 				break;
-			session->greeted = true;
-			uint8_t resp[65536], *resp_end = resp;
-			pkt_write_c(&resp_end, endof(resp), session->net.version, RoutingHeader, {0, 0, false});
-			SERIALIZE_MPCORE(&resp_end, endof(resp), session->net.version, {
-				.type = String_from("MpcTextChatPacket"),
-				.mpcTextChatPacket = {
-					.protocolVersion = mpCore->mpcCapabilitiesPacket.protocolVersion,
-					.text = LongString_fmt(
-						"Welcome to BeatUpServer | BETA!\n* Per-player difficulty is %s\n* Per-player modifiers are %s",
-						room->perPlayerDifficulty ? "enabled" : "disabled", room->perPlayerModifiers ? "enabled" : "disabled"),
-				},
-			});
-			instance_send_channeled(&session->net, &session->channels, resp, (uint32_t)(resp_end - resp), DeliveryMethod_ReliableOrdered);
+			session->chatProtocol = mpCore->mpcCapabilities.protocolVersion;
+			chat(room, session, "Welcome to BeatUpServer | BETA!\n* Per-player difficulty is %s\n* Per-player modifiers are %s",
+				room->perPlayerDifficulty ? "enabled" : "disabled", room->perPlayerModifiers ? "enabled" : "disabled");
 			break;
 		}
 		case MpCoreType_MpcTextChatPacket: {
-			if(!mpCore->mpcTextChatPacket.text.length || mpCore->mpcTextChatPacket.text.data[0] != '/')
-				break;
-			uint8_t resp[65536], *resp_end = resp;
-			pkt_write_c(&resp_end, endof(resp), session->net.version, RoutingHeader, {0, 0, false});
-			SERIALIZE_MPCORE(&resp_end, endof(resp), session->net.version, {
-				.type = String_from("MpcTextChatPacket"),
-				.mpcTextChatPacket = {
-					.protocolVersion = mpCore->mpcTextChatPacket.protocolVersion,
-					.text = LongString_from("Slash commands are not currently supported"),
-				},
-			});
-			instance_send_channeled(&session->net, &session->channels, resp, (uint32_t)(resp_end - resp), DeliveryMethod_ReliableOrdered);
+			if(session->chatProtocol && mpCore->mpcTextChat.text.length && mpCore->mpcTextChat.text.data[0] == '/')
+				handle_ChatCommand(ctx, room, session, &mpCore->mpcTextChat.text.data[1], &mpCore->mpcTextChat.text.data[mpCore->mpcTextChat.text.length]);
 			break;
 		}
 		default:;
@@ -1150,7 +1314,7 @@ static bool handle_MultiplayerSession(struct InstanceContext *ctx, struct Room *
 		case MultiplayerSessionMessageType_ScoreSyncState: break;
 		case MultiplayerSessionMessageType_NodePoseSyncStateDelta: uprintf("BAD TYPE: MultiplayerSessionMessageType_NodePoseSyncStateDelta\n"); break;
 		case MultiplayerSessionMessageType_ScoreSyncStateDelta: uprintf("BAD TYPE: MultiplayerSessionMessageType_ScoreSyncStateDelta\n"); break;
-		case MultiplayerSessionMessageType_MpCore: handle_MpCore(room, session, &message->mpCore); return false;
+		case MultiplayerSessionMessageType_MpCore: handle_MpCore(ctx, room, session, &message->mpCore); return false;
 		case MultiplayerSessionMessageType_BeatUpMessage: return handle_BeatUpMessage(&message->beatUpMessage);
 		default: uprintf("BAD MULTIPLAYER SESSION MESSAGE TYPE\n");
 	}
@@ -1185,7 +1349,6 @@ static void handle_PlayerIdentity(struct InstanceContext *ctx, struct Room *room
 				.remoteConnectionId = InstanceSession_connectionId(room->players, session),
 				.userId = session->userId,
 				.userName = session->userName,
-				.isConnectionOwner = 0,
 			},
 		};
 		struct InternalMessage r_sort = {
@@ -1770,19 +1933,19 @@ static struct NetSession *instance_onResolve(struct NetContext *net, struct SS a
 
 static uint32_t instance_onResend(struct NetContext *net, uint32_t currentTime) {
 	struct InstanceContext *const ctx = (struct InstanceContext*)net->userptr;
-	int32_t nextTick = MasterContext_onResend(&ctx->base, net, currentTime);
+	uint32_t nextTick = MasterContext_onResend(&ctx->base, net, currentTime);
 	FOR_ALL_ROOMS(ctx, room) {
 		FOR_SOME_PLAYERS(id, (*room)->playerSort,) {
-			struct InstanceSession *session = &(*room)->players[id];
-			int32_t kickTime = (int32_t)(NetSession_get_lastKeepAlive(&session->net) + IDLE_TIMEOUT_MS - currentTime);
+			struct InstanceSession *const session = &(*room)->players[id];
+			const int32_t kickTime = (int32_t)(NetSession_get_lastKeepAlive(&session->net) + IDLE_TIMEOUT_MS - currentTime);
 			if(kickTime < 0) {
 				uprintf("session timeout\n");
 				room_disconnect(ctx, room, session, false);
 				continue;
 			}
-			if(kickTime < nextTick)
-				nextTick = kickTime;
-			nextTick = (int32_t)instance_channels_tick(&session->channels, &ctx->net, &session->net, currentTime); // TODO: proper resend timing
+			if((uint32_t)kickTime < nextTick)
+				nextTick = (uint32_t)kickTime;
+			nextTick = instance_channels_tick(&session->channels, &ctx->net, &session->net, currentTime); // TODO: proper resend timing
 		}
 		if(!*room)
 			continue;
@@ -1793,8 +1956,8 @@ static uint32_t instance_onResend(struct NetContext *net, uint32_t currentTime) 
 				uint32_t ms = (uint32_t)(delta * 1000);
 				if(ms < 10)
 					ms = 10;
-				if(ms < (uint32_t)nextTick)
-					nextTick = (int32_t)ms;
+				if(ms < nextTick)
+					nextTick = ms;
 			} else if((*room)->state & ServerState_Game_Results) { // TODO: ServerState_Lobby_Results = ServerState_Lobby_Idle >> 1
 				room_set_state(ctx, *room, ServerState_Lobby_Idle);
 			} else {
@@ -1805,7 +1968,7 @@ static uint32_t instance_onResend(struct NetContext *net, uint32_t currentTime) 
 		FOR_SOME_PLAYERS(id, (*room)->playerSort,)
 			net_flush_merged(&ctx->net, &(*room)->players[id].net);
 	}
-	return (uint32_t)nextTick;
+	return nextTick;
 }
 
 static const char *instance_domainIPv4 = NULL, *instance_domain = NULL;
@@ -1852,7 +2015,7 @@ static struct Room **room_open(struct InstanceContext *ctx, uint32_t roomID, str
 		};
 	}
 	// Allocate extra slot for fake player in `SongSelectionMode_Random`
-	struct Room *room = malloc(sizeof(struct Room) + ((uint32_t)configuration.maxPlayerCount + (configuration.songSelectionMode == SongSelectionMode_Random)) * sizeof(*room->players));
+	struct Room *room = malloc(sizeof(struct Room) + ((uint32_t)configuration.maxPlayerCount + 1) * sizeof(*room->players));
 	if(room == NULL) {
 		uprintf("alloc error\n");
 		return NULL;
@@ -1976,7 +2139,7 @@ static void instance_onGraphAuth(struct NetContext *net, struct NetSession *mast
 			uprintf("Auth failed: bad room ID\n");
 			return;
 		}
-		roomID = roomID * 10 + (*it - '0');
+		roomID = roomID * 10 + ((uint32_t)*it - '0');
 	}
 	struct Room **const roomPtr = instance_get_room(ctx, roomID);
 	struct Room *const room = (roomPtr != NULL) ? *roomPtr : NULL;
@@ -1984,7 +2147,7 @@ static void instance_onGraphAuth(struct NetContext *net, struct NetSession *mast
 		uprintf("Auth failed: room closed\n");
 		return;
 	}
-	const playerid_t id = (sep[1] - '0') * 100 | (sep[2] - '0') * 10 | (sep[3] - '0');
+	const playerid_t id = ((uint32_t)sep[1] - '0') * 100 | ((uint32_t)sep[2] - '0') * 10 | ((uint32_t)sep[3] - '0');
 	if(id >= (uint32_t)room->configuration.maxPlayerCount) {
 		uprintf("Auth failed: player slot out of range\n");
 		return;
