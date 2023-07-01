@@ -1,3 +1,6 @@
 [submodule "mbedtls"]
-	path = mbedtls
+	path = thirdparty/mbedtls
 	url = https://github.com/ARMmbed/mbedtls.git
+[submodule "thirdparty/enet"]
+	path = thirdparty/enet
+	url = https://github.com/SoftwareGuy/ENet-CSharp.git
