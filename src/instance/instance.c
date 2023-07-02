@@ -1525,15 +1525,6 @@ static void process_message(struct InstanceContext *ctx, struct Room *room, stru
 	}
 }
 
-struct ChanneledState {
-	struct InstanceContext *ctx;
-	struct Room *room;
-	struct InstanceSession *session;
-};
-static void process_Channeled(struct ChanneledState *state, const uint8_t **data, const uint8_t *end, DeliveryMethod channelId) {
-	process_message(state->ctx, state->room, state->session, data, end, true, channelId);
-}
-
 static void handle_ConnectRequest(struct InstanceContext *ctx, struct Room *room, struct InstanceSession *session, const struct ConnectRequest *req, const uint8_t **data, const uint8_t *end) {
 	struct String baseUserId = session->userId;
 	if(req->userId.length < baseUserId.length && baseUserId.data[req->userId.length] == '$') // fast path for annotation stripping
@@ -1795,7 +1786,19 @@ static inline void handle_packet(struct InstanceContext *ctx, struct Room **room
 		const uint8_t *sub = data;
 		switch(header.property) {
 			case PacketProperty_Unreliable: process_message(ctx, *room, session, &sub, &sub[length], false, 0); break;
-			case PacketProperty_Channeled: handle_Channeled((ChanneledHandler)process_Channeled, &(struct ChanneledState){ctx, *room, session}, &ctx->net, &session->net, &session->channels, &header, &sub, &sub[length]); break;
+			case PacketProperty_Channeled: {
+					const uint8_t *pkt = NULL;
+					DeliveryMethod channelId = header.channeled.channelId;
+					size_t pkt_len = handle_Channeled_start(&ctx->net, &session->net, &session->channels, &header, &sub, &sub[length], &pkt);
+					while(pkt_len != 0) {
+						const uint8_t *pkt_it = pkt;
+						process_message(ctx, *room, session, &pkt_it, &pkt[pkt_len], true, channelId);
+						pkt_debug("BAD CHANNELED PACKET LENGTH", pkt_it, &pkt[pkt_len], pkt_len, session->net.version);
+						channelId = DeliveryMethod_ReliableOrdered;
+						pkt_len = handle_Channeled_next(&session->net, &session->channels, &pkt);
+					}
+					break;
+				}
 			case PacketProperty_Ack: {
 				if(!session->net.version.windowSize) {
 					if(!length || length > sizeof(header.ack.data)) {

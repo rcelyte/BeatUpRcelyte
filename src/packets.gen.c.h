@@ -2706,12 +2706,14 @@ static void _pkt_WireGraphConnect_read(struct WireGraphConnect *restrict data, c
 	_pkt_String_read(&data->secret, pkt, end, ctx);
 	_pkt_String_read(&data->userId, pkt, end, ctx);
 	_pkt_GameplayServerConfiguration_read(&data->configuration, pkt, end, ctx);
+	_pkt_u32_read(&data->protocolVersion, pkt, end, ctx);
 }
 static void _pkt_WireGraphConnect_write(const struct WireGraphConnect *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_write(&data->code, pkt, end, ctx);
 	_pkt_String_write(&data->secret, pkt, end, ctx);
 	_pkt_String_write(&data->userId, pkt, end, ctx);
 	_pkt_GameplayServerConfiguration_write(&data->configuration, pkt, end, ctx);
+	_pkt_u32_write(&data->protocolVersion, pkt, end, ctx);
 }
 static void _pkt_WireGraphConnectResp_read(struct WireGraphConnectResp *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u8_read(&data->result, pkt, end, ctx);

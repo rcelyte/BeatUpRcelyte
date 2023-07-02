@@ -2276,6 +2276,7 @@ struct WireGraphConnect {
 	struct String secret;
 	struct String userId;
 	struct GameplayServerConfiguration configuration;
+	uint32_t protocolVersion;
 };
 struct WireGraphConnectResp {
 	MultiplayerPlacementErrorCode result;

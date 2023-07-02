@@ -447,7 +447,7 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSe
 	#else
 	ssize_t raw_len = recvfrom(ctx->sockfd, raw, sizeof(raw), 0, &addr.sa, &addr.len);
 	#endif
-	if(raw_len <= 0 || raw_len > sizeof(raw)) {
+	if(raw_len <= 0 || (size_t)raw_len > sizeof(raw)) {
 		if(atomic_load(&ctx->run))
 			goto retry;
 		if(raw_len == -1)

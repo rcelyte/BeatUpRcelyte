@@ -1,5 +1,5 @@
 #pragma once
-#include <stdint.h>
+#include "global.h"
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -10,11 +10,6 @@ struct WireMessage;
 struct WireContext {
 	void *userptr;
 	void (*onMessage)(struct WireContext *ctx, struct WireLink *link, const struct WireMessage *message);
-};
-
-struct DataView {
-	void *data;
-	size_t length;
 };
 
 void wire_init(uint8_t remoteKey[32], uint8_t remoteKey_len);

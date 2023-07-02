@@ -205,9 +205,17 @@ static void status_graph(struct HttpContext *http, struct HttpRequest req, struc
 		.http = http,
 	};
 	struct WireGraphConnect connectInfo = {0};
+	bool foundVersion = false;
 	struct JsonIterator iter = {(const char*)req.body, (const char*)&req.body[req.body_len], false, {0}};
 	JSON_ITER_OBJECT(&iter, key0) {
-		if(String_is(key0, "beatmap_level_selection_mask")) {
+		if(String_is(key0, "version")) {
+			const struct String version = json_read_string(&iter);
+			connectInfo.protocolVersion = 
+				(startsWith(version.data, &version.data[version.length], "1.19.") ||
+				startsWith(version.data, &version.data[version.length], "1.2") ||
+				startsWith(version.data, &version.data[version.length], "1.30.")) ? 0 : 8;
+			foundVersion = true;
+		} else if(String_is(key0, "beatmap_level_selection_mask")) {
 			JSON_ITER_OBJECT(&iter, key1) {
 				if(String_is(key1, "difficulties")) {
 					state.selectionMask.difficulties = (BeatmapDifficultyMask)json_read_uint64(&iter);
@@ -250,7 +258,7 @@ static void status_graph(struct HttpContext *http, struct HttpRequest req, struc
 			json_skip_any(&iter);
 		}
 	}
-	if(iter.fault || !connectInfo.userId.length || !connectInfo.configuration.maxPlayerCount) {
+	if(iter.fault || !foundVersion || !connectInfo.userId.length || !connectInfo.configuration.maxPlayerCount) {
 		status_graph_resp((struct DataView){&state, sizeof(state)}, &(struct WireGraphConnectResp){
 			.result = MultiplayerPlacementErrorCode_Unknown,
 		});

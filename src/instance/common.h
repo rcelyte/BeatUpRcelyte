@@ -145,6 +145,7 @@ struct Channels {
 	struct ReliableOrderedChannel ro;
 	struct SequencedChannel rs;
 	struct IncomingFragments *incomingFragmentsList;
+	void *heldBuffer;
 };
 struct PingPong {
 	uint64_t lastPing;
@@ -161,7 +162,8 @@ void instance_channels_flushBacklog(struct Channels *channels, struct NetSession
 uint32_t instance_channels_tick(struct Channels *channels, struct NetContext *net, struct NetSession *session, uint32_t currentTime);
 void instance_send_channeled(struct NetSession *session, struct Channels *channels, const uint8_t *buf, uint32_t len, DeliveryMethod method);
 void handle_Ack(struct NetSession *session, struct Channels *channels, const struct Ack *ack);
-void handle_Channeled(ChanneledHandler handler, void *userptr, struct NetContext *net, struct NetSession *session, struct Channels *channels, const struct NetPacketHeader *header, const uint8_t **data, const uint8_t *end);
+size_t handle_Channeled_start(struct NetContext *net, struct NetSession *session, struct Channels *channels, const struct NetPacketHeader *header, const uint8_t **data, const uint8_t *end, const uint8_t **pkt_out);
+size_t handle_Channeled_next(const struct NetSession *session, struct Channels *channels, const uint8_t **pkt_out);
 void handle_Ping(struct NetContext *net, struct NetSession *session, struct PingPong *pingpong, struct Ping ping);
 float handle_Pong(struct NetContext *net, struct NetSession *session, struct PingPong *pingpong, struct Pong pong);
 void handle_MtuCheck(struct NetContext *net, struct NetSession *session, const struct MtuCheck *req);

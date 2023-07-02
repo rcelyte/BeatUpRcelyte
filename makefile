@@ -14,7 +14,7 @@ LIBS := libmbedtls.a libmbedx509.a libmbedcrypto.a
 OBJS := $(FILES:%=$(OBJDIR)/%.o) $(HTMLS:%=$(OBJDIR)/%.s) $(LIBS:%=$(OBJDIR)/%)
 DEPS := $(FILES:%=$(OBJDIR)/%.d)
 
-CFLAGS := -std=gnu2x -Ithirdparty/mbedtls/include -Ithirdparty/enet/Source/Native -DMP_EXTENDED_ROUTING
+CFLAGS := -std=gnu2x -isystem thirdparty/mbedtls/include -isystem thirdparty/enet/Source/Native -DMP_EXTENDED_ROUTING
 LDFLAGS := -O3 -Wl,--gc-sections,--fatal-warnings -fno-pie -pthread
 
 sinclude makefile.user

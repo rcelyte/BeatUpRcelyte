@@ -49,6 +49,7 @@ n WireGraphConnect
 	String secret
 	String userId
 	GameplayServerConfiguration configuration
+	u32 protocolVersion
 n WireGraphConnectResp
 	MultiplayerPlacementErrorCode result
 	if(.result == MultiplayerPlacementErrorCode_Success)
