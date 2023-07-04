@@ -69,4 +69,10 @@ static partial class BeatUpClient {
 			return;
 		Base(self, endPoint, certificate, certificateChain);
 	}
+
+	[Detour(typeof(IgnoranceCore.IgnoranceClient), nameof(IgnoranceCore.IgnoranceClient.Start))]
+	static void IgnoranceClient_Start(IgnoranceCore.IgnoranceClient self) {
+		self.ValidateCertificate = false;
+		Base(self);
+	}
 }

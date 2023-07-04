@@ -8,13 +8,13 @@ MAKEFLAGS += --no-print-directory -j$(command nproc 2>/dev/null || echo 2)
 HOST := $(shell uname -m)
 NATIVE_CC ?= cc
 OBJDIR := .obj/$(shell $(CC) -dumpmachine)
-FILES := $(wildcard src/*.c src/*/*.c) thirdparty/enet/Source/Native/enet.c
+FILES := $(wildcard src/*.c src/*/*.c)
 HTMLS := $(wildcard src/*/*.html)
 LIBS := libmbedtls.a libmbedx509.a libmbedcrypto.a
 OBJS := $(FILES:%=$(OBJDIR)/%.o) $(HTMLS:%=$(OBJDIR)/%.s) $(LIBS:%=$(OBJDIR)/%)
 DEPS := $(FILES:%=$(OBJDIR)/%.d)
 
-CFLAGS := -std=gnu2x -isystem thirdparty/mbedtls/include -isystem thirdparty/enet/Source/Native -DMP_EXTENDED_ROUTING
+CFLAGS := -std=gnu2x -ffunction-sections -fdata-sections -isystem thirdparty/mbedtls/include -isystem thirdparty/enet/Source/Native -DMP_EXTENDED_ROUTING
 LDFLAGS := -O3 -Wl,--gc-sections,--fatal-warnings -fno-pie -pthread
 
 sinclude makefile.user
@@ -33,7 +33,6 @@ beatupserver.%: $(OBJS)
 	@echo "[cc $@]"
 	$(CC) $(OBJS) $(LDFLAGS) -o "$@"
 
-$(OBJDIR)/thirdparty/enet/Source/Native/enet.c.o: CFLAGS += -include thirdparty/enet_static_fix.h
 $(OBJDIR)/%.c.o: %.c src/packets.gen.h $(OBJDIR)/libs.mk thirdparty/mbedtls/.git makefile
 	@echo "[cc $(notdir $@)]"
 	@mkdir -p "$(@D)"

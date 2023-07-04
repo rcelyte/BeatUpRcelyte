@@ -99,13 +99,13 @@ void net_stop(struct NetContext *ctx);
 void net_cleanup(struct NetContext *ctx);
 void net_lock(struct NetContext *ctx);
 void net_unlock(struct NetContext *ctx);
-void NetSession_init(struct NetSession *session, struct NetContext *ctx, struct SS addr);
+void NetSession_init(struct NetSession *session, struct NetContext *ctx, struct SS addr, const mbedtls_ssl_config *config);
 void NetSession_initFrom(struct NetSession *session, const struct NetSession *from);
 void NetSession_free(struct NetSession *session);
 uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSession **session, void **userdata_out);
 void net_flush_merged(struct NetContext *ctx, struct NetSession *session);
-void net_queue_merged(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint16_t len);
-void net_send_internal(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint32_t len, bool encrypt);
+void net_queue_merged(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint16_t len, const struct NetPacketHeader *header);
+void net_send_internal(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint32_t len, enum EncryptMode encryptMode);
 int32_t net_get_sockfd(struct NetContext *ctx);
 mbedtls_ctr_drbg_context *net_get_ctr_drbg(struct NetContext *ctx);
 

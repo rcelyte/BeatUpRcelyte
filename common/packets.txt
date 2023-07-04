@@ -77,6 +77,14 @@ n LoadProgress
 	u32 sequence
 	LoadState state
 	u16 progress
+r ServerConnectInfo
+	ConnectInfo base
+	u32 windowSize
+	u8 countdownDuration
+	b directDownloads:1
+	b skipResults:1
+	b perPlayerDifficulty:1
+	b perPlayerModifiers:1
 d BeatUpMessage
 	BeatUpMessageType type
 	u8 BeatUpMessageType(.type)
@@ -86,14 +94,7 @@ d BeatUpMessage
 		DataFragmentRequest dataFragmentRequest
 		DataFragment dataFragment
 		LoadProgress loadProgress
-d ServerConnectInfo
-	ConnectInfo base
-	u32 windowSize
-	u8 countdownDuration
-	b directDownloads:1
-	b skipResults:1
-	b perPlayerDifficulty:1
-	b perPlayerModifiers:1
+		ServerConnectInfo serverConnectInfo
 d ModConnectHeader
 	vu32 length
 	String name

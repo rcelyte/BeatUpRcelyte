@@ -9,6 +9,7 @@ static partial class BeatUpClient {
 			DataFragmentRequest,
 			DataFragment,
 			LoadProgress,
+			ServerConnectInfo,
 		}
 
 		const byte beatUpMessageType = 101;
@@ -67,7 +68,7 @@ static partial class BeatUpClient {
 			int end = reader.Position + length;
 			try {
 				MessageType type = (MessageType)reader.GetByte();
-				if(type != MessageType.ConnectInfo && !beatUpPlayers.Keys.Contains(player))
+				if(type != MessageType.ConnectInfo && type != MessageType.ServerConnectInfo && !beatUpPlayers.Keys.Contains(player))
 					return;
 				switch(type) {
 					case MessageType.ConnectInfo: HandleConnectInfo(new ConnectInfo(reader), player); break;
@@ -76,6 +77,16 @@ static partial class BeatUpClient {
 					case MessageType.DataFragmentRequest: ShareProvider.OnDataFragmentRequest(new DataFragmentRequest(reader), player); break;
 					case MessageType.DataFragment: onDataFragment?.Invoke(new DataFragment(reader, end), player); break;
 					case MessageType.LoadProgress: playerData.UpdateLoadProgress(new LoadProgress(reader), player); break;
+					case MessageType.ServerConnectInfo: {
+						if((player as ConnectedPlayerManager.ConnectedPlayer)?.remoteConnectionId != 0)
+							break;
+						Log.Debug("Late ServerConnectInfo received");
+						connectInfo = new ServerConnectInfo(reader);
+						infoText?.SetActive(true);
+						RefreshModifiersHeader();
+						HandleConnectInfo(connectInfo.@base, player);
+						break;
+					}
 					default: break;
 				}
 			} catch(System.Exception ex) {
@@ -103,17 +114,16 @@ static partial class BeatUpClient {
 			reader.SkipBytes(end - reader.Position);
 		}
 
-		internal static void Setup(IMenuRpcManager rpcManager) {
+		internal static void Setup(IMenuRpcManager rpcManager, MultiplayerSessionManager? multiplayerSessionManager) {
 			rpcManager.setIsEntitledToLevelEvent += (userId, levelId, status) =>
 				playerData.UpdateLoadProgress(new LoadProgress(status), GetPlayer(userId), true);
-			MultiplayerSessionManager? multiplayerSessionManager = Resolve<MultiplayerSessionManager>();
-			if(multiplayerSessionManager != null) {
-				multiplayerSessionManager._packetSerializer._typeRegistry[typeof(BeatUpPacket)] = beatUpMessageType;
-				multiplayerSessionManager._packetSerializer._typeRegistry[typeof(MpBeatmapPacket)] = mpCoreMessageType;
-				multiplayerSessionManager._packetSerializer._messsageHandlers[beatUpMessageType] = HandleBeatUpPacket;
-				if(!haveMpCore)
-					multiplayerSessionManager._packetSerializer._messsageHandlers[mpCoreMessageType] = HandleMpPacket;
-			}
+			if(multiplayerSessionManager == null)
+				return;
+			multiplayerSessionManager._packetSerializer._typeRegistry[typeof(BeatUpPacket)] = beatUpMessageType;
+			multiplayerSessionManager._packetSerializer._typeRegistry[typeof(MpBeatmapPacket)] = mpCoreMessageType;
+			multiplayerSessionManager._packetSerializer._messsageHandlers[beatUpMessageType] = HandleBeatUpPacket;
+			if(!haveMpCore)
+				multiplayerSessionManager._packetSerializer._messsageHandlers[mpCoreMessageType] = HandleMpPacket;
 		}
 	}
 

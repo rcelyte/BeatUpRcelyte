@@ -1,5 +1,5 @@
 static partial class BeatUpClient {
-	static string? HashForLevelID([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? levelId) {
+	static string? HashForLevelID(string? levelId) {
 		string[] parts = (levelId ?? string.Empty).Split(new[] {'_', ' '});
 		if(parts.Length < 3 || parts[2].Length != 40)
 			return null;
@@ -23,18 +23,19 @@ static partial class BeatUpClient {
 		public System.Collections.Generic.IReadOnlyList<PreviewDifficultyBeatmapSet>? previewDifficultyBeatmapSets {get; protected set;} = null;
 		public EnvironmentInfoSO? environmentInfo {get;} = null;
 		public EnvironmentInfoSO? allDirectionsEnvironmentInfo {get;} = null;
+		public EnvironmentInfoSO[] environmentInfos => System.Array.Empty<EnvironmentInfoSO>();
 		public readonly ByteArrayNetSerializable cover = new ByteArrayNetSerializable("cover", 0, 8192);
 		UnityEngine.Sprite? localSprite = null;
 		public async System.Threading.Tasks.Task<UnityEngine.Sprite> GetCoverImageAsync(System.Threading.CancellationToken cancellationToken) {
 			Log.Debug("PreviewBeatmapLevel.GetCoverImageAsync()");
-			localSprite ??= await new MemorySpriteLoader(cover.data).LoadSpriteAsync("", cancellationToken);
+			localSprite ??= await new MemorySpriteLoader(cover.GetData()).LoadSpriteAsync("", cancellationToken);
 			localSprite ??= defaultPackCover;
 			return localSprite;
 		}
 		public void SetCover(UnityEngine.Sprite? fullSprite) {
 			localSprite = fullSprite;
 			if(fullSprite == null) {
-				cover.data = new byte[0];
+				cover.SetData(new byte[0]);
 				return;
 			}
 			UnityEngine.RenderTexture target = new UnityEngine.RenderTexture(128, 128, 0);
@@ -50,10 +51,10 @@ static partial class BeatUpClient {
 				byte[] data = UnityEngine.ImageConversion.EncodeToJPG(pixels, quality);
 				if(data.Length > 8192)
 					continue;
-				cover.data = data;
+				cover.SetData(data);
 				return;
 			}
-			cover.data = new byte[0];
+			cover.SetData(new byte[0]);
 		}
 		public override void Serialize(LiteNetLib.Utils.NetDataWriter writer) {
 			writer.Put((string?)(mpCore ? HashForLevelID(levelID) : levelID));
@@ -83,8 +84,10 @@ static partial class BeatUpClient {
 			}
 			cover.Serialize(writer);
 		}
-		PreviewBeatmapLevel(bool mpCore) =>
-			(this.mpCore, cover.data) = (mpCore, new byte[0]);
+		PreviewBeatmapLevel(bool mpCore) {
+			this.mpCore = mpCore;
+			cover.SetData(new byte[0]);
+		}
 		protected PreviewBeatmapLevel(LiteNetLib.Utils.NetDataReader reader, bool mpCore) : this(mpCore) {
 			(levelID, songName, songSubName, songAuthorName, levelAuthorName) =
 				(reader.GetString(), reader.GetString(), reader.GetString(), reader.GetString(), reader.GetString());
@@ -114,14 +117,14 @@ static partial class BeatUpClient {
 			(levelID, songName, songSubName, songAuthorName, levelAuthorName, beatsPerMinute, songTimeOffset, shuffle, shufflePeriod, previewStartTime, previewDuration, songDuration) =
 				(prv.levelID, prv.songName, prv.songSubName, prv.songAuthorName, prv.levelAuthorName, prv.beatsPerMinute, prv.songTimeOffset, prv.shuffle, prv.shufflePeriod, prv.previewStartTime, prv.previewDuration, prv.songDuration);
 			previewDifficultyBeatmapSets = prv.previewDifficultyBeatmapSets;
-			cover.data = new byte[0];
+			cover.SetData(new byte[0]);
 			if(prv is PreviewBeatmapLevel preview) {
-				cover.data = preview.cover.data;
+				cover.SetData(preview.cover.GetData());
 			} else if(!mpCore) {
 				System.Threading.Tasks.Task<UnityEngine.Sprite?> spriteTask = prv.GetCoverImageAsync(System.Threading.CancellationToken.None);
 				if(spriteTask.IsCompleted) { // `Wait()`ing on an async method will deadlock
 					SetCover(spriteTask.Result);
-					Log.Debug($"    Cover size: {cover.data.Length} bytes");
+					Log.Debug($"    Cover size: {cover.length} bytes");
 				} else {
 					Log.Debug($"    Cover not encoded; operation would block");
 				}

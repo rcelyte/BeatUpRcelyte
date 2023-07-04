@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 struct HandshakeState {
 	uint32_t certificateRequestId;
@@ -38,6 +39,7 @@ struct MasterSession {
 	struct HandshakeState handshake;
 	struct MasterResend resend;
 	struct MasterMultipartList *multipartList;
+	ENetHost *enet;
 };
 
 struct LocalMasterContext {
@@ -60,18 +62,23 @@ struct NetSession *MasterContext_onResolve(struct MasterContext *ctx, struct Net
 		*out_len = NetSession_decrypt(&session->net, packet, packet_len, out);
 		return &session->net;
 	}
-	if(packet_len && *packet == 1)
+	if(packet_len && *packet != 0 && *packet != MBEDTLS_SSL_MSG_HANDSHAKE)
 		return NULL;
 	session = malloc(sizeof(struct MasterSession));
 	if(session == NULL) {
 		uprintf("alloc error\n");
 		return NULL;
 	}
-	NetSession_init(&session->net, net, addr);
+	NetSession_init(&session->net, net, addr, &ctx->config);
 	session->lastSentRequestId = 0;
 	session->handshake.step = HandshakeMessageType_ClientHelloRequest;
 	session->resend.set = COUNTER64_CLEAR;
 	session->multipartList = NULL;
+	session->enet = NULL;
+	if(*packet == MBEDTLS_SSL_MSG_HANDSHAKE) {
+		session->enet = eenet_init();
+		eenet_attach(session->enet, net, &session->net);
+	}
 	session->next = ctx->sessionList;
 	ctx->sessionList = session;
 
@@ -97,6 +104,8 @@ static struct MasterSession *master_disconnect(struct MasterSession *session) {
 		session->multipartList = session->multipartList->next;
 		free(e);
 	}
+	if(session->enet)
+		eenet_free(session->enet);
 	NetSession_free(&session->net);
 	free(session);
 	return next;
@@ -121,12 +130,14 @@ uint32_t MasterContext_onResend(struct MasterContext *ctx, struct NetContext *ne
 				continue;
 			if((int32_t)(slot->lastSend - currentTime) <= 0) {
 				unresponsive |= (slot->lastSend - slot->firstSend) > IDLE_TIMEOUT_MS;
-				net_send_internal(net, &session->net, slot->data, slot->length, slot->encrypt);
+				net_send_internal(net, &session->net, slot->data, slot->length, slot->encrypt ? EncryptMode_BGNet : EncryptMode_None);
 				slot->lastSend = currentTime + NET_RESEND_DELAY - (currentTime - slot->lastSend) % NET_RESEND_DELAY;
 			}
 			if(slot->lastSend - currentTime < nextTick)
 				nextTick = slot->lastSend - currentTime;
 		}
+		if(session->enet != NULL)
+			eenet_tick(session->enet);
 		if(unresponsive) // avoids spamming resends for the full 3 minute timeout if the client isn't handling them
 			*sp = master_disconnect(*sp);
 		else
@@ -172,7 +183,7 @@ static void master_send_internal(struct NetContext *net, struct MasterSession *s
 		session->resend.requestIds[i] = master_prevRequestId(session);
 	} else {
 		uprintf("RESEND BUFFER FULL\n");
-		net_send_internal(net, &session->net, buf, length, encrypt);
+		net_send_internal(net, &session->net, buf, length, encrypt ? EncryptMode_BGNet : EncryptMode_None);
 	}
 }
 
@@ -199,7 +210,7 @@ static uint32_t _master_send(struct NetContext *const net, struct MasterSession 
 		return 0;
 	if(resp_end - resp <= 412) { // TODO: use `session->mtu` here?
 		if(type == MessageType_HandshakeMessage && ((const struct HandshakeMessage*)message)->type == HandshakeMessageType_HelloVerifyRequest)
-			net_send_internal(net, &session->net, resp, (uint16_t)(resp_end - resp), false);
+			net_send_internal(net, &session->net, resp, (uint16_t)(resp_end - resp), EncryptMode_None);
 		else
 			master_send_internal(net, session, resp, (uint16_t)(resp_end - resp), type != MessageType_HandshakeMessage);
 		return 1;
@@ -261,17 +272,17 @@ static void master_send_ack(struct NetContext *net, struct MasterSession *sessio
 		},
 	}), &resp_end, endof(resp), session->net.version);
 	if(res)
-		net_send_internal(net, &session->net, resp, (uint32_t)(resp_end - resp), type != MessageType_HandshakeMessage);
+		net_send_internal(net, &session->net, resp, (uint32_t)(resp_end - resp), (type != MessageType_HandshakeMessage) ? EncryptMode_BGNet : EncryptMode_None);
 }
 
-static inline bool InitializeConnection(struct NetContext *net, struct MasterSession *session, const struct ClientHelloRequest *req) {
+static inline bool InitializeConnection(struct NetContext *net, struct MasterSession *session, const mbedtls_ssl_config *config, const struct ClientHelloRequest *req) {
 	if(session->handshake.step != HandshakeMessageType_ClientHelloRequest) {
 		// 5 second timeout to prevent clients from getting "locked out" if their previous session hasn't closed or timed out yet
 		if(net_time() - NetSession_get_lastKeepAlive(&session->net) < 5000)
 			return session->handshake.step == HandshakeMessageType_ClientHelloWithCookieRequest;
 		struct SS addr = *NetSession_get_addr(&session->net);
 		NetSession_free(&session->net);
-		NetSession_init(&session->net, net, addr); // security or something idk
+		NetSession_init(&session->net, net, addr, config); // security or something idk
 		session->resend.set = COUNTER64_CLEAR;
 	}
 	session->epoch = req->base.requestId & 0xff000000;
@@ -280,8 +291,8 @@ static inline bool InitializeConnection(struct NetContext *net, struct MasterSes
 	return true;
 }
 
-static void handle_ClientHelloRequest(struct NetContext *net, struct MasterSession *session, const struct ClientHelloRequest *req) {
-	if(!InitializeConnection(net, session, req))
+static void handle_ClientHelloRequest(struct NetContext *net, struct MasterSession *session, const mbedtls_ssl_config *config, const struct ClientHelloRequest *req) {
+	if(!InitializeConnection(net, session, config, req))
 		return;
 	master_send(net, session, &(const struct HandshakeMessage){
 		.type = HandshakeMessageType_HelloVerifyRequest,
@@ -311,7 +322,7 @@ static void handle_ClientHelloWithCookieRequest(struct MasterContext *ctx, struc
 			.responseId = req->certificateResponseId,
 		},
 	};
-	for(const mbedtls_x509_crt *it = ctx->cert; it != NULL; it = it->next) {
+	for(const mbedtls_x509_crt *it = &ctx->cert; it != NULL; it = it->next) {
 		r_cert.serverCertificateRequest.certificateList[r_cert.serverCertificateRequest.certificateCount].length = (uint32_t)it->raw.len;
 		memcpy(r_cert.serverCertificateRequest.certificateList[r_cert.serverCertificateRequest.certificateCount].data, it->raw.p, r_cert.serverCertificateRequest.certificateList[r_cert.serverCertificateRequest.certificateCount].length);
 		++r_cert.serverCertificateRequest.certificateCount;
@@ -343,8 +354,8 @@ static void handle_ServerCertificateRequest_sent(struct MasterContext *ctx, stru
 	};
 	if(NetKeypair_write_key(&session->net.keys, net, &r_hello.serverHelloRequest.publicKey))
 		return;
-	if(ctx->key != NULL)
-		NetSession_signature(&session->net, net, ctx->key, &r_hello.serverHelloRequest.signature);
+	if(mbedtls_pk_get_type(&ctx->key) != MBEDTLS_PK_NONE)
+		NetSession_signature(&session->net, net, &ctx->key, &r_hello.serverHelloRequest.signature);
 	master_send(net, session, &r_hello);
 	session->handshake.step = HandshakeMessageType_ClientKeyExchangeRequest;
 }
@@ -391,9 +402,18 @@ static void handle_AuthenticateUserRequest(struct NetContext *net, struct Master
 	handle_BaseAuthenticate(net, session, req->base, false);
 }
 
-static void handle_AuthenticateGameLiftUserRequest(struct MasterContext *ctx, struct NetContext *net, struct MasterSession *session, const struct AuthenticateGameLiftUserRequest *req) {
+static bool handle_AuthenticateGameLiftUserRequest(struct MasterContext *ctx, struct NetContext *net, struct MasterSession *session, const struct AuthenticateGameLiftUserRequest *req, struct GraphAuthToken *auth_out) {
 	handle_BaseAuthenticate(net, session, req->base, true);
-	ctx->onGraphAuth(net, &session->net, req);
+	if(auth_out == NULL)
+		return false;
+	*auth_out = (struct GraphAuthToken){
+		.base = {
+			.userId = req->userId,
+			.userName = req->userName,
+			.playerSessionId = req->playerSessionId,
+		},
+	};
+	return true;
 }
 
 /*static struct BitMask128 get_mask(const char *key) {
@@ -744,17 +764,17 @@ static void handle_ConnectToServerRequest(struct NetContext *net, struct MasterS
 	});
 }
 
-static void handle_MultipartMessage(struct MasterContext *ctx, struct NetContext *net, struct MasterSession *session, const struct MultipartMessage *msg) {
+static bool handle_MultipartMessage(struct MasterContext *ctx, struct NetContext *net, struct MasterSession *session, const struct MultipartMessage *msg, struct GraphAuthToken *auth_out) {
 	if(!msg->totalLength) {
 		uprintf("INVALID MULTIPART LENGTH\n");
-		return;
+		return false;
 	}
 	struct MasterMultipartList **multipart = &session->multipartList;
 	for(; *multipart; multipart = &(*multipart)->next) {
 		if((*multipart)->id == msg->multipartMessageId) {
 			if((*multipart)->totalLength != msg->totalLength) {
 				uprintf("BAD MULTIPART LENGTH\n");
-				return;
+				return false;
 			}
 			break;
 		}
@@ -773,34 +793,34 @@ static void handle_MultipartMessage(struct MasterContext *ctx, struct NetContext
 	}
 	if(msg->offset + msg->length > msg->totalLength) {
 		uprintf("INVALID MULTIPART LENGTH\n");
-		return;
+		return false;
 	}
 	memcpy(&(*multipart)->data[msg->offset], msg->data, msg->length);
-	if(++(*multipart)->count >= (msg->totalLength + sizeof(msg->data) - 1) / sizeof(msg->data)) {
-		const uint8_t *data = (*multipart)->data, *end = &(*multipart)->data[msg->totalLength];
-		struct UnconnectedMessage header;
-		if(pkt_read(&header, &data, end, session->net.version))
-			MasterContext_handleMessage(ctx, net, session, header, data, end);
-		struct MasterMultipartList *e = *multipart;
-		*multipart = (*multipart)->next;
-		free(e);
-	}
+	if(++(*multipart)->count < (msg->totalLength + sizeof(msg->data) - 1) / sizeof(msg->data))
+		return false;
+	const uint8_t *data = (*multipart)->data, *end = &(*multipart)->data[msg->totalLength];
+	struct UnconnectedMessage header;
+	const bool res = pkt_read(&header, &data, end, session->net.version) && MasterContext_handleMessage(ctx, net, session, header, data, end, auth_out);
+	struct MasterMultipartList *e = *multipart;
+	*multipart = (*multipart)->next;
+	free(e);
+	return res;
 }
 
 static pthread_t master_thread = NET_THREAD_INVALID;
 static struct LocalMasterContext localMaster = {
 	.net = CLEAR_NETCONTEXT,
 }; // TODO: This "singleton" can't scale up due to pool API thread safety
-void MasterContext_handleMessage(struct MasterContext *ctx, struct NetContext *net, struct MasterSession *session, struct UnconnectedMessage header, const uint8_t *data, const uint8_t *end) {
+bool MasterContext_handleMessage(struct MasterContext *ctx, struct NetContext *net, struct MasterSession *session, struct UnconnectedMessage header, const uint8_t *data, const uint8_t *end, struct GraphAuthToken *auth_out) {
 	while(data < end) {
 		struct SerializeHeader serial;
 		if(!pkt_read(&serial, &data, end, session->net.version))
-			return;
+			return false;
 		const uint8_t *sub = data;
 		data += serial.length;
 		if(data > end) {
 			uprintf("Invalid serial length: %u\n", serial.length);
-			return;
+			return false;
 		}
 		if((uint8_t)header.protocolVersion > session->net.version.protocolVersion)
 			session->net.version.protocolVersion = (uint8_t)header.protocolVersion;
@@ -818,7 +838,11 @@ void MasterContext_handleMessage(struct MasterContext *ctx, struct NetContext *n
 				case UserMessageType_ConnectToServerResponse: uprintf("BAD TYPE: UserMessageType_ConnectToServerResponse\n"); break;
 				case UserMessageType_ConnectToServerRequest: handle_ConnectToServerRequest(net, session, &message.connectToServerRequest); break;
 				case UserMessageType_MessageReceivedAcknowledge: master_handle_ack(session, &message.messageReceivedAcknowledge); break;
-				case UserMessageType_MultipartMessage: handle_MultipartMessage(ctx, net, session, &message.multipartMessage); break;
+				case UserMessageType_MultipartMessage: {
+					if(handle_MultipartMessage(ctx, net, session, &message.multipartMessage, auth_out))
+						return true;
+					break;
+				}
 				case UserMessageType_SessionKeepaliveMessage: break;
 				case UserMessageType_GetPublicServersRequest: uprintf("UserMessageType_GetPublicServersRequest not implemented\n"); abort();
 				case UserMessageType_GetPublicServersResponse: uprintf("BAD TYPE: UserMessageType_GetPublicServersResponse\n"); break;
@@ -835,10 +859,18 @@ void MasterContext_handleMessage(struct MasterContext *ctx, struct NetContext *n
 			if(pkt_debug("BAD GAMELIFT MESSAGE LENGTH", sub, data, serial.length, session->net.version))
 				continue;
 			switch(message.type) {
-				case GameLiftMessageType_AuthenticateGameLiftUserRequest: handle_AuthenticateGameLiftUserRequest(ctx, net, session, &message.authenticateGameLiftUserRequest); break;
+				case GameLiftMessageType_AuthenticateGameLiftUserRequest: {
+					if(handle_AuthenticateGameLiftUserRequest(ctx, net, session, &message.authenticateGameLiftUserRequest, auth_out))
+						return true;
+					break;
+				}
 				case GameLiftMessageType_AuthenticateUserResponse: uprintf("BAD TYPE: GameLiftMessageType_AuthenticateUserResponse\n"); break;
 				case GameLiftMessageType_MessageReceivedAcknowledge: master_handle_ack(session, &message.messageReceivedAcknowledge); break;
-				case GameLiftMessageType_MultipartMessage: handle_MultipartMessage(ctx, net, session, &message.multipartMessage); break;
+				case GameLiftMessageType_MultipartMessage: {
+					if(handle_MultipartMessage(ctx, net, session, &message.multipartMessage, auth_out))
+						return true;
+					break;
+				}
 				default: uprintf("BAD GAMELIFT MESSAGE TYPE: %hhu\n", message.type);
 			}
 			continue;
@@ -849,7 +881,7 @@ void MasterContext_handleMessage(struct MasterContext *ctx, struct NetContext *n
 			if(pkt_debug("BAD HANDSHAKE MESSAGE LENGTH", sub, data, serial.length, session->net.version))
 				continue;
 			switch(message.type) {
-				case HandshakeMessageType_ClientHelloRequest: handle_ClientHelloRequest(net, session, &message.clientHelloRequest); break;
+				case HandshakeMessageType_ClientHelloRequest: handle_ClientHelloRequest(net, session, &ctx->config, &message.clientHelloRequest); break;
 				case HandshakeMessageType_HelloVerifyRequest: uprintf("BAD TYPE: HandshakeMessageType_HelloVerifyRequest\n"); break;
 				case HandshakeMessageType_ClientHelloWithCookieRequest: handle_ClientHelloWithCookieRequest(ctx, net, session, &message.clientHelloWithCookieRequest); break;
 				case HandshakeMessageType_ServerHelloRequest: uprintf("BAD TYPE: HandshakeMessageType_ServerHelloRequest\n"); break;
@@ -878,16 +910,38 @@ void MasterContext_handleMessage(struct MasterContext *ctx, struct NetContext *n
 		}
 		uprintf("BAD MESSAGE TYPE: %u\n", header.type);
 	}
+	return false;
 }
 
-void MasterContext_handle(struct MasterContext *ctx, struct NetContext *net, struct MasterSession *session, const uint8_t *data, const uint8_t *end) {
+bool MasterContext_handle(struct MasterContext *ctx, struct NetContext *net, struct MasterSession *session, const uint8_t *data, const uint8_t *end, struct GraphAuthToken *auth_out) {
+	if(session->enet != NULL) {
+		session->net.version.direct = true;
+		struct EENetPacket event = {0};
+		for(eenet_handle(session->enet, data, end, &event); event.type != EENetPacketType_None; eenet_handle_next(session->enet, &event)) {
+			static const uint8_t ident[] = {0x06,0x00,0x00,0x00,0x49,0x67,0x6e,0x43,0x6f,0x6e}; // String [length=6 data="IgnCon"]
+			if(event.data_len <= sizeof(ident) || memcmp(event.data, ident, sizeof(ident)))
+				continue;
+			event.data += sizeof(ident);
+			event.data_len -= sizeof(ident);
+			event.type = EENetPacketType_ConnectMessage;
+			if(pkt_read(&auth_out->base, (const uint8_t*[]){event.data}, &event.data[event.data_len], session->net.version)) {
+				auth_out->enet = session->enet;
+				auth_out->event = event;
+				eenet_attach(session->enet, NULL, NULL);
+				session->enet = NULL;
+				return true;
+			}
+		}
+		return false;
+	}
 	struct NetPacketHeader header;
 	if(!pkt_read(&header, &data, end, session->net.version))
-		return;
+		return false;
 	if(header.property == PacketProperty_UnconnectedMessage)
-		MasterContext_handleMessage(ctx, net, session, header.unconnectedMessage, data, end);
-	else if(header.property != PacketProperty_Disconnect)
+		return MasterContext_handleMessage(ctx, net, session, header.unconnectedMessage, data, end, auth_out);
+	if(header.property != PacketProperty_Disconnect)
 		uprintf("Unhandled property [%s]\n", reflect(PacketProperty, header.property));
+	return false;
 }
 
 static void *master_handler(struct LocalMasterContext *ctx) {
@@ -898,16 +952,20 @@ static void *master_handler(struct LocalMasterContext *ctx) {
 	uint32_t len;
 	struct MasterSession *session;
 	while((len = net_recv(&ctx->net, pkt, (struct NetSession**)&session, NULL)))
-		MasterContext_handle(&ctx->base, &ctx->net, session, pkt, &pkt[len]);
+		MasterContext_handle(&ctx->base, &ctx->net, session, pkt, &pkt[len], NULL);
 	net_unlock(&ctx->net);
 	return 0;
 }
 
-static void onGraphAuth_stub(struct NetContext*, struct NetSession*, const struct AuthenticateGameLiftUserRequest*) {}
-void MasterContext_init(struct MasterContext *ctx) {
-	*ctx = (struct MasterContext){
-		.onGraphAuth = onGraphAuth_stub,
-	};
+void MasterContext_init(struct MasterContext *ctx, mbedtls_ctr_drbg_context *ctr_drbg) {
+	*ctx = (struct MasterContext){0};
+	mbedtls_ssl_cookie_init(&ctx->cookie);
+	mbedtls_ssl_config_init(&ctx->config);
+	assert(mbedtls_ssl_cookie_setup(&ctx->cookie, mbedtls_ctr_drbg_random, ctr_drbg) == 0);
+	assert(mbedtls_ssl_config_defaults(&ctx->config, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_DATAGRAM, MBEDTLS_SSL_PRESET_DEFAULT) == 0);
+	mbedtls_ssl_conf_rng(&ctx->config, mbedtls_ctr_drbg_random, ctr_drbg);
+	mbedtls_ssl_conf_read_timeout(&ctx->config, 180000);
+	mbedtls_ssl_conf_dtls_cookies(&ctx->config, mbedtls_ssl_cookie_write, mbedtls_ssl_cookie_check, &ctx->cookie);
 }
 
 bool MasterContext_setCertificate(struct MasterContext *ctx, const mbedtls_x509_crt *cert, const mbedtls_pk_context *key) {
@@ -922,14 +980,19 @@ bool MasterContext_setCertificate(struct MasterContext *ctx, const mbedtls_x509_
 		uprintf("Host certificate chain too long\n");
 		return true;
 	}
-	ctx->cert = cert;
-	ctx->key = key;
+	ctx->cert = *cert; // shallow copy
+	ctx->key = *key; // shallow copy
+	if(mbedtls_ssl_conf_own_cert(&ctx->config, &ctx->cert, &ctx->key))
+		return true;
+	mbedtls_ssl_conf_ca_chain(&ctx->config, cert->next, NULL);
 	return false;
 }
 
 void MasterContext_cleanup(struct MasterContext *ctx) {
 	while(ctx->sessionList)
 		ctx->sessionList = master_disconnect(ctx->sessionList);
+	mbedtls_ssl_config_free(&ctx->config);
+	mbedtls_ssl_cookie_free(&ctx->cookie);
 }
 
 struct WireContext *master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_context *key, uint16_t port) {
@@ -941,7 +1004,7 @@ struct WireContext *master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_c
 		uprintf("WireContext_init() failed\n");
 		goto fail0;
 	}
-	MasterContext_init(&localMaster.base);
+	MasterContext_init(&localMaster.base, &localMaster.net.ctr_drbg);
 	if(MasterContext_setCertificate(&localMaster.base, cert, key))
 		goto fail1;
 	localMaster.net.userptr = &localMaster;

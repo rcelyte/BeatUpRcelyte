@@ -12,7 +12,7 @@ static partial class BeatUpClient {
 		EnvironmentInfoSO envInfo = LoadEnvironmentInfo(info.environmentName, Resolve<CustomLevelLoader>()!._defaultEnvironmentInfo);
 		EnvironmentInfoSO envInfo360 = LoadEnvironmentInfo(info.allDirectionsEnvironmentName, Resolve<CustomLevelLoader>()!._defaultAllDirectionsEnvironmentInfo);
 		PreviewDifficultyBeatmapSet[] sets = info.difficultyBeatmapSets.Select(difficultyBeatmapSet => {
-			BeatmapCharacteristicSO characteristic = Resolve<BeatmapCharacteristicCollectionSO>()!.GetBeatmapCharacteristicBySerializedName(difficultyBeatmapSet.beatmapCharacteristicName);
+			BeatmapCharacteristicSO characteristic = Resolve<BeatmapCharacteristicCollection>()!.GetBeatmapCharacteristicBySerializedName(difficultyBeatmapSet.beatmapCharacteristicName);
 			if(characteristic == null)
 				return null;
 			return new PreviewDifficultyBeatmapSet(characteristic, difficultyBeatmapSet.difficultyBeatmaps.Select(diff => {
@@ -29,7 +29,16 @@ static partial class BeatUpClient {
 			}
 		} catch(System.Exception) {}
 		MemorySpriteLoader sprite = new MemorySpriteLoader(fallbackCover);
-		return new CustomPreviewBeatmapLevel(defaultPackCover, info, string.Empty, sprite, levelId, info.songName, info.songSubName, info.songAuthorName, info.levelAuthorName, info.beatsPerMinute, info.songTimeOffset, info.shuffle, info.shufflePeriod, info.previewStartTime, info.previewDuration, envInfo, envInfo360, sets);
+		EnvironmentInfoSO[] envInfos = (info.environmentNames ?? new string[0])
+			.Select(name => Resolve<CustomLevelLoader>()!._environmentSceneInfoCollection.GetEnvironmentInfoBySerializedName(name))
+			.ToArray();
+		ColorScheme?[] overrideColorSchemes = (info.colorSchemes ?? new BeatmapLevelColorSchemeSaveData[0])
+			.Select(scheme => (scheme.useOverride) ? new ColorScheme(scheme.colorScheme.colorSchemeId,
+				scheme.colorScheme.colorSchemeId, true, scheme.colorScheme.colorSchemeId, false, scheme.colorScheme.saberAColor,
+				scheme.colorScheme.saberBColor, scheme.colorScheme.environmentColor0, scheme.colorScheme.environmentColor1, true,
+				scheme.colorScheme.environmentColor0Boost, scheme.colorScheme.environmentColor1Boost, scheme.colorScheme.obstaclesColor) : null)
+			.ToArray();
+		return new CustomPreviewBeatmapLevel(defaultPackCover, info, string.Empty, sprite, levelId, info.songName, info.songSubName, info.songAuthorName, info.levelAuthorName, info.beatsPerMinute, info.songTimeOffset, info.shuffle, info.shufflePeriod, info.previewStartTime, info.previewDuration, envInfo, envInfo360, envInfos, overrideColorSchemes, sets);
 	}
 	static async System.Threading.Tasks.Task<UnityEngine.AudioClip?> DecodeAudio(System.IO.Compression.ZipArchiveEntry song, UnityEngine.AudioType type) {
 		using System.IO.Stream stream = song.Open();
@@ -69,7 +78,7 @@ static partial class BeatUpClient {
 		using System.Security.Cryptography.SHA1 hash = System.Security.Cryptography.SHA1.Create();
 		hash.HashCore(infoData, 0, infoData.Length);
 		level.SetBeatmapLevelData(new BeatmapLevelData(audioClip, info.difficultyBeatmapSets.Select(setInfo => {
-			BeatmapCharacteristicSO? characteristic = Resolve<BeatmapCharacteristicCollectionSO>()!.GetBeatmapCharacteristicBySerializedName(setInfo.beatmapCharacteristicName);
+			BeatmapCharacteristicSO? characteristic = Resolve<BeatmapCharacteristicCollection>()!.GetBeatmapCharacteristicBySerializedName(setInfo.beatmapCharacteristicName);
 			CustomDifficultyBeatmapSet beatmapSet = new CustomDifficultyBeatmapSet(characteristic);
 			beatmapSet.SetCustomDifficultyBeatmaps(setInfo.difficultyBeatmaps.Select(difficultyInfo => {
 				string filename = difficultyInfo.beatmapFilename;
@@ -80,7 +89,7 @@ static partial class BeatUpClient {
 				BeatmapSaveDataVersion3.BeatmapSaveData saveData = BeatmapSaveDataVersion3.BeatmapSaveData.DeserializeFromJSONString(System.Text.Encoding.UTF8.GetString(rawData, 0, rawData.Length));
 				BeatmapDataBasicInfo basicInfo = BeatmapDataLoader.GetBeatmapDataBasicInfoFromSaveData(saveData);
 				difficultyInfo.difficulty.BeatmapDifficultyFromSerializedName(out BeatmapDifficulty difficulty);
-				return new CustomDifficultyBeatmap(level, beatmapSet, difficulty, difficultyInfo.difficultyRank, difficultyInfo.noteJumpMovementSpeed, difficultyInfo.noteJumpStartBeatOffset, info.beatsPerMinute, saveData, basicInfo);
+				return new CustomDifficultyBeatmap(level, beatmapSet, difficulty, difficultyInfo.difficultyRank, difficultyInfo.noteJumpMovementSpeed, difficultyInfo.noteJumpStartBeatOffset, info.beatsPerMinute, difficultyInfo.beatmapColorSchemeIdx, difficultyInfo.environmentNameIdx, saveData, basicInfo);
 			}).ToArray());
 			return beatmapSet;
 		}).ToArray()));

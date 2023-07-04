@@ -309,12 +309,10 @@ size_t handle_Channeled_start(struct NetContext *net, struct NetSession *session
 				*pkt_out = *data;
 				pkt_len = (size_t)(end - *data);
 			}
-			uint8_t resp[65536], *resp_end = resp;
-			pkt_write_c(&resp_end, endof(resp), session->version, NetPacketHeader, {
+			net_queue_merged(net, session, NULL, 0, &(const struct NetPacketHeader){
 				.property = PacketProperty_Ack,
 				.ack = channels->rs.ack,
 			});
-			net_queue_merged(net, session, resp, (uint16_t)(resp_end - resp));
 			return pkt_len;
 		}
 		default:;
@@ -340,7 +338,7 @@ void handle_Ping(struct NetContext *net, struct NetSession *session, struct Ping
 			.property = PacketProperty_Pong,
 			.pong = pingpong->pong,
 		});
-		net_send_internal(net, session, resp, (uint32_t)(resp_end - resp), true);
+		net_send_internal(net, session, resp, (uint32_t)(resp_end - resp), EncryptMode_BGNet);
 	}
 	if((time - pingpong->lastPing > 5000000LLU && !pingpong->waiting) || time - pingpong->lastPing > 30000000LLU) {
 		pingpong->lastPing = time;
@@ -351,7 +349,7 @@ void handle_Ping(struct NetContext *net, struct NetSession *session, struct Ping
 			.property = PacketProperty_Ping,
 			.ping = pingpong->ping,
 		});
-		net_send_internal(net, session, resp, (uint32_t)(resp_end - resp), true);
+		net_send_internal(net, session, resp, (uint32_t)(resp_end - resp), EncryptMode_BGNet);
 	}
 }
 
@@ -368,33 +366,29 @@ void handle_MtuCheck(struct NetContext *net, struct NetSession *session, const s
 		.property = PacketProperty_MtuOk,
 		.mtuOk.base = req->base,
 	});
-	net_send_internal(net, session, resp, (uint32_t)(resp_end - resp), true);
+	net_send_internal(net, session, resp, (uint32_t)(resp_end - resp), EncryptMode_BGNet);
 }
 
 static void InstanceResendPacket_trySend(struct InstanceResendPacket *packet, struct NetContext *net, struct NetSession *session, uint32_t currentTime) {
 	if(packet->pkt.len == 0 || currentTime - packet->timeStamp < NET_RESEND_DELAY)
 		return;
-	net_queue_merged(net, session, packet->pkt.data, packet->pkt.len);
+	net_queue_merged(net, session, packet->pkt.data, packet->pkt.len, NULL);
 	packet->timeStamp = currentTime - (currentTime - packet->timeStamp) % NET_RESEND_DELAY;
 }
 
 static void Ack_flush(struct Ack *ack, struct NetContext *net, struct NetSession *session) {
-	uint8_t resp[65536], *resp_end = resp;
-	pkt_write_c(&resp_end, endof(resp), session->version, NetPacketHeader, {
+	net_queue_merged(net, session, NULL, 0, &(const struct NetPacketHeader){
 		.property = PacketProperty_Ack,
 		.ack = *ack,
 	});
-	net_queue_merged(net, session, resp, (uint16_t)(resp_end - resp));
 }
 
 uint32_t instance_channels_tick(struct Channels *channels, struct NetContext *net, struct NetSession *session, uint32_t currentTime) {
 	if(!session->version.windowSize) {
-		uint8_t resp[65536];
-		uint16_t length = (uint16_t)pkt_write_c((uint8_t*[]){resp}, endof(resp), session->version, NetPacketHeader, {
+		net_queue_merged(net, session, NULL, 0, &(const struct NetPacketHeader){
 			.property = PacketProperty_Channeled,
 			.channeled.channelId = DeliveryMethod_ReliableOrdered,
 		});
-		net_queue_merged(net, session, resp, length);
 		return 15;
 	}
 	for(; channels->ru.base.sendAck; channels->ru.base.sendAck = false)

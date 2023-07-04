@@ -14,6 +14,12 @@ static partial class BeatUpClient {
 		Base(self, gameplaySetupData, initialStartTime);
 	}
 
+	enum MultiplayerBeatmapLoaderState {
+		NotLoading,
+		LoadingBeatmap,
+		WaitingForCountdown
+	}
+
 	static async System.Threading.Tasks.Task<CustomBeatmapLevel?> DownloadLevel(ShareTracker.DownloadPreview preview, System.Threading.CancellationToken cancellationToken) {
 		byte[]? data = await preview.Fetch(progress => {
 			Net.SetLocalProgressUnreliable(new LoadProgress(LoadState.Downloading, progress));
@@ -27,7 +33,7 @@ static partial class BeatUpClient {
 		CustomBeatmapLevel? level = await UnzipLevel(preview.levelID, data, cancellationToken);
 		Log.Debug("Load " + ((level == null) ? "failed" : "finished"));
 		System.Threading.CancellationTokenSource? loaderCTS = Resolve<MultiplayerLevelLoader>()?._getBeatmapCancellationTokenSource;
-		if(!haveMpCore && loaderCTS != null && cancellationToken == loaderCTS.Token && Resolve<MultiplayerLevelLoader>()!._loaderState == MultiplayerLevelLoader.MultiplayerBeatmapLoaderState.LoadingBeatmap)
+		if(!haveMpCore && loaderCTS != null && cancellationToken == loaderCTS.Token && (int)HarmonyLib.AccessTools.Field(typeof(MultiplayerLevelLoader), "_loaderState").GetValue(Resolve<MultiplayerLevelLoader>()) == (int)MultiplayerBeatmapLoaderState.LoadingBeatmap)
 			Resolve<IMenuRpcManager>()?.SetIsEntitledToLevel(preview.levelID, /*(level == null) ? EntitlementsStatus.NotOwned :*/ EntitlementsStatus.Ok);
 		return level; // TODO: free zipped data to cut down on memory usage
 	}

@@ -156,6 +156,28 @@ static void _pkt_LoadProgress_write(const struct LoadProgress *restrict data, ui
 	_pkt_u8_write(&data->state, pkt, end, ctx);
 	_pkt_u16_write(&data->progress, pkt, end, ctx);
 }
+void _pkt_ServerConnectInfo_read(struct ServerConnectInfo *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_ConnectInfo_read(&data->base, pkt, end, ctx);
+	_pkt_u32_read(&data->windowSize, pkt, end, ctx);
+	_pkt_u8_read(&data->countdownDuration, pkt, end, ctx);
+	uint8_t bitfield0;
+	_pkt_u8_read(&bitfield0, pkt, end, ctx);
+	data->directDownloads = bitfield0 >> 0 & 1;
+	data->skipResults = bitfield0 >> 1 & 1;
+	data->perPlayerDifficulty = bitfield0 >> 2 & 1;
+	data->perPlayerModifiers = bitfield0 >> 3 & 1;
+}
+static void _pkt_ServerConnectInfo_write(const struct ServerConnectInfo *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_ConnectInfo_write(&data->base, pkt, end, ctx);
+	_pkt_u32_write(&data->windowSize, pkt, end, ctx);
+	_pkt_u8_write(&data->countdownDuration, pkt, end, ctx);
+	uint8_t bitfield0 = 0;
+	bitfield0 |= (data->directDownloads & 1u) << 0;
+	bitfield0 |= (data->skipResults & 1u) << 1;
+	bitfield0 |= (data->perPlayerDifficulty & 1u) << 2;
+	bitfield0 |= (data->perPlayerModifiers & 1u) << 3;
+	_pkt_u8_write(&bitfield0, pkt, end, ctx);
+}
 void _pkt_BeatUpMessage_read(struct BeatUpMessage *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u8_read(&data->type, pkt, end, ctx);
 	switch(data->type) {
@@ -165,6 +187,7 @@ void _pkt_BeatUpMessage_read(struct BeatUpMessage *restrict data, const uint8_t 
 		case BeatUpMessageType_DataFragmentRequest: _pkt_DataFragmentRequest_read(&data->dataFragmentRequest, pkt, end, ctx); break;
 		case BeatUpMessageType_DataFragment: _pkt_DataFragment_read(&data->dataFragment, pkt, end, ctx); break;
 		case BeatUpMessageType_LoadProgress: _pkt_LoadProgress_read(&data->loadProgress, pkt, end, ctx); break;
+		case BeatUpMessageType_ServerConnectInfo: _pkt_ServerConnectInfo_read(&data->serverConnectInfo, pkt, end, ctx); break;
 		default: uprintf("Invalid value for enum `BeatUpMessageType`\n"); longjmp(fail, 1);
 	}
 }
@@ -177,30 +200,9 @@ void _pkt_BeatUpMessage_write(const struct BeatUpMessage *restrict data, uint8_t
 		case BeatUpMessageType_DataFragmentRequest: _pkt_DataFragmentRequest_write(&data->dataFragmentRequest, pkt, end, ctx); break;
 		case BeatUpMessageType_DataFragment: _pkt_DataFragment_write(&data->dataFragment, pkt, end, ctx); break;
 		case BeatUpMessageType_LoadProgress: _pkt_LoadProgress_write(&data->loadProgress, pkt, end, ctx); break;
+		case BeatUpMessageType_ServerConnectInfo: _pkt_ServerConnectInfo_write(&data->serverConnectInfo, pkt, end, ctx); break;
 		default: uprintf("Invalid value for enum `BeatUpMessageType`\n"); longjmp(fail, 1);
 	}
-}
-void _pkt_ServerConnectInfo_read(struct ServerConnectInfo *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_ConnectInfo_read(&data->base, pkt, end, ctx);
-	_pkt_u32_read(&data->windowSize, pkt, end, ctx);
-	_pkt_u8_read(&data->countdownDuration, pkt, end, ctx);
-	uint8_t bitfield0;
-	_pkt_u8_read(&bitfield0, pkt, end, ctx);
-	data->directDownloads = bitfield0 >> 0 & 1;
-	data->skipResults = bitfield0 >> 1 & 1;
-	data->perPlayerDifficulty = bitfield0 >> 2 & 1;
-	data->perPlayerModifiers = bitfield0 >> 3 & 1;
-}
-void _pkt_ServerConnectInfo_write(const struct ServerConnectInfo *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_ConnectInfo_write(&data->base, pkt, end, ctx);
-	_pkt_u32_write(&data->windowSize, pkt, end, ctx);
-	_pkt_u8_write(&data->countdownDuration, pkt, end, ctx);
-	uint8_t bitfield0 = 0;
-	bitfield0 |= (data->directDownloads & 1u) << 0;
-	bitfield0 |= (data->skipResults & 1u) << 1;
-	bitfield0 |= (data->perPlayerDifficulty & 1u) << 2;
-	bitfield0 |= (data->perPlayerModifiers & 1u) << 3;
-	_pkt_u8_write(&bitfield0, pkt, end, ctx);
 }
 void _pkt_ModConnectHeader_read(struct ModConnectHeader *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_vu32_read(&data->length, pkt, end, ctx);
@@ -2406,6 +2408,22 @@ static void _pkt_Pong_write(const struct Pong *restrict data, uint8_t **pkt, con
 	_pkt_u16_write(&data->sequence, pkt, end, ctx);
 	_pkt_u64_write(&data->time, pkt, end, ctx);
 }
+void _pkt_ConnectMessage_read(struct ConnectMessage *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_String_read(&data->userId, pkt, end, ctx);
+	_pkt_String_read(&data->userName, pkt, end, ctx);
+	_pkt_b_read(&data->isConnectionOwner, pkt, end, ctx);
+	if(ctx.direct) {
+		_pkt_String_read(&data->playerSessionId, pkt, end, ctx);
+	}
+}
+static void _pkt_ConnectMessage_write(const struct ConnectMessage *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_String_write(&data->userId, pkt, end, ctx);
+	_pkt_String_write(&data->userName, pkt, end, ctx);
+	_pkt_b_write(&data->isConnectionOwner, pkt, end, ctx);
+	if(ctx.direct) {
+		_pkt_String_write(&data->playerSessionId, pkt, end, ctx);
+	}
+}
 static void _pkt_ConnectRequest_read(struct ConnectRequest *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_read(&data->protocolId, pkt, end, ctx);
 	_pkt_u64_read(&data->connectTime, pkt, end, ctx);
@@ -2417,12 +2435,7 @@ static void _pkt_ConnectRequest_read(struct ConnectRequest *restrict data, const
 	if(!ctx.direct) {
 		_pkt_String_read(&data->secret, pkt, end, ctx);
 	}
-	_pkt_String_read(&data->userId, pkt, end, ctx);
-	_pkt_String_read(&data->userName, pkt, end, ctx);
-	_pkt_b_read(&data->isConnectionOwner, pkt, end, ctx);
-	if(ctx.direct) {
-		_pkt_String_read(&data->playerSessionId, pkt, end, ctx);
-	}
+	_pkt_ConnectMessage_read(&data->message, pkt, end, ctx);
 }
 static void _pkt_ConnectRequest_write(const struct ConnectRequest *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_write(&data->protocolId, pkt, end, ctx);
@@ -2435,12 +2448,7 @@ static void _pkt_ConnectRequest_write(const struct ConnectRequest *restrict data
 	if(!ctx.direct) {
 		_pkt_String_write(&data->secret, pkt, end, ctx);
 	}
-	_pkt_String_write(&data->userId, pkt, end, ctx);
-	_pkt_String_write(&data->userName, pkt, end, ctx);
-	_pkt_b_write(&data->isConnectionOwner, pkt, end, ctx);
-	if(ctx.direct) {
-		_pkt_String_write(&data->playerSessionId, pkt, end, ctx);
-	}
+	_pkt_ConnectMessage_write(&data->message, pkt, end, ctx);
 }
 static void _pkt_ConnectAccept_read(struct ConnectAccept *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u64_read(&data->connectTime, pkt, end, ctx);

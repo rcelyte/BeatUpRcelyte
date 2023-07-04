@@ -16,7 +16,7 @@ static partial class BeatUpClient {
 		[System.AttributeUsage(System.AttributeTargets.Method, AllowMultiple = true)]
 		public class Overload : Patch {
 			public Overload(PatchType patchType, System.Type type, string fn, bool optional, params System.Type[] args) =>
-				(this.patchType, this.optional, method) = (patchType, optional, HarmonyLib.AccessTools.DeclaredMethod(type, fn, args));
+				(this.patchType, this.optional, method) = (patchType, optional, fn == ".ctor" ? HarmonyLib.AccessTools.DeclaredConstructor(type, args) : HarmonyLib.AccessTools.DeclaredMethod(type, fn, args));
 		}
 		[System.AttributeUsage(System.AttributeTargets.Method, AllowMultiple = true)]
 		public class Generic : Patch {

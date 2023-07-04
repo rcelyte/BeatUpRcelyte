@@ -19,7 +19,7 @@ static partial class BeatUpClient {
 	[Patch(PatchType.Postfix, typeof(BeatmapIdentifierNetSerializableHelper), nameof(BeatmapIdentifierNetSerializableHelper.ToPreviewDifficultyBeatmap))]
 	public static void BeatmapIdentifierNetSerializableHelper_ToPreviewDifficultyBeatmap(ref PreviewDifficultyBeatmap? __result) {
 		if(__result != null)
-			__result.beatmapCharacteristic ??= Resolve<BeatmapCharacteristicCollectionSO>()!.GetBeatmapCharacteristicBySerializedName("Standard");
+			__result.beatmapCharacteristic ??= Resolve<BeatmapCharacteristicCollection>()!.GetBeatmapCharacteristicBySerializedName("Standard");
 	}
 
 	[Patch(PatchType.Prefix, typeof(LobbySetupViewController), nameof(LobbySetupViewController.SetPlayersMissingLevelText))]

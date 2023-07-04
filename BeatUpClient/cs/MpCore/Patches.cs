@@ -9,24 +9,6 @@ static partial class BeatUpClient_MpCore {
 		return false;
 	}
 
-	/*public static async System.Threading.Tasks.Task<EntitlementsStatus> MpShareWrapper(System.Threading.Tasks.Task<EntitlementsStatus> status, string levelId, NetworkPlayerEntitlementChecker checker) {
-		switch(await status) {
-			case EntitlementsStatus.Ok: return await ShareTask(levelId);
-			case EntitlementsStatus.NotOwned: return await checker._additionalContentModel.GetLevelEntitlementStatusAsync(levelId, System.Threading.CancellationToken.None) switch {
-					AdditionalContentModel.EntitlementStatus.Owned => await ShareTask(levelId),
-					AdditionalContentModel.EntitlementStatus.NotOwned => EntitlementsStatus.NotOwned,
-					_ => EntitlementsStatus.Unknown,
-			};
-			default: return status.Result;
-		};
-	}
-
-	[Patch(PatchType.Postfix, typeof(MultiplayerCore.Objects.MpEntitlementChecker), nameof(MultiplayerCore.Objects.MpEntitlementChecker.GetEntitlementStatus))]
-	public static void MpEntitlementChecker_GetEntitlementStatus(MultiplayerCore.Objects.MpEntitlementChecker __instance, ref System.Threading.Tasks.Task<EntitlementsStatus> __result, string levelId) {
-		Log.Debug($"MpEntitlementChecker_GetEntitlementStatus(levelId=\"{levelId}\")");
-		__result = MpShareWrapper(__result, levelId, __instance);
-	}*/
-
 	static System.Diagnostics.Stopwatch rateLimit = System.Diagnostics.Stopwatch.StartNew();
 	[Patch(PatchType.Postfix, typeof(MultiplayerCore.Objects.MpLevelLoader), nameof(MultiplayerCore.Objects.MpLevelLoader.Report))]
 	static void MpLevelLoader_Report(double value) {
@@ -35,11 +17,6 @@ static partial class BeatUpClient_MpCore {
 		rateLimit.Restart();
 		Net.SetLocalProgressUnreliable(new LoadProgress(LoadState.Downloading, (ushort)(value * 65535)));
 	}
-
-	[Patch.Overload(PatchType.Postfix, typeof(MultiplayerCore.Patchers.NetworkConfigPatcher), "UseMasterServer", true, new[] {typeof(DnsEndPoint), typeof(string), typeof(System.Nullable<int>)})]
-	[Patch.Overload(PatchType.Postfix, typeof(MultiplayerCore.Patchers.NetworkConfigPatcher), "UseMasterServer", true, new[] {typeof(DnsEndPoint), typeof(string), typeof(System.Nullable<int>), typeof(string)})]
-	static void NetworkConfigPatcher_UseMasterServer(DnsEndPoint endPoint, string statusUrl) =>
-		UpdateNetworkConfig(endPoint.ToString(), statusUrl);
 
 	[Patch(PatchType.Postfix, typeof(MultiplayerCore.Patchers.NetworkConfigPatcher), nameof(MultiplayerCore.Patchers.NetworkConfigPatcher.UseCustomApiServer), true)]
 	static void NetworkConfigPatcher_UseCustomApiServer(string graphUrl, string statusUrl, int? maxPartySize, string? quickPlaySetupUrl) =>

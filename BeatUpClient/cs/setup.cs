@@ -2,7 +2,7 @@ using static System.Linq.Enumerable;
 
 static partial class BeatUpClient {
 	static bool SupportedMpCoreVersion(string? v) =>
-		v == null || v == "1.1.2" || v == "1.2.0" || v == "1.3.0" || v == "1.4.0";
+		v == null;
 
 	[System.AttributeUsage(System.AttributeTargets.Method)]
 	internal class InitAttribute : System.Attribute {}
@@ -40,6 +40,15 @@ static partial class BeatUpClient {
 		if(scene.name != "MainMenu")
 			return;
 		Log.Debug("load MainMenu");
+		UnityEngine.AssetBundle data = UnityEngine.AssetBundle.LoadFromStream(System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("BeatUpClient.data"));
+		defaultPackCover = data.LoadAsset<UnityEngine.Sprite>("cover");
+		spriteSwap = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerModeSelectionViewController>()[0].transform.Find("Buttons/CreateServerButton")?.GetComponent<HMUI.ButtonSpriteSwap>();
+		if(spriteSwap != null) {
+			createButtonSprites = (spriteSwap._normalStateSprite, spriteSwap._highlightStateSprite, spriteSwap._pressedStateSprite, spriteSwap._disabledStateSprite);
+			UnityEngine.Sprite[] sprites = data.LoadAssetWithSubAssets<UnityEngine.Sprite>("create");
+			heartButtonSprites = (sprites[0], sprites[1], sprites[1], sprites[0]);
+		}
+
 		SelectorSetup();
 		LobbyUISetup();
 	}
@@ -52,7 +61,7 @@ static partial class BeatUpClient {
 		}
 		Hive.Versioning.Version? mpCoreVersion = modVersion("MultiplayerCore");
 		if(!SupportedMpCoreVersion(mpCoreVersion?.ToString())) {
-			BeatUpClient_Error.Init("Incompatible BeatUpClient Version", $"This version of BeatUpClient only supports MultiplayerCore 1.1.2 to 1.4.0");
+			BeatUpClient_Error.Init("Incompatible BeatUpClient Version", $"This version of BeatUpClient does not support MultiplayerCore");
 			return;
 		}
 		string? err = BeatUpClient_Beta.CheckVersion(version);
@@ -103,11 +112,6 @@ static partial class BeatUpClient {
 					acc += GatherMethods(section.type, ref patchCount);
 				return acc;
 			});
-			Log.Debug("Loading assets");
-			UnityEngine.AssetBundle data = UnityEngine.AssetBundle.LoadFromStream(System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("BeatUpClient.data"));
-			defaultPackCover = data.LoadAsset<UnityEngine.Sprite>("cover");
-			UnityEngine.Sprite[] sprites = data.LoadAssetWithSubAssets<UnityEngine.Sprite>("create");
-			altCreateButtonSprites = (sprites[0], sprites[1], sprites[1], sprites[0]);
 			Log.Debug($"Applying {patchCount} patches");
 			applyPatches();
 			if(GameLiftRequired)

@@ -1,12 +1,3 @@
-namespace System.Diagnostics.CodeAnalysis {
-	[AttributeUsage(AttributeTargets.Parameter, Inherited = false)]
-	internal sealed class NotNullWhenAttribute : Attribute {
-		public bool ReturnValue {get;}
-		public NotNullWhenAttribute(bool returnValue) =>
-			ReturnValue = returnValue;
-	}
-}
-
 static partial class BeatUpClient {
 	public delegate T CreateArrayCallback<T>(uint i);
 	[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
@@ -28,12 +19,6 @@ static partial class BeatUpClient {
 	static ulong RoundUpDivide(ulong n, uint d) =>
 		(n + d - 1) / d;
 
-	internal static class NullableStringHelper {
-		[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-		public static bool IsNullOrEmpty([System.Diagnostics.CodeAnalysis.NotNullWhen(false)] string? str) =>
-			string.IsNullOrEmpty(str);
-	}
-
 	[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
 	public static bool Or(this bool res, System.Action func) {
 		if(!res)
@@ -42,6 +27,6 @@ static partial class BeatUpClient {
 	}
 
 	internal static BeatmapCharacteristicSO SerializedCharacteristic(string? name) =>
-		Resolve<BeatmapCharacteristicCollectionSO>()!.GetBeatmapCharacteristicBySerializedName(name) ??
-		Resolve<BeatmapCharacteristicCollectionSO>()!.GetBeatmapCharacteristicBySerializedName("Standard");
+		Resolve<BeatmapCharacteristicCollection>()!.GetBeatmapCharacteristicBySerializedName(name) ??
+		Resolve<BeatmapCharacteristicCollection>()!.GetBeatmapCharacteristicBySerializedName("Standard");
 }

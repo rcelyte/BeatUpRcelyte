@@ -39,8 +39,8 @@ static partial class BeatUpClient {
 				return;
 			Newtonsoft.Json.Linq.JObject info = Newtonsoft.Json.Linq.JObject.Parse(System.IO.File.ReadAllText(path));
 			Newtonsoft.Json.Linq.IJEnumerable<Newtonsoft.Json.Linq.JToken> customData = Newtonsoft.Json.Linq.Extensions.Children(info["_difficultyBeatmapSets"]?.Children()["_difficultyBeatmaps"] ?? new Newtonsoft.Json.Linq.JArray())["_customData"];
-			requirements = Newtonsoft.Json.Linq.Extensions.Values<string>(customData["_requirements"]).ToHashSet().ToArray();
-			suggestions = Newtonsoft.Json.Linq.Extensions.Values<string>(customData["_suggestions"]).ToHashSet().ToArray();
+			requirements = Newtonsoft.Json.Linq.Extensions.Values<string>(customData["_requirements"]).ToHashSet().ToArray()!;
+			suggestions = Newtonsoft.Json.Linq.Extensions.Values<string>(customData["_suggestions"]).ToHashSet().ToArray()!;
 		}
 	}
 }

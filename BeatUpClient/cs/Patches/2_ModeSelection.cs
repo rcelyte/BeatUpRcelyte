@@ -63,8 +63,8 @@ static partial class BeatUpClient {
 	}
 
 	static UnityEngine.GameObject[]? BeatUpServerUI = null;
-	static (UnityEngine.Sprite normal, UnityEngine.Sprite highlight, UnityEngine.Sprite pressed, UnityEngine.Sprite disabled) altCreateButtonSprites;
-	static bool createButtonSpriteState = false;
+	static (UnityEngine.Sprite normal, UnityEngine.Sprite highlight, UnityEngine.Sprite pressed, UnityEngine.Sprite disabled) createButtonSprites, heartButtonSprites;
+	static HMUI.ButtonSpriteSwap? spriteSwap = null;
 	[Detour(typeof(MultiplayerModeSelectionViewController), nameof(MultiplayerModeSelectionViewController.SetData))]
 	static void MultiplayerModeSelectionViewController_SetData(MultiplayerModeSelectionViewController self, MultiplayerStatusData? multiplayerStatusData) {
 		ShowLoading(null);
@@ -74,19 +74,12 @@ static partial class BeatUpClient {
 		if(BeatUpServerUI != null)
 			foreach(UnityEngine.GameObject element in BeatUpServerUI)
 				element.SetActive(isBeatUp);
-		UnityEngine.Transform? buttons = self.transform.Find("Buttons");
-		if(buttons != null) {
-			if(createButtonSpriteState != isBeatUp) {
-				HMUI.ButtonSpriteSwap? sprites = buttons.Find("CreateServerButton")?.GetComponent<HMUI.ButtonSpriteSwap>();
-				if(sprites != null) {
-					(sprites._normalStateSprite, altCreateButtonSprites.normal) = (altCreateButtonSprites.normal, sprites._normalStateSprite);
-					(sprites._highlightStateSprite, altCreateButtonSprites.highlight) = (altCreateButtonSprites.highlight, sprites._highlightStateSprite);
-					(sprites._pressedStateSprite, altCreateButtonSprites.pressed) = (altCreateButtonSprites.pressed, sprites._pressedStateSprite);
-					(sprites._disabledStateSprite, altCreateButtonSprites.disabled) = (altCreateButtonSprites.disabled, sprites._disabledStateSprite);
-					createButtonSpriteState = isBeatUp;
-				}
-			}
-			buttons.gameObject.SetActive(true);
+		UnityEngine.Transform? createButton = self.transform.Find("Buttons/CreateServerButton");
+		if(createButton != null) {
+			if(spriteSwap != null)
+				(spriteSwap._normalStateSprite, spriteSwap._highlightStateSprite, spriteSwap._pressedStateSprite, spriteSwap._disabledStateSprite) =
+					isBeatUp ? heartButtonSprites : createButtonSprites;
+			createButton.parent.gameObject.SetActive(true);
 		}
 		Base(self, multiplayerStatusData);
 	}

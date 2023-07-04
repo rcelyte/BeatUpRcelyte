@@ -1082,6 +1082,12 @@ n Ping
 n Pong
 	u16 sequence
 	u64 time
+r ConnectMessage
+	String userId
+	String userName
+	b isConnectionOwner
+	if($direct)
+		String playerSessionId
 n ConnectRequest
 	u32 protocolId
 	u64 connectTime
@@ -1091,11 +1097,7 @@ n ConnectRequest
 	u8 address[38, .addrlen]
 	if(!$direct)
 		String secret
-	String userId
-	String userName
-	b isConnectionOwner
-	if($direct)
-		String playerSessionId
+	ConnectMessage message
 n ConnectAccept
 	u64 connectTime
 	u8 connectNum
