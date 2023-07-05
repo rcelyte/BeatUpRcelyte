@@ -1,5 +1,6 @@
 #include "global.h"
 #include "net.h"
+#include "instance/eenet.h"
 #include <mbedtls/ssl.h>
 #include <mbedtls/error.h>
 #include <mbedtls/sha256.h>
@@ -199,9 +200,18 @@ static bool FastHMAC(const uint8_t key[restrict static 64], const uint8_t *restr
 }
 
 uint32_t EncryptionState_decrypt(struct EncryptionState *state, const struct SS *sendAddr, const uint8_t raw[static 1536], const uint8_t *raw_end, uint8_t out[restrict static 1536]) {
-	if(raw_end > raw && *raw >= MBEDTLS_SSL_MSG_CHANGE_CIPHER_SPEC && *raw < 64) {
-		if(state == NULL || !state->dtls.initialized)
+	if(raw_end == raw)
+		return 0;
+	if(state->dtls.enet || *raw >= MBEDTLS_SSL_MSG_CHANGE_CIPHER_SPEC) {
+		if(!state->dtls.initialized)
 			return 0;
+		state->dtls.latch |= (*raw == MBEDTLS_SSL_MSG_HANDSHAKE);
+		if(!state->dtls.latch) {
+			state->dtls.enet |= (*raw == EENET_CONNECT_BYTE);
+			uint32_t length = (uint32_t)(raw_end - raw);
+			memcpy(out, raw, length);
+			return length;
+		}
 		if(state->dtls.resetNeeded) {
 			mbedtls_ssl_session_reset(&state->dtls.ssl);
 			switch(sendAddr->ss.ss_family) {
@@ -229,7 +239,7 @@ uint32_t EncryptionState_decrypt(struct EncryptionState *state, const struct SS 
 		memcpy(out, raw, length);
 		return length;
 	}
-	if(state == NULL || !state->bgnet.initialized || header.encrypted != 1 || length == 0 || length % 16 || InvalidSequenceNum(state, header.sequenceId))
+	if(!state->bgnet.initialized || header.encrypted != 1 || length == 0 || length % 16 || InvalidSequenceNum(state, header.sequenceId))
 		return 0;
 	mbedtls_aes_setkey_dec(&state->bgnet.aes, state->bgnet.receiveKey, sizeof(state->bgnet.receiveKey) * 8);
 	mbedtls_aes_crypt_cbc(&state->bgnet.aes, MBEDTLS_AES_DECRYPT, length, header.iv, raw, out);
@@ -285,6 +295,10 @@ uint32_t EncryptionState_encrypt(struct EncryptionState *state, const struct SS 
 		case EncryptMode_DTLS: {
 			if(!state->dtls.initialized)
 				break;
+			if(!state->dtls.latch) {
+				memcpy(out, buf, buf_len);
+				return buf_len;
+			}
 			mbedtls_ssl_set_bio(&state->dtls.ssl, &(struct DtlsBio){
 				.sendfd = state->dtls.sendfd,
 				.sendAddr = *sendAddr,

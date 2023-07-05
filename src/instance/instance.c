@@ -1978,12 +1978,12 @@ static void *instance_handler(struct InstanceContext *ctx) {
 // TODO: clients aren't guaranteed to use the same IP address when deeplinking from the master server to instances
 static struct NetSession *instance_onResolve(struct NetContext *net, struct SS addr, const uint8_t packet[static 1536], uint32_t packet_len, uint8_t out[static 1536], uint32_t *out_len, void **userdata_out) {
 	*userdata_out = NULL;
+	if(packet_len == 0)
+		return NULL;
 	struct InstanceContext *const ctx = (struct InstanceContext*)net->userptr;
-	if(packet_len == 0 || *packet == 0) // instance filters unencrypted packets
-		return MasterContext_onResolve(&ctx->base, net, addr, packet, packet_len, out, out_len);
 	FOR_ALL_ROOMS(ctx, room) {
 		FOR_SOME_PLAYERS(id, (*room)->playerSort,) {
-			if(!SS_equal(&addr, &(*room)->players[id].net.addr))
+			if(!SS_equal(&addr, &(*room)->players[id].net.addr) || (*packet == 0 && (*room)->players[id].enet == NULL)) // filter non-enet unencrypted
 				continue;
 			*out_len = NetSession_decrypt(&(*room)->players[id].net, packet, packet_len, out);
 			*userdata_out = room;

@@ -57,12 +57,14 @@ struct MasterSession *MasterContext_lookup(struct MasterContext *ctx, struct SS 
 }
 
 struct NetSession *MasterContext_onResolve(struct MasterContext *ctx, struct NetContext *net, struct SS addr, const uint8_t packet[static 1536], uint32_t packet_len, uint8_t out[static 1536], uint32_t *out_len) {
+	if(packet_len == 0)
+		return NULL;
 	struct MasterSession *session = MasterContext_lookup(ctx, addr);
 	if(session != NULL) {
 		*out_len = NetSession_decrypt(&session->net, packet, packet_len, out);
 		return &session->net;
 	}
-	if(packet_len && *packet != 0 && *packet != MBEDTLS_SSL_MSG_HANDSHAKE)
+	if(*packet != 0 && *packet != MBEDTLS_SSL_MSG_HANDSHAKE && *packet != EENET_CONNECT_BYTE)
 		return NULL;
 	session = malloc(sizeof(struct MasterSession));
 	if(session == NULL) {
@@ -75,7 +77,7 @@ struct NetSession *MasterContext_onResolve(struct MasterContext *ctx, struct Net
 	session->resend.set = COUNTER64_CLEAR;
 	session->multipartList = NULL;
 	session->enet = NULL;
-	if(*packet == MBEDTLS_SSL_MSG_HANDSHAKE) {
+	if(*packet != 0) {
 		session->enet = eenet_init();
 		eenet_attach(session->enet, net, &session->net);
 	}

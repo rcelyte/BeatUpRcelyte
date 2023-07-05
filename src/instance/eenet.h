@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include <stdbool.h>
+#define EENET_CONNECT_BYTE 0x4f
 
 typedef struct _ENetPacket ENetPacket;
 struct EENetPacket {

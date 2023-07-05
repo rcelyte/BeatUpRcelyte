@@ -12,6 +12,8 @@ static inline int getaddrinfo(const char*, const char*, const void*, void*) {
 #include "../net.h"
 #include <enet.h>
 
+_Static_assert(EENET_CONNECT_BYTE == (ENET_PROTOCOL_HEADER_FLAG_SENT_TIME | ENET_PROTOCOL_MAXIMUM_PEER_ID) >> 8, "ABI break");
+
 ENetHost *eenet_init() {
 	ENetHost *const host = enet_host_create(NULL, 1, 2, 0, 0, 0);
 	host->randomSeed = 0;
