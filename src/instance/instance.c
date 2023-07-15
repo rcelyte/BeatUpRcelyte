@@ -1950,7 +1950,7 @@ static void *instance_handler(struct InstanceContext *ctx) {
 			session.instance = instance_onGraphAuth(&ctx->net, session.base, &token, &room);
 			if(session.instance == NULL) {
 				eenet_free(token.enet);
-			} else {
+			} else if(token.enet) {
 				eenet_attach(token.enet, &ctx->net, &session.instance->net);
 				session.instance->enet = token.enet;
 				event = token.event;
