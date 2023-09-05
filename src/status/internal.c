@@ -175,7 +175,7 @@ static UserAgent ProbeHeaders(const char *buf, const char *end, size_t *contentL
 static void status_status(struct HttpContext *http, bool isGame) {
 	char msg[65536], *msg_end = msg;
 	PUT("{\"minimumAppVersion\":\"1.19.0%s\""
-	    ",\"maximumAppVersion\":\"1.31.0_🅱️\""
+	    ",\"maximumAppVersion\":\"1.31.1_🅱️\""
 	    ",\"status\":%u", isGame ? "b2147483647" : STATUS_APPVER_POSTFIX, TEST_maintenanceStartTime != 0);
 	if(TEST_maintenanceStartTime) {
 		PUT(",\"maintenanceStartTime\":%" PRIu64, TEST_maintenanceStartTime);
