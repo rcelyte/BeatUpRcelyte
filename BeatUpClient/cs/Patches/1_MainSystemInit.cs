@@ -1,24 +1,16 @@
 static partial class BeatUpClient {
-	static readonly BoolSO customServerEnvironmentOverride = UnityEngine.ScriptableObject.CreateInstance<BoolSO>();
-	[Patch(PatchType.Transpiler, typeof(MainSystemInit), nameof(MainSystemInit.InstallBindings))]
-	public static System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> MainSystemInit_InstallBindings(System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> instructions) {
-		customServerEnvironmentOverride.value = true;
-		System.Reflection.FieldInfo original = HarmonyLib.AccessTools.Field(typeof(MainSettingsModelSO), nameof(MainSettingsModelSO.useCustomServerEnvironment));
-		System.Reflection.FieldInfo replace = HarmonyLib.AccessTools.Field(typeof(BeatUpClient), nameof(BeatUpClient.customServerEnvironmentOverride));
-		foreach(HarmonyLib.CodeInstruction instruction in instructions) {
-			if(HarmonyLib.CodeInstructionExtensions.LoadsField(instruction, original)) {
-				yield return new HarmonyLib.CodeInstruction(System.Reflection.Emit.OpCodes.Pop);
-				yield return new HarmonyLib.CodeInstruction(System.Reflection.Emit.OpCodes.Ldsfld, replace);
-			} else {
-				yield return instruction;
-			}
-		}
-	}
-
-	// TODO: this should run later (i.e. @ AudioClipAsyncLoader..ctor)
 	[Patch(PatchType.Postfix, typeof(MainSystemInit), nameof(MainSystemInit.InstallBindings))]
 	static void MainSystemInit_InstallBindings_post(MainSystemInit __instance, Zenject.DiContainer container) {
 		customServerHostName = __instance._mainSettingsModel.customServerHostName;
+		string hostname = customServerHostName.value.ToLower();
+		int port = __instance._networkConfig.masterServerEndPoint.port;
+		if(hostname.Contains(":")) {
+			int.TryParse(hostname.Split(':')[1], out port);
+			hostname = hostname.Split(':')[0];
+		}
+		container.Rebind<INetworkConfig>().FromInstance(new CustomNetworkConfig(__instance._networkConfig, hostname, port, true)).AsSingle();
+
+		// TODO: everything below should run later (i.e. @ AudioClipAsyncLoader..ctor)
 		NetworkConfigSetup(__instance._networkConfig);
 		Injected<BeatmapCharacteristicCollection>.Resolve(container);
 		Injected<BeatmapLevelsModel>.Resolve(container);

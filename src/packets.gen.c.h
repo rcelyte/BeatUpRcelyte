@@ -236,11 +236,43 @@ static void _pkt_BeatmapLevelSelectionMask_write(const struct BeatmapLevelSelect
 	_pkt_u32_write(&data->modifiers, pkt, end, ctx);
 	_pkt_SongPackMask_write(&data->songPacks, pkt, end, ctx);
 }
+static void _pkt_UTimestamp_read(struct UTimestamp *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	if(ctx.protocolVersion < 9) {
+		_pkt_f32_read(&data->legacy, pkt, end, ctx);
+	}
+	if(ctx.protocolVersion >= 9) {
+		_pkt_vu64_read(&data->value, pkt, end, ctx);
+	}
+}
+static void _pkt_UTimestamp_write(const struct UTimestamp *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	if(ctx.protocolVersion < 9) {
+		_pkt_f32_write(&data->legacy, pkt, end, ctx);
+	}
+	if(ctx.protocolVersion >= 9) {
+		_pkt_vu64_write(&data->value, pkt, end, ctx);
+	}
+}
+static void _pkt_STimestamp_read(struct STimestamp *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	if(ctx.protocolVersion < 9) {
+		_pkt_f32_read(&data->legacy, pkt, end, ctx);
+	}
+	if(ctx.protocolVersion >= 9) {
+		_pkt_vi64_read(&data->value, pkt, end, ctx);
+	}
+}
+static void _pkt_STimestamp_write(const struct STimestamp *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	if(ctx.protocolVersion < 9) {
+		_pkt_f32_write(&data->legacy, pkt, end, ctx);
+	}
+	if(ctx.protocolVersion >= 9) {
+		_pkt_vi64_write(&data->value, pkt, end, ctx);
+	}
+}
 static void _pkt_RemoteProcedureCall_read(struct RemoteProcedureCall *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_f32_read(&data->syncTime, pkt, end, ctx);
+	_pkt_UTimestamp_read(&data->syncTime, pkt, end, ctx);
 }
 static void _pkt_RemoteProcedureCall_write(const struct RemoteProcedureCall *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_f32_write(&data->syncTime, pkt, end, ctx);
+	_pkt_UTimestamp_write(&data->syncTime, pkt, end, ctx);
 }
 static void _pkt_SetPlayersMissingEntitlementsToLevel_read(struct SetPlayersMissingEntitlementsToLevel *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_RemoteProcedureCall_read(&data->base, pkt, end, ctx);
@@ -460,7 +492,7 @@ static void _pkt_StartLevel_read(struct StartLevel *restrict data, const uint8_t
 		_pkt_GameplayModifiers_read(&data->gameplayModifiers, pkt, end, ctx);
 	}
 	if(data->flags.hasValue2) {
-		_pkt_f32_read(&data->startTime, pkt, end, ctx);
+		_pkt_STimestamp_read(&data->startTime, pkt, end, ctx);
 	}
 }
 static void _pkt_StartLevel_write(const struct StartLevel *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -473,7 +505,7 @@ static void _pkt_StartLevel_write(const struct StartLevel *restrict data, uint8_
 		_pkt_GameplayModifiers_write(&data->gameplayModifiers, pkt, end, ctx);
 	}
 	if(data->flags.hasValue2) {
-		_pkt_f32_write(&data->startTime, pkt, end, ctx);
+		_pkt_STimestamp_write(&data->startTime, pkt, end, ctx);
 	}
 }
 static void _pkt_GetStartedLevel_read(struct GetStartedLevel *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -532,14 +564,14 @@ static void _pkt_SetStartGameTime_read(struct SetStartGameTime *restrict data, c
 	_pkt_RemoteProcedureCall_read(&data->base, pkt, end, ctx);
 	_pkt_RemoteProcedureCallFlags_read(&data->flags, pkt, end, ctx);
 	if(data->flags.hasValue0) {
-		_pkt_f32_read(&data->newTime, pkt, end, ctx);
+		_pkt_STimestamp_read(&data->newTime, pkt, end, ctx);
 	}
 }
 static void _pkt_SetStartGameTime_write(const struct SetStartGameTime *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_RemoteProcedureCall_write(&data->base, pkt, end, ctx);
 	_pkt_RemoteProcedureCallFlags_write(&data->flags, pkt, end, ctx);
 	if(data->flags.hasValue0) {
-		_pkt_f32_write(&data->newTime, pkt, end, ctx);
+		_pkt_STimestamp_write(&data->newTime, pkt, end, ctx);
 	}
 }
 static void _pkt_CancelStartGameTime_read(struct CancelStartGameTime *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -578,14 +610,14 @@ static void _pkt_SetCountdownEndTime_read(struct SetCountdownEndTime *restrict d
 	_pkt_RemoteProcedureCall_read(&data->base, pkt, end, ctx);
 	_pkt_RemoteProcedureCallFlags_read(&data->flags, pkt, end, ctx);
 	if(data->flags.hasValue0) {
-		_pkt_f32_read(&data->newTime, pkt, end, ctx);
+		_pkt_STimestamp_read(&data->newTime, pkt, end, ctx);
 	}
 }
 static void _pkt_SetCountdownEndTime_write(const struct SetCountdownEndTime *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_RemoteProcedureCall_write(&data->base, pkt, end, ctx);
 	_pkt_RemoteProcedureCallFlags_write(&data->flags, pkt, end, ctx);
 	if(data->flags.hasValue0) {
-		_pkt_f32_write(&data->newTime, pkt, end, ctx);
+		_pkt_STimestamp_write(&data->newTime, pkt, end, ctx);
 	}
 }
 static void _pkt_CancelCountdown_read(struct CancelCountdown *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -940,14 +972,14 @@ static void _pkt_SetSongStartTime_read(struct SetSongStartTime *restrict data, c
 	_pkt_RemoteProcedureCall_read(&data->base, pkt, end, ctx);
 	_pkt_RemoteProcedureCallFlags_read(&data->flags, pkt, end, ctx);
 	if(data->flags.hasValue0) {
-		_pkt_f32_read(&data->startTime, pkt, end, ctx);
+		_pkt_STimestamp_read(&data->startTime, pkt, end, ctx);
 	}
 }
 static void _pkt_SetSongStartTime_write(const struct SetSongStartTime *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_RemoteProcedureCall_write(&data->base, pkt, end, ctx);
 	_pkt_RemoteProcedureCallFlags_write(&data->flags, pkt, end, ctx);
 	if(data->flags.hasValue0) {
-		_pkt_f32_write(&data->startTime, pkt, end, ctx);
+		_pkt_STimestamp_write(&data->startTime, pkt, end, ctx);
 	}
 }
 static void _pkt_Vector3Serializable_read(struct Vector3Serializable *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -1506,12 +1538,12 @@ static void _pkt_SyncStateId_write(const struct SyncStateId *restrict data, uint
 }
 static void _pkt_NodePoseSyncState_read(struct NodePoseSyncState *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_SyncStateId_read(&data->id, pkt, end, ctx);
-	_pkt_f32_read(&data->time, pkt, end, ctx);
+	_pkt_UTimestamp_read(&data->time, pkt, end, ctx);
 	_pkt_NodePoseSyncState1_read(&data->state, pkt, end, ctx);
 }
 static void _pkt_NodePoseSyncState_write(const struct NodePoseSyncState *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_SyncStateId_write(&data->id, pkt, end, ctx);
-	_pkt_f32_write(&data->time, pkt, end, ctx);
+	_pkt_UTimestamp_write(&data->time, pkt, end, ctx);
 	_pkt_NodePoseSyncState1_write(&data->state, pkt, end, ctx);
 }
 static void _pkt_StandardScoreSyncState_read(struct StandardScoreSyncState *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -1530,12 +1562,12 @@ static void _pkt_StandardScoreSyncState_write(const struct StandardScoreSyncStat
 }
 static void _pkt_ScoreSyncState_read(struct ScoreSyncState *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_SyncStateId_read(&data->id, pkt, end, ctx);
-	_pkt_f32_read(&data->time, pkt, end, ctx);
+	_pkt_UTimestamp_read(&data->time, pkt, end, ctx);
 	_pkt_StandardScoreSyncState_read(&data->state, pkt, end, ctx);
 }
 static void _pkt_ScoreSyncState_write(const struct ScoreSyncState *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_SyncStateId_write(&data->id, pkt, end, ctx);
-	_pkt_f32_write(&data->time, pkt, end, ctx);
+	_pkt_UTimestamp_write(&data->time, pkt, end, ctx);
 	_pkt_StandardScoreSyncState_write(&data->state, pkt, end, ctx);
 }
 static void _pkt_NodePoseSyncStateDelta_read(struct NodePoseSyncStateDelta *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -1749,10 +1781,10 @@ static void _pkt_MpCore_write(const struct MpCore *restrict data, uint8_t **pkt,
 	}
 }
 static void _pkt_SyncTime_read(struct SyncTime *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_f32_read(&data->syncTime, pkt, end, ctx);
+	_pkt_UTimestamp_read(&data->syncTime, pkt, end, ctx);
 }
 static void _pkt_SyncTime_write(const struct SyncTime *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_f32_write(&data->syncTime, pkt, end, ctx);
+	_pkt_UTimestamp_write(&data->syncTime, pkt, end, ctx);
 }
 static void _pkt_PlayerConnected_read(struct PlayerConnected *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u8_read(&data->remoteConnectionId, pkt, end, ctx);
@@ -1784,7 +1816,7 @@ static void _pkt_Color32_write(const struct Color32 *restrict data, uint8_t **pk
 	_pkt_u8_write(&data->b, pkt, end, ctx);
 	_pkt_u8_write(&data->a, pkt, end, ctx);
 }
-static void _pkt_MultiplayerAvatarData_read(struct MultiplayerAvatarData *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+static void _pkt_LegacyAvatarData_read(struct LegacyAvatarData *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_String_read(&data->headTopId, pkt, end, ctx);
 	_pkt_Color32_read(&data->headTopPrimaryColor, pkt, end, ctx);
 	_pkt_Color32_read(&data->handsColor, pkt, end, ctx);
@@ -1803,7 +1835,7 @@ static void _pkt_MultiplayerAvatarData_read(struct MultiplayerAvatarData *restri
 	_pkt_String_read(&data->facialHairId, pkt, end, ctx);
 	_pkt_String_read(&data->handsId, pkt, end, ctx);
 }
-static void _pkt_MultiplayerAvatarData_write(const struct MultiplayerAvatarData *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+static void _pkt_LegacyAvatarData_write(const struct LegacyAvatarData *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_String_write(&data->headTopId, pkt, end, ctx);
 	_pkt_Color32_write(&data->headTopPrimaryColor, pkt, end, ctx);
 	_pkt_Color32_write(&data->handsColor, pkt, end, ctx);
@@ -1822,15 +1854,105 @@ static void _pkt_MultiplayerAvatarData_write(const struct MultiplayerAvatarData 
 	_pkt_String_write(&data->facialHairId, pkt, end, ctx);
 	_pkt_String_write(&data->handsId, pkt, end, ctx);
 }
+static void _pkt_WriterString_read(struct WriterString *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_vu32_read(&data->length, pkt, end, ctx);
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->length), 67, "WriterString.data"); i < count; ++i)
+		_pkt_char_read(&data->data[i], pkt, end, ctx);
+}
+static void _pkt_WriterString_write(const struct WriterString *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_vu32_write(&data->length, pkt, end, ctx);
+	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->length), 67, "WriterString.data"); i < count; ++i)
+		_pkt_char_write(&data->data[i], pkt, end, ctx);
+}
+static void _pkt_WriterColor_read(struct WriterColor *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_f32_read(&data->r, pkt, end, ctx);
+	_pkt_f32_read(&data->g, pkt, end, ctx);
+	_pkt_f32_read(&data->b, pkt, end, ctx);
+	_pkt_f32_read(&data->a, pkt, end, ctx);
+}
+static void _pkt_WriterColor_write(const struct WriterColor *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_f32_write(&data->r, pkt, end, ctx);
+	_pkt_f32_write(&data->g, pkt, end, ctx);
+	_pkt_f32_write(&data->b, pkt, end, ctx);
+	_pkt_f32_write(&data->a, pkt, end, ctx);
+}
+void _pkt_BeatAvatarData_read(struct BeatAvatarData *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_WriterString_read(&data->headTopId, pkt, end, ctx);
+	_pkt_WriterColor_read(&data->headTopPrimaryColor, pkt, end, ctx);
+	_pkt_WriterColor_read(&data->headTopSecondaryColor, pkt, end, ctx);
+	_pkt_WriterString_read(&data->glassesId, pkt, end, ctx);
+	_pkt_WriterColor_read(&data->glassesColor, pkt, end, ctx);
+	_pkt_WriterString_read(&data->facialHairId, pkt, end, ctx);
+	_pkt_WriterColor_read(&data->facialHairColor, pkt, end, ctx);
+	_pkt_WriterString_read(&data->handsId, pkt, end, ctx);
+	_pkt_WriterColor_read(&data->handsColor, pkt, end, ctx);
+	_pkt_WriterString_read(&data->clothesId, pkt, end, ctx);
+	_pkt_WriterColor_read(&data->clothesPrimaryColor, pkt, end, ctx);
+	_pkt_WriterColor_read(&data->clothesSecondaryColor, pkt, end, ctx);
+	_pkt_WriterColor_read(&data->clothesDetailColor, pkt, end, ctx);
+	_pkt_WriterString_read(&data->skinColorId, pkt, end, ctx);
+	_pkt_WriterString_read(&data->eyesId, pkt, end, ctx);
+	_pkt_WriterString_read(&data->mouthId, pkt, end, ctx);
+}
+void _pkt_BeatAvatarData_write(const struct BeatAvatarData *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_WriterString_write(&data->headTopId, pkt, end, ctx);
+	_pkt_WriterColor_write(&data->headTopPrimaryColor, pkt, end, ctx);
+	_pkt_WriterColor_write(&data->headTopSecondaryColor, pkt, end, ctx);
+	_pkt_WriterString_write(&data->glassesId, pkt, end, ctx);
+	_pkt_WriterColor_write(&data->glassesColor, pkt, end, ctx);
+	_pkt_WriterString_write(&data->facialHairId, pkt, end, ctx);
+	_pkt_WriterColor_write(&data->facialHairColor, pkt, end, ctx);
+	_pkt_WriterString_write(&data->handsId, pkt, end, ctx);
+	_pkt_WriterColor_write(&data->handsColor, pkt, end, ctx);
+	_pkt_WriterString_write(&data->clothesId, pkt, end, ctx);
+	_pkt_WriterColor_write(&data->clothesPrimaryColor, pkt, end, ctx);
+	_pkt_WriterColor_write(&data->clothesSecondaryColor, pkt, end, ctx);
+	_pkt_WriterColor_write(&data->clothesDetailColor, pkt, end, ctx);
+	_pkt_WriterString_write(&data->skinColorId, pkt, end, ctx);
+	_pkt_WriterString_write(&data->eyesId, pkt, end, ctx);
+	_pkt_WriterString_write(&data->mouthId, pkt, end, ctx);
+}
+static void _pkt_OpaqueAvatarData_read(struct OpaqueAvatarData *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u32_read(&data->typeHash, pkt, end, ctx);
+	_pkt_u16_read(&data->length, pkt, end, ctx);
+	_pkt_raw_read(data->data, pkt, end, ctx, check_overflow((uint32_t)(data->length), 4096, "OpaqueAvatarData.data"));
+}
+static void _pkt_OpaqueAvatarData_write(const struct OpaqueAvatarData *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u32_write(&data->typeHash, pkt, end, ctx);
+	_pkt_u16_write(&data->length, pkt, end, ctx);
+	_pkt_raw_write(data->data, pkt, end, ctx, check_overflow((uint32_t)(data->length), 4096, "OpaqueAvatarData.data"));
+}
+static void _pkt_MultiplayerAvatarsData_read(struct MultiplayerAvatarsData *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	if(ctx.protocolVersion < 9) {
+		_pkt_LegacyAvatarData_read(&data->legacy, pkt, end, ctx);
+	}
+	if(ctx.protocolVersion >= 9) {
+		_pkt_i32_read(&data->count, pkt, end, ctx);
+		for(uint32_t i = 0, count = check_overflow((uint32_t)(data->count), 6, "MultiplayerAvatarsData.avatars"); i < count; ++i)
+			_pkt_OpaqueAvatarData_read(&data->avatars[i], pkt, end, ctx);
+		_pkt_BitMask128_read(&data->supportedTypes, pkt, end, ctx);
+	}
+}
+static void _pkt_MultiplayerAvatarsData_write(const struct MultiplayerAvatarsData *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	if(ctx.protocolVersion < 9) {
+		_pkt_LegacyAvatarData_write(&data->legacy, pkt, end, ctx);
+	}
+	if(ctx.protocolVersion >= 9) {
+		_pkt_i32_write(&data->count, pkt, end, ctx);
+		for(uint32_t i = 0, count = check_overflow((uint32_t)(data->count), 6, "MultiplayerAvatarsData.avatars"); i < count; ++i)
+			_pkt_OpaqueAvatarData_write(&data->avatars[i], pkt, end, ctx);
+		_pkt_BitMask128_write(&data->supportedTypes, pkt, end, ctx);
+	}
+}
 static void _pkt_PlayerIdentity_read(struct PlayerIdentity *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_PlayerStateHash_read(&data->playerState, pkt, end, ctx);
-	_pkt_MultiplayerAvatarData_read(&data->playerAvatar, pkt, end, ctx);
+	_pkt_MultiplayerAvatarsData_read(&data->playerAvatars, pkt, end, ctx);
 	_pkt_ByteArrayNetSerializable_read(&data->random, pkt, end, ctx);
 	_pkt_ByteArrayNetSerializable_read(&data->publicEncryptionKey, pkt, end, ctx);
 }
 static void _pkt_PlayerIdentity_write(const struct PlayerIdentity *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_PlayerStateHash_write(&data->playerState, pkt, end, ctx);
-	_pkt_MultiplayerAvatarData_write(&data->playerAvatar, pkt, end, ctx);
+	_pkt_MultiplayerAvatarsData_write(&data->playerAvatars, pkt, end, ctx);
 	_pkt_ByteArrayNetSerializable_write(&data->random, pkt, end, ctx);
 	_pkt_ByteArrayNetSerializable_write(&data->publicEncryptionKey, pkt, end, ctx);
 }
@@ -1899,22 +2021,22 @@ static void _pkt_PlayerStateUpdate_write(const struct PlayerStateUpdate *restric
 	_pkt_PlayerStateHash_write(&data->playerState, pkt, end, ctx);
 }
 static void _pkt_PlayerAvatarUpdate_read(struct PlayerAvatarUpdate *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_MultiplayerAvatarData_read(&data->playerAvatar, pkt, end, ctx);
+	_pkt_MultiplayerAvatarsData_read(&data->playerAvatars, pkt, end, ctx);
 }
 static void _pkt_PlayerAvatarUpdate_write(const struct PlayerAvatarUpdate *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_MultiplayerAvatarData_write(&data->playerAvatar, pkt, end, ctx);
+	_pkt_MultiplayerAvatarsData_write(&data->playerAvatars, pkt, end, ctx);
 }
 static void _pkt_PingMessage_read(struct PingMessage *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_f32_read(&data->pingTime, pkt, end, ctx);
+	_pkt_UTimestamp_read(&data->pingTime, pkt, end, ctx);
 }
 static void _pkt_PingMessage_write(const struct PingMessage *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_f32_write(&data->pingTime, pkt, end, ctx);
+	_pkt_UTimestamp_write(&data->pingTime, pkt, end, ctx);
 }
 static void _pkt_PongMessage_read(struct PongMessage *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_f32_read(&data->pingTime, pkt, end, ctx);
+	_pkt_UTimestamp_read(&data->pingTime, pkt, end, ctx);
 }
 static void _pkt_PongMessage_write(const struct PongMessage *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_f32_write(&data->pingTime, pkt, end, ctx);
+	_pkt_UTimestamp_write(&data->pingTime, pkt, end, ctx);
 }
 void _pkt_InternalMessage_read(struct InternalMessage *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u8_read(&data->type, pkt, end, ctx);
@@ -1960,6 +2082,9 @@ void _pkt_RoutingHeader_read(struct RoutingHeader *restrict data, const uint8_t 
 	_pkt_u8_read(&bitfield0, pkt, end, ctx);
 	data->connectionId = bitfield0 >> 0 & 127;
 	data->encrypted = bitfield0 >> 7 & 1;
+	if(ctx.protocolVersion >= 9) {
+		_pkt_u8_read(&data->packetOptions, pkt, end, ctx);
+	}
 }
 void _pkt_RoutingHeader_write(const struct RoutingHeader *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u8_write(&data->remoteConnectionId, pkt, end, ctx);
@@ -1967,10 +2092,16 @@ void _pkt_RoutingHeader_write(const struct RoutingHeader *restrict data, uint8_t
 	bitfield0 |= (data->connectionId & 127u) << 0;
 	bitfield0 |= (data->encrypted & 1u) << 7;
 	_pkt_u8_write(&bitfield0, pkt, end, ctx);
+	if(ctx.protocolVersion >= 9) {
+		_pkt_u8_write(&data->packetOptions, pkt, end, ctx);
+	}
 }
 void _pkt_BTRoutingHeader_read(struct BTRoutingHeader *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u8_read(&data->remoteConnectionId, pkt, end, ctx);
 	_pkt_u8_read(&data->connectionId, pkt, end, ctx);
+	if(ctx.protocolVersion >= 9) {
+		_pkt_u8_read(&data->packetOptions, pkt, end, ctx);
+	}
 }
 static void _pkt_BaseMasterServerReliableRequest_read(struct BaseMasterServerReliableRequest *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_read(&data->requestId, pkt, end, ctx);
@@ -2633,10 +2764,10 @@ static void _pkt_WireSessionAlloc_read(struct WireSessionAlloc *restrict data, c
 	_pkt_String_read(&data->userId, pkt, end, ctx);
 	_pkt_b_read(&data->ipv4, pkt, end, ctx);
 	_pkt_b_read(&data->direct, pkt, end, ctx);
+	_pkt_u32_read(&data->protocolVersion, pkt, end, ctx);
 	if(!data->direct) {
 		_pkt_Cookie32_read(&data->random, pkt, end, ctx);
 		_pkt_ByteArrayNetSerializable_read(&data->publicKey, pkt, end, ctx);
-		_pkt_u32_read(&data->protocolVersion, pkt, end, ctx);
 	}
 }
 static void _pkt_WireSessionAlloc_write(const struct WireSessionAlloc *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -2645,10 +2776,10 @@ static void _pkt_WireSessionAlloc_write(const struct WireSessionAlloc *restrict 
 	_pkt_String_write(&data->userId, pkt, end, ctx);
 	_pkt_b_write(&data->ipv4, pkt, end, ctx);
 	_pkt_b_write(&data->direct, pkt, end, ctx);
+	_pkt_u32_write(&data->protocolVersion, pkt, end, ctx);
 	if(!data->direct) {
 		_pkt_Cookie32_write(&data->random, pkt, end, ctx);
 		_pkt_ByteArrayNetSerializable_write(&data->publicKey, pkt, end, ctx);
-		_pkt_u32_write(&data->protocolVersion, pkt, end, ctx);
 	}
 }
 static void _pkt_WireSessionAllocResp_read(struct WireSessionAllocResp *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {

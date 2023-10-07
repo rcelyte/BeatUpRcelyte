@@ -9,7 +9,7 @@ static partial class BeatUpClient {
 
 	internal static bool waitForMpCore = false;
 	[Detour(typeof(MultiplayerLevelLoader), nameof(MultiplayerLevelLoader.LoadLevel))]
-	static void MultiplayerLevelLoader_LoadLevel(MultiplayerLevelLoader self, ILevelGameplaySetupData gameplaySetupData, float initialStartTime) {
+	static void MultiplayerLevelLoader_LoadLevel(MultiplayerLevelLoader self, ILevelGameplaySetupData gameplaySetupData, long initialStartTime) {
 		waitForMpCore = haveMpCore;
 		Base(self, gameplaySetupData, initialStartTime);
 	}

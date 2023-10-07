@@ -46,6 +46,7 @@ static uint32_t check_overflow(uint32_t count, uint32_t limit, const char *conte
 static_assert(sizeof(uint8_t) == 1, "");
 #define _pkt_b_read(data, pkt, end, ctx) _pkt_u8_read((uint8_t*)(data), pkt, end, ctx)
 #define _pkt_i8_read(data, pkt, end, ctx) _pkt_u8_read((uint8_t*)(data), pkt, end, ctx)
+#define _pkt_char_read(data, pkt, end, ctx) _pkt_u8_read((uint8_t*)(data), pkt, end, ctx)
 static void _pkt_u8_read(uint8_t *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext) {
 	RANGE_CHECK(sizeof(*data));
 	*data = *(*pkt)++;
@@ -110,6 +111,7 @@ static_assert(sizeof(double) == 8, "");
 
 #define _pkt_b_write(data, pkt, end, ctx) _pkt_u8_write((const uint8_t*)(data), pkt, end, ctx)
 #define _pkt_i8_write(data, pkt, end, ctx) _pkt_u8_write((const uint8_t*)(data), pkt, end, ctx)
+#define _pkt_char_write(data, pkt, end, ctx) _pkt_u8_write((const uint8_t*)(data), pkt, end, ctx)
 static void _pkt_u8_write(const uint8_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext) {
 	RANGE_CHECK(sizeof(*data));
 	*(*pkt)++ = *data;

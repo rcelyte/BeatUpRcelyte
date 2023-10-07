@@ -18,8 +18,8 @@ static partial class BeatUpClient_MpCore {
 		Net.SetLocalProgressUnreliable(new LoadProgress(LoadState.Downloading, (ushort)(value * 65535)));
 	}
 
-	[Patch(PatchType.Postfix, typeof(MultiplayerCore.Patchers.NetworkConfigPatcher), nameof(MultiplayerCore.Patchers.NetworkConfigPatcher.UseCustomApiServer), true)]
-	static void NetworkConfigPatcher_UseCustomApiServer(string graphUrl, string statusUrl, int? maxPartySize, string? quickPlaySetupUrl) =>
+	[Patch(PatchType.Postfix, typeof(MultiplayerCore.Patchers.NetworkConfigPatcher), nameof(MultiplayerCore.Patchers.NetworkConfigPatcher.UseCustomApiServer))]
+	static void NetworkConfigPatcher_UseCustomApiServer(string graphUrl, string statusUrl/*, int? maxPartySize, string? quickPlaySetupUrl, bool disableSsl*/) =>
 		UpdateNetworkConfig(graphUrl, statusUrl); // TODO: respect `maxPartySize`, `quickPlaySetupUrl`
 
 	[Patch(PatchType.Postfix, typeof(MultiplayerCore.Patchers.NetworkConfigPatcher), nameof(MultiplayerCore.Patchers.NetworkConfigPatcher.UseOfficialServer))]

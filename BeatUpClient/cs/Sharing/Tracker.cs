@@ -7,7 +7,7 @@ static partial class BeatUpClient {
 		public class DownloadPreview : CustomPreviewBeatmapLevel {
 			public System.Collections.Generic.List<Downloader> variants;
 			public DownloadPreview(ShareInfo info, ConnectedPlayerManager.ConnectedPlayer connectedPlayer) :
-					base(defaultPackCover, null, string.Empty, null, info.id.name, string.Empty, string.Empty, string.Empty, string.Empty, 0, 0, 0, 0, 0, 0, null, null, null, null, null) =>
+					base(defaultPackCover, null, string.Empty, null, info.id.name, string.Empty, string.Empty, string.Empty, string.Empty, 0, 0, 0, 0, 0, 0, null, null, null, null, PlayerSensitivityFlag.Safe, null) =>
 				(_coverImage, variants) = (defaultPackCover, new System.Collections.Generic.List<Downloader>() {new Downloader(info, connectedPlayer)});
 			public System.Threading.Tasks.Task<byte[]?> Fetch(System.Action<ushort>? progress = null) =>
 				variants.FirstOrDefault()?.Fetch(progress, out System.Threading.CancellationTokenSource _) ?? System.Threading.Tasks.Task.FromResult<byte[]?>(null);

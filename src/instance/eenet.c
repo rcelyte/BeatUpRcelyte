@@ -68,7 +68,10 @@ void eenet_attach(ENetHost *host, struct NetContext *ctx, struct NetSession *ses
 bool eenet_handle(ENetHost *host, const uint8_t *data, const uint8_t *end, struct EENetPacket *pkt_out) {
 	*pkt_out = (struct EENetPacket){0};
 
+	#pragma GCC diagnostic push
+	#pragma GCC diagnostic ignored "-Wcast-qual"
 	host->receivedData = (uint8_t*)data; // TODO: do not.
+	#pragma GCC diagnostic pop
 	host->receivedDataLength = (size_t)(end - data);
 	host->totalReceivedData += host->receivedDataLength;
 	++host->totalReceivedPackets;
@@ -97,7 +100,8 @@ int enet_socket_get_address(ENetSocket, ENetAddress*) {return -1;}
 // ENetSocket enet_socket_accept(ENetSocket, ENetAddress*);
 // int enet_socket_connect(ENetSocket, const ENetAddress*);
 int enet_socket_send(ENetSocket, const ENetAddress *ptr, const ENetBuffer *buffers, size_t buffers_len) {
-	const struct FakeSocket state = *(const struct FakeSocket*)ptr;
+	struct FakeSocket state = {0};
+	memcpy(&state, ptr, sizeof(state));
 	if(state.ctx == NULL || state.session == NULL)
 		return -1;
 	uint32_t body_len = 0;
@@ -109,7 +113,7 @@ int enet_socket_send(ENetSocket, const ENetAddress *ptr, const ENetBuffer *buffe
 		body_len += buffer_it->dataLength;
 	}
 	net_send_internal(state.ctx, state.session, body, body_len, EncryptMode_DTLS);
-	return body_len;
+	return (int)body_len;
 }
 int enet_socket_receive(ENetSocket, ENetAddress*, ENetBuffer*, size_t) {return 0;}
 int enet_socket_wait(ENetSocket, uint32_t*, uint64_t) {return -1;}

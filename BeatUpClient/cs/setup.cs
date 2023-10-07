@@ -55,13 +55,13 @@ static partial class BeatUpClient {
 
 	internal static void Enable(Hive.Versioning.Version version, System.Func<string, Hive.Versioning.Version?> modVersion) {
 		uint protocolVersion = (uint)HarmonyLib.AccessTools.Field(typeof(NetworkConstants), nameof(NetworkConstants.kProtocolVersion)).GetValue(null);
-		if(protocolVersion != 8u) {
-			BeatUpClient_Error.Init("Incompatible BeatUpClient Version", $"This version of BeatUpClient requires a{((protocolVersion < 8u) ? " newer" : "n older")} version of Beat Saber.");
+		if(protocolVersion != 9u) {
+			BeatUpClient_Error.Init("Incompatible BeatUpClient Version", $"This version of BeatUpClient requires a{((protocolVersion < 9u) ? " newer" : "n older")} version of Beat Saber.");
 			return;
 		}
 		Hive.Versioning.Version? mpCoreVersion = modVersion("MultiplayerCore");
 		if(!SupportedMpCoreVersion(mpCoreVersion?.ToString())) {
-			BeatUpClient_Error.Init("Incompatible BeatUpClient Version", $"This version of BeatUpClient does not support MultiplayerCore");
+			BeatUpClient_Error.Init("Incompatible BeatUpClient Version", $"This version of BeatUpClient is incompatible with MultiplayerCore");
 			return;
 		}
 		string? err = BeatUpClient_Beta.CheckVersion(version);
@@ -106,7 +106,9 @@ static partial class BeatUpClient {
 			System.Action applyPatches = new (System.Type type, bool enable)[] {
 				(typeof(BeatUpClient), true),
 				(typeof(BeatUpClient_SongCore), haveSongCore),
+				#if MPCORE_SUPPORT
 				(typeof(BeatUpClient_MpCore), haveMpCore),
+				#endif
 			}.Aggregate((System.Action)delegate {}, (acc, section) => {
 				if(section.enable)
 					acc += GatherMethods(section.type, ref patchCount);

@@ -72,7 +72,10 @@ static partial class BeatUpClient {
 
 	[Detour(typeof(IgnoranceCore.IgnoranceClient), nameof(IgnoranceCore.IgnoranceClient.Start))]
 	static void IgnoranceClient_Start(IgnoranceCore.IgnoranceClient self) {
-		self.ValidateCertificate = false;
+		if(!currentServerIsOfficial) {
+			self.UseSsl = currentServerIsBeatUp;
+			self.ValidateCertificate = false;
+		}
 		Base(self);
 	}
 }

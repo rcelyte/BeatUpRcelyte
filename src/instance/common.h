@@ -4,7 +4,7 @@
 #include "../packets.h"
 #endif
 
-#define LOAD_TIMEOUT 15
+#define LOAD_TIMEOUT_MS 15000
 #define KICK_TIMEOUT_MS 3000
 
 #define NET_MAX_WINDOW_SIZE 256
@@ -29,17 +29,6 @@
 #define CLEAR_STRING (struct String){0}
 #define CLEAR_BEATMAP (struct BeatmapIdentifierNetSerializable){0}
 #define CLEAR_MODIFIERS (struct GameplayModifiers){0}
-#define CLEAR_AVATARDATA (struct MultiplayerAvatarData){ \
-	.headTopPrimaryColor.a = 1, \
-	.handsColor.a = 1, \
-	.clothesPrimaryColor.a = 1, \
-	.clothesSecondaryColor.a = 1, \
-	.clothesDetailColor.a = 1, \
-	._unused = {{.a = 1}, {.a = 1}}, \
-	.glassesColor.a = 1, \
-	.facialHairColor.a = 1, \
-	.headTopSecondaryColor.a = 1, \
-}
 #define CLEAR_SETTINGS (struct PlayerSpecificSettings){0}
 
 #define REQUIRED_MODIFIER_MASK (15 << 18) // SongSpeed

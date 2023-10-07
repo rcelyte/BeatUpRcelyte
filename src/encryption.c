@@ -307,7 +307,6 @@ uint32_t EncryptionState_encrypt(struct EncryptionState *state, const struct SS 
 			mbedtls_ssl_set_bio(&state->dtls.ssl, NULL, NULL, NULL, NULL);
 			return 0;
 		}
-		default:;
 	}
 	return 0;
 }

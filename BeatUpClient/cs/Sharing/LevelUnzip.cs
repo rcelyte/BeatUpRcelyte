@@ -33,12 +33,12 @@ static partial class BeatUpClient {
 			.Select(name => Resolve<CustomLevelLoader>()!._environmentSceneInfoCollection.GetEnvironmentInfoBySerializedName(name))
 			.ToArray();
 		ColorScheme?[] overrideColorSchemes = (info.colorSchemes ?? new BeatmapLevelColorSchemeSaveData[0])
-			.Select(scheme => (scheme.useOverride) ? new ColorScheme(scheme.colorScheme.colorSchemeId,
-				scheme.colorScheme.colorSchemeId, true, scheme.colorScheme.colorSchemeId, false, scheme.colorScheme.saberAColor,
-				scheme.colorScheme.saberBColor, scheme.colorScheme.environmentColor0, scheme.colorScheme.environmentColor1, true,
-				scheme.colorScheme.environmentColor0Boost, scheme.colorScheme.environmentColor1Boost, scheme.colorScheme.obstaclesColor) : null)
+			.Select(scheme => (scheme.useOverride) ? new ColorScheme(scheme.colorScheme.colorSchemeId, scheme.colorScheme.colorSchemeId, true,
+				scheme.colorScheme.colorSchemeId, false, scheme.colorScheme.saberAColor, scheme.colorScheme.saberBColor, scheme.colorScheme.environmentColor0,
+				scheme.colorScheme.environmentColor1, UnityEngine.Color.white, true, scheme.colorScheme.environmentColor0Boost, scheme.colorScheme.environmentColor1Boost,
+				UnityEngine.Color.white, scheme.colorScheme.obstaclesColor) : null)
 			.ToArray();
-		return new CustomPreviewBeatmapLevel(defaultPackCover, info, string.Empty, sprite, levelId, info.songName, info.songSubName, info.songAuthorName, info.levelAuthorName, info.beatsPerMinute, info.songTimeOffset, info.shuffle, info.shufflePeriod, info.previewStartTime, info.previewDuration, envInfo, envInfo360, envInfos, overrideColorSchemes, sets);
+		return new CustomPreviewBeatmapLevel(defaultPackCover, info, string.Empty, sprite, levelId, info.songName, info.songSubName, info.songAuthorName, info.levelAuthorName, info.beatsPerMinute, info.songTimeOffset, info.shuffle, info.shufflePeriod, info.previewStartTime, info.previewDuration, envInfo, envInfo360, envInfos, overrideColorSchemes, PlayerSensitivityFlag.Safe, sets);
 	}
 	static async System.Threading.Tasks.Task<UnityEngine.AudioClip?> DecodeAudio(System.IO.Compression.ZipArchiveEntry song, UnityEngine.AudioType type) {
 		using System.IO.Stream stream = song.Open();

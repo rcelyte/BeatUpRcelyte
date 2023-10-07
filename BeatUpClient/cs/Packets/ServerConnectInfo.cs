@@ -30,7 +30,7 @@ static partial class BeatUpClient {
 			(@base, windowSize, countdownDuration, directDownloads, skipResults, perPlayerDifficulty, perPlayerModifiers) =
 				(new ConnectInfo(maxBlockSize), 0, (byte)(config.CountdownDuration * 4), config.DirectDownloads, config.SkipResults, config.PerPlayerDifficulty, config.PerPlayerModifiers);
 		public static ServerConnectInfo Default => new ServerConnectInfo {
-			countdownDuration = (byte)(LobbyGameStateController.kShortTimerSeconds * 4),
+			countdownDuration = (byte)(LobbyGameStateController.kShortTimerMs / 250),
 		};
 	}
 }

@@ -404,7 +404,7 @@ static void handle_AuthenticateUserRequest(struct NetContext *net, struct Master
 	handle_BaseAuthenticate(net, session, req->base, false);
 }
 
-static bool handle_AuthenticateGameLiftUserRequest(struct MasterContext *ctx, struct NetContext *net, struct MasterSession *session, const struct AuthenticateGameLiftUserRequest *req, struct GraphAuthToken *auth_out) {
+static bool handle_AuthenticateGameLiftUserRequest(struct NetContext *net, struct MasterSession *session, const struct AuthenticateGameLiftUserRequest *req, struct GraphAuthToken *auth_out) {
 	handle_BaseAuthenticate(net, session, req->base, true);
 	if(auth_out == NULL)
 		return false;
@@ -488,7 +488,7 @@ struct GraphConnectCookie {
 
 static ConnectToServerResponse_Result SendWireSessionAlloc(struct WireSessionAlloc *allocInfo, struct ConnectCookie *state, size_t state_len, struct GameplayServerConfiguration configuration, ServerCode code) {
 	state->room = ~UINT32_C(0);
-	if(allocInfo->protocolVersion >= 9) {
+	if(allocInfo->protocolVersion >= 10) {
 		uprintf("Connect to Server Error: Game version too new\n");
 		return ConnectToServerResponse_Result_VersionMismatch;
 	}
@@ -630,6 +630,7 @@ static void handle_WireGraphConnect(struct LocalMasterContext *ctx, WireCookie c
 		.userId = req->userId,
 		.ipv4 = true,
 		.direct = true,
+		.protocolVersion = req->protocolVersion,
 	};
 	const ConnectToServerResponse_Result result = SendWireSessionAlloc(&allocInfo, &state.base, sizeof(state), req->configuration, req->code);
 	if(result == ConnectToServerResponse_Result_Success)
@@ -754,9 +755,9 @@ static void handle_ConnectToServerRequest(struct NetContext *net, struct MasterS
 		.userId = req->base.userId,
 		.ipv4 = (state.addr.ss.ss_family != AF_INET6 || memcmp(state.addr.in6.sin6_addr.s6_addr, (const uint16_t[]){0,0,0,0,0,0xffff}, 12) == 0),
 		.direct = false,
+		.protocolVersion = session->net.version.protocolVersion,
 		.random = req->base.random,
 		.publicKey = req->base.publicKey,
-		.protocolVersion = session->net.version.protocolVersion,
 	};
 	const ConnectToServerResponse_Result result = SendWireSessionAlloc(&allocInfo, &state.base, sizeof(state), req->configuration, req->code);
 	if(result == ConnectToServerResponse_Result_Success)
@@ -862,7 +863,7 @@ bool MasterContext_handleMessage(struct MasterContext *ctx, struct NetContext *n
 				continue;
 			switch(message.type) {
 				case GameLiftMessageType_AuthenticateGameLiftUserRequest: {
-					if(handle_AuthenticateGameLiftUserRequest(ctx, net, session, &message.authenticateGameLiftUserRequest, auth_out))
+					if(handle_AuthenticateGameLiftUserRequest(net, session, &message.authenticateGameLiftUserRequest, auth_out))
 						return true;
 					break;
 				}

@@ -405,6 +405,7 @@ static void resolve() {
 static const char *StructType(const char *type) {
 	static char buf[256] = "struct ";
 	if(strcmp(type, "b") == 0) return "bool";
+	if(strcmp(type, "char") == 0) return "char";
 	if(strcmp(type, "i8") == 0) return "int8_t";
 	if(strcmp(type, "u8") == 0) return "uint8_t";
 	if(strcmp(type, "i16") == 0) return "int16_t";

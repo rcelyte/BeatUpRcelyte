@@ -174,13 +174,14 @@ static UserAgent ProbeHeaders(const char *buf, const char *end, size_t *contentL
 #define PUT(...) (msg_end += (uint32_t)snprintf(msg_end, (msg_end >= endof(msg)) ? 0 : (uint32_t)(endof(msg) - msg_end), __VA_ARGS__))
 static void status_status(struct HttpContext *http, bool isGame) {
 	char msg[65536], *msg_end = msg;
-	PUT("{\"minimumAppVersion\":\"1.19.0%s\""
-	    ",\"maximumAppVersion\":\"1.31.1_🅱️\""
+	PUT("{\"minimum_app_version\":\"1.19.0%s\""
+	    ",\"maximumAppVersion\":\"1.32.0_🅱️\""
 	    ",\"status\":%u", isGame ? "b2147483647" : STATUS_APPVER_POSTFIX, TEST_maintenanceStartTime != 0);
 	if(TEST_maintenanceStartTime) {
-		PUT(",\"maintenanceStartTime\":%" PRIu64, TEST_maintenanceStartTime);
-		PUT(",\"maintenanceEndTime\":%" PRIu64, TEST_maintenanceEndTime);
-		PUT(",\"userMessage\":{\"localizations\":[{\"language\":0,\"message\":\"%s\"}]}", TEST_maintenanceMessage);
+		PUT(",\"maintenance_start_time\":%" PRIu64, TEST_maintenanceStartTime);
+		PUT(",\"maintenance_end_time\":%" PRIu64, TEST_maintenanceEndTime);
+		PUT(",\"maintenanceEndTime\":%" PRIu64, TEST_maintenanceEndTime); // legacy
+		PUT(",\"user_message\":{\"localizations\":[{\"language\":0,\"message\":\"%s\"}]}", TEST_maintenanceMessage);
 	}
 	PUT(",\"requiredMods\": ["
 	    "{\"id\":\"BeatUpClient\",\"version\":\"0.4.6\"},"
@@ -205,16 +206,28 @@ static void status_graph(struct HttpContext *http, struct HttpRequest req, struc
 		.http = http,
 	};
 	struct WireGraphConnect connectInfo = {0};
-	bool foundVersion = false;
 	struct JsonIterator iter = {(const char*)req.body, (const char*)&req.body[req.body_len], false, {0}};
 	JSON_ITER_OBJECT(&iter, key0) {
 		if(String_is(key0, "version")) {
 			const struct String version = json_read_string(&iter);
-			connectInfo.protocolVersion = 
-				(startsWith(version.data, &version.data[version.length], "1.19.") ||
-				startsWith(version.data, &version.data[version.length], "1.2") ||
-				startsWith(version.data, &version.data[version.length], "1.30.")) ? 0 : 8;
-			foundVersion = true;
+			if(version.length < 2 || version.data[0] != '1' || version.data[1] != '.')
+				continue;
+			const char *sep = memchr(version.data, '_', version.length);
+			#pragma GCC diagnostic push
+			#pragma GCC diagnostic ignored "-Wmultichar"
+			_Static_assert('abc' == ('a' << 16 | 'b' << 8 | 'c'));
+			uint64_t versionBE = 0;
+			for(const char *it = &version.data[2], *const it_end = sep ? sep : &version.data[version.length]; it < it_end; ++it)
+				versionBE = versionBE << 8 | *(const uint8_t*)it;
+			switch(versionBE) {
+				case '19.1': connectInfo.protocolVersion = 7; break;
+				case '20.0': case '21.0': case '22.0': case '22.1': case '23.0': case '24.0': case '24.1': case '25.0': case '25.1':
+				case '26.0': case '27.0': case '28.0': case '29.0': case '29.1': case '29.4': case '30.0': case '30.2': case '31.0':
+				case '31.1': connectInfo.protocolVersion = 8; break;
+				case '32.0': connectInfo.protocolVersion = 9; break;
+				default: uprintf("Unexpected game version: %.*s\n", version.length, version.data);
+			}
+			#pragma GCC diagnostic pop
 		} else if(String_is(key0, "beatmap_level_selection_mask")) {
 			JSON_ITER_OBJECT(&iter, key1) {
 				if(String_is(key1, "difficulties")) {
@@ -258,7 +271,7 @@ static void status_graph(struct HttpContext *http, struct HttpRequest req, struc
 			json_skip_any(&iter);
 		}
 	}
-	if(iter.fault || !foundVersion || !connectInfo.userId.length || !connectInfo.configuration.maxPlayerCount) {
+	if(iter.fault || connectInfo.protocolVersion == 0 || connectInfo.userId.length == 0 || connectInfo.configuration.maxPlayerCount == 0) {
 		status_graph_resp((struct DataView){&state, sizeof(state)}, &(struct WireGraphConnectResp){
 			.result = MultiplayerPlacementErrorCode_Unknown,
 		});

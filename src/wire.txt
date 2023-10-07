@@ -10,10 +10,10 @@ n WireSessionAlloc
 	String userId
 	b ipv4
 	b direct
+	u32 protocolVersion
 	if(!.direct)
 		Cookie32 random
 		ByteArrayNetSerializable publicKey
-		u32 protocolVersion
 n WireSessionAllocResp
 	ConnectToServerResponse_Result result
 	if(.result == ConnectToServerResponse_Result_Success)

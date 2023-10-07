@@ -312,10 +312,8 @@ bool net_init(struct NetContext *ctx, uint16_t port) {
 }
 
 static void net_set_mtu(struct NetSession *session, uint8_t idx) {
-	uint32_t oldMtu = session->mtu;
 	session->mtu = PossibleMtu[idx];
 	session->mtuIdx = idx;
-	uprintf("MTU %u -> %u\n", oldMtu, session->mtu);
 	uint8_t buf[NET_MAX_PKT_SIZE], *buf_end = buf;
 	session->maxChanneledSize = session->mtu - (uint16_t)pkt_write_c(&buf_end, endof(buf), session->version, NetPacketHeader, {
 		.property = PacketProperty_Channeled,
@@ -486,10 +484,10 @@ void net_flush_merged(struct NetContext *ctx, struct NetSession *session) {
 void net_queue_merged(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint16_t len, const struct NetPacketHeader *header) {
 	uint8_t scratch[128];
 	const size_t scratch_len = (header != NULL) ? pkt_write(header, (uint8_t*[]){scratch}, endof(scratch), session->version) : 0;
-	if((session->mergeData_end - session->mergeData) + 2 + scratch_len + len > session->mtu)
+	if((size_t)(session->mergeData_end - session->mergeData) + 2 + scratch_len + len > session->mtu)
 		net_flush_merged(ctx, session);
 	pkt_write_c(&session->mergeData_end, endof(session->mergeData), session->version, MergedHeader, {
-		.length = scratch_len + len,
+		.length = (uint16_t)(scratch_len + len),
 	});
 	pkt_write_bytes(scratch, &session->mergeData_end, endof(session->mergeData), session->version, scratch_len);
 	pkt_write_bytes(buf, &session->mergeData_end, endof(session->mergeData), session->version, len);

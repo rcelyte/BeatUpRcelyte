@@ -24,6 +24,7 @@ static partial class BeatUpClient {
 		public EnvironmentInfoSO? environmentInfo {get;} = null;
 		public EnvironmentInfoSO? allDirectionsEnvironmentInfo {get;} = null;
 		public EnvironmentInfoSO[] environmentInfos => System.Array.Empty<EnvironmentInfoSO>();
+		public PlayerSensitivityFlag contentRating => PlayerSensitivityFlag.Safe;
 		public readonly ByteArrayNetSerializable cover = new ByteArrayNetSerializable("cover", 0, 8192);
 		UnityEngine.Sprite? localSprite = null;
 		public async System.Threading.Tasks.Task<UnityEngine.Sprite> GetCoverImageAsync(System.Threading.CancellationToken cancellationToken) {

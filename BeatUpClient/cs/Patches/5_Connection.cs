@@ -1,21 +1,16 @@
 static partial class BeatUpClient {
-	static bool enableCustomLevels = false;
-	static void HandleConnectToServerSuccess(bool enableCustomLevels, int maxPlayerCount) {
-		Log.Debug($"HandleConnectToServerSuccess(enableCustomLevels={enableCustomLevels}, maxPlayerCount={maxPlayerCount})");
-		BeatUpClient.enableCustomLevels = enableCustomLevels;
-		playerData = new PlayerData(maxPlayerCount);
+	static bool currentServerIsOfficial, enableCustomLevels = false;
+
+	[Patch(PatchType.Prefix, typeof(GameLiftConnectionManager), nameof(GameLiftConnectionManager.HandleConnectToServerSuccess))]
+	static void GameLiftConnectionManager_HandleConnectToServerSuccess(string playerSessionId, GameplayServerConfiguration configuration) {
+		currentServerIsOfficial = playerSessionId.StartsWith("psess-");
+		Log.Debug($"HandleConnectToServerSuccess(currentServerIsOfficial={currentServerIsOfficial}, maxPlayerCount={configuration.maxPlayerCount})");
+		BeatUpClient.enableCustomLevels = !currentServerIsOfficial;
+		playerData = new PlayerData(configuration.maxPlayerCount);
 		lobbyDifficultyPanel.Clear();
 		connectInfo = ServerConnectInfo.Default;
 		infoText?.SetActive(false);
 	}
-
-	[Patch(PatchType.Prefix, typeof(GameLiftConnectionManager), nameof(GameLiftConnectionManager.HandleConnectToServerSuccess))]
-	static void GameLiftConnectionManager_HandleConnectToServerSuccess(string playerSessionId, GameplayServerConfiguration configuration) =>
-		HandleConnectToServerSuccess(!playerSessionId.StartsWith("psess-"), configuration.maxPlayerCount); // TODO: disable customs on official
-
-	[Patch(PatchType.Prefix, "BGNet", "MasterServerConnectionManager", "HandleConnectToServerSuccess")]
-	static void MasterServerConnectionManager_HandleConnectToServerSuccess(GameplayServerConfiguration configuration) =>
-		HandleConnectToServerSuccess(true, configuration.maxPlayerCount);
 
 	[Patch(PatchType.Prefix, typeof(LevelSelectionNavigationController), nameof(LevelSelectionNavigationController.Setup))]
 	public static void LevelSelectionNavigationController_Setup(ref BeatmapCharacteristicSO[] notAllowedCharacteristics, string actionButtonText, ref bool enableCustomLevels) {

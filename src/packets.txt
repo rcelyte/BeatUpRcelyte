@@ -41,8 +41,18 @@ n BeatmapLevelSelectionMask
 	BeatmapDifficultyMask difficulties
 	GameplayModifierMask modifiers
 	SongPackMask songPacks
+n UTimestamp
+	if(ctx.protocolVersion < 9)
+		f32 legacy
+	if(ctx.protocolVersion >= 9)
+		vu64 value
+n STimestamp
+	if(ctx.protocolVersion < 9)
+		f32 legacy
+	if(ctx.protocolVersion >= 9)
+		vi64 value
 n RemoteProcedureCall
-	f32 syncTime
+	UTimestamp syncTime
 n SetPlayersMissingEntitlementsToLevel
 	RemoteProcedureCall base
 	RemoteProcedureCallFlags flags
@@ -155,7 +165,7 @@ n StartLevel
 	if(.flags.hasValue1)
 		GameplayModifiers gameplayModifiers
 	if(.flags.hasValue2)
-		f32 startTime
+		STimestamp startTime
 n GetStartedLevel
 	RemoteProcedureCall base
 n CancelLevelStart
@@ -182,7 +192,7 @@ n SetStartGameTime
 	RemoteProcedureCall base
 	RemoteProcedureCallFlags flags
 	if(.flags.hasValue0)
-		f32 newTime
+		STimestamp newTime
 n CancelStartGameTime
 	RemoteProcedureCall base
 n GetIsInLobby
@@ -198,7 +208,7 @@ n SetCountdownEndTime
 	RemoteProcedureCall base
 	RemoteProcedureCallFlags flags
 	if(.flags.hasValue0)
-		f32 newTime
+		STimestamp newTime
 n CancelCountdown
 	RemoteProcedureCall base
 n GetOwnedSongPacks
@@ -344,7 +354,7 @@ n SetSongStartTime
 	RemoteProcedureCall base
 	RemoteProcedureCallFlags flags
 	if(.flags.hasValue0)
-		f32 startTime
+		STimestamp startTime
 n Vector3Serializable
 	vi32 x
 	vi32 y
@@ -654,7 +664,7 @@ n SyncStateId
 	b same:1
 n NodePoseSyncState
 	SyncStateId id
-	f32 time
+	UTimestamp time
 	NodePoseSyncState1 state
 n StandardScoreSyncState
 	vi32 modifiedScore
@@ -664,7 +674,7 @@ n StandardScoreSyncState
 	vi32 multiplier
 n ScoreSyncState
 	SyncStateId id
-	f32 time
+	UTimestamp time
 	StandardScoreSyncState state
 n NodePoseSyncStateDelta
 	SyncStateId baseId
@@ -755,7 +765,7 @@ n MpCore
 		MpcCapabilitiesPacket mpcCapabilities
 		MpPlayerData mpPlayerData
 n SyncTime
-	f32 syncTime
+	UTimestamp syncTime
 n PlayerConnected
 	u8 remoteConnectionId
 	String userId
@@ -768,7 +778,7 @@ n Color32
 	u8 g
 	u8 b
 	u8 a
-n MultiplayerAvatarData
+n LegacyAvatarData
 	String headTopId
 	Color32 headTopPrimaryColor
 	Color32 handsColor
@@ -785,9 +795,45 @@ n MultiplayerAvatarData
 	String glassesId
 	String facialHairId
 	String handsId
+n WriterString
+	vu32 length
+	char data[67, .length]
+n WriterColor
+	f32 r
+	f32 g
+	f32 b
+	f32 a
+d BeatAvatarData
+	WriterString headTopId
+	WriterColor headTopPrimaryColor
+	WriterColor headTopSecondaryColor
+	WriterString glassesId
+	WriterColor glassesColor
+	WriterString facialHairId
+	WriterColor facialHairColor
+	WriterString handsId
+	WriterColor handsColor
+	WriterString clothesId
+	WriterColor clothesPrimaryColor
+	WriterColor clothesSecondaryColor
+	WriterColor clothesDetailColor
+	WriterString skinColorId
+	WriterString eyesId
+	WriterString mouthId
+n OpaqueAvatarData
+	u32 typeHash
+	u16 length
+	u8 data[4096, .length]
+n MultiplayerAvatarsData
+	if(ctx.protocolVersion < 9)
+		LegacyAvatarData legacy
+	if(ctx.protocolVersion >= 9)
+		i32 count
+		OpaqueAvatarData avatars[6, .count]
+		BitMask128 supportedTypes
 n PlayerIdentity
 	PlayerStateHash playerState
-	MultiplayerAvatarData playerAvatar
+	MultiplayerAvatarsData playerAvatars
 	ByteArrayNetSerializable random
 	ByteArrayNetSerializable publicEncryptionKey
 n PlayerLatencyUpdate
@@ -825,11 +871,11 @@ n KickPlayer
 n PlayerStateUpdate
 	PlayerStateHash playerState
 n PlayerAvatarUpdate
-	MultiplayerAvatarData playerAvatar
+	MultiplayerAvatarsData playerAvatars
 n PingMessage
-	f32 pingTime
+	UTimestamp pingTime
 n PongMessage
-	f32 pingTime
+	UTimestamp pingTime
 d InternalMessage
 	InternalMessageType type
 	u8 InternalMessageType(.type)
@@ -850,9 +896,13 @@ d RoutingHeader
 	u8 remoteConnectionId
 	u8 connectionId:7
 	b encrypted:1
+	if(ctx.protocolVersion >= 9)
+		u8 packetOptions
 r BTRoutingHeader
 	u8 remoteConnectionId
 	u8 connectionId
+	if(ctx.protocolVersion >= 9)
+		u8 packetOptions
 n BaseMasterServerReliableRequest
 	u32 requestId
 n BaseMasterServerResponse

@@ -15,7 +15,7 @@ static partial class BeatUpClient {
 					MultiplayerController multiplayerController = container.Resolve<MultiplayerController>();
 					multiplayerController._songStartSyncController.syncStartSuccessEvent -= OnSongStart;
 					multiplayerController._songStartSyncController.syncStartSuccessEvent += OnSongStart;
-					void OnSongStart(float introAnimationStartSyncTime) {
+					void OnSongStart(long introAnimationStartSyncTime) {
 						multiplayerController._songStartSyncController.syncStartSuccessEvent -= OnSongStart;
 						multiplayerController._playersManager.activeLocalPlayerFacade._gameSongController._beatmapCallbacksController._startFilterTime = multiplayerController.GetCurrentSongTime(multiplayerController.GetSongStartSyncTime(introAnimationStartSyncTime)) * menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameplayCoreSceneSetupData.gameplayModifiers.songSpeedMul + 1;
 					}

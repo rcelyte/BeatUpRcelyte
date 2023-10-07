@@ -1,5 +1,5 @@
 #!/bin/make
-VERSION := 0.6.0
+VERSION := 0.7.0
 
 .SILENT:
 
@@ -67,9 +67,52 @@ extern:
 BeatUpClient.dll: $(CSFILES) .obj/MakeThingsPublic.exe makefile
 	@echo "[csc $@]"
 	@mkdir -p .obj/
-	printf "{\"\$$schema\":\"https://raw.githubusercontent.com/bsmg/BSIPA-MetadataFileSchema/master/Schema.json\",\"author\":\"rcelyte\",\"description\":\"Tweaks and enhancements for enabling modded multiplayer\",\"gameVersion\":\"1.31.0_5291182070\",\"dependsOn\":{\"BSIPA\":\"^4.3.0\"},\"conflictsWith\":{\"BeatTogether\":\"*\"},\"loadBefore\":[\"MultiplayerCore\"],\"id\":\"BeatUpClient\",\"name\":\"BeatUpClient\",\"version\":\"$(VERSION)\",\"links\":{\"project-source\":\"https://github.com/rcelyte/BeatUpRcelyte/BeatUpClient\"}}" > .obj/manifest.json
+	printf "{\"\$$schema\":\"https://raw.githubusercontent.com/bsmg/BSIPA-MetadataFileSchema/master/Schema.json\",\"author\":\"rcelyte\",\"description\":\"Tweaks and enhancements for enabling modded multiplayer\",\"gameVersion\":\"1.32.0_6331131390\",\"dependsOn\":{\"BSIPA\":\"^4.3.0\"},\"conflictsWith\":{\"BeatTogether\":\"*\"},\"loadBefore\":[\"MultiplayerCore\"],\"id\":\"BeatUpClient\",\"name\":\"BeatUpClient\",\"version\":\"$(VERSION)\",\"links\":{\"project-source\":\"https://github.com/rcelyte/BeatUpRcelyte/BeatUpClient\"}}" > .obj/manifest.json
 	MONO_PATH=$(BSINSTALL)/Libs mono .obj/MakeThingsPublic.exe $(BSINSTALL)
-	csc -nologo -t:library -nostdlib -o+ -debug- -nullable+ -unsafe+ -w:4 -warnaserror+ -langversion:9 -define:MPCORE_SUPPORT $(CSFILES) -res:.obj/manifest.json,.manifest.json -res:data.bundle,BeatUpClient.data -out:"$@" -r:.obj/Refs/Libs/0Harmony.dll,.obj/Refs/Libs/Hive.Versioning.dll,.obj/Refs/Libs/Mono.Cecil.dll,.obj/Refs/Libs/MonoMod.RuntimeDetour.dll,.obj/Refs/Libs/MonoMod.Utils.dll,.obj/Refs/Libs/Newtonsoft.Json.dll,.obj/Refs/Managed/BeatmapCore.dll,.obj/Refs/Managed/BGNet.dll,.obj/Refs/Managed/Colors.dll,.obj/Refs/Managed/GameplayCore.dll,.obj/Refs/Managed/HMLib.dll,.obj/Refs/Managed/HMUI.dll,.obj/Refs/Managed/IPA.Loader.dll,.obj/Refs/Managed/LiteNetLib.dll,.obj/Refs/Managed/Main.dll,.obj/Refs/Managed/mscorlib.dll,.obj/Refs/Managed/netstandard.dll,.obj/Refs/Managed/Polyglot.dll,.obj/Refs/Libs/System.IO.Compression.dll,.obj/Refs/Managed/UnityEngine.AssetBundleModule.dll,.obj/Refs/Managed/UnityEngine.AudioModule.dll,.obj/Refs/Managed/UnityEngine.CoreModule.dll,.obj/Refs/Managed/UnityEngine.ImageConversionModule.dll,.obj/Refs/Managed/UnityEngine.UI.dll,.obj/Refs/Managed/UnityEngine.UIModule.dll,.obj/Refs/Managed/UnityEngine.UnityWebRequestAudioModule.dll,.obj/Refs/Managed/UnityEngine.UnityWebRequestModule.dll,.obj/Refs/Managed/Unity.TextMeshPro.dll,.obj/Refs/Managed/VRUI.dll,.obj/Refs/Managed/Zenject.dll,.obj/Refs/Managed/Zenject-usage.dll,.obj/Refs/Plugins/MultiplayerCore.dll,.obj/Refs/Plugins/SiraUtil.dll,.obj/Refs/Plugins/SongCore.dll,.obj/Refs/Managed/Unity.ResourceManager.dll,.obj/Refs/Managed/System.Net.Http.dll,.obj/Refs/Managed/Ignorance.dll
+	csc -nologo -t:library -nostdlib -o+ -debug- -nullable+ -unsafe+ -w:4 -warnaserror+ -langversion:9 $(CSFILES) \
+		-res:.obj/manifest.json,.manifest.json -res:data.bundle,BeatUpClient.data -out:"$@" \
+		-r:.obj/Refs/Libs/0Harmony.dll \
+		-r:.obj/Refs/Libs/Hive.Versioning.dll \
+		-r:.obj/Refs/Libs/Mono.Cecil.dll \
+		-r:.obj/Refs/Libs/MonoMod.RuntimeDetour.dll \
+		-r:.obj/Refs/Libs/MonoMod.Utils.dll \
+		-r:.obj/Refs/Libs/Newtonsoft.Json.dll \
+		-r:.obj/Refs/Managed/BeatmapCore.dll \
+		-r:.obj/Refs/Managed/BGNet.dll \
+		-r:.obj/Refs/Managed/Colors.dll \
+		-r:.obj/Refs/Managed/GameplayCore.dll \
+		-r:.obj/Refs/Managed/HMLib.dll \
+		-r:.obj/Refs/Managed/HMUI.dll \
+		-r:.obj/Refs/Managed/IPA.Loader.dll \
+		-r:.obj/Refs/Managed/LiteNetLib.dll \
+		-r:.obj/Refs/Managed/Main.dll \
+		-r:.obj/Refs/Managed/mscorlib.dll \
+		-r:.obj/Refs/Managed/netstandard.dll \
+		-r:.obj/Refs/Managed/Polyglot.dll \
+		-r:.obj/Refs/Libs/System.IO.Compression.dll \
+		-r:.obj/Refs/Managed/UnityEngine.AssetBundleModule.dll \
+		-r:.obj/Refs/Managed/UnityEngine.AudioModule.dll \
+		-r:.obj/Refs/Managed/UnityEngine.CoreModule.dll \
+		-r:.obj/Refs/Managed/UnityEngine.ImageConversionModule.dll \
+		-r:.obj/Refs/Managed/UnityEngine.UI.dll \
+		-r:.obj/Refs/Managed/UnityEngine.UIModule.dll \
+		-r:.obj/Refs/Managed/UnityEngine.UnityWebRequestAudioModule.dll \
+		-r:.obj/Refs/Managed/UnityEngine.UnityWebRequestModule.dll \
+		-r:.obj/Refs/Managed/Unity.TextMeshPro.dll \
+		-r:.obj/Refs/Managed/VRUI.dll \
+		-r:.obj/Refs/Managed/Zenject.dll \
+		-r:.obj/Refs/Managed/Zenject-usage.dll \
+		-r:.obj/Refs/Plugins/MultiplayerCore.dll \
+		-r:.obj/Refs/Plugins/SiraUtil.dll \
+		-r:.obj/Refs/Plugins/SongCore.dll \
+		-r:.obj/Refs/Managed/Unity.ResourceManager.dll \
+		-r:.obj/Refs/Managed/System.Net.Http.dll \
+		-r:.obj/Refs/Managed/Ignorance.dll \
+		-r:.obj/Refs/Managed/BGLib.AppFlow.dll \
+		-r:.obj/Refs/Managed/BGLib.DotnetExtension.dll \
+		-r:.obj/Refs/Managed/BGLib.UnityExtension.dll \
+		-r:.obj/Refs/Managed/Networking.dll \
+		-r:.obj/Refs/Managed/Menu.CommonLib.dll
 
 AudioPluginMsHRTF.dll: cs/loader.c BeatUpClient.dll
 	@echo "[cc $@]"

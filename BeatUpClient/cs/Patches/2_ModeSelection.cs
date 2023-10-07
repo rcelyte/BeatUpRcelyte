@@ -62,6 +62,7 @@ static partial class BeatUpClient {
 		self.SetTitle(Polyglot.Localization.Get("LABEL_CONNECTION_ERROR"), HMUI.ViewController.AnimationType.In);
 	}
 
+	static bool currentServerIsBeatUp = false;
 	static UnityEngine.GameObject[]? BeatUpServerUI = null;
 	static (UnityEngine.Sprite normal, UnityEngine.Sprite highlight, UnityEngine.Sprite pressed, UnityEngine.Sprite disabled) createButtonSprites, heartButtonSprites;
 	static HMUI.ButtonSpriteSwap? spriteSwap = null;
@@ -70,15 +71,15 @@ static partial class BeatUpClient {
 		ShowLoading(null);
 		self._maintenanceMessageText.richText = false;
 		self._maintenanceMessageText.transform.localPosition = new UnityEngine.Vector3(0, -5, 0);
-		bool isBeatUp = multiplayerStatusData?.minimumAppVersion?.EndsWith("b2147483647") == true;
+		currentServerIsBeatUp = multiplayerStatusData?.minimumAppVersion?.EndsWith("b2147483647") == true;
 		if(BeatUpServerUI != null)
 			foreach(UnityEngine.GameObject element in BeatUpServerUI)
-				element.SetActive(isBeatUp);
+				element.SetActive(currentServerIsBeatUp);
 		UnityEngine.Transform? createButton = self.transform.Find("Buttons/CreateServerButton");
 		if(createButton != null) {
 			if(spriteSwap != null)
 				(spriteSwap._normalStateSprite, spriteSwap._highlightStateSprite, spriteSwap._pressedStateSprite, spriteSwap._disabledStateSprite) =
-					isBeatUp ? heartButtonSprites : createButtonSprites;
+					currentServerIsBeatUp ? heartButtonSprites : createButtonSprites;
 			createButton.parent.gameObject.SetActive(true);
 		}
 		Base(self, multiplayerStatusData);
