@@ -41,7 +41,7 @@ static class BeatUpClient_Migration {
 			if(dismissed)
 				return;
 			TryFinishMigration();
-			self.DismissViewController(self._simpleDialogPromptViewController, HMUI.ViewController.AnimationDirection.Vertical, () =>
+			_ = self.DismissViewController(self._simpleDialogPromptViewController, HMUI.ViewController.AnimationDirection.Vertical, () =>
 				self.HandleMainMenuViewControllerDidFinish(viewController, MainMenuViewController.MenuButton.Multiplayer));
 		});
 	}
