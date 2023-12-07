@@ -67,7 +67,19 @@ extern:
 BeatUpClient.dll: $(CSFILES) .obj/MakeThingsPublic.exe makefile
 	@echo "[csc $@]"
 	@mkdir -p .obj/
-	printf "{\"\$$schema\":\"https://raw.githubusercontent.com/bsmg/BSIPA-MetadataFileSchema/master/Schema.json\",\"author\":\"rcelyte\",\"description\":\"Tweaks and enhancements for enabling modded multiplayer\",\"gameVersion\":\"1.33.0_6589161869\",\"dependsOn\":{\"BSIPA\":\"^4.3.0\"},\"conflictsWith\":{\"BeatTogether\":\"*\"},\"loadBefore\":[\"MultiplayerCore\"],\"id\":\"BeatUpClient\",\"name\":\"BeatUpClient\",\"version\":\"$(VERSION)\",\"links\":{\"project-source\":\"https://github.com/rcelyte/BeatUpRcelyte/BeatUpClient\"}}" > .obj/manifest.json
+	printf "{\n\
+		\"\$$schema\": \"https://raw.githubusercontent.com/bsmg/BSIPA-MetadataFileSchema/master/Schema.json\",\n\
+		\"author\": \"rcelyte\",\n\
+		\"description\": \"Tweaks and enhancements for enabling modded multiplayer\",\n\
+		\"gameVersion\": \"1.34.0_6944535938\",\n\
+		\"dependsOn\": {\"BSIPA\": \"^4.3.0\"},\n\
+		\"conflictsWith\": {\"BeatTogether\": \"*\"},\n\
+		\"loadBefore\": [\"MultiplayerCore\"],\n\
+		\"id\": \"BeatUpClient\",\n\
+		\"name\": \"BeatUpClient\",\n\
+		\"version\": \"$(VERSION)\",\n\
+		\"links\": {\"project-source\": \"https://github.com/rcelyte/BeatUpRcelyte/BeatUpClient\"}\n\
+	}" > .obj/manifest.json
 	MONO_PATH=$(BSINSTALL)/Libs mono .obj/MakeThingsPublic.exe $(BSINSTALL)
 	csc -nologo -t:library -nostdlib -o+ -debug- -nullable+ -unsafe+ -w:4 -warnaserror+ -langversion:9 $(CSFILES) \
 		-res:.obj/manifest.json,.manifest.json -res:data.bundle,BeatUpClient.data -out:"$@" \

@@ -15,6 +15,7 @@ struct GraphConnectCookie {
 	struct HttpContext *http;
 	struct String secret;
 	struct BeatmapLevelSelectionMask selectionMask;
+	bool shortMask;
 };
 
 int32_t status_bind_tcp(uint16_t port, uint32_t backlog);

@@ -35,6 +35,7 @@ u32 GameplayModifierMask
 n BitMask128
 	u64 d0
 	u64 d1
+// TODO: 1.34.0 extends this to 256 bits but retains the same protocol version as older game versions; need to test if this breaks cross-version
 n SongPackMask
 	BitMask128 bloomFilter
 n BeatmapLevelSelectionMask

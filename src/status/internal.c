@@ -175,7 +175,7 @@ static UserAgent ProbeHeaders(const char *buf, const char *end, size_t *contentL
 static void status_status(struct HttpContext *http, bool isGame) {
 	char msg[65536], *msg_end = msg;
 	PUT("{\"minimum_app_version\":\"1.19.0%s\""
-	    ",\"maximumAppVersion\":\"1.33.0_🅱️\""
+	    ",\"maximumAppVersion\":\"1.34.0_🅱️\""
 	    ",\"status\":%u", isGame ? "b2147483647" : STATUS_APPVER_POSTFIX, TEST_maintenanceStartTime != 0);
 	if(TEST_maintenanceStartTime) {
 		PUT(",\"maintenance_start_time\":%" PRIu64, TEST_maintenanceStartTime);
@@ -220,11 +220,12 @@ static void status_graph(struct HttpContext *http, struct HttpRequest req, struc
 			for(const char *it = &version.data[2], *const it_end = sep ? sep : &version.data[version.length]; it < it_end; ++it)
 				versionBE = versionBE << 8 | *(const uint8_t*)it;
 			switch(versionBE) {
-				case '19.1': connectInfo.protocolVersion = 7; break;
+				case '19.1': connectInfo.protocolVersion = 7; state.shortMask = true; break;
 				case '20.0': case '21.0': case '22.0': case '22.1': case '23.0': case '24.0': case '24.1': case '25.0': case '25.1':
 				case '26.0': case '27.0': case '28.0': case '29.0': case '29.1': case '29.4': case '30.0': case '30.2': case '31.0':
-				case '31.1': connectInfo.protocolVersion = 8; break;
-				case '32.0': case '33.0': connectInfo.protocolVersion = 9; break;
+				case '31.1': connectInfo.protocolVersion = 8; state.shortMask = true; break;
+				case '32.0': case '33.0': state.shortMask = true; [[fallthrough]];
+				case '34.0': connectInfo.protocolVersion = 9; break;
 				default: uprintf("Unexpected game version: %.*s\n", version.length, version.data);
 			}
 			#pragma GCC diagnostic pop
@@ -297,12 +298,13 @@ void status_graph_resp(struct DataView cookieView, const struct WireGraphConnect
 	}
 	char msg[65536], *msg_end = msg;
 	const MultiplayerPlacementErrorCode result = (resp != NULL) ? resp->result : MultiplayerPlacementErrorCode_MatchmakingTimeout;
+	const char *const packMask = state->shortMask ? "/////////////////////w" : "//////////////////////////////////////////8";
 	if(result != MultiplayerPlacementErrorCode_Success) {
 		PUT("{\"error_code\":%hhu,\"player_session_info\":{\"game_session_id\":\"\",\"port\":-1,\"dns_name\":\"\",\"player_session_id\":\"\","
 		    "\"private_game_code\":\"\",\"gameplay_server_configuration\":{\"max_player_count\":5,\"discovery_policy\":1,\"invite_policy\":0,"
 		    "\"gameplay_server_mode\":1,\"song_selection_mode\":2,\"gameplay_server_control_settings\":3},\"beatmap_level_selection_mask\":{"
-		    "\"difficulties\":31,\"modifiers\":65535,\"song_packs\":\"/////////////////////w\"},\"private_game_secret\":\"\"},\"poll_interval_ms\":-1}",
-		    result);
+		    "\"difficulties\":31,\"modifiers\":65535,\"song_packs\":\"%s\"},\"private_game_secret\":\"\"},\"poll_interval_ms\":-1}",
+		    result, packMask);
 	} else {
 		uprintf("TODO: encode songPackMask\n");
 		PUT("{"
@@ -317,7 +319,7 @@ void status_graph_resp(struct DataView cookieView, const struct WireGraphConnect
 					"\"beatmap_level_selection_mask\":{"
 						"\"difficulties\":%hhu," // state->selectionMask.difficulties
 						"\"modifiers\":%u," // state->selectionMask.modifiers
-						"\"song_packs\":\"/////////////////////w\""
+						"\"song_packs\":\"%s\"" // packMask
 					"},"
 					"\"gameplay_server_configuration\":{"
 						"\"max_player_count\":%d," // resp->configuration.maxPlayerCount
@@ -338,6 +340,7 @@ void status_graph_resp(struct DataView cookieView, const struct WireGraphConnect
 			state->secret.length, state->secret.data,
 			state->selectionMask.difficulties,
 			state->selectionMask.modifiers,
+			packMask,
 			resp->configuration.maxPlayerCount,
 			resp->configuration.discoveryPolicy,
 			resp->configuration.invitePolicy,
