@@ -595,6 +595,7 @@ static const char *ServerState_toString(ServerState state) {
 	return "???";
 }
 
+[[gnu::format(printf, 4, 0)]] static void chat(struct InstanceContext *const ctx, struct Room *const room, const struct InstanceSession *const session, const char *const format, ...);
 static void room_set_state(struct InstanceContext *ctx, struct Room *room, ServerState state) {
 	uprintf("state %s -> %s\n", ServerState_toString(room->state), ServerState_toString(state));
 	if(STATE_EDGE(room->state, state, ServerState_Lobby)) {
@@ -725,8 +726,10 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 		case ServerState_Game_LoadingSong: {
 			if(room->state & ServerState_Game_LoadingScene) {
 				room->game.activePlayers = CounterP_and(room->game.activePlayers, room->game.loadingScene.isLoaded);
-				if(room_try_finish(ctx, room))
+				if(room_try_finish(ctx, room)) {
+					chat(ctx, room, NULL, "All players failed to load gameplay scene");
 					return;
+				}
 			}
 			mbedtls_ctr_drbg_random(&ctx->net.ctr_drbg, (uint8_t*)room->global.sessionId, sizeof(room->global.sessionId));
 			room->game.loadingSong.isLoaded = COUNTERP_CLEAR;
@@ -736,8 +739,10 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 		case ServerState_Game_Gameplay: {
 			if(room->state & ServerState_Game_LoadingSong) {
 				room->game.activePlayers = CounterP_and(room->game.activePlayers, room->game.loadingSong.isLoaded);
-				if(room_try_finish(ctx, room))
+				if(room_try_finish(ctx, room)) {
+					chat(ctx, room, NULL, "All players failed to load song");
 					return;
+				}
 			}
 			room->game.startTime = room_get_syncTime(room) + 250;
 			break;
@@ -1167,8 +1172,6 @@ static bool ChatCommand_readBool(const char **cmd, const char *const cmd_end, bo
 	return true;
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
 static void chat(struct InstanceContext *const ctx, struct Room *const room, const struct InstanceSession *const session, const char *const format, ...) {
 	va_list args;
 	va_start(args, format);
@@ -1201,7 +1204,6 @@ static void chat(struct InstanceContext *const ctx, struct Room *const room, con
 		instance_send(ctx, &room->players[id], resp, (uint32_t)(resp_end - resp), true);
 	}
 }
-#pragma GCC diagnostic pop
 
 static void handle_ChatCommand(struct InstanceContext *const ctx, struct Room *const room, const struct InstanceSession *session, const char *cmd, const char *const cmd_end) {
 	/* TODO: help + command details

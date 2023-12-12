@@ -175,7 +175,7 @@ static UserAgent ProbeHeaders(const char *buf, const char *end, size_t *contentL
 static void status_status(struct HttpContext *http, bool isGame) {
 	char msg[65536], *msg_end = msg;
 	PUT("{\"minimum_app_version\":\"1.19.0%s\""
-	    ",\"maximumAppVersion\":\"1.34.0_🅱️\""
+	    ",\"maximumAppVersion\":\"1.34.2_🅱️\""
 	    ",\"status\":%u", isGame ? "b2147483647" : STATUS_APPVER_POSTFIX, TEST_maintenanceStartTime != 0);
 	if(TEST_maintenanceStartTime) {
 		PUT(",\"maintenance_start_time\":%" PRIu64, TEST_maintenanceStartTime);
@@ -225,7 +225,7 @@ static void status_graph(struct HttpContext *http, struct HttpRequest req, struc
 				case '26.0': case '27.0': case '28.0': case '29.0': case '29.1': case '29.4': case '30.0': case '30.2': case '31.0':
 				case '31.1': connectInfo.protocolVersion = 8; state.shortMask = true; break;
 				case '32.0': case '33.0': state.shortMask = true; [[fallthrough]];
-				case '34.0': connectInfo.protocolVersion = 9; break;
+				case '34.0': case '34.2': connectInfo.protocolVersion = 9; break;
 				default: uprintf("Unexpected game version: %.*s\n", version.length, version.data);
 			}
 			#pragma GCC diagnostic pop

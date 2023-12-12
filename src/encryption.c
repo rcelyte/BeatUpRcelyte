@@ -232,7 +232,7 @@ uint32_t EncryptionState_decrypt(struct EncryptionState *state, const struct SS 
 		return (res < 0) ? 0 : (uint32_t)res;
 	}
 	struct PacketEncryptionLayer header;
-	if(!pkt_read(&header, &raw, raw_end, PV_LEGACY_DEFAULT))
+	if(!pkt_read(&header, &raw, raw_end, (struct PacketContext){0}))
 		return 0;
 	uint32_t length = (uint32_t)(raw_end - raw);
 	if(!header.encrypted) {
@@ -262,7 +262,7 @@ uint32_t EncryptionState_decrypt(struct EncryptionState *state, const struct SS 
 uint32_t EncryptionState_encrypt(struct EncryptionState *state, const struct SS *sendAddr, mbedtls_ctr_drbg_context *ctr_drbg, enum EncryptMode mode, const uint8_t *restrict buf, uint32_t buf_len, uint8_t out[static 1536]) {
 	switch(mode) {
 		case EncryptMode_None: {
-			uint32_t header_len = (uint32_t)pkt_write_c((uint8_t*[]){out}, &out[1536], PV_LEGACY_DEFAULT, PacketEncryptionLayer, {
+			uint32_t header_len = (uint32_t)pkt_write_c((uint8_t*[]){out}, &out[1536], (struct PacketContext){0}, PacketEncryptionLayer, {
 				.encrypted = false,
 			});
 			memcpy(&out[header_len], buf, buf_len);
@@ -276,7 +276,7 @@ uint32_t EncryptionState_encrypt(struct EncryptionState *state, const struct SS 
 				.sequenceId = ++state->bgnet.outboundSequence,
 			};
 			mbedtls_ctr_drbg_random(ctr_drbg, header.iv, sizeof(header.iv));
-			uint32_t header_len = (uint32_t)pkt_write(&header, (uint8_t*[]){out}, &out[1536], PV_LEGACY_DEFAULT);
+			uint32_t header_len = (uint32_t)pkt_write(&header, (uint8_t*[]){out}, &out[1536], (struct PacketContext){0});
 			uint8_t cap[16 + MBEDTLS_MD_MAX_SIZE], cap_len = buf_len & 15;
 			uint32_t cut_len = buf_len - cap_len;
 			memcpy(cap, &buf[cut_len], cap_len);
