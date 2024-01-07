@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <assert.h>
+#include "code_filter.h"
 
 struct PoolHost {
 	struct PoolHost *next;
@@ -119,15 +120,25 @@ static struct PoolHost *_pool_handle_new(uint32_t *room_out, ServerCode code) {
 }
 
 // TODO: hash table lookups
-struct PoolHost *pool_handle_new(uint32_t *room_out, bool random) {
-	if(random) {
-		uprintf("TODO: randomized room codes\n");
+struct PoolHost *pool_handle_new(uint32_t *const room_out, mbedtls_ctr_drbg_context *const ctr_drbg) {
+	assert(ServerCode_NONE == 0);
+	if(ctr_drbg == NULL) {
+		for(ServerCode code = 1, end = StringToServerCode("ZZ", 2); code <= end; ++code)
+			if(!pool_handle_lookup((uint32_t[]){0}, code))
+				return _pool_handle_new(room_out, code);
+		uprintf("All public room codes in use\n");
 		return NULL;
 	}
-	assert(ServerCode_NONE == 0);
-	for(ServerCode code = 1; code < 257; ++code)
-		if(!pool_handle_lookup((uint32_t[]){0}, code))
-			return _pool_handle_new(room_out, code);
+	for(uint32_t attempt = 0; attempt < 192; ++attempt) {
+		uint64_t code = 0;
+		mbedtls_ctr_drbg_random(ctr_drbg, (uint8_t*)&code, sizeof(code));
+		code = (code % StringToServerCode("ZZZZZ", 5)) + 1;
+		if(code / 64 < lengthof(RoomCodeFilter) && (RoomCodeFilter[code / 64] & UINT64_C(1) << (code % 64)) != 0)
+			continue;
+		if(!pool_handle_lookup((uint32_t[]){0}, (ServerCode)code))
+			return _pool_handle_new(room_out, (ServerCode)code);
+	}
+	uprintf("Failed to find an available room code\n");
 	return NULL;
 }
 

@@ -486,7 +486,7 @@ struct GraphConnectCookie {
 	WireCookie cookie;
 };
 
-static ConnectToServerResponse_Result SendWireSessionAlloc(struct WireSessionAlloc *allocInfo, struct ConnectCookie *state, size_t state_len, struct GameplayServerConfiguration configuration, ServerCode code) {
+static ConnectToServerResponse_Result SendWireSessionAlloc(struct WireSessionAlloc *const allocInfo, struct ConnectCookie *const state, const size_t state_len, const struct GameplayServerConfiguration configuration, const ServerCode code, mbedtls_ctr_drbg_context *const ctr_drbg) {
 	state->room = ~UINT32_C(0);
 	if(allocInfo->protocolVersion >= 10) {
 		uprintf("Connect to Server Error: Game version too new\n");
@@ -500,7 +500,7 @@ static ConnectToServerResponse_Result SendWireSessionAlloc(struct WireSessionAll
 			uprintf("Connect to Server Error: Quickplay not supported\n");
 			return ConnectToServerResponse_Result_NoAvailableDedicatedServers;
 		}
-		struct PoolHost *host = pool_handle_new(&state->room, false);
+		struct PoolHost *host = pool_handle_new(&state->room, (configuration.discoveryPolicy == DiscoveryPolicy_Public) ? NULL : ctr_drbg);
 		if(host == NULL) {
 			uprintf("Connect to Server Error: pool_handle_new() failed\n");
 			return ConnectToServerResponse_Result_NoAvailableDedicatedServers;
@@ -632,7 +632,7 @@ static void handle_WireGraphConnect(struct LocalMasterContext *ctx, WireCookie c
 		.direct = true,
 		.protocolVersion = req->protocolVersion,
 	};
-	const ConnectToServerResponse_Result result = SendWireSessionAlloc(&allocInfo, &state.base, sizeof(state), req->configuration, req->code);
+	const ConnectToServerResponse_Result result = SendWireSessionAlloc(&allocInfo, &state.base, sizeof(state), req->configuration, req->code, &ctx->net.ctr_drbg);
 	if(result == ConnectToServerResponse_Result_Success)
 		return;
 	handle_WireSessionAllocResp_graph(ctx, NULL, &state, &(const struct WireSessionAllocResp){
@@ -738,7 +738,7 @@ static void master_onWireMessage(struct WireContext *wire, struct WireLink *link
 }
 
 // TODO: deduplicate requests
-static void handle_ConnectToServerRequest(struct NetContext *net, struct MasterSession *session, const struct ConnectToServerRequest *req) {
+static void handle_ConnectToServerRequest(struct NetContext *const net, struct MasterSession *const session, const struct ConnectToServerRequest *const req) {
 	master_send_ack(net, session, MessageType_UserMessage, req->base.base.requestId);
 	struct LocalConnectCookie state = {
 		.base.cookieType = MasterCookieType_LocalConnect,
@@ -759,7 +759,7 @@ static void handle_ConnectToServerRequest(struct NetContext *net, struct MasterS
 		.random = req->base.random,
 		.publicKey = req->base.publicKey,
 	};
-	const ConnectToServerResponse_Result result = SendWireSessionAlloc(&allocInfo, &state.base, sizeof(state), req->configuration, req->code);
+	const ConnectToServerResponse_Result result = SendWireSessionAlloc(&allocInfo, &state.base, sizeof(state), req->configuration, req->code, &net->ctr_drbg);
 	if(result == ConnectToServerResponse_Result_Success)
 		return;
 	handle_WireSessionAllocResp_local(net, session, NULL, &state, &(const struct WireSessionAllocResp){
@@ -960,7 +960,7 @@ static void *master_handler(struct LocalMasterContext *ctx) {
 	return 0;
 }
 
-void MasterContext_init(struct MasterContext *ctx, mbedtls_ctr_drbg_context *ctr_drbg) {
+void MasterContext_init(struct MasterContext *const ctx, mbedtls_ctr_drbg_context *const ctr_drbg) {
 	*ctx = (struct MasterContext){0};
 	mbedtls_ssl_cookie_init(&ctx->cookie);
 	mbedtls_ssl_config_init(&ctx->config);

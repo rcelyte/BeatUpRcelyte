@@ -657,6 +657,7 @@ enum {
 	MpCoreType_CustomAvatarPacket,
 	MpCoreType_MpcCapabilitiesPacket,
 	MpCoreType_MpPlayerData,
+	MpCoreType_MpexPlayerData,
 };
 [[maybe_unused]] static const char *_reflect_MpCoreType(MpCoreType value) {
 	switch(value) {
@@ -665,6 +666,7 @@ enum {
 		case MpCoreType_CustomAvatarPacket: return "CustomAvatarPacket";
 		case MpCoreType_MpcCapabilitiesPacket: return "MpcCapabilitiesPacket";
 		case MpCoreType_MpPlayerData: return "MpPlayerData";
+		case MpCoreType_MpexPlayerData: return "MpexPlayerData";
 		default: return "???";
 	}
 }
@@ -1197,6 +1199,7 @@ struct BitMask128 {
 };
 struct SongPackMask {
 	struct BitMask128 bloomFilter;
+	struct BitMask128 bloomFilterHi;
 };
 struct BeatmapLevelSelectionMask {
 	BeatmapDifficultyMask difficulties;
@@ -1794,6 +1797,9 @@ struct MpPlayerData {
 	struct String platformId;
 	MpPlatform platform;
 };
+struct MpexPlayerData {
+	struct String nameColor;
+};
 struct CustomAvatarPacket {
 	struct String hash;
 	float scale;
@@ -1815,6 +1821,7 @@ struct MpCore {
 		struct CustomAvatarPacket customAvatar;
 		struct MpcCapabilitiesPacket mpcCapabilities;
 		struct MpPlayerData mpPlayerData;
+		struct MpexPlayerData mpexPlayerData;
 	};
 };
 struct SyncTime {

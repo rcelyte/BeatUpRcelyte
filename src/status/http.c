@@ -152,7 +152,7 @@ void HttpContext_respond(struct HttpContext *self, uint16_t code, const char *mi
 	}
 	char header[384] = {0};
 	const uint32_t header_len = (uint32_t)snprintf(header, sizeof(header), "HTTP/1.1 %s\r\nConnection: close\r\nContent-Length: %zu\r\nContent-Type: %s\r\n"
-		"X-Frame-Options: DENY\r\nX-Content-Type-Options: nosniff\r\nX-DNS-Prefetch-Control: off\r\nX-Robots-Tag: noindex\r\n\r\n", codeText, data_len, mime);
+		"X-Frame-Options: DENY\r\nX-Content-Type-Options: nosniff\r\nServer: beatupproto\r\nX-DNS-Prefetch-Control: off\r\nX-Robots-Tag: noindex\r\n\r\n", codeText, data_len, mime);
 	if(!SendData(self, (const uint8_t*)header, header_len))
 		SendData(self, data, data_len);
 }

@@ -37,18 +37,21 @@ bool pkt_debug(const char *errorMessage, const uint8_t *head, const uint8_t *end
 }
 
 ServerCode StringToServerCode(const char *in, uint32_t len) {
-	static const uint8_t readTable[128] = {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,27,28,29,30,31,32,33,34,35,36,1,1,1,1,1,1,1,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1};
+	static const uint8_t readTable[64] = {
+		1,11,9,12,1,13,14,15,16,2,17,18,19,20,21,1,22,23,24,25,26,27,28,29,30,31,32,
+		1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,3,4,5,6,7,8,9,10,1,1,1,1,1,1,
+	};
 	ServerCode out = 0;
 	if(len <= 5)
-		for(uint32_t i = 0, fac = 1; i < len; ++i, fac *= 36)
-			out += readTable[in[i] & 127] * fac;
+		for(uint32_t i = 0, fac = 1; i < len; ++i, fac *= 32)
+			out += readTable[in[i] & 63] * fac;
 	return out;
 }
 
 char *ServerCodeToString(char *out, ServerCode in) {
 	char *s = out;
-	for(; in; in /= 36)
-		*s++ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--in % 36];
+	for(; in; in >>= 5)
+		*s++ = "0123456789ACEFGHJKLMNPQRSTUVWXYZ"[--in & 0x1f];
 	*s = 0;
 	return out;
 }
@@ -89,6 +92,7 @@ MpCoreType MpCoreType_From(const struct String *type) {
 	if(String_is(*type, "CustomAvatarPacket")) return MpCoreType_CustomAvatarPacket;
 	if(String_is(*type, "MpcCapabilitiesPacket")) return MpCoreType_MpcCapabilitiesPacket;
 	if(String_is(*type, "MpPlayerData")) return MpCoreType_MpPlayerData;
+	if(String_is(*type, "MpexPlayerData")) return MpCoreType_MpexPlayerData;
 	uprintf("Unsupported MpCore custom packet: %.*s\n", type->length, type->data);
 	return (MpCoreType)0xffffffff;
 }

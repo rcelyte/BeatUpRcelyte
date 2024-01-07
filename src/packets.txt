@@ -38,6 +38,8 @@ n BitMask128
 // TODO: 1.34.0 extends this to 256 bits but retains the same protocol version as older game versions; need to test if this breaks cross-version
 n SongPackMask
 	BitMask128 bloomFilter
+	if($longPackMask)
+		BitMask128 bloomFilterHi
 n BeatmapLevelSelectionMask
 	BeatmapDifficultyMask difficulties
 	GameplayModifierMask modifiers
@@ -745,6 +747,8 @@ i32 MpPlatform
 n MpPlayerData
 	String platformId
 	MpPlatform platform
+n MpexPlayerData
+	String nameColor
 n CustomAvatarPacket
 	String hash
 	f32 scale
@@ -765,6 +769,7 @@ n MpCore
 		CustomAvatarPacket customAvatar
 		MpcCapabilitiesPacket mpcCapabilities
 		MpPlayerData mpPlayerData
+		MpexPlayerData mpexPlayerData
 n SyncTime
 	UTimestamp syncTime
 n PlayerConnected

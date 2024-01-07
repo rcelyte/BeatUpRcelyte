@@ -222,9 +222,15 @@ static void _pkt_BitMask128_write(const struct BitMask128 *restrict data, uint8_
 }
 static void _pkt_SongPackMask_read(struct SongPackMask *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_BitMask128_read(&data->bloomFilter, pkt, end, ctx);
+	if(ctx.longPackMask) {
+		_pkt_BitMask128_read(&data->bloomFilterHi, pkt, end, ctx);
+	}
 }
 static void _pkt_SongPackMask_write(const struct SongPackMask *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_BitMask128_write(&data->bloomFilter, pkt, end, ctx);
+	if(ctx.longPackMask) {
+		_pkt_BitMask128_write(&data->bloomFilterHi, pkt, end, ctx);
+	}
 }
 static void _pkt_BeatmapLevelSelectionMask_read(struct BeatmapLevelSelectionMask *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u8_read(&data->difficulties, pkt, end, ctx);
@@ -1724,6 +1730,12 @@ static void _pkt_MpPlayerData_write(const struct MpPlayerData *restrict data, ui
 	_pkt_String_write(&data->platformId, pkt, end, ctx);
 	_pkt_i32_write(&data->platform, pkt, end, ctx);
 }
+static void _pkt_MpexPlayerData_read(struct MpexPlayerData *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_String_read(&data->nameColor, pkt, end, ctx);
+}
+static void _pkt_MpexPlayerData_write(const struct MpexPlayerData *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_String_write(&data->nameColor, pkt, end, ctx);
+}
 static void _pkt_CustomAvatarPacket_read(struct CustomAvatarPacket *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_String_read(&data->hash, pkt, end, ctx);
 	_pkt_f32_read(&data->scale, pkt, end, ctx);
@@ -1766,6 +1778,7 @@ static void _pkt_MpCore_read(struct MpCore *restrict data, const uint8_t **pkt, 
 		case MpCoreType_CustomAvatarPacket: _pkt_CustomAvatarPacket_read(&data->customAvatar, pkt, end, ctx); break;
 		case MpCoreType_MpcCapabilitiesPacket: _pkt_MpcCapabilitiesPacket_read(&data->mpcCapabilities, pkt, end, ctx); break;
 		case MpCoreType_MpPlayerData: _pkt_MpPlayerData_read(&data->mpPlayerData, pkt, end, ctx); break;
+		case MpCoreType_MpexPlayerData: _pkt_MpexPlayerData_read(&data->mpexPlayerData, pkt, end, ctx); break;
 		default: uprintf("Invalid value for enum `MpCoreType`\n"); longjmp(fail, 1);
 	}
 }
@@ -1777,6 +1790,7 @@ static void _pkt_MpCore_write(const struct MpCore *restrict data, uint8_t **pkt,
 		case MpCoreType_CustomAvatarPacket: _pkt_CustomAvatarPacket_write(&data->customAvatar, pkt, end, ctx); break;
 		case MpCoreType_MpcCapabilitiesPacket: _pkt_MpcCapabilitiesPacket_write(&data->mpcCapabilities, pkt, end, ctx); break;
 		case MpCoreType_MpPlayerData: _pkt_MpPlayerData_write(&data->mpPlayerData, pkt, end, ctx); break;
+		case MpCoreType_MpexPlayerData: _pkt_MpexPlayerData_write(&data->mpexPlayerData, pkt, end, ctx); break;
 		default: uprintf("Invalid value for enum `MpCoreType`\n"); longjmp(fail, 1);
 	}
 }

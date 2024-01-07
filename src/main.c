@@ -13,7 +13,7 @@ static bool headless = false;
 
 static struct Config cfg;
 int main(int argc, const char *argv[]) {
-	// fprintf(stderr, "MAX CODE: %u\n", StringToServerCode("99999", 5));
+	// fprintf(stderr, "MAX CODE: %u\n", StringToServerCode("ZZZZZ", 5));
 	for(const char **arg = &argv[1]; arg < &argv[argc]; ++arg) {
 		if(strcmp(*arg, "--daemon") == 0) {
 			headless = 1;
