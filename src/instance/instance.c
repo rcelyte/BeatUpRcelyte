@@ -2185,7 +2185,7 @@ static struct String instance_room_get_managerId(struct Room *room, struct Insta
 static struct PacketContext instance_room_get_protocol(struct InstanceContext *ctx, uint32_t roomID) {
 	struct PacketContext version = PV_LEGACY_DEFAULT;
 	struct Room **room = instance_get_room(ctx, roomID);
-	if(room == NULL)
+	if(room == NULL || *room == NULL)
 		return (struct PacketContext){0};
 	struct CounterP ct = (*room)->playerSort;
 	uint32_t id = 0;
@@ -2321,7 +2321,12 @@ static void instance_room_join(struct InstanceContext *ctx, struct WireLink *lin
 		.cookie = cookie,
 	};
 	uint32_t roomProtocol = instance_room_get_protocol(ctx, req->base.room).protocolVersion;
-	if(roomProtocol != req->base.protocolVersion) {
+	if(roomProtocol == 0) {
+		// This condition can happen if a player joins while the WireRoomCloseNotify message still in flight,
+		//     or if the instance and master have desynced.
+		uprintf("Connect to Server Error: Room closed (room=%u, client=%u)\n", roomProtocol, req->base.protocolVersion);
+		r_alloc.roomJoinResp.base.result = ConnectToServerResponse_Result_InvalidCode;
+	} else if(roomProtocol != req->base.protocolVersion) {
 		uprintf("Connect to Server Error: Version mismatch (room=%u, client=%u)\n", roomProtocol, req->base.protocolVersion);
 		r_alloc.roomJoinResp.base.result = ConnectToServerResponse_Result_VersionMismatch;
 	} else {
