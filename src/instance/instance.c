@@ -250,7 +250,7 @@ static void mapPool_init(const char *filename) {
 	}
 	const uint8_t *raw_it = &raw[6];
 	for(instance_mapPool_len = 0; raw_it < raw_end; ++instance_mapPool_len)
-		if(!pkt_read(&(struct MpBeatmapPacket){.difficulty=0}, &raw_it, raw_end, (struct PacketContext){12, 6, 0, false, 64}))
+		if(!pkt_read(&(struct MpBeatmapPacket){.difficulty=0}, &raw_it, raw_end, (struct PacketContext){.netVersion = 12}))
 			break;
 	if(raw_it != raw_end) {
 		uprintf("Failed to read %s: corrupt data\n", filename);
@@ -263,7 +263,7 @@ static void mapPool_init(const char *filename) {
 	}
 	raw_it = &raw[6];
 	for(uint32_t i = 0; i < instance_mapPool_len; ++i)
-		pkt_read(&instance_mapPool[i], &raw_it, raw_end, (struct PacketContext){12, 6, 0, false, 64});
+		pkt_read(&instance_mapPool[i], &raw_it, raw_end, (struct PacketContext){.netVersion = 12});
 	return;
 	fail:
 	fclose(file);
@@ -1361,6 +1361,15 @@ static void session_refresh_stateHash(struct InstanceContext *ctx, struct Room *
 		room_set_state(ctx, room, ServerState_Lobby_Ready);
 }
 
+static struct String GameVersion_toString(const GameVersion version) {
+	struct String out = {0};
+	strncpy(out.data, reflect(GameVersion, version), lengthof(out.data));
+	for(; out.length < lengthof(out.data) && out.data[out.length] != 0; ++out.length)
+		if(out.data[out.length] == '_')
+			out.data[out.length] = '.';
+	return out;
+}
+
 #include "avatar_compat.h"
 static void handle_PlayerIdentity(struct InstanceContext *ctx, struct Room *room, struct InstanceSession *session, const struct PlayerIdentity *identity) {
 	session->stateHash = identity->playerState;
@@ -1404,6 +1413,10 @@ static void handle_PlayerIdentity(struct InstanceContext *ctx, struct Room *room
 			.type = InternalMessageType_PlayerIdentity,
 			.playerIdentity = *identity,
 		};
+		const struct MpPlayerData r_playerData = {
+			.platform = MpPlatform_Unknown, // TODO: platformId, platform
+			.gameVersion = GameVersion_toString(session->net.version.gameVersion),
+		};
 		#ifndef ENABLE_PASSTHROUGH_ENCRYPTION
 		memset(r_identity.playerIdentity.random.data, 0, r_identity.playerIdentity.random.length);
 		r_identity.playerIdentity.publicEncryptionKey.length = 0;
@@ -1424,6 +1437,12 @@ static void handle_PlayerIdentity(struct InstanceContext *ctx, struct Room *room
 			resp_end = resp;
 			pkt_write_c(&resp_end, endof(resp), room->players[id].net.version, RoutingHeader, {InstanceSession_connectionId(room->players, session), 0, false, 0});
 			pkt_serialize(&r_identity, &resp_end, endof(resp), room->players[id].net.version);
+			if(&room->players[id] != session && session->net.version.gameVersion >= GameVersion_1_29_4) {
+				SERIALIZE_MPCORE(&resp_end, endof(resp), room->players[id].net.version, {
+					.type = String_from("MpPlayerData"),
+					.mpPlayerData = r_playerData,
+				});
+			}
 			instance_send(ctx, &room->players[id], resp, (uint32_t)(resp_end - resp), true);
 		}
 	}
@@ -1703,6 +1722,15 @@ static void TryInitiateSession(struct InstanceContext *ctx, struct Room **room, 
 		#endif
 		pkt_write_c(&resp_end, endof(resp), session->net.version, RoutingHeader, {InstanceSession_connectionId((*room)->players, &(*room)->players[id]), 0, false, 0});
 		pkt_serialize(&r_identity, &resp_end, endof(resp), session->net.version);
+		if((*room)->players[id].net.version.gameVersion >= GameVersion_1_29_4) {
+			SERIALIZE_MPCORE(&resp_end, endof(resp), session->net.version, {
+				.type = String_from("MpPlayerData"),
+				.mpPlayerData = {
+					.platform = MpPlatform_Unknown, // TODO: platformId, platform
+					.gameVersion = GameVersion_toString((*room)->players[id].net.version.gameVersion),
+				},
+			});
+		}
 		instance_send(ctx, session, resp, (uint32_t)(resp_end - resp), true);
 	}
 
@@ -1842,7 +1870,6 @@ static void room_disconnect(struct InstanceContext *ctx, struct Room **room, str
 	if(ctx->master == NULL)
 		return;
 	WireLink_send(ctx->master, &(const struct WireMessage){
-		.cookie = 0,
 		.type = WireMessageType_WireRoomCloseNotify,
 		.roomCloseNotify.room = (uint32_t)indexof(*ctx->rooms, room),
 	});
@@ -2216,9 +2243,8 @@ static struct WireSessionAllocResp room_resolve_session(struct InstanceContext *
 		room->playerSort = tmp;
 	}
 	NetSession_init(&session->net, &ctx->net, (struct SS){.ss.ss_family = AF_UNSPEC}, &ctx->base.config);
-	session->net.version.direct = req->direct;
-	session->net.version.protocolVersion = (uint8_t)req->protocolVersion;
-	if(!req->direct)
+	session->net.version = req->clientVersion;
+	if(!req->clientVersion.direct)
 		session->net.clientRandom = req->random;
 	*session = (struct InstanceSession){
 		.net = session->net,
@@ -2235,7 +2261,7 @@ static struct WireSessionAllocResp room_resolve_session(struct InstanceContext *
 		.endPoint = instance_get_endpoint(&ctx->net, req->ipv4),
 		.playerSlot = (uint32_t)indexof(room->players, session),
 	};
-	if(!req->direct) {
+	if(!req->clientVersion.direct) {
 		resp.random = *NetKeypair_get_random(&session->net.keys);
 		if(NetKeypair_write_key(&session->net.keys, &ctx->net, &resp.publicKey)) {
 			uprintf("Connect to Server Error: NetKeypair_write_key() failed\n");
@@ -2324,10 +2350,10 @@ static void instance_room_join(struct InstanceContext *ctx, struct WireLink *lin
 	if(roomProtocol == 0) {
 		// This condition can happen if a player joins while the WireRoomCloseNotify message still in flight,
 		//     or if the instance and master have desynced.
-		uprintf("Connect to Server Error: Room closed (room=%u, client=%u)\n", roomProtocol, req->base.protocolVersion);
+		uprintf("Connect to Server Error: Room closed (room=%u, client=%u)\n", roomProtocol, req->base.clientVersion.protocolVersion);
 		r_alloc.roomJoinResp.base.result = ConnectToServerResponse_Result_InvalidCode;
-	} else if(roomProtocol != req->base.protocolVersion) {
-		uprintf("Connect to Server Error: Version mismatch (room=%u, client=%u)\n", roomProtocol, req->base.protocolVersion);
+	} else if(roomProtocol != req->base.clientVersion.protocolVersion) {
+		uprintf("Connect to Server Error: Version mismatch (room=%u, client=%u)\n", roomProtocol, req->base.clientVersion.protocolVersion);
 		r_alloc.roomJoinResp.base.result = ConnectToServerResponse_Result_VersionMismatch;
 	} else {
 		r_alloc.roomJoinResp.base = room_resolve_session(ctx, &req->base);

@@ -488,7 +488,7 @@ struct GraphConnectCookie {
 
 static ConnectToServerResponse_Result SendWireSessionAlloc(struct WireSessionAlloc *const allocInfo, struct ConnectCookie *const state, const size_t state_len, const struct GameplayServerConfiguration configuration, const ServerCode code, mbedtls_ctr_drbg_context *const ctr_drbg) {
 	state->room = ~UINT32_C(0);
-	if(allocInfo->protocolVersion >= 10) {
+	if(allocInfo->clientVersion.protocolVersion >= 10) {
 		uprintf("Connect to Server Error: Game version too new\n");
 		return ConnectToServerResponse_Result_VersionMismatch;
 	}
@@ -519,7 +519,7 @@ static ConnectToServerResponse_Result SendWireSessionAlloc(struct WireSessionAll
 	} else {
 		struct PoolHost *host = pool_handle_lookup(&state->room, code);
 		if(host == NULL) {
-			uprintf("Connect to Server Error: Room code does not exist\n");
+			uprintf("Connect to Server Error: Room '%s' does not exist\n", ServerCodeToString((char[8]){0}, code));
 			return ConnectToServerResponse_Result_InvalidCode;
 		}
 		allocInfo->room = state->room;
@@ -629,9 +629,11 @@ static void handle_WireGraphConnect(struct LocalMasterContext *ctx, WireCookie c
 		.secret = req->secret,
 		.userId = req->userId,
 		.ipv4 = true,
-		.direct = true,
-		.protocolVersion = req->protocolVersion,
+		.clientVersion = PV_LEGACY_DEFAULT,
 	};
+	allocInfo.clientVersion.direct = true;
+	allocInfo.clientVersion.protocolVersion = req->protocolVersion;
+	allocInfo.clientVersion.gameVersion = req->gameVersion;
 	const ConnectToServerResponse_Result result = SendWireSessionAlloc(&allocInfo, &state.base, sizeof(state), req->configuration, req->code, &ctx->net.ctr_drbg);
 	if(result == ConnectToServerResponse_Result_Success)
 		return;
@@ -754,11 +756,17 @@ static void handle_ConnectToServerRequest(struct NetContext *const net, struct M
 		.secret = req->secret,
 		.userId = req->base.userId,
 		.ipv4 = (state.addr.ss.ss_family != AF_INET6 || memcmp(state.addr.in6.sin6_addr.s6_addr, (const uint16_t[]){0,0,0,0,0,0xffff}, 12) == 0),
-		.direct = false,
-		.protocolVersion = session->net.version.protocolVersion,
+		.clientVersion = PV_LEGACY_DEFAULT,
 		.random = req->base.random,
 		.publicKey = req->base.publicKey,
 	};
+	allocInfo.clientVersion.direct = false;
+	allocInfo.clientVersion.protocolVersion = session->net.version.protocolVersion;
+	switch(session->net.version.protocolVersion) {
+		case 6: allocInfo.clientVersion.gameVersion = GameVersion_1_19_0; break;
+		case 7: allocInfo.clientVersion.gameVersion = GameVersion_1_19_1; break;
+		default: allocInfo.clientVersion.gameVersion = GameVersion_1_20_0;
+	}
 	const ConnectToServerResponse_Result result = SendWireSessionAlloc(&allocInfo, &state.base, sizeof(state), req->configuration, req->code, &net->ctr_drbg);
 	if(result == ConnectToServerResponse_Result_Success)
 		return;

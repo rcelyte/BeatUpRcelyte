@@ -2,6 +2,64 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
+typedef uint8_t GameVersion;
+enum {
+	GameVersion_1_19_0,
+	GameVersion_1_19_1,
+	GameVersion_1_20_0,
+	GameVersion_1_21_0,
+	GameVersion_1_22_0,
+	GameVersion_1_22_1,
+	GameVersion_1_23_0,
+	GameVersion_1_24_0,
+	GameVersion_1_24_1,
+	GameVersion_1_25_0,
+	GameVersion_1_25_1,
+	GameVersion_1_26_0,
+	GameVersion_1_27_0,
+	GameVersion_1_28_0,
+	GameVersion_1_29_0,
+	GameVersion_1_29_1,
+	GameVersion_1_29_4,
+	GameVersion_1_30_0,
+	GameVersion_1_30_2,
+	GameVersion_1_31_0,
+	GameVersion_1_31_1,
+	GameVersion_1_32_0,
+	GameVersion_1_33_0,
+	GameVersion_1_34_0,
+	GameVersion_1_34_2,
+};
+[[maybe_unused]] static const char *_reflect_GameVersion(GameVersion value) {
+	switch(value) {
+		case GameVersion_1_19_0: return "1_19_0";
+		case GameVersion_1_19_1: return "1_19_1";
+		case GameVersion_1_20_0: return "1_20_0";
+		case GameVersion_1_21_0: return "1_21_0";
+		case GameVersion_1_22_0: return "1_22_0";
+		case GameVersion_1_22_1: return "1_22_1";
+		case GameVersion_1_23_0: return "1_23_0";
+		case GameVersion_1_24_0: return "1_24_0";
+		case GameVersion_1_24_1: return "1_24_1";
+		case GameVersion_1_25_0: return "1_25_0";
+		case GameVersion_1_25_1: return "1_25_1";
+		case GameVersion_1_26_0: return "1_26_0";
+		case GameVersion_1_27_0: return "1_27_0";
+		case GameVersion_1_28_0: return "1_28_0";
+		case GameVersion_1_29_0: return "1_29_0";
+		case GameVersion_1_29_1: return "1_29_1";
+		case GameVersion_1_29_4: return "1_29_4";
+		case GameVersion_1_30_0: return "1_30_0";
+		case GameVersion_1_30_2: return "1_30_2";
+		case GameVersion_1_31_0: return "1_31_0";
+		case GameVersion_1_31_1: return "1_31_1";
+		case GameVersion_1_32_0: return "1_32_0";
+		case GameVersion_1_33_0: return "1_33_0";
+		case GameVersion_1_34_0: return "1_34_0";
+		case GameVersion_1_34_2: return "1_34_2";
+		default: return "???";
+	}
+}
 typedef uint32_t BeatmapDifficulty;
 enum {
 	BeatmapDifficulty_Easy,
@@ -1097,6 +1155,14 @@ enum {
 		default: return "???";
 	}
 }
+struct PacketContext {
+	uint8_t netVersion;
+	uint8_t protocolVersion;
+	uint8_t beatUpVersion;
+	GameVersion gameVersion;
+	bool direct;
+	uint16_t windowSize;
+};
 struct ByteArrayNetSerializable {
 	uint32_t length;
 	uint8_t data[8192];
@@ -1796,6 +1862,7 @@ struct MpBeatmapPacket {
 struct MpPlayerData {
 	struct String platformId;
 	MpPlatform platform;
+	struct String gameVersion;
 };
 struct MpexPlayerData {
 	struct String nameColor;
@@ -2300,8 +2367,7 @@ struct WireSessionAlloc {
 	struct String secret;
 	struct String userId;
 	bool ipv4;
-	bool direct;
-	uint32_t protocolVersion;
+	struct PacketContext clientVersion;
 	struct Cookie32 random;
 	struct ByteArrayNetSerializable publicKey;
 };
@@ -2339,6 +2405,7 @@ struct WireGraphConnect {
 	struct String userId;
 	struct GameplayServerConfiguration configuration;
 	uint32_t protocolVersion;
+	GameVersion gameVersion;
 };
 struct WireGraphConnectResp {
 	MultiplayerPlacementErrorCode result;
@@ -2367,8 +2434,7 @@ struct WireMessage {
 static const struct PacketContext PV_LEGACY_DEFAULT = {
 	.netVersion = 11,
 	.protocolVersion = 6,
-	.beatUpVersion = 0,
-	.windowSize = 0,
+	.gameVersion = GameVersion_1_19_0,
 };
 void _pkt_ServerConnectInfo_read(struct ServerConnectInfo *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 void _pkt_BeatUpMessage_read(struct BeatUpMessage *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);

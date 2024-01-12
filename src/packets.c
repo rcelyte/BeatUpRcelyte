@@ -48,7 +48,7 @@ ServerCode StringToServerCode(const char *in, uint32_t len) {
 	return out;
 }
 
-char *ServerCodeToString(char *out, ServerCode in) {
+char *ServerCodeToString(char out[8], ServerCode in) {
 	char *s = out;
 	for(; in; in >>= 5)
 		*s++ = "0123456789ACEFGHJKLMNPQRSTUVWXYZ"[--in & 0x1f];

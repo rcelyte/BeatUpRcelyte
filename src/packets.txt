@@ -35,10 +35,10 @@ u32 GameplayModifierMask
 n BitMask128
 	u64 d0
 	u64 d1
-// TODO: 1.34.0 extends this to 256 bits but retains the same protocol version as older game versions; need to test if this breaks cross-version
+// TODO: need to test if 1.32.0 and 1.33.0 clients break >=1.34.0 clients
 n SongPackMask
 	BitMask128 bloomFilter
-	if($longPackMask)
+	if($gameVersion >= GameVersion_1_34_0)
 		BitMask128 bloomFilterHi
 n BeatmapLevelSelectionMask
 	BeatmapDifficultyMask difficulties
@@ -747,6 +747,8 @@ i32 MpPlatform
 n MpPlayerData
 	String platformId
 	MpPlatform platform
+	if($gameVersion >= GameVersion_1_29_4)
+		String gameVersion
 n MpexPlayerData
 	String nameColor
 n CustomAvatarPacket

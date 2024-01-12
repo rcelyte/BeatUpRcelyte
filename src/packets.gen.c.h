@@ -1,3 +1,19 @@
+static void _pkt_PacketContext_read(struct PacketContext *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u8_read(&data->netVersion, pkt, end, ctx);
+	_pkt_u8_read(&data->protocolVersion, pkt, end, ctx);
+	_pkt_u8_read(&data->beatUpVersion, pkt, end, ctx);
+	_pkt_u8_read(&data->gameVersion, pkt, end, ctx);
+	_pkt_b_read(&data->direct, pkt, end, ctx);
+	_pkt_u16_read(&data->windowSize, pkt, end, ctx);
+}
+static void _pkt_PacketContext_write(const struct PacketContext *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_u8_write(&data->netVersion, pkt, end, ctx);
+	_pkt_u8_write(&data->protocolVersion, pkt, end, ctx);
+	_pkt_u8_write(&data->beatUpVersion, pkt, end, ctx);
+	_pkt_u8_write(&data->gameVersion, pkt, end, ctx);
+	_pkt_b_write(&data->direct, pkt, end, ctx);
+	_pkt_u16_write(&data->windowSize, pkt, end, ctx);
+}
 static void _pkt_ByteArrayNetSerializable_read(struct ByteArrayNetSerializable *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_vu32_read(&data->length, pkt, end, ctx);
 	_pkt_raw_read(data->data, pkt, end, ctx, check_overflow((uint32_t)(data->length), 8192, "ByteArrayNetSerializable.data"));
@@ -222,13 +238,13 @@ static void _pkt_BitMask128_write(const struct BitMask128 *restrict data, uint8_
 }
 static void _pkt_SongPackMask_read(struct SongPackMask *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_BitMask128_read(&data->bloomFilter, pkt, end, ctx);
-	if(ctx.longPackMask) {
+	if(ctx.gameVersion >= GameVersion_1_34_0) {
 		_pkt_BitMask128_read(&data->bloomFilterHi, pkt, end, ctx);
 	}
 }
 static void _pkt_SongPackMask_write(const struct SongPackMask *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_BitMask128_write(&data->bloomFilter, pkt, end, ctx);
-	if(ctx.longPackMask) {
+	if(ctx.gameVersion >= GameVersion_1_34_0) {
 		_pkt_BitMask128_write(&data->bloomFilterHi, pkt, end, ctx);
 	}
 }
@@ -1725,10 +1741,16 @@ static void _pkt_MpBeatmapPacket_write(const struct MpBeatmapPacket *restrict da
 static void _pkt_MpPlayerData_read(struct MpPlayerData *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_String_read(&data->platformId, pkt, end, ctx);
 	_pkt_i32_read(&data->platform, pkt, end, ctx);
+	if(ctx.gameVersion >= GameVersion_1_29_4) {
+		_pkt_String_read(&data->gameVersion, pkt, end, ctx);
+	}
 }
 static void _pkt_MpPlayerData_write(const struct MpPlayerData *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_String_write(&data->platformId, pkt, end, ctx);
 	_pkt_i32_write(&data->platform, pkt, end, ctx);
+	if(ctx.gameVersion >= GameVersion_1_29_4) {
+		_pkt_String_write(&data->gameVersion, pkt, end, ctx);
+	}
 }
 static void _pkt_MpexPlayerData_read(struct MpexPlayerData *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_String_read(&data->nameColor, pkt, end, ctx);
@@ -2777,9 +2799,8 @@ static void _pkt_WireSessionAlloc_read(struct WireSessionAlloc *restrict data, c
 	_pkt_String_read(&data->secret, pkt, end, ctx);
 	_pkt_String_read(&data->userId, pkt, end, ctx);
 	_pkt_b_read(&data->ipv4, pkt, end, ctx);
-	_pkt_b_read(&data->direct, pkt, end, ctx);
-	_pkt_u32_read(&data->protocolVersion, pkt, end, ctx);
-	if(!data->direct) {
+	_pkt_PacketContext_read(&data->clientVersion, pkt, end, ctx);
+	if(!data->clientVersion.direct) {
 		_pkt_Cookie32_read(&data->random, pkt, end, ctx);
 		_pkt_ByteArrayNetSerializable_read(&data->publicKey, pkt, end, ctx);
 	}
@@ -2789,9 +2810,8 @@ static void _pkt_WireSessionAlloc_write(const struct WireSessionAlloc *restrict 
 	_pkt_String_write(&data->secret, pkt, end, ctx);
 	_pkt_String_write(&data->userId, pkt, end, ctx);
 	_pkt_b_write(&data->ipv4, pkt, end, ctx);
-	_pkt_b_write(&data->direct, pkt, end, ctx);
-	_pkt_u32_write(&data->protocolVersion, pkt, end, ctx);
-	if(!data->direct) {
+	_pkt_PacketContext_write(&data->clientVersion, pkt, end, ctx);
+	if(!data->clientVersion.direct) {
 		_pkt_Cookie32_write(&data->random, pkt, end, ctx);
 		_pkt_ByteArrayNetSerializable_write(&data->publicKey, pkt, end, ctx);
 	}
@@ -2860,6 +2880,7 @@ static void _pkt_WireGraphConnect_read(struct WireGraphConnect *restrict data, c
 	_pkt_String_read(&data->userId, pkt, end, ctx);
 	_pkt_GameplayServerConfiguration_read(&data->configuration, pkt, end, ctx);
 	_pkt_u32_read(&data->protocolVersion, pkt, end, ctx);
+	_pkt_u8_read(&data->gameVersion, pkt, end, ctx);
 }
 static void _pkt_WireGraphConnect_write(const struct WireGraphConnect *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_write(&data->code, pkt, end, ctx);
@@ -2867,6 +2888,7 @@ static void _pkt_WireGraphConnect_write(const struct WireGraphConnect *restrict 
 	_pkt_String_write(&data->userId, pkt, end, ctx);
 	_pkt_GameplayServerConfiguration_write(&data->configuration, pkt, end, ctx);
 	_pkt_u32_write(&data->protocolVersion, pkt, end, ctx);
+	_pkt_u8_write(&data->gameVersion, pkt, end, ctx);
 }
 static void _pkt_WireGraphConnectResp_read(struct WireGraphConnectResp *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u8_read(&data->result, pkt, end, ctx);

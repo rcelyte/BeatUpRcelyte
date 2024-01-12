@@ -5,14 +5,6 @@
 #include <stdarg.h>
 #include <string.h>
 
-struct PacketContext {
-	uint8_t netVersion:5;
-	uint8_t protocolVersion:5;
-	uint8_t beatUpVersion:4;
-	bool longPackMask:1; // TODO: set
-	bool direct:1;
-	uint16_t windowSize;
-};
 struct String {
 	uint32_t length;
 	bool isNull;

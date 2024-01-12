@@ -1,3 +1,36 @@
+u8 GameVersion
+	1_19_0
+	1_19_1
+	1_20_0
+	1_21_0
+	1_22_0
+	1_22_1
+	1_23_0
+	1_24_0
+	1_24_1
+	1_25_0
+	1_25_1
+	1_26_0
+	1_27_0
+	1_28_0
+	1_29_0
+	1_29_1
+	1_29_4
+	1_30_0
+	1_30_2
+	1_31_0
+	1_31_1
+	1_32_0
+	1_33_0
+	1_34_0
+	1_34_2
+n PacketContext
+	u8 netVersion
+	u8 protocolVersion
+	u8 beatUpVersion
+	GameVersion gameVersion
+	b direct
+	u16 windowSize
 n ByteArrayNetSerializable
 	vu32 length
 	u8 data[8192, .length]

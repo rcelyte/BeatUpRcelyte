@@ -16,4 +16,4 @@ bool pkt_debug(const char *errorMessage, const uint8_t *head, const uint8_t *end
 
 static const ServerCode ServerCode_NONE = 0;
 ServerCode StringToServerCode(const char *in, uint32_t len);
-char *ServerCodeToString(char *out, ServerCode in);
+char *ServerCodeToString(char out[8], ServerCode in);

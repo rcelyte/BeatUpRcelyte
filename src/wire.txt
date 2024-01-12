@@ -9,9 +9,8 @@ n WireSessionAlloc
 	String secret
 	String userId
 	b ipv4
-	b direct
-	u32 protocolVersion
-	if(!.direct)
+	PacketContext clientVersion
+	if(!.clientVersion.direct)
 		Cookie32 random
 		ByteArrayNetSerializable publicKey
 n WireSessionAllocResp
@@ -50,6 +49,7 @@ n WireGraphConnect
 	String userId
 	GameplayServerConfiguration configuration
 	u32 protocolVersion
+	GameVersion gameVersion
 n WireGraphConnectResp
 	MultiplayerPlacementErrorCode result
 	if(.result == MultiplayerPlacementErrorCode_Success)

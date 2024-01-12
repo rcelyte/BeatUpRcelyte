@@ -220,14 +220,41 @@ static void status_graph(struct HttpContext *http, struct HttpRequest req, struc
 			for(const char *it = &version.data[2], *const it_end = sep ? sep : &version.data[version.length]; it < it_end; ++it)
 				versionBE = versionBE << 8 | *(const uint8_t*)it;
 			switch(versionBE) {
-				case '19.1': connectInfo.protocolVersion = 7; state.shortMask = true; break;
-				case '20.0': case '21.0': case '22.0': case '22.1': case '23.0': case '24.0': case '24.1': case '25.0': case '25.1':
-				case '26.0': case '27.0': case '28.0': case '29.0': case '29.1': case '29.4': case '30.0': case '30.2': case '31.0':
-				case '31.1': connectInfo.protocolVersion = 8; state.shortMask = true; break;
-				case '32.0': case '33.0': state.shortMask = true; [[fallthrough]];
-				case '34.0': case '34.2': connectInfo.protocolVersion = 9; break;
-				default: uprintf("Unexpected game version: %.*s\n", version.length, version.data);
+				case '19.1': connectInfo.gameVersion = GameVersion_1_19_1; break;
+				case '20.0': connectInfo.gameVersion = GameVersion_1_20_0; break;
+				case '21.0': connectInfo.gameVersion = GameVersion_1_21_0; break;
+				case '22.0': connectInfo.gameVersion = GameVersion_1_22_0; break;
+				case '22.1': connectInfo.gameVersion = GameVersion_1_22_1; break;
+				case '23.0': connectInfo.gameVersion = GameVersion_1_23_0; break;
+				case '24.0': connectInfo.gameVersion = GameVersion_1_24_0; break;
+				case '24.1': connectInfo.gameVersion = GameVersion_1_24_1; break;
+				case '25.0': connectInfo.gameVersion = GameVersion_1_25_0; break;
+				case '25.1': connectInfo.gameVersion = GameVersion_1_25_1; break;
+				case '26.0': connectInfo.gameVersion = GameVersion_1_26_0; break;
+				case '27.0': connectInfo.gameVersion = GameVersion_1_27_0; break;
+				case '28.0': connectInfo.gameVersion = GameVersion_1_28_0; break;
+				case '29.0': connectInfo.gameVersion = GameVersion_1_29_0; break;
+				case '29.1': connectInfo.gameVersion = GameVersion_1_29_1; break;
+				case '29.4': connectInfo.gameVersion = GameVersion_1_29_4; break;
+				case '30.0': connectInfo.gameVersion = GameVersion_1_30_0; break;
+				case '30.2': connectInfo.gameVersion = GameVersion_1_30_2; break;
+				case '31.0': connectInfo.gameVersion = GameVersion_1_31_0; break;
+				case '31.1': connectInfo.gameVersion = GameVersion_1_31_1; break;
+				case '32.0': connectInfo.gameVersion = GameVersion_1_32_0; break;
+				case '33.0': connectInfo.gameVersion = GameVersion_1_33_0; break;
+				case '34.0': connectInfo.gameVersion = GameVersion_1_34_0; break;
+				case '34.2': connectInfo.gameVersion = GameVersion_1_34_2; break;
+				default: {
+					connectInfo.protocolVersion = 0; connectInfo.gameVersion = 0;
+					uprintf("Unexpected game version: %.*s\n", version.length, version.data);
+				}
 			}
+			connectInfo.protocolVersion =
+				(connectInfo.gameVersion < GameVersion_1_19_1) ? 6 :
+				(connectInfo.gameVersion < GameVersion_1_20_0) ? 7 :
+				(connectInfo.gameVersion < GameVersion_1_32_0) ? 8 :
+				9;
+			state.shortMask = (connectInfo.gameVersion < GameVersion_1_34_0);
 			#pragma GCC diagnostic pop
 		} else if(String_is(key0, "beatmap_level_selection_mask")) {
 			JSON_ITER_OBJECT(&iter, key1) {

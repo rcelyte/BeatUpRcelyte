@@ -127,7 +127,7 @@ static bool alpha(char ch) {
 }
 
 static bool numeric(char ch) {
-	return (ch >= '0' && ch <= '9') || ch == '+' || ch == '-';
+	return ch >= '0' && ch <= '9';
 }
 
 static char read_char(const char **it) {
@@ -138,7 +138,7 @@ static char read_char(const char **it) {
 }
 
 static void read_name(const char **it, char *out, size_t out_len) {
-	if(!alpha(**it))
+	if(!alpha(**it) && !numeric(**it))
 		fail_at(*it, "expected name");
 	while((**it >= '0' && **it <= '9') || alpha(**it)) {
 		*out++ = *(*it)++;
@@ -520,8 +520,7 @@ static void gen_header(char **out) {
 		"static const struct PacketContext PV_LEGACY_DEFAULT = {\n"
 		"\t.netVersion = 11,\n"
 		"\t.protocolVersion = 6,\n"
-		"\t.beatUpVersion = 0,\n"
-		"\t.windowSize = 0,\n"
+		"\t.gameVersion = GameVersion_1_19_0,\n"
 		"};\n");
 	for(struct Token *token = tokens; token < tokens_end; ++token) {
 		if(token->type != TType_Struct_start)
