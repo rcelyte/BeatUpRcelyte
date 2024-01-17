@@ -63,8 +63,7 @@ char *ServerCodeToString(char out[8], ServerCode in) {
 }
 [[maybe_unused]] static void _pkt_ServerCode_write(const ServerCode *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	struct String str = {.length = 0, .isNull = false};
-	for(ServerCode code = *data; code; code /= 36)
-		str.data[str.length++] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[--code % 36];
+	str.length = strlen(ServerCodeToString(str.data, *data));
 	_pkt_String_write(&str, pkt, end, ctx);
 }
 [[maybe_unused]] static void _pkt_RemoteProcedureCallFlags_read(struct RemoteProcedureCallFlags *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
