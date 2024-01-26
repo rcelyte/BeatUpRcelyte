@@ -575,7 +575,7 @@ static bool handle_WireSessionAllocResp_local(struct NetContext *net, struct Mas
 			.configuration = sessionAlloc->configuration,
 			.managerId = sessionAlloc->managerId,
 		};
-		uprintf("Sending player to room `%s`\n", ServerCodeToString((char[8]){0}, r_conn.connectToServerResponse.code));
+		uprintf("Sending player to room '%s'\n", ServerCodeToString((char[8]){0}, r_conn.connectToServerResponse.code));
 	}
 
 	if(session != NULL)
@@ -600,7 +600,7 @@ static bool handle_WireSessionAllocResp_graph(struct LocalMasterContext *ctx, st
 				.playerSlot = sessionAlloc->playerSlot,
 				.code = pool_handle_code(host, state->base.room),
 			};
-			uprintf("Sending player to room `%s`\n", ServerCodeToString((char[8]){0}, resp.code));
+			uprintf("Sending player to room '%s'\n", ServerCodeToString((char[8]){0}, resp.code));
 			break;
 		}
 		case ConnectToServerResponse_Result_InvalidSecret: [[fallthrough]];

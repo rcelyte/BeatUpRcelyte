@@ -1,5 +1,5 @@
 static partial class BeatUpClient {
-	public class MemorySpriteLoader : ISpriteAsyncLoader {
+	public class MemorySpriteLoader /*: ISpriteAsyncLoader*/ {
 		byte[]? data;
 		public MemorySpriteLoader(byte[]? data) =>
 			this.data = data;

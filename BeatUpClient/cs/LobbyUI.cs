@@ -30,7 +30,7 @@ static partial class BeatUpClient {
 		} else {
 			infoText = UnityEngine.Object.Instantiate(SinglePlayerOnlyTitle.gameObject, MultiplayerSettingsPanel);
 			infoText.name = "BeatUpClient_Info";
-			Polyglot.LocalizedTextMeshProUGUI text = infoText.GetComponentInChildren<Polyglot.LocalizedTextMeshProUGUI>();
+			BGLib.Polyglot.LocalizedTextMeshProUGUI text = infoText.GetComponentInChildren<BGLib.Polyglot.LocalizedTextMeshProUGUI>();
 			text.localizedComponent.richText = true;
 			text.Key = "BEATUP_INFO";
 		}

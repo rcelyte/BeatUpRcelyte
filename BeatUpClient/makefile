@@ -1,5 +1,5 @@
 #!/bin/make
-VERSION := 0.7.0
+VERSION := 0.8.0
 
 .SILENT:
 
@@ -71,7 +71,7 @@ BeatUpClient.dll: $(CSFILES) .obj/MakeThingsPublic.exe makefile
 		\"\$$schema\": \"https://raw.githubusercontent.com/bsmg/BSIPA-MetadataFileSchema/master/Schema.json\",\n\
 		\"author\": \"rcelyte\",\n\
 		\"description\": \"Tweaks and enhancements for enabling modded multiplayer\",\n\
-		\"gameVersion\": \"1.34.2_7115288407\",\n\
+		\"gameVersion\": \"1.34.4_7558151000\",\n\
 		\"dependsOn\": {\"BSIPA\": \"^4.3.0\"},\n\
 		\"conflictsWith\": {\"BeatTogether\": \"*\"},\n\
 		\"loadBefore\": [\"MultiplayerCore\"],\n\
@@ -90,7 +90,7 @@ BeatUpClient.dll: $(CSFILES) .obj/MakeThingsPublic.exe makefile
 		-r:.obj/Refs/Libs/MonoMod.Utils.dll \
 		-r:.obj/Refs/Libs/Newtonsoft.Json.dll \
 		-r:.obj/Refs/Managed/BeatmapCore.dll \
-		-r:.obj/Refs/Managed/BGNet.dll \
+		-r:.obj/Refs/Managed/BGNetCore.dll \
 		-r:.obj/Refs/Managed/Colors.dll \
 		-r:.obj/Refs/Managed/GameplayCore.dll \
 		-r:.obj/Refs/Managed/HMLib.dll \
@@ -100,12 +100,13 @@ BeatUpClient.dll: $(CSFILES) .obj/MakeThingsPublic.exe makefile
 		-r:.obj/Refs/Managed/Main.dll \
 		-r:.obj/Refs/Managed/mscorlib.dll \
 		-r:.obj/Refs/Managed/netstandard.dll \
-		-r:.obj/Refs/Managed/Polyglot.dll \
+		-r:.obj/Refs/Managed/BGLib.Polyglot.dll \
 		-r:.obj/Refs/Libs/System.IO.Compression.dll \
 		-r:.obj/Refs/Managed/UnityEngine.AssetBundleModule.dll \
 		-r:.obj/Refs/Managed/UnityEngine.AudioModule.dll \
 		-r:.obj/Refs/Managed/UnityEngine.CoreModule.dll \
 		-r:.obj/Refs/Managed/UnityEngine.ImageConversionModule.dll \
+		-r:.obj/Refs/Managed/UnityEngine.JSONSerializeModule.dll \
 		-r:.obj/Refs/Managed/UnityEngine.UI.dll \
 		-r:.obj/Refs/Managed/UnityEngine.UIModule.dll \
 		-r:.obj/Refs/Managed/UnityEngine.UnityWebRequestAudioModule.dll \
@@ -124,7 +125,9 @@ BeatUpClient.dll: $(CSFILES) .obj/MakeThingsPublic.exe makefile
 		-r:.obj/Refs/Managed/BGLib.DotnetExtension.dll \
 		-r:.obj/Refs/Managed/BGLib.UnityExtension.dll \
 		-r:.obj/Refs/Managed/Networking.dll \
-		-r:.obj/Refs/Managed/Menu.CommonLib.dll
+		-r:.obj/Refs/Managed/Menu.CommonLib.dll \
+		-r:.obj/Refs/Managed/MediaLoader.dll \
+		-r:.obj/Refs/Managed/DataModels.dll
 
 AudioPluginMsHRTF.dll: cs/loader.c BeatUpClient.dll
 	@echo "[cc $@]"

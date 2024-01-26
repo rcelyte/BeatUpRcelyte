@@ -4,6 +4,7 @@
 #include <stdbool.h>
 typedef uint8_t GameVersion;
 enum {
+	GameVersion_Unknown,
 	GameVersion_1_19_0,
 	GameVersion_1_19_1,
 	GameVersion_1_20_0,
@@ -29,9 +30,11 @@ enum {
 	GameVersion_1_33_0,
 	GameVersion_1_34_0,
 	GameVersion_1_34_2,
+	GameVersion_1_34_4,
 };
 [[maybe_unused]] static const char *_reflect_GameVersion(GameVersion value) {
 	switch(value) {
+		case GameVersion_Unknown: return "Unknown";
 		case GameVersion_1_19_0: return "1_19_0";
 		case GameVersion_1_19_1: return "1_19_1";
 		case GameVersion_1_20_0: return "1_20_0";
@@ -57,6 +60,7 @@ enum {
 		case GameVersion_1_33_0: return "1_33_0";
 		case GameVersion_1_34_0: return "1_34_0";
 		case GameVersion_1_34_2: return "1_34_2";
+		case GameVersion_1_34_4: return "1_34_4";
 		default: return "???";
 	}
 }

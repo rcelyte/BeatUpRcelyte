@@ -6,17 +6,17 @@ static partial class BeatUpClient {
 		Log.Debug($"AnnounceWrapper(task.Result={status})");
 		ShareInfo info = new ShareInfo(0, new ShareMeta(0), new ShareId {usage = ShareableType.BeatmapSet, mimeType = "application/json", name = levelId});
 		if(status == EntitlementsStatus.Ok) {
-			BeatmapLevelsModel.GetBeatmapLevelResult result = await Resolve<BeatmapLevelsModel>()!.GetBeatmapLevelAsync(levelId, System.Threading.CancellationToken.None);
-			if(result.isError) {
+			IBeatmapLevelData? beatmapLevelData = (await Resolve<BeatmapLevelsModel>()!.GetBeatmapLevelDataAsync(levelId, System.Threading.CancellationToken.None)).beatmapLevelData;
+			if(beatmapLevelData == null) {
 				Log.Debug("    Announce: failed to load beatmap");
 				status = EntitlementsStatus.NotOwned;
-			} else if(result.beatmapLevel is CustomBeatmapLevel level) {
+			} else if(beatmapLevelData is FileSystemBeatmapLevelData fileLevel) {
 				await announceTask;
 				ShareInfo oldInfo = ShareProvider.GetCurrent().info;
 				if(oldInfo.id.name == levelId) {
 					info = oldInfo;
 				} else {
-					System.Threading.Tasks.Task<(Hash256, System.ArraySegment<byte>)> zipTask = ZipLevel(level, System.Threading.CancellationToken.None, progress =>
+					System.Threading.Tasks.Task<(Hash256, System.ArraySegment<byte>)> zipTask = ZipLevel(fileLevel, System.Threading.CancellationToken.None, progress =>
 						Net.SetLocalProgressUnreliable(new LoadProgress(LoadState.Exporting, progress)));
 					announceTask = zipTask;
 					(Hash256 hash, System.ArraySegment<byte> data) = await zipTask;
@@ -120,11 +120,12 @@ static partial class BeatUpClient {
 		return false;
 	}
 
-	[Patch(PatchType.Prefix, typeof(MenuRpcManager), "InvokeSetSelectedBeatmap")]
-	public static void MenuRpcManager_InvokeSetSelectedBeatmap(string userId, BeatmapIdentifierNetSerializable identifier) {
-		RecommendPreview? preview = playerData.ResolvePreview(identifier.levelID);
+	[Detour(typeof(MenuRpcManager), nameof(MenuRpcManager.InvokeSetSelectedBeatmap))]
+	public static void MenuRpcManager_InvokeSetSelectedBeatmap(MenuRpcManager self, string userId, BeatmapKeyNetSerializable key) {
+		RecommendPreview? preview = playerData.ResolvePreview(key.levelID);
 		if(preview != null)
 			playerData.previews[PlayerIndex(Net.GetPlayer(userId))] = preview;
-		_ = AnnounceWrapper(EntitlementsStatus.Ok, identifier.levelID);
+		_ = AnnounceWrapper(EntitlementsStatus.Ok, key.levelID);
+		Base(self, userId, key);
 	}
 }

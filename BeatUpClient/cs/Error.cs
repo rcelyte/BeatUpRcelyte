@@ -7,7 +7,7 @@ static class BeatUpClient_Error {
 			BeatUpClient.Base(self, viewController, subMenuType);
 			return;
 		}
-		self._simpleDialogPromptViewController.Init(header, message, Polyglot.Localization.Get("BUTTON_OK"), buttonNumber => {
+		self._simpleDialogPromptViewController.Init(header, message, BGLib.Polyglot.Localization.Get("BUTTON_OK"), buttonNumber => {
 			skip = true;
 			self.DismissViewController(self._simpleDialogPromptViewController, HMUI.ViewController.AnimationDirection.Vertical, () =>
 				self.HandleMainMenuViewControllerDidFinish(viewController, MainMenuViewController.MenuButton.Multiplayer));

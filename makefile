@@ -69,7 +69,7 @@ $(OBJDIR)/libs.mk: makefile
 	#endif
 	EOF
 
-src/packets.gen.h: src/packets.txt src/wire.txt .obj/gen.$(HOST) makefile
+src/packets.gen.h: src/packets.txt common/packets.txt src/wire.txt .obj/gen.$(HOST) makefile
 	@echo "[gen $(notdir $@)]"
 	./.obj/gen.$(HOST) "$<" "$@" src/packets.gen.c.h
 

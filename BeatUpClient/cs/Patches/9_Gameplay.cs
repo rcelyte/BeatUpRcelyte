@@ -5,13 +5,16 @@ static partial class BeatUpClient {
 		if(connectInfo.perPlayerDifficulty && multiplayerPlayersManager.localPlayerStartSeekSongController is MultiplayerLocalActivePlayerFacade) {
 			MenuTransitionsHelper menuTransitionsHelper = UnityEngine.Resources.FindObjectsOfTypeAll<MenuTransitionsHelper>()[0];
 			MultiplayerConnectedPlayerSongTimeSyncController audioTimeSyncController = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerConnectedPlayerSongTimeSyncController>()[0];
-			PreviewDifficultyBeatmap original = new PreviewDifficultyBeatmap(__instance._localPlayerInGameMenuInitData.previewBeatmapLevel, __instance._localPlayerInGameMenuInitData.beatmapCharacteristic, __instance._localPlayerInGameMenuInitData.beatmapDifficulty);
-			PreviewDifficultyBeatmap selectedPreview = original;
-			IDifficultyBeatmap? selectedBeatmap = null;
+			BeatmapKey selectedKey = new(__instance._localPlayerInGameMenuInitData.beatmapLevel.levelID, __instance._localPlayerInGameMenuInitData.beatmapCharacteristic, __instance._localPlayerInGameMenuInitData.beatmapDifficulty);
 			UnityEngine.RectTransform switchButton = UI.CreateButtonFrom(__instance._resumeButton.gameObject, __instance._resumeButton.transform.parent, "SwitchDifficulty", () => {
 				MultiplayerLevelScenesTransitionSetupDataSO setupData = menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData;
-				setupData.Init(setupData.gameMode, selectedPreview.beatmapLevel, selectedPreview.beatmapDifficulty, selectedPreview.beatmapCharacteristic, selectedBeatmap, setupData.colorScheme, setupData.gameplayCoreSceneSetupData.gameplayModifiers, setupData.gameplayCoreSceneSetupData.playerSpecificSettings, setupData.gameplayCoreSceneSetupData.practiceSettings, setupData.gameplayCoreSceneSetupData.useTestNoteCutSoundEffects);
-				menuTransitionsHelper._gameScenesManager.ReplaceScenes(menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData, null, .35f, null, container => {
+				setupData.Init(setupData.gameMode, in selectedKey, setupData.beatmapLevel, setupData.beatmapLevelData,
+					setupData.colorScheme, setupData.gameplayCoreSceneSetupData.gameplayModifiers,
+					setupData.gameplayCoreSceneSetupData.playerSpecificSettings, setupData.gameplayCoreSceneSetupData.practiceSettings,
+					Resolve<AudioClipAsyncLoader>(), Resolve<BeatmapDataLoader>(),
+					setupData.gameplayCoreSceneSetupData.useTestNoteCutSoundEffects);
+				menuTransitionsHelper._gameScenesManager.ReplaceScenes(menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData, null,
+						.35f, null, (Zenject.DiContainer container) => {
 					MultiplayerController multiplayerController = container.Resolve<MultiplayerController>();
 					multiplayerController._songStartSyncController.syncStartSuccessEvent -= OnSongStart;
 					multiplayerController._songStartSyncController.syncStartSuccessEvent += OnSongStart;
@@ -21,20 +24,21 @@ static partial class BeatUpClient {
 					}
 				});
 			});
-			switchButton.GetComponentInChildren<Polyglot.LocalizedTextMeshProUGUI>().Key = "BEATUP_SWITCH";
+			switchButton.GetComponentInChildren<BGLib.Polyglot.LocalizedTextMeshProUGUI>().Key = "BEATUP_SWITCH";
 			switchButton.gameObject.SetActive(false);
 			DifficultyPanel panel = new DifficultyPanel(__instance._mainBar.transform, 1, -2, __instance._levelBar.transform.Find("BG").GetComponent<HMUI.ImageView>(), true);
 			__instance._levelBar.transform.localPosition = new UnityEngine.Vector3(0, 13.25f, 0);
 			panel.beatmapCharacteristic.localPosition = new UnityEngine.Vector3(-1, -1.5f, 0);
 			panel.beatmapDifficulty.localPosition = new UnityEngine.Vector3(-1, -8.25f, 0);
-			void OnSelect(PreviewDifficultyBeatmap preview) {
-				selectedPreview = preview;
-				selectedBeatmap = (preview == original) ? null : BeatmapLevelDataExtensions.GetDifficultyBeatmap(menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.difficultyBeatmap.level.beatmapLevelData, preview);
-				__instance._resumeButton.gameObject.SetActive(selectedBeatmap == null);
-				switchButton.gameObject.SetActive(selectedBeatmap != null);
-				panel.Update(preview, OnSelect);
+			void OnSelect(BeatmapCharacteristicSO newCharacteristic, BeatmapDifficulty newDifficulty) {
+				selectedKey = new(selectedKey.levelId, newCharacteristic, newDifficulty);
+				bool original = (newDifficulty == selectedKey.difficulty &&
+					newCharacteristic.SerializedName() == selectedKey.beatmapCharacteristic.SerializedName());
+				__instance._resumeButton.gameObject.SetActive(original);
+				switchButton.gameObject.SetActive(!original);
+				panel.Update(__instance._localPlayerInGameMenuInitData.beatmapLevel, selectedKey.beatmapCharacteristic, selectedKey.difficulty, OnSelect);
 			}
-			panel.Update(original, OnSelect);
+			panel.Update(__instance._localPlayerInGameMenuInitData.beatmapLevel, selectedKey.beatmapCharacteristic, selectedKey.difficulty, OnSelect);
 		}
 	}
 

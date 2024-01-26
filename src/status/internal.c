@@ -175,7 +175,7 @@ static UserAgent ProbeHeaders(const char *buf, const char *end, size_t *contentL
 static void status_status(struct HttpContext *http, bool isGame) {
 	char msg[65536], *msg_end = msg;
 	PUT("{\"minimum_app_version\":\"1.19.0%s\""
-	    ",\"maximumAppVersion\":\"1.34.2_🅱️\""
+	    ",\"maximumAppVersion\":\"1.34.4_🅱️\""
 	    ",\"status\":%u", isGame ? "b2147483647" : STATUS_APPVER_POSTFIX, TEST_maintenanceStartTime != 0);
 	if(TEST_maintenanceStartTime) {
 		PUT(",\"maintenance_start_time\":%" PRIu64, TEST_maintenanceStartTime);
@@ -244,8 +244,9 @@ static void status_graph(struct HttpContext *http, struct HttpRequest req, struc
 				case '33.0': connectInfo.gameVersion = GameVersion_1_33_0; break;
 				case '34.0': connectInfo.gameVersion = GameVersion_1_34_0; break;
 				case '34.2': connectInfo.gameVersion = GameVersion_1_34_2; break;
+				case '34.4': connectInfo.gameVersion = GameVersion_1_34_4; break;
 				default: {
-					connectInfo.protocolVersion = 0; connectInfo.gameVersion = 0;
+					connectInfo.gameVersion = GameVersion_Unknown;
 					uprintf("Unexpected game version: %.*s\n", version.length, version.data);
 				}
 			}
@@ -254,7 +255,7 @@ static void status_graph(struct HttpContext *http, struct HttpRequest req, struc
 				(connectInfo.gameVersion < GameVersion_1_20_0) ? 7 :
 				(connectInfo.gameVersion < GameVersion_1_32_0) ? 8 :
 				9;
-			state.shortMask = (connectInfo.gameVersion < GameVersion_1_34_0);
+			state.shortMask = (connectInfo.gameVersion != GameVersion_Unknown && connectInfo.gameVersion < GameVersion_1_34_0);
 			#pragma GCC diagnostic pop
 		} else if(String_is(key0, "beatmap_level_selection_mask")) {
 			JSON_ITER_OBJECT(&iter, key1) {
@@ -299,7 +300,7 @@ static void status_graph(struct HttpContext *http, struct HttpRequest req, struc
 			json_skip_any(&iter);
 		}
 	}
-	if(iter.fault || connectInfo.protocolVersion == 0 || connectInfo.userId.length == 0 || connectInfo.configuration.maxPlayerCount == 0) {
+	if(iter.fault || connectInfo.gameVersion == GameVersion_Unknown || connectInfo.userId.length == 0 || connectInfo.configuration.maxPlayerCount == 0) {
 		status_graph_resp((struct DataView){&state, sizeof(state)}, &(struct WireGraphConnectResp){
 			.result = MultiplayerPlacementErrorCode_Unknown,
 		});

@@ -32,7 +32,7 @@ static class BeatUpClient_Migration {
 			return;
 		}
 		bool dismissed = false;
-		self._simpleDialogPromptViewController.Init("BeatTogether Migration", "Migrating legacy hostnames...", Polyglot.Localization.Get("BUTTON_CANCEL"), buttonNumber => {
+		self._simpleDialogPromptViewController.Init("BeatTogether Migration", "Migrating legacy hostnames...", BGLib.Polyglot.Localization.Get("BUTTON_CANCEL"), buttonNumber => {
 			dismissed = true;
 			self.DismissViewController(self._simpleDialogPromptViewController, HMUI.ViewController.AnimationDirection.Vertical);
 		});

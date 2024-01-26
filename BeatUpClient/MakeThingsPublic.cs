@@ -8,7 +8,7 @@ if(args.Length < 1) {
 
 string managed = Path.Combine("Beat Saber_Data", "Managed");
 var refs = new (string path, string name, string[]? overrides)[] {
-	(managed, "BGNet.dll", new[] {
+	(managed, "BGNetCore.dll", new[] {
 		"ClientCertificateValidator::ValidateCertificateChainInternal",
 		"ConnectedPlayerManager/ConnectedPlayer",
 		"ConnectedPlayerManager/PlayerConnectedPacket",
@@ -21,6 +21,7 @@ var refs = new (string path, string name, string[]? overrides)[] {
 		"LiteNetLibConnectionManager::GetConnectionMessage",
 		"MasterServerConnectionManager::HandleConnectToServerSuccess",
 		"MenuRpcManager::_multiplayerSessionManager",
+		"MenuRpcManager::InvokeSetSelectedBeatmap",
 		"MultiplayerSessionManager::_packetSerializer",
 		"NetworkPacketSerializer`2::_messsageHandlers",
 		"NetworkPacketSerializer`2::_typeRegistry",
@@ -77,7 +78,6 @@ var refs = new (string path, string name, string[]? overrides)[] {
 		"BeatmapCharacteristicSegmentedControlController::didSelectBeatmapCharacteristicEvent",
 		"BeatmapDifficultySegmentedControlController::_difficultySegmentedControl",
 		"BeatmapDifficultySegmentedControlController::didSelectDifficultyEvent",
-		"BeatmapLevelsModel::_loadedPreviewBeatmapLevels",
 		"ColorsOverrideSettingsPanelController::_editColorSchemeButton",
 		"CustomLevelLoader::_defaultAllDirectionsEnvironmentInfo",
 		"CustomLevelLoader::_defaultEnvironmentInfo",
@@ -92,9 +92,6 @@ var refs = new (string path, string name, string[]? overrides)[] {
 		"GameSongController::_beatmapCallbacksController",
 		"JoiningLobbyViewController::_loadingControl",
 		"LevelScenesTransitionSetupDataSO::get_gameplayCoreSceneSetupData",
-		"LobbyPlayersDataModel::_multiplayerSessionManager",
-		"LobbyPlayersDataModel::HandleMenuRpcManagerGetRecommendedBeatmap",
-		"LobbyPlayersDataModel::HandleMultiplayerSessionManagerPlayerConnected",
 		"MainFlowCoordinator::_simpleDialogPromptViewController",
 		"MainFlowCoordinator::HandleMainMenuViewControllerDidFinish",
 		"MainFlowCoordinator::HandleMultiplayerModeSelectionFlowCoordinatorDidFinish",
@@ -120,9 +117,7 @@ var refs = new (string path, string name, string[]? overrides)[] {
 		"MultiplayerModeSelectionFlowCoordinator::PresentMasterServerUnavailableErrorDialog",
 		"MultiplayerModeSelectionViewController::_customServerEndPointText",
 		"MultiplayerModeSelectionViewController::_maintenanceMessageText",
-		"MultiplayerStatusModel::_request",
 		"PCAppInit::TransitionToNextScene",
-		"QuickPlaySetupModel::_request",
 		"StandardLevelDetailView::_beatmapCharacteristicSegmentedControlController",
 		"StandardLevelDetailView::_beatmapDifficultySegmentedControlController",
 	}),
@@ -142,9 +137,10 @@ var refs = new (string path, string name, string[]? overrides)[] {
 		"MultiplayerCore.Patches.DataModelBinderPatch::_playersDataModelMethod",
 		"MultiplayerCore.Plugin",
 	}),
-	(managed, "Polyglot.dll", new[] {
-		"Polyglot.LocalizationImporter::Import",
-		"Polyglot.LocalizedTextComponent`1::localizedComponent",
+	(managed, "BGLib.Polyglot.dll", new[] {
+		"BGLib.Polyglot.LocalizationImporter::Import",
+		"BGLib.Polyglot.LocalizationImporter::Initialize",
+		"BGLib.Polyglot.LocalizedTextComponent`1::localizedComponent",
 	}),
 	("Plugins", "SiraUtil.dll", new[] {
 		"SiraUtil.Affinity.Harmony.HarmonyAffinityPatcher",
@@ -202,12 +198,27 @@ var refs = new (string path, string name, string[]? overrides)[] {
 	(managed, "UnityEngine.AudioModule.dll", null),
 	(managed, "UnityEngine.CoreModule.dll", null),
 	(managed, "UnityEngine.ImageConversionModule.dll", null),
+	(managed, "UnityEngine.JSONSerializeModule.dll", null),
 	(managed, "UnityEngine.UI.dll", null),
 	(managed, "UnityEngine.UIModule.dll", null),
 	(managed, "UnityEngine.UnityWebRequestAudioModule.dll", null),
 	(managed, "UnityEngine.UnityWebRequestModule.dll", null),
 	(managed, "VRUI.dll", null),
 	(managed, "Zenject-usage.dll", null),
+	(managed, "MediaLoader.dll", null),
+	(managed, "DataModels.dll", new[] {
+		"BeatmapKey::beatmapCharacteristic",
+		"BeatmapLevelsModel::_loadedBeatmapLevels",
+		"FileDifficultyBeatmap::beatmapPath",
+		"FileDifficultyBeatmap::lightshowPath",
+		"FileSystemBeatmapLevelData::_audioDataPath",
+		"FileSystemBeatmapLevelData::_difficultyBeatmaps",
+		"LobbyPlayersDataModel::_multiplayerSessionManager",
+		"LobbyPlayersDataModel::HandleMenuRpcManagerGetRecommendedBeatmap",
+		"LobbyPlayersDataModel::HandleMultiplayerSessionManagerPlayerConnected",
+		"MultiplayerStatusModel::_request",
+		"QuickPlaySetupModel::_request",
+	}),
 
 	(managed, "netstandard.dll", null), // TODO: Required by `Hive.Versioning.VersionRange`; remove once beta version check is gone
 };

@@ -45,10 +45,9 @@ static partial class BeatUpClient {
 			}
 		}
 		// TODO: switching between `MpBeatmapPacket`s and `RecommendPreview`s is a lossy conversion
-		public MpBeatmapPacket(RecommendPreview preview, PreviewDifficultyBeatmap beatmap) : base(beatmap.beatmapLevel, true) {
-			(characteristic, difficulty) = (beatmap.beatmapCharacteristic.serializedName, beatmap.beatmapDifficulty);
-			PreviewDifficultyBeatmapSet? set = beatmap.beatmapLevel.previewDifficultyBeatmapSets?.FirstOrDefault(set => set.beatmapCharacteristic == beatmap.beatmapCharacteristic);
-			requirements = (set?.beatmapDifficulties ?? new BeatmapDifficulty[0])
+		public MpBeatmapPacket(RecommendPreview preview, BeatmapLevel info, BeatmapKey key) : base(info, true) {
+			(characteristic, difficulty) = (key.beatmapCharacteristic.SerializedName(), key.difficulty);
+			requirements = info.GetDifficulties(key.beatmapCharacteristic)
 				.SelectMany(diff => preview.requirements.Select(req => (diff, req)))
 				.ToLookup(pair => pair.diff, pair => pair.req);
 		}

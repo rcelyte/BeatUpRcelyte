@@ -1,26 +1,33 @@
 static partial class BeatUpClient {
-	[Patch(PatchType.Postfix, typeof(MainSystemInit), nameof(MainSystemInit.InstallBindings))]
-	static void MainSystemInit_InstallBindings_post(MainSystemInit __instance, Zenject.DiContainer container) {
-		customServerHostName = __instance._mainSettingsModel.customServerHostName;
+	[Detour(typeof(MainSystemInit), nameof(MainSystemInit.InstallBindings))]
+	static void MainSystemInit_InstallBindings(MainSystemInit self, Zenject.DiContainer container, bool isRunningFromTests) {
+		Base(self, container, isRunningFromTests);
+		customServerHostName = self._mainSettingsModel.customServerHostName;
 		string hostname = customServerHostName.value.ToLower();
-		int port = __instance._networkConfig.masterServerEndPoint.port;
+		int port = self._networkConfig.masterServerEndPoint.port;
 		if(hostname.Contains(":")) {
 			int.TryParse(hostname.Split(':')[1], out port);
 			hostname = hostname.Split(':')[0];
 		}
-		container.Rebind<INetworkConfig>().FromInstance(new CustomNetworkConfig(__instance._networkConfig, hostname, port, true)).AsSingle();
+		container.Rebind<INetworkConfig>().FromInstance(new CustomNetworkConfig(self._networkConfig, hostname, port, true)).AsSingle();
 
-		// TODO: everything below should run later (i.e. @ AudioClipAsyncLoader..ctor)
-		NetworkConfigSetup(__instance._networkConfig);
-		Injected<BeatmapCharacteristicCollection>.Resolve(container);
-		Injected<BeatmapLevelsModel>.Resolve(container);
-		Injected<CustomLevelLoader>.Resolve(container);
+		NetworkConfigSetup(self._networkConfig);
 		Injected<CustomNetworkConfig>.Resolve<INetworkConfig>(container);
 		Injected<IMultiplayerStatusModel>.Resolve(container);
 		Injected<IQuickPlaySetupModel>.Resolve(container);
 		MultiplayerSessionManager? multiplayerSessionManager = Injected<MultiplayerSessionManager>.Resolve<IMultiplayerSessionManager>(container);
 		IMenuRpcManager menuRpcManager = Injected<IMenuRpcManager>.Resolve(container)!;
+		Injected<AudioClipAsyncLoader>.Resolve(container);
+		Injected<BeatmapDataLoader>.Resolve(container);
 		multiplayerSessionManager?.SetLocalPlayerState("modded", true);
 		Net.Setup(menuRpcManager, multiplayerSessionManager);
+	}
+
+	[Detour(typeof(BeatmapCharacteristicInstaller), nameof(BeatmapCharacteristicInstaller.InstallBindings))]
+	static void BeatmapCharacteristicInstaller_InstallBindings(BeatmapCharacteristicInstaller self) {
+		Base(self);
+		Injected<BeatmapCharacteristicCollection>.Resolve(self.Container);
+		Injected<CustomLevelLoader>.Resolve(self.Container);
+		Injected<BeatmapLevelsModel>.Resolve(self.Container);
 	}
 }

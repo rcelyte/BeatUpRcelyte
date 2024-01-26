@@ -24,23 +24,18 @@ static partial class BeatUpClient {
 		public RecommendPreview(LiteNetLib.Utils.NetDataReader reader) : base(reader, false) {
 			labels = CreateArray((uint)(previewDifficultyBeatmapSets?.Count() ?? 0), i =>
 				CreateArray(UpperBound(reader.GetByte(), 5), i => reader.GetString()));
-			requirements = CreateArray(UpperBound(reader.GetByte(), 16), i => reader.GetString());
-			suggestions = CreateArray(UpperBound(reader.GetByte(), 16), i => reader.GetString());
+			this.requirements = CreateArray(UpperBound(reader.GetByte(), 16), i => reader.GetString());
+			this.suggestions = CreateArray(UpperBound(reader.GetByte(), 16), i => reader.GetString());
 		}
-		public RecommendPreview(IPreviewBeatmapLevel? preview, string[]? requirements) : base(preview, false) {
+		public RecommendPreview(PreviewBeatmapLevel? preview, string[]? requirements) : base(preview, false) {
 			labels = CreateArray((uint)(previewDifficultyBeatmapSets?.Count() ?? 0), i =>
-				CreateArray((uint)previewDifficultyBeatmapSets![(int)i].beatmapDifficulties.Count(), i => string.Empty));
-			this.requirements = requirements ?? new string[0];
-			suggestions = new string[0];
+				CreateArray((uint)previewDifficultyBeatmapSets![(int)i].difficulties.Count(), i => string.Empty));
+			(this.requirements, this.suggestions) = (requirements ?? new string[0], new string[0]);
 		}
-		public RecommendPreview(CustomPreviewBeatmapLevel preview) : this((IPreviewBeatmapLevel)preview, null) { // TODO: labels
-			string path = System.IO.Path.Combine(preview.customLevelPath, "Info.dat");
-			if(!System.IO.File.Exists(path))
-				return;
-			Newtonsoft.Json.Linq.JObject info = Newtonsoft.Json.Linq.JObject.Parse(System.IO.File.ReadAllText(path));
-			Newtonsoft.Json.Linq.IJEnumerable<Newtonsoft.Json.Linq.JToken> customData = Newtonsoft.Json.Linq.Extensions.Children(info["_difficultyBeatmapSets"]?.Children()["_difficultyBeatmaps"] ?? new Newtonsoft.Json.Linq.JArray())["_customData"];
-			requirements = Newtonsoft.Json.Linq.Extensions.Values<string>(customData["_requirements"]).ToHashSet().ToArray()!;
-			suggestions = Newtonsoft.Json.Linq.Extensions.Values<string>(customData["_suggestions"]).ToHashSet().ToArray()!;
+		public RecommendPreview(BeatmapLevel from) : base(from, false) { // TODO: labels
+			labels = CreateArray((uint)(previewDifficultyBeatmapSets?.Count() ?? 0), i =>
+				CreateArray((uint)previewDifficultyBeatmapSets![(int)i].difficulties.Count(), i => string.Empty));
+			(this.requirements, this.suggestions) = (new string[0], new string[0]);
 		}
 	}
 }

@@ -96,7 +96,7 @@ static partial class BeatUpClient {
 			}
 		}
 
-		internal static void ProcessMpPreview(IPreviewBeatmapLevel preview, IConnectedPlayer player, string[]? requirements = null) {
+		internal static void ProcessMpPreview(PreviewBeatmapLevel preview, IConnectedPlayer player, string[]? requirements = null) {
 			Log.Debug($"ProcessMpPreview(player=\"{player}\")");
 			RecommendPreview current = playerData.previews[PlayerIndex(player)];
 			if(preview.levelID != current.levelID || current.previewDifficultyBeatmapSets == null) // Ignore if we already have a BeatUpClient preview for this level

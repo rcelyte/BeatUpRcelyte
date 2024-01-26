@@ -44,7 +44,7 @@ static partial class BeatUpClient {
 			UnityEngine.GameObject gameObject = CreateElement(template, parent, name);
 			((UnityEngine.RectTransform)gameObject.transform).sizeDelta = new UnityEngine.Vector2(90, ((UnityEngine.RectTransform)gameObject.transform).sizeDelta.y);
 			UnityEngine.GameObject nameText = gameObject.transform.Find("NameText").gameObject;
-			nameText.GetComponent<Polyglot.LocalizedTextMeshProUGUI>().Key = headerKey;
+			nameText.GetComponent<BGLib.Polyglot.LocalizedTextMeshProUGUI>().Key = headerKey;
 			return gameObject;
 		}
 		public static UnityEngine.RectTransform CreateToggle(UnityEngine.Transform parent, string name, string headerKey, IValue<bool> value) {

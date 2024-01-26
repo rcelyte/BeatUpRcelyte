@@ -2,11 +2,6 @@ using static System.Linq.Enumerable;
 
 static partial class BeatUpClient {
 	class DifficultyPanel {
-		class PlaceholderDifficulty : EmptyDifficultyBeatmap, IDifficultyBeatmap {
-			public new BeatmapDifficulty difficulty {get;}
-			public PlaceholderDifficulty(BeatmapDifficulty difficulty) =>
-				this.difficulty = difficulty; // TODO: assign to EmptyDifficultyBeatmap.<difficulty>k__BackingField directly
-		}
 		static UnityEngine.GameObject characteristicTemplate = null!;
 		static UnityEngine.GameObject difficultyTemplate = null!;
 		BeatmapCharacteristicSegmentedControlController characteristicSelector;
@@ -50,8 +45,8 @@ static partial class BeatUpClient {
 			this.hideHints = hideHints;
 		}
 		public void Clear() =>
-			Update(null, null!);
-		public void Update(PreviewDifficultyBeatmap? beatmapLevel, System.Action<PreviewDifficultyBeatmap> onChange) {
+			Update(null, null!, default, null!);
+		public void Update(BeatmapLevel? beatmapLevel, BeatmapCharacteristicSO characteristic, BeatmapDifficulty difficulty, System.Action<BeatmapCharacteristicSO, BeatmapDifficulty> onChange) {
 			characteristicSelector.transform.parent.gameObject.SetActive(false);
 			difficultySelector.transform.parent.gameObject.SetActive(false);
 
@@ -59,29 +54,22 @@ static partial class BeatUpClient {
 			difficultySelector.didSelectDifficultyEvent = delegate {};
 			if(beatmapLevel == null)
 				return;
-			System.Collections.Generic.IReadOnlyList<PreviewDifficultyBeatmapSet>? previewSets = beatmapLevel.beatmapLevel.previewDifficultyBeatmapSets;
-			if(previewSets == null)
-				return;
-			PlaceholderDifficulty[]? diffs = previewSets
-				.FirstOrDefault(set => set.beatmapCharacteristic == beatmapLevel.beatmapCharacteristic && set.beatmapDifficulties?.Length >= 1)
-				?.beatmapDifficulties.Select(diff => new PlaceholderDifficulty(diff)).ToArray();
-			difficultySelector.SetData(diffs ?? new[] {new PlaceholderDifficulty(beatmapLevel.beatmapDifficulty)}, beatmapLevel.beatmapDifficulty);
-			characteristicSelector.SetData(previewSets.Select(set => new DifficultyBeatmapSet(set.beatmapCharacteristic, null!)).ToList(), beatmapLevel.beatmapCharacteristic);
+			difficultySelector.SetData(beatmapLevel.GetDifficulties(characteristic).DefaultIfEmpty(difficulty), difficulty, BeatmapDifficultyMask.All);
+			characteristicSelector.SetData(beatmapLevel.GetCharacteristics(), characteristic, new());
 			if(hideHints)
 				foreach(HMUI.HoverHint hint in characteristicSelector.GetComponentsInChildren<HMUI.HoverHint>())
 					hint.enabled = false;
-			characteristicSelector.didSelectBeatmapCharacteristicEvent += (controller, beatmapCharacteristic) => {
-				PreviewDifficultyBeatmapSet set = previewSets.First(set => set.beatmapCharacteristic == beatmapCharacteristic);
-				BeatmapDifficulty closestDifficulty = set.beatmapDifficulties[0];
-				foreach(BeatmapDifficulty difficulty in set.beatmapDifficulties) {
-					if(difficulty > beatmapLevel.beatmapDifficulty)
+			characteristicSelector.didSelectBeatmapCharacteristicEvent += (BeatmapCharacteristicSegmentedControlController controller, BeatmapCharacteristicSO newCharacteristic) => {
+				BeatmapDifficulty closestDifficulty = beatmapLevel.GetDifficulties(newCharacteristic).First();
+				foreach(BeatmapDifficulty diff in beatmapLevel.GetDifficulties(newCharacteristic)) {
+					if(diff > difficulty)
 						break;
-					closestDifficulty = difficulty;
+					closestDifficulty = diff;
 				}
-				onChange(new PreviewDifficultyBeatmap(beatmapLevel.beatmapLevel, beatmapCharacteristic, closestDifficulty));
+				onChange(newCharacteristic, closestDifficulty);
 			};
-			difficultySelector.didSelectDifficultyEvent += (controller, difficulty) =>
-				onChange(new PreviewDifficultyBeatmap(beatmapLevel.beatmapLevel, beatmapLevel.beatmapCharacteristic, difficulty));
+			difficultySelector.didSelectDifficultyEvent += (BeatmapDifficultySegmentedControlController controller, BeatmapDifficulty newDifficulty) =>
+				onChange(characteristic, newDifficulty);
 			characteristicSelector.transform.parent.gameObject.SetActive(true);
 			difficultySelector.transform.parent.gameObject.SetActive(true);
 		}

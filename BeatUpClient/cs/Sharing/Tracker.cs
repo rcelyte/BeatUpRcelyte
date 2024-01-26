@@ -4,13 +4,15 @@ static partial class BeatUpClient {
 	static class ShareTracker {
 		public static event System.Action<ShareInfo, IConnectedPlayer, bool>? onProcess = null;
 
-		public class DownloadPreview : CustomPreviewBeatmapLevel {
+		public class DownloadPreview : BeatmapLevel {
 			public System.Collections.Generic.List<Downloader> variants;
 			public DownloadPreview(ShareInfo info, ConnectedPlayerManager.ConnectedPlayer connectedPlayer) :
-					base(defaultPackCover, null, string.Empty, null, info.id.name, string.Empty, string.Empty, string.Empty, string.Empty, 0, 0, 0, 0, 0, 0, null, null, null, null, PlayerSensitivityFlag.Safe, null) =>
-				(_coverImage, variants) = (defaultPackCover, new System.Collections.Generic.List<Downloader>() {new Downloader(info, connectedPlayer)});
+					base(false, info.id.name, string.Empty, string.Empty, string.Empty, 0, 0, 0, 0, 0, PlayerSensitivityFlag.Safe, new StaticPreviewMediaData(defaultPackCover, null), null) {
+				this.variants = new System.Collections.Generic.List<Downloader>() {new Downloader(info, connectedPlayer)};
+			}
 			public System.Threading.Tasks.Task<byte[]?> Fetch(System.Action<ushort>? progress = null) =>
-				variants.FirstOrDefault()?.Fetch(progress, out System.Threading.CancellationTokenSource _) ?? System.Threading.Tasks.Task.FromResult<byte[]?>(null);
+				variants.FirstOrDefault()?.Fetch(progress, out System.Threading.CancellationTokenSource _) ??
+					System.Threading.Tasks.Task.FromResult<byte[]?>(null);
 		}
 
 		static System.Collections.Generic.List<DownloadPreview> trackedLevels = new System.Collections.Generic.List<DownloadPreview>();
@@ -18,7 +20,7 @@ static partial class BeatUpClient {
 			trackedLevels.RemoveAll(level => {
 				level.variants.RemoveAll(filter);
 				if(level.variants.Count == 0)
-					Resolve<BeatmapLevelsModel>()!._loadedPreviewBeatmapLevels.Remove(level.levelID);
+					Resolve<BeatmapLevelsModel>()!._loadedBeatmapLevels.Remove(level.levelID);
 				return level.variants.Count == 0;
 			});
 		}
@@ -36,7 +38,7 @@ static partial class BeatUpClient {
 			}
 			if(info.id.usage != ShareableType.BeatmapSet || info.id.mimeType != "application/json" || info.meta.byteLength < 1)
 				return false;
-			if(Resolve<BeatmapLevelsModel>()!._loadedPreviewBeatmapLevels.TryGetValue(info.id.name, out IPreviewBeatmapLevel preview)) {
+			if(Resolve<BeatmapLevelsModel>()!._loadedBeatmapLevels.TryGetValue(info.id.name, out BeatmapLevel preview)) {
 				DownloadPreview? share = preview as DownloadPreview;
 				if(share == null)
 					return false;
@@ -47,7 +49,7 @@ static partial class BeatUpClient {
 					source.Add(connectedPlayer, info.offset);
 			} else {
 				DownloadPreview share = new DownloadPreview(info, connectedPlayer);
-				Resolve<BeatmapLevelsModel>()!._loadedPreviewBeatmapLevels[info.id.name] = share;
+				Resolve<BeatmapLevelsModel>()!._loadedBeatmapLevels[info.id.name] = share;
 				trackedLevels.Add(share);
 			}
 			return true;

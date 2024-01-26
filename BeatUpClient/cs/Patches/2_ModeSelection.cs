@@ -7,7 +7,7 @@ static partial class BeatUpClient {
 		if(loading != null) {
 			loading.name = "BeatUpClient_LoadingControl";
 			loading.transform.localPosition = new UnityEngine.Vector3(0, 12, 0);
-			loading.GetComponent<LoadingControl>().ShowLoading(Polyglot.Localization.Get("LABEL_CHECKING_SERVER_STATUS"));
+			loading.GetComponent<LoadingControl>().ShowLoading(BGLib.Polyglot.Localization.Get("LABEL_CHECKING_SERVER_STATUS"));
 		}
 	}
 
@@ -45,8 +45,8 @@ static partial class BeatUpClient {
 
 	static string GetMaintenanceMessage(MultiplayerUnavailableReason reason, long? maintenanceWindowEndTime) {
 		if(reason == MultiplayerUnavailableReason.MaintenanceMode)
-			return Polyglot.Localization.GetFormat(MultiplayerUnavailableReasonMethods.LocalizedKey(reason), (TimeExtensions.AsUnixTime(maintenanceWindowEndTime.GetValueOrDefault()) - System.DateTime.UtcNow).ToString("h':'mm"));
-		return $"{Polyglot.Localization.Get(MultiplayerUnavailableReasonMethods.LocalizedKey(reason))} ({MultiplayerUnavailableReasonMethods.ErrorCode(reason)})";
+			return BGLib.Polyglot.Localization.Instance.GetFormatOrKey(reason.LocalizedKey(), (maintenanceWindowEndTime.GetValueOrDefault().AsUnixTime() - System.DateTime.UtcNow).ToString("h':'mm"));
+		return $"{BGLib.Polyglot.Localization.Instance.Get(MultiplayerUnavailableReasonMethods.LocalizedKey(reason))} ({MultiplayerUnavailableReasonMethods.ErrorCode(reason)})";
 	}
 
 	[Detour(typeof(MultiplayerModeSelectionFlowCoordinator), nameof(MultiplayerModeSelectionFlowCoordinator.PresentMasterServerUnavailableErrorDialog))]
@@ -59,7 +59,7 @@ static partial class BeatUpClient {
 		message.richText = true;
 		message.transform.localPosition = new UnityEngine.Vector3(0, 15, 0);
 		message.gameObject.SetActive(true);
-		self.SetTitle(Polyglot.Localization.Get("LABEL_CONNECTION_ERROR"), HMUI.ViewController.AnimationType.In);
+		self.SetTitle(BGLib.Polyglot.Localization.Get("LABEL_CONNECTION_ERROR"), HMUI.ViewController.AnimationType.In);
 	}
 
 	static bool currentServerIsBeatUp = false;

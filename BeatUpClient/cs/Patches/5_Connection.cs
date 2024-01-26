@@ -14,7 +14,7 @@ static partial class BeatUpClient {
 
 	[Patch(PatchType.Prefix, typeof(LevelSelectionNavigationController), nameof(LevelSelectionNavigationController.Setup))]
 	public static void LevelSelectionNavigationController_Setup(ref BeatmapCharacteristicSO[] notAllowedCharacteristics, string actionButtonText, ref bool enableCustomLevels) {
-		if(actionButtonText != Polyglot.Localization.Get("BUTTON_SELECT"))
+		if(actionButtonText != BGLib.Polyglot.Localization.Get("BUTTON_SELECT"))
 			return;
 		enableCustomLevels |= BeatUpClient.enableCustomLevels;
 		notAllowedCharacteristics = new BeatmapCharacteristicSO[0];

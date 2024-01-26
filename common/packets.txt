@@ -1,4 +1,5 @@
 u8 GameVersion
+	Unknown
 	1_19_0
 	1_19_1
 	1_20_0
@@ -24,6 +25,7 @@ u8 GameVersion
 	1_33_0
 	1_34_0
 	1_34_2
+	1_34_4
 n PacketContext
 	u8 netVersion
 	u8 protocolVersion

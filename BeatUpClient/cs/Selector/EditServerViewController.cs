@@ -21,7 +21,7 @@ static partial class BeatUpClient {
 			inputField._textLengthLimit = 180;
 			inputField.onValueChanged = new HMUI.InputFieldView.InputFieldChanged();
 			inputField.onValueChanged.AddListener(callback.Invoke);
-			Polyglot.LocalizedTextMeshProUGUI localizedText = inputField._placeholderText.GetComponent<Polyglot.LocalizedTextMeshProUGUI>();
+			BGLib.Polyglot.LocalizedTextMeshProUGUI localizedText = inputField._placeholderText.GetComponent<BGLib.Polyglot.LocalizedTextMeshProUGUI>();
 			localizedText.enabled = (placeholderKey == null);
 			localizedText.Key = placeholderKey ?? string.Empty;
 			UnityEngine.RectTransform transform = (UnityEngine.RectTransform)gameObject.transform;
@@ -144,7 +144,7 @@ static partial class BeatUpClient {
 				this.flowCoordinator = modeSelection;
 				this.edit = edit;
 				modeSelection.PresentViewController(this, null, HMUI.ViewController.AnimationDirection.Vertical, false);
-				modeSelection.SetTitle(Polyglot.Localization.Get(edit ? "BEATUP_EDIT_SERVER" : "BEATUP_ADD_SERVER"), HMUI.ViewController.AnimationType.In);
+				modeSelection.SetTitle(BGLib.Polyglot.Localization.Get(edit ? "BEATUP_EDIT_SERVER" : "BEATUP_ADD_SERVER"), HMUI.ViewController.AnimationType.In);
 				modeSelection._screenSystem.SetBackButton(false, true);
 			}
 		}

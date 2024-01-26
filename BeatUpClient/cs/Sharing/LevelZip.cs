@@ -30,14 +30,21 @@ static partial class BeatUpClient {
 		}
 	}
 
-	static async System.Threading.Tasks.Task<(Hash256, System.ArraySegment<byte>)> ZipLevel(CustomBeatmapLevel level, System.Threading.CancellationToken cancellationToken, System.Action<ushort>? onProgress = null) {
-		(string path, string name)[] files = level.standardLevelInfoSaveData.difficultyBeatmapSets
-			.SelectMany(set => set.difficultyBeatmaps)
-			.Select(diff => (System.IO.Path.Combine(level.customLevelPath, diff.beatmapFilename), diff.beatmapFilename))
-			.Prepend((level.songAudioClipPath, level.standardLevelInfoSaveData.songFilename))
-			.Prepend((System.IO.Path.Combine(level.customLevelPath, "Info.dat"), "Info.dat"))
-			.ToArray();
-		ulong totalLength = files.Aggregate(0LU, (total, file) => total + (ulong)new System.IO.FileInfo(file.path).Length);
+	static async System.Threading.Tasks.Task<(Hash256, System.ArraySegment<byte>)> ZipLevel(FileSystemBeatmapLevelData levelData, System.Threading.CancellationToken cancellationToken, System.Action<ushort>? onProgress = null) {
+		string customLevelPath = System.IO.Path.GetDirectoryName(levelData.songAudioClipPath);
+		System.Collections.Generic.List<System.IO.FileInfo> files = new(3 + levelData._difficultyBeatmaps.Count * 2);
+		files.Add(new(System.IO.Path.Combine(customLevelPath, "Info.dat")));
+		if(!string.IsNullOrEmpty(levelData._audioDataPath))
+			files.Add(new(levelData._audioDataPath));
+		foreach(FileDifficultyBeatmap diff in levelData._difficultyBeatmaps.Values) {
+			if(!string.IsNullOrEmpty(diff.lightshowPath) && System.IO.File.Exists(diff.lightshowPath))
+				files.Add(new(diff.lightshowPath));
+			if(!string.IsNullOrEmpty(diff.beatmapPath) && System.IO.File.Exists(diff.beatmapPath))
+				files.Add(new(diff.beatmapPath));
+		}
+		files.Add(new(levelData.songAudioClipPath));
+
+		ulong totalLength = files.Aggregate(0LU, (total, file) => total + (ulong)file.Length);
 		if(totalLength > MaxUnzippedSize) {
 			Log.Warn("Level too large for sharing!");
 			return (default, default);
@@ -54,10 +61,10 @@ static partial class BeatUpClient {
 		using System.IO.MemoryStream memoryStream = new System.IO.MemoryStream();
 		using(System.IO.Compression.ZipArchive archive = new System.IO.Compression.ZipArchive(memoryStream, System.IO.Compression.ZipArchiveMode.Create, true)) {
 			ulong progress = 0;
-			foreach((string path, string name) file in files) {
-				Log.Debug($"    Compressing `{file.path}`");
-				using System.IO.Stream fileStream = System.IO.File.Open(file.path, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read);
-				using System.IO.Stream entry = archive.CreateEntry(file.name).Open();
+			foreach(System.IO.FileInfo file in files) {
+				Log.Debug($"    Compressing `{file.Name}`");
+				using System.IO.Stream fileStream = file.OpenRead();
+				using System.IO.Stream entry = archive.CreateEntry(file.Name).Open();
 				await fileStream.CopyToAsync(new CallbackStream(entry, delta => UpdateProgress(progress += delta)), 81920, cancellationToken);
 			}
 		}

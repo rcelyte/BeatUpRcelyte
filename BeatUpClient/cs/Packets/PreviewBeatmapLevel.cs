@@ -1,3 +1,5 @@
+using static System.Linq.Enumerable;
+
 static partial class BeatUpClient {
 	static string? HashForLevelID(string? levelId) {
 		string[] parts = (levelId ?? string.Empty).Split(new[] {'_', ' '});
@@ -6,7 +8,13 @@ static partial class BeatUpClient {
 		return parts[2];
 	}
 
-	internal abstract class PreviewBeatmapLevel : BeatUpPacket, IPreviewBeatmapLevel {
+	internal abstract class PreviewBeatmapLevel : BeatUpPacket {
+		public struct PreviewDifficultyBeatmapSet {
+			public BeatmapCharacteristicSO characteristic;
+			public BeatmapDifficulty[] difficulties;
+			public PreviewDifficultyBeatmapSet(BeatmapCharacteristicSO characteristic, BeatmapDifficulty[] difficulties) =>
+				(this.characteristic, this.difficulties) = (characteristic, difficulties);
+		};
 		bool mpCore;
 		public string? levelID {get;} = string.Empty;
 		public string? songName {get;} = string.Empty;
@@ -21,9 +29,6 @@ static partial class BeatUpClient {
 		public float previewDuration {get;}
 		public float songDuration {get;}
 		public System.Collections.Generic.IReadOnlyList<PreviewDifficultyBeatmapSet>? previewDifficultyBeatmapSets {get; protected set;} = null;
-		public EnvironmentInfoSO? environmentInfo {get;} = null;
-		public EnvironmentInfoSO? allDirectionsEnvironmentInfo {get;} = null;
-		public EnvironmentInfoSO[] environmentInfos => System.Array.Empty<EnvironmentInfoSO>();
 		public PlayerSensitivityFlag contentRating => PlayerSensitivityFlag.Safe;
 		public readonly ByteArrayNetSerializable cover = new ByteArrayNetSerializable("cover", 0, 8192);
 		UnityEngine.Sprite? localSprite = null;
@@ -74,13 +79,13 @@ static partial class BeatUpClient {
 			writer.Put((float)previewStartTime);
 			writer.Put((float)previewDuration);
 			writer.Put((float)songDuration);
-			writer.Put((string?)environmentInfo?.serializedName);
-			writer.Put((string?)allDirectionsEnvironmentInfo?.serializedName);
+			writer.Put((string?)null);
+			writer.Put((string?)null);
 			writer.Put((byte)UpperBound((uint)(previewDifficultyBeatmapSets?.Count ?? 0), 8));
 			foreach(PreviewDifficultyBeatmapSet previewDifficultyBeatmapSet in previewDifficultyBeatmapSets ?? new PreviewDifficultyBeatmapSet[0]) {
-				writer.Put((string)previewDifficultyBeatmapSet.beatmapCharacteristic.serializedName);
-				writer.Put((byte)UpperBound((uint)previewDifficultyBeatmapSet.beatmapDifficulties.Length, 5));
-				foreach(BeatmapDifficulty difficulty in previewDifficultyBeatmapSet.beatmapDifficulties)
+				writer.Put((string)previewDifficultyBeatmapSet.characteristic.serializedName);
+				writer.Put((byte)UpperBound((uint)previewDifficultyBeatmapSet.difficulties.Length, 5));
+				foreach(BeatmapDifficulty difficulty in previewDifficultyBeatmapSet.difficulties)
 					writer.PutVarUInt((uint)difficulty);
 			}
 			cover.Serialize(writer);
@@ -100,8 +105,8 @@ static partial class BeatUpClient {
 			}
 			(songTimeOffset, shuffle, shufflePeriod, previewStartTime, previewDuration, songDuration) =
 				(reader.GetFloat(), reader.GetFloat(), reader.GetFloat(), reader.GetFloat(), reader.GetFloat(), reader.GetFloat());
-			environmentInfo = Resolve<CustomLevelLoader>()!._environmentSceneInfoCollection.GetEnvironmentInfoBySerializedName(reader.GetString());
-			allDirectionsEnvironmentInfo = Resolve<CustomLevelLoader>()!._environmentSceneInfoCollection.GetEnvironmentInfoBySerializedName(reader.GetString());
+			reader.GetString();
+			reader.GetString();
 			uint count = UpperBound(reader.GetByte(), 8);
 			previewDifficultyBeatmapSets = (count < 1) ? null : CreateArray(count, i => {
 				// TODO: need a good solution for handling `lawless`, `lightshow`, etc when SongCore isn't available
@@ -111,18 +116,29 @@ static partial class BeatUpClient {
 			});
 			cover.Deserialize(reader);
 		}
-		protected PreviewBeatmapLevel(IPreviewBeatmapLevel? prv, bool mpCore) : this(mpCore) {
-			if(prv == null)
+		protected PreviewBeatmapLevel(PreviewBeatmapLevel? from, bool mpCore) : this(mpCore) {
+			if(from == null)
 				return;
-			Log.Debug($"PreviewBeatmapLevel(beatmapLevel={prv}, previewDifficultyBeatmapSets={previewDifficultyBeatmapSets}, mpCore={mpCore}) pre");
+			Log.Debug($"PreviewBeatmapLevel(from={from}, mpCore={mpCore}) pre");
 			(levelID, songName, songSubName, songAuthorName, levelAuthorName, beatsPerMinute, songTimeOffset, shuffle, shufflePeriod, previewStartTime, previewDuration, songDuration) =
-				(prv.levelID, prv.songName, prv.songSubName, prv.songAuthorName, prv.levelAuthorName, prv.beatsPerMinute, prv.songTimeOffset, prv.shuffle, prv.shufflePeriod, prv.previewStartTime, prv.previewDuration, prv.songDuration);
-			previewDifficultyBeatmapSets = prv.previewDifficultyBeatmapSets;
-			cover.SetData(new byte[0]);
-			if(prv is PreviewBeatmapLevel preview) {
-				cover.SetData(preview.cover.GetData());
-			} else if(!mpCore) {
-				System.Threading.Tasks.Task<UnityEngine.Sprite?> spriteTask = prv.GetCoverImageAsync(System.Threading.CancellationToken.None);
+				(from.levelID, from.songName, from.songSubName, from.songAuthorName, from.levelAuthorName, from.beatsPerMinute, from.songTimeOffset, from.shuffle, from.shufflePeriod, from.previewStartTime, from.previewDuration, from.songDuration);
+			previewDifficultyBeatmapSets = from.previewDifficultyBeatmapSets;
+			cover.SetData(from.cover.GetData());
+			Log.Debug($"PreviewBeatmapLevel(from={from}, previewDifficultyBeatmapSets={previewDifficultyBeatmapSets}, mpCore={mpCore}) post");
+		}
+		protected PreviewBeatmapLevel(BeatmapLevel from, bool mpCore) : this(mpCore) {
+			Log.Debug($"PreviewBeatmapLevel(from={from}, mpCore={mpCore}) pre");
+			(levelID, songName, songSubName, songAuthorName, levelAuthorName, beatsPerMinute, songTimeOffset, shuffle, shufflePeriod, previewStartTime, previewDuration, songDuration) =
+				(from.levelID, from.songName, from.songSubName, from.songAuthorName, string.Empty, from.beatsPerMinute, from.songTimeOffset, 0, 0, from.previewStartTime, from.previewDuration, from.songDuration);
+			previewDifficultyBeatmapSets = from.beatmapBasicData.Keys
+				.GroupBy(
+					((BeatmapCharacteristicSO characteristic, BeatmapDifficulty difficulty) pair) => pair.characteristic,
+					(characteristic, pairs) => new PreviewDifficultyBeatmapSet(characteristic, pairs
+						.Select(((BeatmapCharacteristicSO characteristic, BeatmapDifficulty difficulty) pair) => pair.difficulty)
+						.ToArray()))
+				.ToArray();
+			if(!mpCore) {
+				System.Threading.Tasks.Task<UnityEngine.Sprite> spriteTask = from.previewMediaData.GetCoverSpriteAsync(System.Threading.CancellationToken.None);
 				if(spriteTask.IsCompleted) { // `Wait()`ing on an async method will deadlock
 					SetCover(spriteTask.Result);
 					Log.Debug($"    Cover size: {cover.length} bytes");
@@ -130,9 +146,7 @@ static partial class BeatUpClient {
 					Log.Debug($"    Cover not encoded; operation would block");
 				}
 			}
-			environmentInfo = prv.environmentInfo;
-			allDirectionsEnvironmentInfo = prv.allDirectionsEnvironmentInfo;
-			Log.Debug($"PreviewBeatmapLevel(beatmapLevel={prv}, previewDifficultyBeatmapSets={previewDifficultyBeatmapSets}, mpCore={mpCore}) post");
+			Log.Debug($"PreviewBeatmapLevel(from={from}, previewDifficultyBeatmapSets={previewDifficultyBeatmapSets}, mpCore={mpCore}) post");
 		}
 	}
 }
