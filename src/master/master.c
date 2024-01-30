@@ -632,7 +632,7 @@ static void handle_WireGraphConnect(struct LocalMasterContext *ctx, WireCookie c
 		.clientVersion = PV_LEGACY_DEFAULT,
 	};
 	allocInfo.clientVersion.direct = true;
-	allocInfo.clientVersion.protocolVersion = req->protocolVersion;
+	allocInfo.clientVersion.protocolVersion = (uint8_t)req->protocolVersion;
 	allocInfo.clientVersion.gameVersion = req->gameVersion;
 	const ConnectToServerResponse_Result result = SendWireSessionAlloc(&allocInfo, &state.base, sizeof(state), req->configuration, req->code, &ctx->net.ctr_drbg);
 	if(result == ConnectToServerResponse_Result_Success)
@@ -642,7 +642,7 @@ static void handle_WireGraphConnect(struct LocalMasterContext *ctx, WireCookie c
 	});
 }
 
-static void handle_WireSessionAllocResp(struct LocalMasterContext *ctx, struct WireLink *link, struct PoolHost *host, WireCookie cookie, const struct WireSessionAllocResp *sessionAlloc, bool spawn) {
+static void handle_WireSessionAllocResp(struct LocalMasterContext *const ctx, struct WireLink *const link, struct PoolHost *const host, const WireCookie cookie, const struct WireSessionAllocResp *const sessionAlloc, const bool spawn) {
 	const struct DataView view = WireLink_getCookie(link, cookie);
 	const struct ConnectCookie *const state = (struct ConnectCookie*)view.data;
 	bool dropped = spawn;
@@ -683,7 +683,7 @@ static void master_onWireMessage_status(struct LocalMasterContext *ctx, struct W
 			ctx->status = NULL;
 		return;
 	}
-	if(message->type == WireMessageType_WireStatusHook) {
+	if(message->type == WireMessageType_WireStatusAttach) {
 		ctx->status = link;
 		return;
 	}
@@ -702,7 +702,7 @@ static void master_onWireMessage(struct WireContext *wire, struct WireLink *link
 	net_lock(&ctx->net);
 	struct PoolHost **const host = (struct PoolHost**)WireLink_userptr(link);
 	if(*host == NULL) {
-		if(message == NULL || message->type != WireMessageType_WireSetAttribs) {
+		if(message == NULL || message->type != WireMessageType_WireInstanceAttach) {
 			master_onWireMessage_status(ctx, link, message);
 			goto unlock;
 		}
@@ -724,16 +724,26 @@ static void master_onWireMessage(struct WireContext *wire, struct WireLink *link
 		*host = NULL;
 		goto unlock;
 	}
-	bool spawn = false;
 	switch(message->type) {
-		case WireMessageType_WireSetAttribs: TEMPpool_host_setAttribs(*host, message->setAttribs.capacity, message->setAttribs.discover); break;
-		case WireMessageType_WireRoomSpawnResp: spawn = true; [[fallthrough]];
+		case WireMessageType_WireInstanceAttach: TEMPpool_host_setAttribs(*host, message->instanceAttach.capacity, message->instanceAttach.discover); break;
+		case WireMessageType_WireRoomSpawnResp: [[fallthrough]];
 		case WireMessageType_WireRoomJoinResp: {
-			handle_WireSessionAllocResp(ctx, link, *host, message->cookie, &message->roomJoinResp.base, spawn);
+			handle_WireSessionAllocResp(ctx, link, *host, message->cookie, &message->roomJoinResp.base, message->type == WireMessageType_WireRoomSpawnResp);
 			WireLink_freeCookie(link, message->cookie);
 			break;
 		}
-		case WireMessageType_WireRoomCloseNotify: pool_handle_free(*host, message->roomCloseNotify.room); break;
+		case WireMessageType_WireRoomStatusNotify: [[fallthrough]];
+		case WireMessageType_WireRoomCloseNotify: {
+			struct WireMessage forward = *message;
+			forward.cookie = pool_handle_sequence(*host, message->cookie);
+			if(message->type == WireMessageType_WireRoomStatusNotify)
+				*(uint32_t*)forward.roomStatusNotify.entry = pool_handle_code(*host, message->cookie);
+			else
+				pool_handle_free(*host, message->cookie);
+			if(ctx->status == NULL)
+				break;
+			WireLink_send(ctx->status, &forward);
+		} break;
 		default: uprintf("Unhandled wire message [%s]\n", reflect(WireMessageType, message->type));
 	}
 	unlock: net_unlock(&ctx->net);

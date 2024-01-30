@@ -521,6 +521,9 @@ static void gen_header(char **out) {
 		"\t.netVersion = 11,\n"
 		"\t.protocolVersion = 6,\n"
 		"\t.gameVersion = GameVersion_1_19_0,\n"
+		"};\n"
+		"static const struct PacketContext PV_WIRE = {\n"
+		"\t.netVersion = 12,\n"
 		"};\n");
 	for(struct Token *token = tokens; token < tokens_end; ++token) {
 		if(token->type != TType_Struct_start)

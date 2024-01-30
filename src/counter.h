@@ -69,7 +69,7 @@ static inline bool CounterP_overwrite(struct CounterP *set, uint32_t bit, bool s
 	*out |= i * 64;
 	return true;
 }
-[[maybe_unused]] static bool CounterP_set_next(struct CounterP *set, uint32_t *out) {
+[[maybe_unused]] static bool CounterP_set_next(struct CounterP *const set, uint32_t *const out) {
 	uint32_t i = 0;
 	for(uint32_t word = 0; word < lengthof(set->bits); ++word)
 		i |= (uint32_t)(~set->bits[word] != UINT64_C(0)) << word;
@@ -81,28 +81,34 @@ static inline bool CounterP_overwrite(struct CounterP *set, uint32_t bit, bool s
 	*out |= i * 64;
 	return true;
 }
-static inline struct CounterP CounterP_and(struct CounterP a, struct CounterP b) {
+static inline struct CounterP CounterP_and(const struct CounterP a, const struct CounterP b) {
 	struct CounterP out = {0};
 	for(uint32_t i = 0; i < lengthof(out.bits); ++i)
 		out.bits[i] = a.bits[i] & b.bits[i];
 	return out;
 }
-static inline struct CounterP CounterP_or(struct CounterP a, struct CounterP b) {
+static inline struct CounterP CounterP_or(const struct CounterP a, const struct CounterP b) {
 	struct CounterP out = {0};
 	for(uint32_t i = 0; i < lengthof(out.bits); ++i)
 		out.bits[i] = a.bits[i] | b.bits[i];
 	return out;
 }
-static inline bool CounterP_isEmpty(struct CounterP set) {
+static inline bool CounterP_isEmpty(const struct CounterP set) {
 	return memcmp(set.bits, COUNTERP_CLEAR.bits, sizeof(set.bits)) == 0;
 }
 static inline bool CounterP_contains(struct CounterP set, struct CounterP subset) {
 	set = CounterP_and(set, subset);
 	return memcmp(set.bits, subset.bits, sizeof(set.bits)) == 0;
 }
-static inline bool CounterP_containsNone(struct CounterP set, struct CounterP subset) {
+static inline bool CounterP_containsNone(const struct CounterP set, struct CounterP subset) {
 	return CounterP_isEmpty(CounterP_and(set, subset));
 }
-static inline uint8_t CounterP_byte(struct CounterP set, uint32_t offset) {
+static inline uint8_t CounterP_byte(const struct CounterP set, uint32_t offset) {
 	return (uint8_t)(set.bits[offset / 64] >> (offset % 64));
+}
+static inline uint32_t CounterP_count(const struct CounterP set) {
+	uint32_t count = 0;
+	for(const uint64_t *word = set.bits; word < endof(set.bits); ++word)
+		count += (unsigned)__builtin_popcountll(*word);
+	return count;
 }

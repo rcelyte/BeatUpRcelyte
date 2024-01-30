@@ -20,5 +20,6 @@ struct PoolHost *pool_host_iter_next(struct PoolHost *current);
 struct PoolHost *pool_handle_new(uint32_t *room_out, mbedtls_ctr_drbg_context *ctr_drbg);
 struct PoolHost *pool_handle_new_named(uint32_t *room_out, ServerCode code);
 void pool_handle_free(struct PoolHost *host, uint32_t room);
-ServerCode pool_handle_code(struct PoolHost *host, uint32_t room);
+ServerCode pool_handle_code(const struct PoolHost *host, uint32_t room);
+uint32_t pool_handle_sequence(const struct PoolHost *host, uint32_t room);
 struct PoolHost *pool_handle_lookup(uint32_t *room_out, ServerCode code);

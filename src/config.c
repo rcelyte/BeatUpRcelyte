@@ -106,7 +106,8 @@ static void config_read_url(const char **it, jsonkey_t key, char address_out[sta
 static void config_read_hex(const char **it, jsonkey_t key, uint8_t key_out[static 32], uint8_t *length_out) {
 	static const uint8_t table[128] = {
 		['0'] = 0, ['1'] = 1, ['2'] = 2, ['3'] = 3, ['4'] = 4, ['5'] = 5, ['6'] = 6, ['7'] = 7, ['8'] = 8, ['9'] = 9,
-		['a'] = 10, ['b'] = 11, ['c'] = 12, ['d'] = 13, ['e'] = 14, ['f'] = 15, ['A'] = 10, ['B'] = 11, ['C'] = 12, ['D'] = 13, ['E'] = 14, ['F'] = 15,
+		['a'] = 10, ['b'] = 11, ['c'] = 12, ['d'] = 13, ['e'] = 14, ['f'] = 15,
+		['A'] = 10, ['B'] = 11, ['C'] = 12, ['D'] = 13, ['E'] = 14, ['F'] = 15,
 	};
 	uint32_t str_len = 0;
 	const char *str = json_read_string(it, &str_len);

@@ -1,7 +1,7 @@
 n WireAddress
 	vu32 length
 	u8 data[128, .length]
-n WireSetAttribs
+n WireInstanceAttach
 	u32 capacity
 	b discover
 n WireSessionAlloc
@@ -31,9 +31,39 @@ n WireRoomSpawnResp
 	WireSessionAllocResp base
 n WireRoomJoinResp
 	WireSessionAllocResp base
-n WireRoomCloseNotify
+n WireRoomQuery
 	u32 room
-n WireStatusHook
+n WireRoomQueryResp_PlayerInfo
+	PacketContext version
+	b modded
+	String userName
+	Color32 colorScheme[7]
+n WireRoomQueryResp
+	String levelID
+	u8 hostIndex
+	u8 players_len
+	WireRoomQueryResp_PlayerInfo players[254, .players_len]
+d WireStatusEntry
+	u32 code
+	u8 protocolVersion
+	u8 playerCount
+	u8 playerCapacity
+	u16 playerNPS
+	u16 levelNPS
+	b public:1
+	b quickplay:1
+	b skipResults:1
+	b perPlayerDifficulty:1
+	b perPlayerModifiers:1
+	SongSelectionMode selectionMode
+	String levelName
+	String levelID
+	ByteArrayNetSerializable levelCover
+n WireRoomStatusNotify
+	vu32 entry_len
+	u8 entry[8384, .entry_len]
+n WireRoomCloseNotify
+n WireStatusAttach
 u8 MultiplayerPlacementErrorCode
 	Success
 	Unknown
@@ -63,12 +93,15 @@ d WireMessage
 	u32 cookie
 	WireMessageType type
 	u8 WireMessageType(.type)
-		WireSetAttribs setAttribs
-		WireRoomSpawn roomSpawn
-		WireRoomJoin roomJoin
-		WireRoomSpawnResp roomSpawnResp
-		WireRoomJoinResp roomJoinResp
+		WireInstanceAttach instanceAttach
+		WireStatusAttach statusAttach
+		WireRoomStatusNotify roomStatusNotify
 		WireRoomCloseNotify roomCloseNotify
-		WireStatusHook statusHook
+		WireRoomSpawn roomSpawn
+		WireRoomSpawnResp roomSpawnResp
+		WireRoomJoin roomJoin
+		WireRoomJoinResp roomJoinResp
+		WireRoomQuery roomQuery
+		WireRoomQueryResp roomQueryResp
 		WireGraphConnect graphConnect
 		WireGraphConnectResp graphConnectResp

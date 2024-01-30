@@ -15,11 +15,12 @@ struct GraphConnectCookie {
 	struct HttpContext *http;
 	struct String secret;
 	struct BeatmapLevelSelectionMask selectionMask;
-	bool shortMask;
+	bool shortMask, web;
 };
 
 int32_t status_bind_tcp(uint16_t port, uint32_t backlog);
 void status_resp(struct HttpContext *http, const char path[], struct HttpRequest httpRequest, struct WireLink *master);
+void status_update_index(uint32_t sequence, const uint8_t entry[], uint32_t entry_len);
 void status_graph_resp(struct DataView cookieView, const struct WireGraphConnectResp *resp);
 
 /*static tempList[2] = {{

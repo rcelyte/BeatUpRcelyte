@@ -68,6 +68,8 @@ int main(int argc, const char *argv[]) {
 	}
 	fail4: instance_cleanup();
 	fail2: status_ssl_cleanup();
+	if(cfg.statusPort)
+		status_internal_cleanup();
 	fail1:
 	if(cfg.masterPort) // TODO: unconditional cleanup
 		master_cleanup();

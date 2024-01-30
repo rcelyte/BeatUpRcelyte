@@ -9,7 +9,7 @@ HOST := $(shell uname -m)
 NATIVE_CC ?= cc
 OBJDIR := .obj/$(shell $(CC) -dumpmachine)
 FILES := $(wildcard src/*.c src/*/*.c)
-HTMLS := $(wildcard src/*/*.html)
+HTMLS := $(wildcard src/status/*.html)
 LIBS := libmbedtls.a libmbedx509.a libmbedcrypto.a
 OBJS := $(FILES:%=$(OBJDIR)/%.o) $(HTMLS:%=$(OBJDIR)/%.s) $(LIBS:%=$(OBJDIR)/%)
 DEPS := $(FILES:%=$(OBJDIR)/%.d)
@@ -65,7 +65,7 @@ $(OBJDIR)/libs.mk: makefile
 	#endif
 	#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(_WIN64) || defined(WINAPI_FAMILY) || defined(_MSC_VER) || defined(__MINGW32__) || defined(__MINGW64__) || defined(__CYGWIN32__)
 	CFLAGS += -DWINDOWS
-	LDFLAGS += -lws2_32
+	LDFLAGS += -lws2_32 -lbcrypt
 	#endif
 	EOF
 

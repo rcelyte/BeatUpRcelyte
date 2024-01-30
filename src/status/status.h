@@ -8,3 +8,4 @@ bool status_ssl_init(const char *path, uint16_t port, mbedtls_x509_crt certs[2],
 void status_ssl_cleanup(void);
 
 void status_internal_init(void);
+void status_internal_cleanup(void);

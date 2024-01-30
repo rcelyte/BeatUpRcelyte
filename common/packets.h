@@ -1,4 +1,5 @@
 #pragma once
+#include "global.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -36,5 +37,14 @@ static inline bool LongString_eq(struct LongString a, struct LongString b) {retu
 	struct String out = {.isNull = false};
 	out.length = (uint32_t)vsnprintf(out.data, sizeof(out.data) / sizeof(*out.data), format, args);
 	va_end(args);
+	return out;
+}
+
+static inline struct String LongString_truncate(const struct LongString *const from) {
+	struct String out = {
+		.length = (from->length > lengthof(out.data) ? lengthof(out.data) : from->length),
+		.isNull = from->isNull,
+	};
+	memcpy(out.data, from->data, out.length);
 	return out;
 }

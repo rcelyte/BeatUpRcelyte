@@ -13,8 +13,10 @@ struct PoolHost {
 	uint32_t capacity;
 	struct Counter64 blocks;
 	ServerCode *codes;
+	uint32_t *sequence;
 };
 
+static uint32_t globalSequence = 0;
 static uint16_t lastId = 0;
 static struct PoolHost *firstHost = NULL;
 
@@ -70,15 +72,18 @@ void TEMPpool_host_setAttribs(struct PoolHost *host, uint32_t capacity, bool dis
 		.capacity = capacity,
 		.blocks.bits = ~UINT64_C(0),
 		.codes = malloc(capacity * sizeof(*host->codes)),
+		.sequence = malloc(capacity * sizeof(*host->sequence)),
 	};
-	if(host->codes == NULL) {
-		host->discover = false;
-		host->capacity = 0;
+	if(host->codes == NULL || host->sequence == NULL) {
+		free(host->codes);
+		free(host->sequence);
+		*host = (struct PoolHost){0};
 		uprintf("alloc error\n");
 		return;
 	}
 	for(ServerCode *it = host->codes, *end = &host->codes[capacity]; it < end; ++it)
 		*it = ServerCode_NONE;
+	memset(host->sequence, 0, capacity * sizeof(*host->sequence));
 }
 
 struct WireLink *pool_host_wire(struct PoolHost *host) {
@@ -114,6 +119,7 @@ static struct PoolHost *_pool_handle_new(uint32_t *room_out, ServerCode code) {
 	if(freeCount < 2)
 		Counter64_clear(&host->blocks, block);
 	host->codes[*room_out] = code;
+	host->sequence[*room_out] = ++globalSequence;
 	++globalRoomCount;
 	uprintf("%u room%s open\n", globalRoomCount, (globalRoomCount == 1) ? "" : "s");
 	return host;
@@ -157,8 +163,12 @@ void pool_handle_free(struct PoolHost *host, uint32_t room) {
 	uprintf("%u room%s open\n", globalRoomCount, (globalRoomCount == 1) ? "" : "s");
 }
 
-ServerCode pool_handle_code(struct PoolHost *host, uint32_t room) {
+ServerCode pool_handle_code(const struct PoolHost *const host, const uint32_t room) {
 	return host->codes[room];
+}
+
+uint32_t pool_handle_sequence(const struct PoolHost *const host, const uint32_t room) {
+	return host->sequence[room];
 }
 
 struct PoolHost *pool_handle_lookup(uint32_t *room_out, ServerCode code) { // TODO: use a hash table for this
