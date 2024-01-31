@@ -1,53 +1,6 @@
-#include "../global.h"
-#include "master.h"
-#include "pool.h"
-#include "../counter.h"
-#include <stdio.h>
+#include "master_internal.h"
 #include <stdlib.h>
-#include <string.h>
 #include <assert.h>
-
-struct HandshakeState {
-	uint32_t certificateRequestId;
-	uint32_t helloResponseId;
-	uint32_t certificateOutboundCount;
-	HandshakeMessageType step;
-};
-struct MasterPacket {
-	uint32_t firstSend, lastSend;
-	uint16_t length;
-	bool encrypt;
-	uint8_t data[512];
-};
-struct MasterResend {
-	struct Counter64 set;
-	struct MasterPacket slots[64];
-	uint32_t requestIds[64];
-};
-struct MasterMultipartList {
-	struct MasterMultipartList *next;
-	uint32_t id;
-	uint32_t totalLength;
-	uint16_t count;
-	uint8_t data[];
-};
-struct MasterSession {
-	struct NetSession net;
-	struct MasterSession *next;
-	uint32_t epoch;
-	uint32_t lastSentRequestId;
-	struct HandshakeState handshake;
-	struct MasterResend resend;
-	struct MasterMultipartList *multipartList;
-	ENetHost *enet;
-};
-
-struct LocalMasterContext {
-	struct MasterContext base;
-	struct NetContext net;
-	struct WireContext wire;
-	struct WireLink *status;
-};
 
 struct MasterSession *MasterContext_lookup(struct MasterContext *ctx, struct SS addr) {
 	for(struct MasterSession *session = ctx->sessionList; session; session = session->next)
@@ -90,10 +43,6 @@ struct NetSession *MasterContext_onResolve(struct MasterContext *ctx, struct Net
 
 	*out_len = NetSession_decrypt(&session->net, packet, packet_len, out);
 	return &session->net;
-}
-
-static struct NetSession *master_onResolve(struct NetContext *net, struct SS addr, const uint8_t packet[static 1536], uint32_t packet_len, uint8_t out[static 1536], uint32_t *out_len, void**) {
-	return MasterContext_onResolve(&((struct LocalMasterContext*)net->userptr)->base, net, addr, packet, packet_len, out, out_len);
 }
 
 static struct MasterSession *master_disconnect(struct MasterSession *session) {
@@ -148,17 +97,13 @@ uint32_t MasterContext_onResend(struct MasterContext *ctx, struct NetContext *ne
 	return nextTick;
 }
 
-static uint32_t master_onResend(struct NetContext *net, uint32_t currentTime) {
-	return MasterContext_onResend(&((struct LocalMasterContext*)net->userptr)->base, net, currentTime);
-}
-
-static uint32_t master_prevRequestId(const struct MasterSession *const session) {
+static uint32_t MasterSession_prevRequestId(const struct MasterSession *const session) {
 	return (session->lastSentRequestId & 63) | session->epoch;
 }
 
-static uint32_t master_nextRequestId(struct MasterSession *session) {
+uint32_t MasterSession_nextRequestId(struct MasterSession *const session) {
 	++session->lastSentRequestId;
-	return master_prevRequestId(session);
+	return MasterSession_prevRequestId(session);
 }
 
 // return is valid until the next call to `master_send()`
@@ -182,18 +127,18 @@ static void master_send_internal(struct NetContext *net, struct MasterSession *s
 		slot->length = length;
 		slot->encrypt = encrypt;
 		memcpy(slot->data, buf, length);
-		session->resend.requestIds[i] = master_prevRequestId(session);
+		session->resend.requestIds[i] = MasterSession_prevRequestId(session);
 	} else {
 		uprintf("RESEND BUFFER FULL\n");
 		net_send_internal(net, &session->net, buf, length, encrypt ? EncryptMode_BGNet : EncryptMode_None);
 	}
 }
 
-#define master_send(net, session, ...) _master_send(net, session, _Generic(*(__VA_ARGS__), \
+#define master_send(net, session, ...) MasterSession_send(net, session, _Generic(*(__VA_ARGS__), \
 	struct UserMessage: MessageType_UserMessage, \
 	struct GameLiftMessage: MessageType_GameLiftMessage, \
 	struct HandshakeMessage: MessageType_HandshakeMessage), __VA_ARGS__)
-static uint32_t _master_send(struct NetContext *const net, struct MasterSession *const session, const MessageType type, const void *const message) {
+uint32_t MasterSession_send(struct NetContext *const net, struct MasterSession *const session, const MessageType type, const void *const message) {
 	uint8_t resp[65536], *resp_end = resp;
 	bool res = pkt_write_c(&resp_end, endof(resp), session->net.version, NetPacketHeader, {
 		.property = PacketProperty_UnconnectedMessage,
@@ -219,7 +164,7 @@ static uint32_t _master_send(struct NetContext *const net, struct MasterSession 
 	}
 	struct MultipartMessageProxy mmp = {
 		.value = {
-			.multipartMessageId = master_prevRequestId(session),
+			.multipartMessageId = MasterSession_prevRequestId(session),
 			.length = 384,
 			.totalLength = (uint32_t)(resp_end - &resp[1]), // TODO: `_Static_assert()` offset of serialized `NetPacketHeader.unconnectedMessage` to warn on potential ABI breaks
 		},
@@ -231,7 +176,7 @@ static uint32_t _master_send(struct NetContext *const net, struct MasterSession 
 	}
 	uint32_t partCount = 0;
 	do {
-		mmp.value.base.requestId = master_nextRequestId(session);
+		mmp.value.base.requestId = MasterSession_nextRequestId(session);
 		if(mmp.value.length > mmp.value.totalLength - mmp.value.offset)
 			mmp.value.length = mmp.value.totalLength - mmp.value.offset;
 		uint8_t part[512], *part_end = part;
@@ -300,7 +245,7 @@ static void handle_ClientHelloRequest(struct NetContext *net, struct MasterSessi
 		.type = HandshakeMessageType_HelloVerifyRequest,
 		.helloVerifyRequest = {
 			.base = {
-				.requestId = master_nextRequestId(session),
+				.requestId = MasterSession_nextRequestId(session),
 				.responseId = req->base.requestId,
 			},
 			.cookie = *NetSession_get_cookie(&session->net),
@@ -320,7 +265,7 @@ static void handle_ClientHelloWithCookieRequest(struct MasterContext *ctx, struc
 	struct HandshakeMessage r_cert = {
 		.type = HandshakeMessageType_ServerCertificateRequest,
 		.serverCertificateRequest.base = {
-			.requestId = master_nextRequestId(session),
+			.requestId = MasterSession_nextRequestId(session),
 			.responseId = req->certificateResponseId,
 		},
 	};
@@ -348,7 +293,7 @@ static void handle_ServerCertificateRequest_sent(struct MasterContext *ctx, stru
 		.type = HandshakeMessageType_ServerHelloRequest,
 		.serverHelloRequest = {
 			.base = {
-				.requestId = master_nextRequestId(session),
+				.requestId = MasterSession_nextRequestId(session),
 				.responseId = session->handshake.helloResponseId,
 			},
 			.random = *NetKeypair_get_random(&session->net.keys),
@@ -371,7 +316,7 @@ static void handle_ClientKeyExchangeRequest(struct NetContext *net, struct Maste
 	master_send(net, session, &(const struct HandshakeMessage){
 		.type = HandshakeMessageType_ChangeCipherSpecRequest,
 		.changeCipherSpecRequest.base = {
-			.requestId = master_nextRequestId(session),
+			.requestId = MasterSession_nextRequestId(session),
 			.responseId = req->base.requestId,
 		},
 	});
@@ -383,7 +328,7 @@ static void handle_BaseAuthenticate(struct NetContext *net, struct MasterSession
 	master_send_ack(net, session, gamelift ? MessageType_GameLiftMessage : MessageType_UserMessage, req.requestId);
 	const struct AuthenticateUserResponse r_auth = {
 		.base = {
-			.requestId = master_nextRequestId(session),
+			.requestId = MasterSession_nextRequestId(session),
 			.responseId = req.requestId,
 		},
 		.result = AuthenticateUserResponse_Result_Success,
@@ -459,332 +404,6 @@ static bool handle_AuthenticateGameLiftUserRequest(struct NetContext *net, struc
 	return out;
 }*/
 
-typedef uint8_t MasterCookieType;
-enum {
-	MasterCookieType_INVALID,
-	MasterCookieType_LocalConnect,
-	MasterCookieType_GraphConnect,
-};
-
-struct ConnectCookie {
-	MasterCookieType cookieType;
-	uint32_t room;
-};
-
-struct LocalConnectCookie {
-	struct ConnectCookie base;
-	struct String secret;
-	struct SS addr;
-	struct BaseMasterServerReliableRequest request;
-	struct BeatmapLevelSelectionMask selectionMask;
-};
-
-struct GraphConnectCookie {
-	struct ConnectCookie base;
-	struct String secret;
-	const struct WireLink *status;
-	WireCookie cookie;
-};
-
-static ConnectToServerResponse_Result SendWireSessionAlloc(struct WireSessionAlloc *const allocInfo, struct ConnectCookie *const state, const size_t state_len, const struct GameplayServerConfiguration configuration, const ServerCode code, mbedtls_ctr_drbg_context *const ctr_drbg) {
-	state->room = ~UINT32_C(0);
-	if(allocInfo->clientVersion.protocolVersion >= 10) {
-		uprintf("Connect to Server Error: Game version too new\n");
-		return ConnectToServerResponse_Result_VersionMismatch;
-	}
-	WireCookie cookie = 0;
-	bool failed = true;
-	struct WireLink *link = NULL;
-	if(code == ServerCode_NONE) {
-		if(!allocInfo->secret.length) {
-			uprintf("Connect to Server Error: Quickplay not supported\n");
-			return ConnectToServerResponse_Result_NoAvailableDedicatedServers;
-		}
-		struct PoolHost *host = pool_handle_new(&state->room, (configuration.discoveryPolicy == DiscoveryPolicy_Public) ? NULL : ctr_drbg);
-		if(host == NULL) {
-			uprintf("Connect to Server Error: pool_handle_new() failed\n");
-			return ConnectToServerResponse_Result_NoAvailableDedicatedServers;
-		}
-		allocInfo->room = state->room;
-		link = pool_host_wire(host);
-		cookie = WireLink_makeCookie(link, state, state_len);
-		failed = WireLink_send(link, &(struct WireMessage){
-			.type = WireMessageType_WireRoomSpawn,
-			.cookie = cookie,
-			.roomSpawn = {
-				.base = *allocInfo,
-				.configuration = configuration,
-			},
-		});
-	} else {
-		struct PoolHost *host = pool_handle_lookup(&state->room, code);
-		if(host == NULL) {
-			uprintf("Connect to Server Error: Room '%s' does not exist\n", ServerCodeToString((char[8]){0}, code));
-			return ConnectToServerResponse_Result_InvalidCode;
-		}
-		allocInfo->room = state->room;
-		link = pool_host_wire(host);
-		cookie = WireLink_makeCookie(link, state, state_len);
-		failed = WireLink_send(link, &(struct WireMessage){
-			.type = WireMessageType_WireRoomJoin,
-			.cookie = cookie,
-			.roomJoin.base = *allocInfo,
-		});
-	}
-	if(failed) {
-		WireLink_freeCookie(link, cookie);
-		return ConnectToServerResponse_Result_UnknownError;
-	}
-	return ConnectToServerResponse_Result_Success;
-}
-
-static uint32_t shuffle(uint32_t num, bool dir) {
-	static const uint32_t magic[2] = {0x45d9f3b, 0x119de1f3};
-	num = ((num >> 16) ^ num) * magic[dir];
-	num = ((num >> 16) ^ num) * magic[dir];
-	num = (num >> 16) ^ num;
-	return num;
-}
-
-static bool handle_WireSessionAllocResp_local(struct NetContext *net, struct MasterSession *session, struct PoolHost *host, const struct LocalConnectCookie *state, const struct WireSessionAllocResp *sessionAlloc) {
-	struct UserMessage r_conn = {
-		.type = UserMessageType_ConnectToServerResponse,
-		.connectToServerResponse = {
-			.base = {
-				.requestId = (session != NULL) ? master_nextRequestId(session) : 0,
-				.responseId = state->request.requestId,
-			},
-			.result = (sessionAlloc != NULL) ? sessionAlloc->result : ConnectToServerResponse_Result_UnknownError,
-		},
-	};
-
-	if(r_conn.connectToServerResponse.result == ConnectToServerResponse_Result_Success) {
-		r_conn.connectToServerResponse = (struct ConnectToServerResponse){
-			.base = r_conn.connectToServerResponse.base,
-			.result = ConnectToServerResponse_Result_Success,
-			.userId = String_fmt("beatupserver:%08x", shuffle(((uint32_t)pool_host_ident(host) << 14) | (state->base.room + 1), false)),
-			.userName = String_from(""),
-			.secret = state->secret,
-			.selectionMask = state->selectionMask,
-			.isConnectionOwner = true,
-			.isDedicatedServer = true,
-			.remoteEndPoint = sessionAlloc->endPoint,
-			.random = sessionAlloc->random,
-			.publicKey = sessionAlloc->publicKey,
-			.code = pool_handle_code(host, state->base.room),
-			.configuration = sessionAlloc->configuration,
-			.managerId = sessionAlloc->managerId,
-		};
-		uprintf("Sending player to room '%s'\n", ServerCodeToString((char[8]){0}, r_conn.connectToServerResponse.code));
-	}
-
-	if(session != NULL)
-		master_send(net, session, &r_conn);
-	return r_conn.connectToServerResponse.result != ConnectToServerResponse_Result_Success;
-}
-
-static bool handle_WireSessionAllocResp_graph(struct LocalMasterContext *ctx, struct PoolHost *host, const struct GraphConnectCookie *state, const struct WireSessionAllocResp *sessionAlloc) {
-	if(state->status != ctx->status || state->status == NULL)
-		return true;
-	struct WireGraphConnectResp resp = {
-		.result = MultiplayerPlacementErrorCode_Unknown,
-	};
-	switch((sessionAlloc != NULL) ? sessionAlloc->result : ConnectToServerResponse_Result_UnknownError) {
-		case ConnectToServerResponse_Result_Success: {
-			resp = (struct WireGraphConnectResp){
-				.result = MultiplayerPlacementErrorCode_Success,
-				.configuration = sessionAlloc->configuration,
-				.hostId = shuffle(((uint32_t)pool_host_ident(host) << 14) | (state->base.room + 1), false),
-				.endPoint = sessionAlloc->endPoint,
-				.roomSlot = state->base.room,
-				.playerSlot = sessionAlloc->playerSlot,
-				.code = pool_handle_code(host, state->base.room),
-			};
-			uprintf("Sending player to room '%s'\n", ServerCodeToString((char[8]){0}, resp.code));
-			break;
-		}
-		case ConnectToServerResponse_Result_InvalidSecret: [[fallthrough]];
-		case ConnectToServerResponse_Result_InvalidCode: resp.result = MultiplayerPlacementErrorCode_ServerDoesNotExist; break;
-		case ConnectToServerResponse_Result_InvalidPassword: resp.result = MultiplayerPlacementErrorCode_AuthenticationFailed; break;
-		case ConnectToServerResponse_Result_ServerAtCapacity: resp.result = MultiplayerPlacementErrorCode_ServerAtCapacity; break;
-		case ConnectToServerResponse_Result_NoAvailableDedicatedServers: resp.result = MultiplayerPlacementErrorCode_ServerDoesNotExist; break;
-		default:;
-	}
-	WireLink_send(ctx->status, &(struct WireMessage){
-		.cookie = state->cookie,
-		.type = WireMessageType_WireGraphConnectResp,
-		.graphConnectResp = resp,
-	});
-	return resp.result != MultiplayerPlacementErrorCode_Success;
-}
-
-static void handle_WireGraphConnect(struct LocalMasterContext *ctx, WireCookie cookie, const struct WireGraphConnect *req) {
-	struct GraphConnectCookie state = {
-		.base.cookieType = MasterCookieType_GraphConnect,
-		.secret = req->secret,
-		.status = ctx->status,
-		.cookie = cookie,
-	};
-	struct WireSessionAlloc allocInfo = {
-		.secret = req->secret,
-		.userId = req->userId,
-		.ipv4 = true,
-		.clientVersion = PV_LEGACY_DEFAULT,
-	};
-	allocInfo.clientVersion.direct = true;
-	allocInfo.clientVersion.protocolVersion = (uint8_t)req->protocolVersion;
-	allocInfo.clientVersion.gameVersion = req->gameVersion;
-	const ConnectToServerResponse_Result result = SendWireSessionAlloc(&allocInfo, &state.base, sizeof(state), req->configuration, req->code, &ctx->net.ctr_drbg);
-	if(result == ConnectToServerResponse_Result_Success)
-		return;
-	handle_WireSessionAllocResp_graph(ctx, NULL, &state, &(const struct WireSessionAllocResp){
-		.result = result,
-	});
-}
-
-static void handle_WireSessionAllocResp(struct LocalMasterContext *const ctx, struct WireLink *const link, struct PoolHost *const host, const WireCookie cookie, const struct WireSessionAllocResp *const sessionAlloc, const bool spawn) {
-	const struct DataView view = WireLink_getCookie(link, cookie);
-	const struct ConnectCookie *const state = (struct ConnectCookie*)view.data;
-	bool dropped = spawn;
-	switch((view.length >= sizeof(*state)) ? state->cookieType : MasterCookieType_INVALID) {
-		case MasterCookieType_LocalConnect: {
-			if(view.length != sizeof(struct LocalConnectCookie))
-				break;
-			const struct LocalConnectCookie *const localState = (const struct LocalConnectCookie*)view.data;
-			dropped &= handle_WireSessionAllocResp_local(&ctx->net, MasterContext_lookup(&ctx->base, localState->addr), host, localState, sessionAlloc);
-			return;
-		}
-		case MasterCookieType_GraphConnect: {
-			if(view.length != sizeof(struct GraphConnectCookie))
-				break;
-			dropped &= handle_WireSessionAllocResp_graph(ctx, host, (const struct GraphConnectCookie*)view.data, sessionAlloc);
-			return;
-		}
-		default: dropped = false;
-	}
-	if(dropped)
-		pool_handle_free(host, state->room);
-	uprintf("Connect to Server Error: Malformed wire cookie\n");
-}
-
-static void master_onWireMessage_status(struct LocalMasterContext *ctx, struct WireLink *link, const struct WireMessage *message) {
-	if(message == NULL) {
-		for(struct PoolHost *host = pool_host_iter_start(); host != NULL; host = pool_host_iter_next(host)) {
-			struct WireLink *const hostLink = pool_host_wire(host);
-			for(WireCookie cookie = 1; cookie <= WireLink_lastCookieIndex(hostLink); ++cookie) {
-				const struct DataView view = WireLink_getCookie(hostLink, cookie);
-				if(view.length != sizeof(struct GraphConnectCookie) || ((struct GraphConnectCookie*)view.data)->base.cookieType != MasterCookieType_GraphConnect)
-					continue;
-				if(((struct GraphConnectCookie*)view.data)->status == link)
-					((struct GraphConnectCookie*)view.data)->status = NULL;
-			}
-		}
-		if(ctx->status == link)
-			ctx->status = NULL;
-		return;
-	}
-	if(message->type == WireMessageType_WireStatusAttach) {
-		ctx->status = link;
-		return;
-	}
-	if(link != ctx->status) {
-		uprintf("dropping unbound wire message\n");
-		return;
-	}
-	switch(message->type) {
-		case WireMessageType_WireGraphConnect: handle_WireGraphConnect(ctx, message->cookie, &message->graphConnect); break;
-		default: uprintf("Unhandled wire message [%s]\n", reflect(WireMessageType, message->type));
-	}
-}
-
-static void master_onWireMessage(struct WireContext *wire, struct WireLink *link, const struct WireMessage *message) {
-	struct LocalMasterContext *const ctx = (struct LocalMasterContext*)wire->userptr;
-	net_lock(&ctx->net);
-	struct PoolHost **const host = (struct PoolHost**)WireLink_userptr(link);
-	if(*host == NULL) {
-		if(message == NULL || message->type != WireMessageType_WireInstanceAttach) {
-			master_onWireMessage_status(ctx, link, message);
-			goto unlock;
-		}
-		*host = pool_host_attach(link);
-		if(*host == NULL) {
-			uprintf("pool_host_attach() failed\n");
-			goto unlock;
-		}
-	}
-	if(message == NULL) {
-		for(WireCookie cookie = 1; cookie <= WireLink_lastCookieIndex(link); ++cookie) {
-			const struct DataView view = WireLink_getCookie(link, cookie);
-			const MasterCookieType cookieType = (view.length >= sizeof(cookieType)) ? *(MasterCookieType*)view.data : MasterCookieType_INVALID;
-			if(cookieType == MasterCookieType_LocalConnect || cookieType == MasterCookieType_GraphConnect)
-				handle_WireSessionAllocResp(ctx, link, *host, cookie, NULL, false); // TODO: retry with a different instance if any are still alive
-			WireLink_freeCookie(link, cookie);
-		}
-		pool_host_detach(*host);
-		*host = NULL;
-		goto unlock;
-	}
-	switch(message->type) {
-		case WireMessageType_WireInstanceAttach: TEMPpool_host_setAttribs(*host, message->instanceAttach.capacity, message->instanceAttach.discover); break;
-		case WireMessageType_WireRoomSpawnResp: [[fallthrough]];
-		case WireMessageType_WireRoomJoinResp: {
-			handle_WireSessionAllocResp(ctx, link, *host, message->cookie, &message->roomJoinResp.base, message->type == WireMessageType_WireRoomSpawnResp);
-			WireLink_freeCookie(link, message->cookie);
-			break;
-		}
-		case WireMessageType_WireRoomStatusNotify: [[fallthrough]];
-		case WireMessageType_WireRoomCloseNotify: {
-			struct WireMessage forward = *message;
-			forward.cookie = pool_handle_sequence(*host, message->cookie);
-			if(message->type == WireMessageType_WireRoomStatusNotify)
-				*(uint32_t*)forward.roomStatusNotify.entry = pool_handle_code(*host, message->cookie);
-			else
-				pool_handle_free(*host, message->cookie);
-			if(ctx->status == NULL)
-				break;
-			WireLink_send(ctx->status, &forward);
-		} break;
-		default: uprintf("Unhandled wire message [%s]\n", reflect(WireMessageType, message->type));
-	}
-	unlock: net_unlock(&ctx->net);
-}
-
-// TODO: deduplicate requests
-static void handle_ConnectToServerRequest(struct NetContext *const net, struct MasterSession *const session, const struct ConnectToServerRequest *const req) {
-	master_send_ack(net, session, MessageType_UserMessage, req->base.base.requestId);
-	struct LocalConnectCookie state = {
-		.base.cookieType = MasterCookieType_LocalConnect,
-		.secret = req->secret,
-		.addr = *NetSession_get_addr(&session->net),
-		.request = req->base.base,
-		.selectionMask = req->selectionMask,
-	};
-	/*struct BitMask128 customs = get_mask("custom_levelpack_CustomLevels");
-	state.selectionMask.songPacks.bloomFilter.d0 |= customs.d0;
-	state.selectionMask.songPacks.bloomFilter.d1 |= customs.d1;*/
-	struct WireSessionAlloc allocInfo = {
-		.secret = req->secret,
-		.userId = req->base.userId,
-		.ipv4 = (state.addr.ss.ss_family != AF_INET6 || memcmp(state.addr.in6.sin6_addr.s6_addr, (const uint16_t[]){0,0,0,0,0,0xffff}, 12) == 0),
-		.clientVersion = PV_LEGACY_DEFAULT,
-		.random = req->base.random,
-		.publicKey = req->base.publicKey,
-	};
-	allocInfo.clientVersion.direct = false;
-	allocInfo.clientVersion.protocolVersion = session->net.version.protocolVersion;
-	switch(session->net.version.protocolVersion) {
-		case 6: allocInfo.clientVersion.gameVersion = GameVersion_1_19_0; break;
-		case 7: allocInfo.clientVersion.gameVersion = GameVersion_1_19_1; break;
-		default: allocInfo.clientVersion.gameVersion = GameVersion_1_20_0;
-	}
-	const ConnectToServerResponse_Result result = SendWireSessionAlloc(&allocInfo, &state.base, sizeof(state), req->configuration, req->code, &net->ctr_drbg);
-	if(result == ConnectToServerResponse_Result_Success)
-		return;
-	handle_WireSessionAllocResp_local(net, session, NULL, &state, &(const struct WireSessionAllocResp){
-		.result = result,
-	});
-}
-
 static bool handle_MultipartMessage(struct MasterContext *ctx, struct NetContext *net, struct MasterSession *session, const struct MultipartMessage *msg, struct GraphAuthToken *auth_out) {
 	if(!msg->totalLength) {
 		uprintf("INVALID MULTIPART LENGTH\n");
@@ -828,10 +447,11 @@ static bool handle_MultipartMessage(struct MasterContext *ctx, struct NetContext
 	return res;
 }
 
-static pthread_t master_thread = NET_THREAD_INVALID;
-static struct LocalMasterContext localMaster = {
-	.net = CLEAR_NETCONTEXT,
-}; // TODO: This "singleton" can't scale up due to pool API thread safety
+static void handle_ConnectToServerRequest(struct NetContext *const net, struct MasterSession *const session, const struct ConnectToServerRequest *const req) {
+	master_send_ack(net, session, MessageType_UserMessage, req->base.base.requestId);
+	LocalMasterContext_process_ConnectToServerRequest(net, session, req);
+}
+
 bool MasterContext_handleMessage(struct MasterContext *ctx, struct NetContext *net, struct MasterSession *session, struct UnconnectedMessage header, const uint8_t *data, const uint8_t *end, struct GraphAuthToken *auth_out) {
 	while(data < end) {
 		struct SerializeHeader serial;
@@ -847,7 +467,7 @@ bool MasterContext_handleMessage(struct MasterContext *ctx, struct NetContext *n
 			session->net.version.protocolVersion = (uint8_t)header.protocolVersion;
 		if(header.type == MessageType_UserMessage) {
 			session->net.version.direct = false;
-			if(ctx != &localMaster.base)
+			if(ctx != (struct MasterContext*)&LocalMasterContext_Instance)
 				continue;
 			struct UserMessage message = {.type = (UserMessageType)UINT32_C(0xffffffff)};
 			pkt_read(&message, &sub, &sub[serial.length], session->net.version);
@@ -873,7 +493,7 @@ bool MasterContext_handleMessage(struct MasterContext *ctx, struct NetContext *n
 		}
 		if(header.type == MessageType_GameLiftMessage) {
 			session->net.version.direct = true;
-			if(ctx == &localMaster.base)
+			if(ctx == (struct MasterContext*)&LocalMasterContext_Instance)
 				continue;
 			struct GameLiftMessage message = {.type = (GameLiftMessageType)UINT32_C(0xffffffff)};
 			pkt_read(&message, &sub, &sub[serial.length], session->net.version);
@@ -965,19 +585,6 @@ bool MasterContext_handle(struct MasterContext *ctx, struct NetContext *net, str
 	return false;
 }
 
-static void *master_handler(struct LocalMasterContext *ctx) {
-	net_lock(&ctx->net);
-	uprintf("Started\n");
-	uint8_t pkt[1536];
-	memset(pkt, 0, sizeof(pkt));
-	uint32_t len;
-	struct MasterSession *session;
-	while((len = net_recv(&ctx->net, pkt, (struct NetSession**)&session, NULL)))
-		MasterContext_handle(&ctx->base, &ctx->net, session, pkt, &pkt[len], NULL);
-	net_unlock(&ctx->net);
-	return 0;
-}
-
 void MasterContext_init(struct MasterContext *const ctx, mbedtls_ctr_drbg_context *const ctr_drbg) {
 	*ctx = (struct MasterContext){0};
 	mbedtls_ssl_cookie_init(&ctx->cookie);
@@ -1014,44 +621,4 @@ void MasterContext_cleanup(struct MasterContext *ctx) {
 		ctx->sessionList = master_disconnect(ctx->sessionList);
 	mbedtls_ssl_config_free(&ctx->config);
 	mbedtls_ssl_cookie_free(&ctx->cookie);
-}
-
-struct WireContext *master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_context *key, uint16_t port) {
-	if(net_init(&localMaster.net, port)) {
-		uprintf("net_init() failed\n");
-		return NULL;
-	}
-	if(WireContext_init(&localMaster.wire, &localMaster, 16)) {
-		uprintf("WireContext_init() failed\n");
-		goto fail0;
-	}
-	MasterContext_init(&localMaster.base, &localMaster.net.ctr_drbg);
-	if(MasterContext_setCertificate(&localMaster.base, cert, key))
-		goto fail1;
-	localMaster.net.userptr = &localMaster;
-	localMaster.net.onResolve = master_onResolve;
-	localMaster.net.onResend = master_onResend;
-	localMaster.wire.onMessage = master_onWireMessage;
-	if(pthread_create(&master_thread, NULL, (void *(*)(void*))master_handler, &localMaster)) {
-		master_thread = NET_THREAD_INVALID;
-		goto fail2;
-	}
-	return &localMaster.wire;
-	fail2: MasterContext_cleanup(&localMaster.base);
-	fail1: WireContext_cleanup(&localMaster.wire);
-	fail0: net_cleanup(&localMaster.net);
-	return NULL;
-}
-
-void master_cleanup() {
-	if(master_thread != NET_THREAD_INVALID) {
-		net_stop(&localMaster.net);
-		uprintf("Stopping\n");
-		pthread_join(master_thread, NULL);
-		master_thread = NET_THREAD_INVALID;
-		MasterContext_cleanup(&localMaster.base);
-	}
-	pool_reset();
-	WireContext_cleanup(&localMaster.wire);
-	net_cleanup(&localMaster.net);
 }
