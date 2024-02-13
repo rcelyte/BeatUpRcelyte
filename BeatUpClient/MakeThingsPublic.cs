@@ -209,8 +209,8 @@ var refs = new (string path, string name, string[]? overrides)[] {
 	(managed, "DataModels.dll", new[] {
 		"BeatmapKey::beatmapCharacteristic",
 		"BeatmapLevelsModel::_loadedBeatmapLevels",
-		"FileDifficultyBeatmap::beatmapPath",
-		"FileDifficultyBeatmap::lightshowPath",
+		"FileDifficultyBeatmap::_beatmapPath",
+		"FileDifficultyBeatmap::_lightshowPath",
 		"FileSystemBeatmapLevelData::_audioDataPath",
 		"FileSystemBeatmapLevelData::_difficultyBeatmaps",
 		"LobbyPlayersDataModel::_multiplayerSessionManager",

@@ -355,10 +355,8 @@ static void *master_handler(struct LocalMasterContext *ctx) {
 }
 
 static pthread_t master_thread = NET_THREAD_INVALID;
-struct LocalMasterContext LocalMasterContext_Instance = {
-	.net = CLEAR_NETCONTEXT,
-}; // TODO: This "singleton" can't scale up due to pool API thread safety
-struct WireContext *master_init(const mbedtls_x509_crt *cert, const mbedtls_pk_context *key, uint16_t port) {
+struct LocalMasterContext LocalMasterContext_Instance = {0}; // TODO: This "singleton" can't scale up due to pool API thread safety
+struct WireContext *master_init(const mbedtls_x509_crt *const cert, const mbedtls_pk_context *const key, const uint16_t port) {
 	if(net_init(&LocalMasterContext_Instance.net, port)) {
 		uprintf("net_init() failed\n");
 		return NULL;

@@ -116,8 +116,8 @@ static void status_web(struct HttpContext *const http, const ServerCode code) {
 			struct WireStatusEntry entry;
 			if(packet == NULL || packet->data_len == 0 || pkt_read(&entry, (const uint8_t*[]){packet->data}, &packet->data[packet->data_len], PV_WIRE) != packet->data_len)
 				continue;
-			/*if(!entry.public) // TODO: make private rooms visible to matching IPs
-				continue;*/
+			if(!entry.public) // TODO: make private rooms visible to matching IPs
+				continue;
 			char scode[8], playerCapacity[16] = "∞", noteRate[24] = "", *noteRate_end = noteRate;
 			if(entry.playerCapacity < 0xff)
 				sprintf(playerCapacity, "%u", entry.playerCapacity);
@@ -142,7 +142,7 @@ static void status_web(struct HttpContext *const http, const ServerCode code) {
 				[6] = "1.19.0",
 				[7] = "1.19.1",
 				[8] = "1.20.0 ⬌ 1.31.1",
-				[9] = "1.32.0 ⬌ 1.34.4",
+				[9] = "1.32.0 ⬌ 1.34.5",
 			};
 			char cover[(sizeof(entry.levelCover.data) * 4 + 3) / 3 + 53] = "\0style=background-image:url(data:image/jpeg;base64,";
 			if(entry.levelCover.length > 4 && memcmp(entry.levelCover.data, (const uint8_t[4]){0xff,0xd8,0xff,0xe0}, 4) == 0) {
@@ -216,7 +216,7 @@ static UserAgent ProbeHeaders(const char *buf, const char *end, size_t *contentL
 static void status_status(struct HttpContext *http, bool isGame) {
 	char msg[65536], *msg_end = msg;
 	PUT("{\"minimum_app_version\":\"1.19.0%s\""
-	    ",\"maximumAppVersion\":\"1.34.4_🅱️\""
+	    ",\"maximumAppVersion\":\"1.34.5_🅱️\""
 	    ",\"status\":%u", isGame ? "b2147483647" : STATUS_APPVER_POSTFIX, TEST_maintenanceStartTime != 0);
 	if(TEST_maintenanceStartTime) {
 		PUT(",\"maintenance_start_time\":%" PRIu64, TEST_maintenanceStartTime);
@@ -286,6 +286,7 @@ static void status_graph(struct HttpContext *http, struct HttpRequest req, struc
 				case '34.0': connectInfo.gameVersion = GameVersion_1_34_0; break;
 				case '34.2': connectInfo.gameVersion = GameVersion_1_34_2; break;
 				case '34.4': connectInfo.gameVersion = GameVersion_1_34_4; break;
+				case '34.5': connectInfo.gameVersion = GameVersion_1_34_5; break;
 				default: {
 					connectInfo.gameVersion = GameVersion_Unknown;
 					uprintf("Unexpected game version: %.*s\n", version.length, version.data);

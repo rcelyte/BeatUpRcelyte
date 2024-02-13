@@ -1,5 +1,5 @@
 #!/bin/make
-VERSION := 0.8.0
+VERSION := 0.8.1
 
 .SILENT:
 
@@ -71,7 +71,7 @@ BeatUpClient.dll: $(CSFILES) .obj/MakeThingsPublic.exe makefile
 		\"\$$schema\": \"https://raw.githubusercontent.com/bsmg/BSIPA-MetadataFileSchema/master/Schema.json\",\n\
 		\"author\": \"rcelyte\",\n\
 		\"description\": \"Tweaks and enhancements for enabling modded multiplayer\",\n\
-		\"gameVersion\": \"1.34.4_7558151000\",\n\
+		\"gameVersion\": \"1.34.5_7757266186\",\n\
 		\"dependsOn\": {\"BSIPA\": \"^4.3.0\"},\n\
 		\"conflictsWith\": {\"BeatTogether\": \"*\"},\n\
 		\"loadBefore\": [\"MultiplayerCore\"],\n\

@@ -37,10 +37,10 @@ static partial class BeatUpClient {
 		if(!string.IsNullOrEmpty(levelData._audioDataPath))
 			files.Add(new(levelData._audioDataPath));
 		foreach(FileDifficultyBeatmap diff in levelData._difficultyBeatmaps.Values) {
-			if(!string.IsNullOrEmpty(diff.lightshowPath) && System.IO.File.Exists(diff.lightshowPath))
-				files.Add(new(diff.lightshowPath));
-			if(!string.IsNullOrEmpty(diff.beatmapPath) && System.IO.File.Exists(diff.beatmapPath))
-				files.Add(new(diff.beatmapPath));
+			if(!string.IsNullOrEmpty(diff._lightshowPath) && System.IO.File.Exists(diff._lightshowPath))
+				files.Add(new(diff._lightshowPath));
+			if(!string.IsNullOrEmpty(diff._beatmapPath) && System.IO.File.Exists(diff._beatmapPath))
+				files.Add(new(diff._beatmapPath));
 		}
 		files.Add(new(levelData.songAudioClipPath));
 
