@@ -1,5 +1,5 @@
 #!/bin/make
-VERSION := 0.8.1
+VERSION := 0.8.2
 
 .SILENT:
 
@@ -82,7 +82,7 @@ BeatUpClient.dll: $(CSFILES) .obj/MakeThingsPublic.exe makefile
 	}" > .obj/manifest.json
 	MONO_PATH=$(BSINSTALL)/Libs mono .obj/MakeThingsPublic.exe $(BSINSTALL)
 	csc -nologo -t:library -nostdlib -o+ -debug- -nullable+ -unsafe+ -w:4 -warnaserror+ -langversion:9 $(CSFILES) \
-		-res:.obj/manifest.json,.manifest.json -res:data.bundle,BeatUpClient.data -out:"$@" \
+		-res:.obj/manifest.json,.manifest.json -res:assets/cover.png,BeatUpClient.cover -res:assets/create.png,BeatUpClient.create -out:"$@" \
 		-r:.obj/Refs/Libs/0Harmony.dll \
 		-r:.obj/Refs/Libs/Hive.Versioning.dll \
 		-r:.obj/Refs/Libs/Mono.Cecil.dll \

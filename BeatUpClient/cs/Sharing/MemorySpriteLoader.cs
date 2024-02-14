@@ -11,8 +11,8 @@ static partial class BeatUpClient {
 			Log.Debug("Decoding sprite");
 			UnityEngine.Texture2D texture = new UnityEngine.Texture2D(2, 2);
 			UnityEngine.ImageConversion.LoadImage(texture, data);
-			UnityEngine.Rect rect = new UnityEngine.Rect(0, 0, texture.width, texture.height);
-			return System.Threading.Tasks.Task.FromResult<UnityEngine.Sprite?>(UnityEngine.Sprite.Create(texture, rect, new UnityEngine.Vector2(0, 0), 0.1f));
+			return System.Threading.Tasks.Task.FromResult<UnityEngine.Sprite?>(
+				UnityEngine.Sprite.Create(texture, new(0, 0, texture.width, texture.height), new(0, 0), 0.1f));
 		}
 	}
 }
