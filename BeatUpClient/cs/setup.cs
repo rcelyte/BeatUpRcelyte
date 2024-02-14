@@ -40,13 +40,28 @@ static partial class BeatUpClient {
 		if(scene.name != "MainMenu")
 			return;
 		Log.Debug("load MainMenu");
-		UnityEngine.AssetBundle data = UnityEngine.AssetBundle.LoadFromStream(System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("BeatUpClient.data"));
-		defaultPackCover = data.LoadAsset<UnityEngine.Sprite>("cover");
-		spriteSwap = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerModeSelectionViewController>()[0].transform.Find("Buttons/CreateServerButton")?.GetComponent<HMUI.ButtonSpriteSwap>();
+		UnityEngine.Texture2D LoadTexture(string name) { // TODO: get size from file data
+			System.IO.Stream resource = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream(name);
+			byte[]? data;
+			using(System.IO.BinaryReader reader = new System.IO.BinaryReader(resource)) {
+				data = reader.ReadBytes((int)resource.Length);
+			}
+			UnityEngine.Texture2D texture = new UnityEngine.Texture2D(2, 2);
+			UnityEngine.ImageConversion.LoadImage(texture, data);
+			return texture;
+		}
+		UnityEngine.Texture2D coverTexture = LoadTexture("BeatUpClient.cover");
+		defaultPackCover = UnityEngine.Sprite.Create(coverTexture, new(0, 0, coverTexture.width, coverTexture.height), new(0, 0), 0.1f);
+		spriteSwap = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerModeSelectionViewController>()[0]
+			.transform.Find("Buttons/CreateServerButton")?.GetComponent<HMUI.ButtonSpriteSwap>();
 		if(spriteSwap != null) {
-			createButtonSprites = (spriteSwap._normalStateSprite, spriteSwap._highlightStateSprite, spriteSwap._pressedStateSprite, spriteSwap._disabledStateSprite);
-			UnityEngine.Sprite[] sprites = data.LoadAssetWithSubAssets<UnityEngine.Sprite>("create");
-			heartButtonSprites = (sprites[0], sprites[1], sprites[1], sprites[0]);
+			createButtonSprites = (spriteSwap._normalStateSprite, spriteSwap._highlightStateSprite,
+				spriteSwap._pressedStateSprite, spriteSwap._disabledStateSprite);
+			UnityEngine.Texture2D createTexture = LoadTexture("BeatUpClient.create");
+			heartButtonSprites.pressed = heartButtonSprites.highlight = UnityEngine.Sprite.Create(createTexture,
+				new(0, 0, createTexture.width, createTexture.height / 2), new(0, 0), 0.1f);
+			heartButtonSprites.disabled = heartButtonSprites.normal = UnityEngine.Sprite.Create(createTexture,
+				new(0, createTexture.height / 2, createTexture.width, createTexture.height / 2), new(0, 0), 0.1f);
 		}
 
 		SelectorSetup();

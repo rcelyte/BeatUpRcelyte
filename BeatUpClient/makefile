@@ -1,5 +1,5 @@
 #!/bin/make
-VERSION := 0.7.0
+VERSION := 0.7.1
 
 .SILENT:
 
@@ -70,7 +70,7 @@ BeatUpClient.dll: $(CSFILES) .obj/MakeThingsPublic.exe makefile
 	printf "{\"\$$schema\":\"https://raw.githubusercontent.com/bsmg/BSIPA-MetadataFileSchema/master/Schema.json\",\"author\":\"rcelyte\",\"description\":\"Tweaks and enhancements for enabling modded multiplayer\",\"gameVersion\":\"1.32.0_6331131390\",\"dependsOn\":{\"BSIPA\":\"^4.3.0\"},\"conflictsWith\":{\"BeatTogether\":\"*\"},\"loadBefore\":[\"MultiplayerCore\"],\"id\":\"BeatUpClient\",\"name\":\"BeatUpClient\",\"version\":\"$(VERSION)\",\"links\":{\"project-source\":\"https://github.com/rcelyte/BeatUpRcelyte/BeatUpClient\"}}" > .obj/manifest.json
 	MONO_PATH=$(BSINSTALL)/Libs mono .obj/MakeThingsPublic.exe $(BSINSTALL)
 	csc -nologo -t:library -nostdlib -o+ -debug- -nullable+ -unsafe+ -w:4 -warnaserror+ -langversion:9 $(CSFILES) \
-		-res:.obj/manifest.json,.manifest.json -res:data.bundle,BeatUpClient.data -out:"$@" \
+		-res:.obj/manifest.json,.manifest.json -res:assets/cover.png,BeatUpClient.cover -res:assets/create.png,BeatUpClient.create -out:"$@" \
 		-r:.obj/Refs/Libs/0Harmony.dll \
 		-r:.obj/Refs/Libs/Hive.Versioning.dll \
 		-r:.obj/Refs/Libs/Mono.Cecil.dll \
