@@ -212,6 +212,7 @@ bool config_load(struct Config *out, const char *path) {
 
 	const char *it = config_json;
 	JSON_ITER_OBJECT(&it) {
+		case JSON_KEY('q','u','i','e','t'): out->quiet = json_read_bool(&it); break;
 		case JSON_KEY('w','i','r','e','K','e','y'): config_read_hex(&it, key, out->wireKey, &out->wireKey_len); break; // TODO: multiple keys
 		case JSON_KEY('i','n','s','t','a','n','c','e'): enableInstance = true; JSON_ITER_OBJECT(&it) {
 			case JSON_KEY('a','d','d','r','e','s','s'): {

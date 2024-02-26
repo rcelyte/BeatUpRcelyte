@@ -42,13 +42,15 @@ static int ssl_recv_internal(void *fd, uint8_t *data, size_t data_len) {
 	return ssl_error(MBEDTLS_ERR_SSL_WANT_READ);
 }
 
-bool HttpContext_init(struct HttpContext *self, int fd, mbedtls_ssl_config *sslConfig) {
-	*self = (struct HttpContext){0};
-	if(sslConfig == NULL) {
+bool HttpContext_init(struct HttpContext *const self, const int fd, mbedtls_ssl_config *const sslConfig, const bool quiet) {
+	*self = (struct HttpContext){
+		.encrypt = (sslConfig != NULL),
+		.quiet = quiet,
+	};
+	if(!self->encrypt) {
 		self->fd = (void*)(uintptr_t)fd;
 		return false;
 	}
-	self->encrypt = true;
 	mbedtls_ssl_init(&self->ssl);
 	int res = mbedtls_ssl_setup(&self->ssl, sslConfig);
 	if(res) {
@@ -56,13 +58,13 @@ bool HttpContext_init(struct HttpContext *self, int fd, mbedtls_ssl_config *sslC
 		goto fail0;
 	}
 	mbedtls_ssl_set_bio(&self->ssl, (void*)(uintptr_t)fd, ssl_send_internal, ssl_recv_internal, NULL);
-	while((res = mbedtls_ssl_handshake(&self->ssl))) {
-		if(res == MBEDTLS_ERR_SSL_WANT_READ || res == MBEDTLS_ERR_SSL_WANT_WRITE)
-			continue;
+	do {
+		res = mbedtls_ssl_handshake(&self->ssl);
+		if(res == 0)
+			return false;
+	} while(res == MBEDTLS_ERR_SSL_WANT_READ || res == MBEDTLS_ERR_SSL_WANT_WRITE);
+	if(!self->quiet || res != MBEDTLS_ERR_SSL_CONN_EOF)
 		uprintf("mbedtls_ssl_handshake() failed: %s\n", mbedtls_high_level_strerr(res));
-		goto fail0;
-	}
-	return false;
 	fail0: mbedtls_ssl_free(&self->ssl);
 	return true;
 }
@@ -142,7 +144,7 @@ static bool SendData(struct HttpContext *self, const uint8_t *data, size_t data_
 	return false;
 }
 
-void HttpContext_respond(struct HttpContext *self, uint16_t code, const char *mime, const void *data, size_t data_len) {
+void HttpContext_respond(struct HttpContext *const self, const uint16_t code, const char mime[], const void *const data, const size_t data_len) {
 	const char *codeText;
 	switch(code) {
 		case 200: codeText = "200 OK"; break;
@@ -150,9 +152,20 @@ void HttpContext_respond(struct HttpContext *self, uint16_t code, const char *mi
 		case 500: codeText = "500 Internal Server Error"; break;
 		default: uprintf("unexpected HTTP response code: %hu\n", code); abort();
 	}
-	char header[384] = {0};
-	const uint32_t header_len = (uint32_t)snprintf(header, sizeof(header), "HTTP/1.1 %s\r\nConnection: close\r\nContent-Length: %zu\r\nContent-Type: %s\r\n"
-		"X-Frame-Options: DENY\r\nX-Content-Type-Options: nosniff\r\nServer: beatupproto\r\nX-DNS-Prefetch-Control: off\r\nX-Robots-Tag: noindex\r\n\r\n", codeText, data_len, mime);
+	char header[0x400] = {0};
+	const uint32_t header_len = (uint32_t)snprintf(header, sizeof(header), "%s%s%s%zu%s%s%s",
+		"HTTP/1.1 ", codeText, "\r\n"
+		"Connection: close\r\n"
+		"Content-Length: ", data_len, "\r\n"
+		"Content-Type: ", mime, "\r\n"
+		"Cross-Origin-Embedder-Policy: require-corp\r\n"
+		"Cross-Origin-Opener-Policy: same-origin\r\n"
+		"Server: beatupproto\r\n"
+		"X-Frame-Options: DENY\r\n"
+		"X-Content-Type-Options: nosniff\r\n"
+		"X-DNS-Prefetch-Control: off\r\n"
+		"X-Robots-Tag: noindex\r\n"
+		"\r\n");
 	if(!SendData(self, (const uint8_t*)header, header_len))
 		SendData(self, data, data_len);
 }

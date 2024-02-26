@@ -3,7 +3,7 @@
 #include <stdbool.h>
 
 struct HttpContext {
-	bool encrypt;
+	bool encrypt, quiet;
 	union {
 		void *fd;
 		mbedtls_ssl_context ssl;
@@ -19,7 +19,7 @@ struct HttpRequest {
 	uint8_t *body;
 };
 
-bool HttpContext_init(struct HttpContext *self, int fd, mbedtls_ssl_config *sslConfig);
+bool HttpContext_init(struct HttpContext *self, int fd, mbedtls_ssl_config *sslConfig, bool quiet);
 void HttpContext_cleanup(struct HttpContext *self);
 struct HttpRequest HttpContext_recieve(struct HttpContext *self, uint8_t buffer[], size_t buffer_len);
-void HttpContext_respond(struct HttpContext *self, uint16_t code, const char *mime, const void *data, size_t length);
+void HttpContext_respond(struct HttpContext *self, uint16_t code, const char mime[], const void *data, size_t length);

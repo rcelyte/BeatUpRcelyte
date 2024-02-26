@@ -45,8 +45,8 @@ int main(int argc, const char *argv[]) {
 			goto fail1;
 	}
 	if(cfg.statusPort) {
-		status_internal_init();
-		if(status_ssl_init(cfg.statusPath, cfg.statusPort, cfg.certs, cfg.keys, cfg.statusAddress, "", localMaster)) // TODO: remote master config
+		status_internal_init(cfg.quiet);
+		if(status_ssl_init(cfg.statusPath, cfg.statusPort, cfg.certs, cfg.keys, cfg.statusAddress, "", localMaster, cfg.quiet)) // TODO: remote master config
 			goto fail2;
 	}
 	if(instance_init(cfg.instanceAddress[0], cfg.instanceAddress[1], &cfg.masterCert, &cfg.masterKey, cfg.instanceParent, localMaster, cfg.instanceMapPool, cfg.instanceCount))

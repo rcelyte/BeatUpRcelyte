@@ -16,6 +16,7 @@ struct Config {
 			mbedtls_x509_crt masterCert, statusCert;
 		};
 	};
+	bool quiet;
 	uint8_t wireKey_len;
 	uint8_t wireKey[32];
 	uint16_t instanceCount, masterPort, statusPort;

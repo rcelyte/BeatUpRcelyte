@@ -21,6 +21,7 @@ struct StatusContext {
 	pthread_mutex_t mutex;
 	struct WireContext wire;
 	struct WireLink *master;
+	bool quiet;
 };
 static struct StatusContext ctx = {
 	.listenfd = -1,
@@ -57,7 +58,7 @@ static void status_onWireMessage(struct WireContext *wire, struct WireLink *link
 
 static void handle_client(int fd, mbedtls_ssl_config *config) {
 	struct HttpContext http;
-	if(HttpContext_init(&http, fd, config))
+	if(HttpContext_init(&http, fd, config, ctx.quiet))
 		goto fail0;
 	const struct HttpRequest req = HttpContext_recieve(&http, (uint8_t[65536]){0}, 65536);
 	if(req.header_len)
@@ -138,7 +139,7 @@ static int status_ssl_sni(struct StatusContext *ctx, mbedtls_ssl_context *ssl, c
 }
 
 static pthread_t status_thread = NET_THREAD_INVALID;
-bool status_ssl_init(const char *path, uint16_t port, mbedtls_x509_crt certs[2], mbedtls_pk_context keys[2], const char *domain, const char *remoteMaster, struct WireContext *localMaster) {
+bool status_ssl_init(const char *path, uint16_t port, mbedtls_x509_crt certs[2], mbedtls_pk_context keys[2], const char *domain, const char *remoteMaster, struct WireContext *const localMaster, const bool quiet) {
 	status_master.isRemote = (*remoteMaster != 0);
 	if(status_master.isRemote)
 		status_master.remote = remoteMaster;
@@ -148,6 +149,7 @@ bool status_ssl_init(const char *path, uint16_t port, mbedtls_x509_crt certs[2],
 		.listenfd = status_bind_tcp(port, 128),
 		.handleClient = handle_client_http,
 		.path = path,
+		.quiet = quiet,
 	};
 	if(ctx.listenfd == -1)
 		return true;

@@ -25,7 +25,18 @@ static inline struct PacketBuffer **roomIndex_get(const uint32_t sequence) {
 	return &roomIndex[sequence & (lengthof(roomIndex) - 1)];
 }
 
-void status_internal_init() {}
+static _Atomic(bool) quietMode = false;
+void status_internal_init(const bool quiet) {
+	quietMode = quiet;
+	/*uint8_t data[0x200];
+	status_update_index(0, data, pkt_write_c((uint8_t*[]){data}, endof(data), PV_WIRE, WireStatusEntry, {
+		.code = StringToServerCode("TEST", 4),
+		.protocolVersion = 8,
+		.public = true,
+		.perPlayerDifficulty = true,
+		.levelName = String_from("very very very very very very long level name"),
+	}));*/
+}
 
 void status_internal_cleanup() {
 	for(struct PacketBuffer **buffer = roomIndex; buffer < endof(roomIndex); ++buffer) {
@@ -95,73 +106,76 @@ static char *base64_encode(char *out, const struct ByteArrayNetSerializable *con
 	return out;
 }
 
-static void status_web(struct HttpContext *const http, const ServerCode code) {
+static void status_web_index(struct HttpContext *const http) {
+	char page[65536];
+	uint32_t page_len = READ_SYM(page, head_html);
+	page_len += (uint32_t)sprintf(&page[page_len],
+		"<style>span#back {display:none}</style>"
+		"<table id=index style=width:100%%;table-layout:fixed>"
+			"<thead><tr>"
+				"<th style=width:6ch>Code"
+				"<th>Current Level"
+				"<th id=ph>Players"
+				"<th style=width:13ch>Version"
+				"<th style=width:15ch>Player/Level NPS"
+				"<th style=width:13.5pt>"
+			"<tbody>");
+	for(uint32_t i = roomIndex_tail, end = roomIndex_tail + lengthof(roomIndex); i != end; ++i) {
+		const struct PacketBuffer *const packet = *roomIndex_get(i);
+		struct WireStatusEntry entry;
+		if(packet == NULL || packet->data_len == 0 || pkt_read(&entry, (const uint8_t*[]){packet->data}, &packet->data[packet->data_len], PV_WIRE) != packet->data_len)
+			continue;
+		if(!entry.public) // TODO: make private rooms visible to matching IPs
+			continue;
+		char scode[8], playerCapacity[16] = "∞", noteRate[24] = "", *noteRate_end = noteRate;
+		if(entry.playerCapacity < 0xff)
+			sprintf(playerCapacity, "%u", entry.playerCapacity);
+		if(entry.playerNPS != UINT16_MAX)
+			noteRate_end += sprintf(noteRate_end, "%.2f / ", entry.playerNPS / 256.);
+		if(entry.levelNPS != UINT16_MAX)
+			sprintf(noteRate_end, "%.2f", entry.levelNPS / 256.);
+		else
+			sprintf(noteRate_end, "too much");
+		ServerCodeToString(scode, entry.code);
+		if(entry.levelName.isNull)
+			entry.levelName = entry.levelID;
+		struct LongString levelName;
+		levelName.length = escape((uint8_t*)levelName.data, sizeof(levelName.data) - 10, (const uint8_t*)entry.levelName.data,
+			entry.levelName.length - (entry.levelName.length == lengthof(entry.levelName.data)));
+		if(entry.levelName.length == lengthof(entry.levelName.data)) {
+			memcpy(&levelName.data[levelName.length], "<i>...</i>", 10);
+			levelName.length += 10;
+		}
+		static const char *const protocolNames[] = {
+			"???", "???", "???", "???", "???", "???",
+			[6] = "1.19.0",
+			[7] = "1.19.1",
+			[8] = "1.20.0 ⬌ 1.31.1",
+			[9] = "1.32.0 ⬌ 1.34.6",
+		};
+		char cover[(sizeof(entry.levelCover.data) * 4 + 3) / 3 + 53] = "\0style=background-image:url(data:image/jpeg;base64,";
+		if(entry.levelCover.length > 4 && memcmp(entry.levelCover.data, (const uint8_t[4]){0xff,0xd8,0xff,0xe0}, 4) == 0) {
+			cover[0] = ' ';
+			*base64_encode(&cover[51], &entry.levelCover) = ')';
+		}
+		page_len += (uint32_t)sprintf(&page[page_len], "%s%s%s%s%s%s%s%.*s%s%.*s%s%.*s%s%s%s%u%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s", "<tr>"
+			"<th><a href=\"", scode, "\"><code>", scode,
+			"<td><a href=\"", scode, "\"><div class=\"ln\"><span>", (int)levelName.length, levelName.data, "</span><br>"
+				"<div>▏", (int)levelName.length, levelName.data, "▕▏", (int)levelName.length, levelName.data, "▕" // TODO: resolve level name for ID
+			"<th><a href=\"", scode, "\">", entry.playerCount, " / ", playerCapacity,
+			"<th><a href=\"", scode, "\">", protocolNames[(entry.protocolVersion < lengthof(protocolNames)) ? entry.protocolVersion : 0],
+			"<th><a href=\"", scode, "\">", noteRate,
+			"<th", cover, "><a href=\"", scode, "\"><div>&nbsp;");
+	}
+	HttpContext_respond(http, 200, "text/html; charset=utf-8", page, page_len);
+}
+
+static void status_web_room(struct HttpContext *const http, const ServerCode code) {
 	bool index = (code == ServerCode_NONE);
 	char page[65536];
 	uint32_t page_len = READ_SYM(page, head_html);
-	if(index) {
-		page_len += (uint32_t)sprintf(&page[page_len],
-			"<style>#head>a>span{display:none}</style>"
-			"<table id=main style=width:100%%;table-layout:fixed>"
-				"<thead><tr>"
-					"<th style=width:6ch>Code"
-					"<th>Current Level"
-					"<th id=ph>Players"
-					"<th style=width:13ch>Version"
-					"<th style=width:15ch>Player/Level NPS"
-					"<th style=width:13.5pt>"
-				"<tbody>");
-		for(uint32_t i = roomIndex_tail, end = roomIndex_tail + lengthof(roomIndex); i != end; ++i) {
-			const struct PacketBuffer *const packet = *roomIndex_get(i);
-			struct WireStatusEntry entry;
-			if(packet == NULL || packet->data_len == 0 || pkt_read(&entry, (const uint8_t*[]){packet->data}, &packet->data[packet->data_len], PV_WIRE) != packet->data_len)
-				continue;
-			if(!entry.public) // TODO: make private rooms visible to matching IPs
-				continue;
-			char scode[8], playerCapacity[16] = "∞", noteRate[24] = "", *noteRate_end = noteRate;
-			if(entry.playerCapacity < 0xff)
-				sprintf(playerCapacity, "%u", entry.playerCapacity);
-			if(entry.playerNPS != UINT16_MAX)
-				noteRate_end += sprintf(noteRate_end, "%.2f / ", entry.playerNPS / 256.);
-			if(entry.levelNPS != UINT16_MAX)
-				sprintf(noteRate_end, "%.2f", entry.levelNPS / 256.);
-			else
-				sprintf(noteRate_end, "too much");
-			ServerCodeToString(scode, entry.code);
-			if(entry.levelName.isNull)
-				entry.levelName = entry.levelID;
-			struct LongString levelName;
-			levelName.length = escape((uint8_t*)levelName.data, sizeof(levelName.data) - 10, (const uint8_t*)entry.levelName.data,
-				entry.levelName.length - (entry.levelName.length == lengthof(entry.levelName.data)));
-			if(entry.levelName.length == lengthof(entry.levelName.data)) {
-				memcpy(&levelName.data[levelName.length], "<i>...</i>", 10);
-				levelName.length += 10;
-			}
-			static const char *const protocolNames[] = {
-				"???", "???", "???", "???", "???", "???",
-				[6] = "1.19.0",
-				[7] = "1.19.1",
-				[8] = "1.20.0 ⬌ 1.31.1",
-				[9] = "1.32.0 ⬌ 1.34.6",
-			};
-			char cover[(sizeof(entry.levelCover.data) * 4 + 3) / 3 + 53] = "\0style=background-image:url(data:image/jpeg;base64,";
-			if(entry.levelCover.length > 4 && memcmp(entry.levelCover.data, (const uint8_t[4]){0xff,0xd8,0xff,0xe0}, 4) == 0) {
-				cover[0] = ' ';
-				*base64_encode(&cover[51], &entry.levelCover) = ')';
-			}
-			page_len += (uint32_t)sprintf(&page[page_len], "%s%s%s%s%s%s%s%.*s%s%.*s%s%.*s%s%s%s%u%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s", "<tr>"
-				"<th><a href=\"", scode, "\"><code>", scode,
-				"<td><a href=\"", scode, "\"><div class=\"ln\"><span>", (int)levelName.length, levelName.data, "</span><br>"
-					"<div>▏", (int)levelName.length, levelName.data, "▕▏", (int)levelName.length, levelName.data, "▕" // TODO: resolve level name for ID
-				"<th><a href=\"", scode, "\">", entry.playerCount, " / ", playerCapacity,
-				"<th><a href=\"", scode, "\">", protocolNames[(entry.protocolVersion < lengthof(protocolNames)) ? entry.protocolVersion : 0],
-				"<th><a href=\"", scode, "\">", noteRate,
-				"<th", cover, "><a href=\"", scode, "\"><div>&nbsp;");
-		}
-	} else {
-		page_len += (uint32_t)sprintf(&page[page_len], "<div id=main>This page is still under construction</div>");
-		uprintf("TODO: room status page\n");
-	}
+	page_len += (uint32_t)sprintf(&page[page_len], "<div id=main>This page is still under construction</div>");
+	uprintf("TODO: room status page\n");
 	HttpContext_respond(http, 200, "text/html; charset=utf-8", page, page_len);
 }
 
@@ -440,11 +454,12 @@ void status_resp(struct HttpContext *http, const char path[], struct HttpRequest
 	size_t contentLength = 0;
 	UserAgent userAgent = ProbeHeaders(req, req_end, &contentLength);
 	const char *reqPath_end = (char*)memchr(req, ' ', (uint32_t)(req_end - req));
-	uprintf("(%s,%s): %.*s\n", http->encrypt ? "HTTPS" : "HTTP", UserAgent_ToString[userAgent],
-		(reqPath_end != NULL) ? (int)(reqPath_end - httpRequest.header) : (int)(httpRequest.header_len), httpRequest.header);
+	if(!quietMode || userAgent != UserAgent_BSSB || reqPath_end != req || post)
+		uprintf("(%s,%s): %.*s\n", http->encrypt ? "HTTPS" : "HTTP", UserAgent_ToString[userAgent],
+			(reqPath_end != NULL) ? (int)(reqPath_end - httpRequest.header) : (int)(httpRequest.header_len), httpRequest.header);
 	if(!post && startsWith(req, req_end, "robots.txt")) {
 		static const char robots_txt[] = "User-agent: *\nDisallow: /\n";
-		HttpContext_respond(http, 200, "text/plain", robots_txt, sizeof(robots_txt));
+		HttpContext_respond(http, 200, "text/plain", robots_txt, sizeof(robots_txt) - sizeof(""));
 		return;
 	}
 	if(userAgent != UserAgent_Web) {
@@ -487,8 +502,20 @@ void status_resp(struct HttpContext *http, const char path[], struct HttpRequest
 		HttpContext_respond(http, 404, "text/plain; charset=utf-8", NULL, 0);
 		return;
 	}
-	if(httpRequest.header_len > 10) {
-		const char *const code_end = memchr(&httpRequest.header[5], ' ', 5);
-		status_web(http, StringToServerCode(&httpRequest.header[5], (code_end != NULL) ? (uint32_t)(code_end - &httpRequest.header[5]) : 5));
+	if(req_end - req < 6) {
+		HttpContext_respond(http, 404, "text/plain; charset=utf-8", NULL, 0);
+		return;
 	}
+	const char *code_end = memchr(req, '?', 6);
+	if(code_end == NULL)
+		code_end = memchr(req, ' ', 6);
+	if(code_end == req) {
+		status_web_index(http);
+		return;
+	}
+	if(code_end == NULL) {
+		HttpContext_respond(http, 404, "text/plain; charset=utf-8", NULL, 0);
+		return;
+	}
+	status_web_room(http, StringToServerCode(req, (uint32_t)(code_end - req)));
 }
