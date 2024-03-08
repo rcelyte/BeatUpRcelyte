@@ -11,9 +11,10 @@ static partial class BeatUpClient {
 		public string graphAccessToken {get;}
 		public bool forceGameLift {get; set;}
 		public ServiceEnvironment serviceEnvironment {get;}
+		public string appId {get;}
 		public VanillaConfig(NetworkConfigSO from) => // Bypass all getters other mods might patch
-			(this.maxPartySize, this.discoveryPort, this.partyPort, this.multiplayerPort, this.masterServerEndPoint, this.multiplayerStatusUrl, this.quickPlaySetupUrl, this.graphUrl, this.graphAccessToken, this.forceGameLift, this.serviceEnvironment) = 
-				(/*from._maxPartySize*/5, from._discoveryPort, from._partyPort, from._multiplayerPort, new DnsEndPoint(from._masterServerHostName, from._masterServerPort), from._multiplayerStatusUrl, from._quickPlaySetupUrl, from.graphUrl, from.graphAccessToken, from._forceGameLift, from._serviceEnvironment);
+			(this.maxPartySize, this.discoveryPort, this.partyPort, this.multiplayerPort, this.masterServerEndPoint, this.multiplayerStatusUrl, this.quickPlaySetupUrl, this.graphUrl, this.graphAccessToken, this.forceGameLift, this.serviceEnvironment, this.appId) = 
+				(/*from._maxPartySize*/5, from._discoveryPort, from._partyPort, from._multiplayerPort, new DnsEndPoint(from._masterServerHostName, from._masterServerPort), from._multiplayerStatusUrl, from._quickPlaySetupUrl, from.graphUrl, from.graphAccessToken, from._forceGameLift, from._serviceEnvironment, from.appId);
 	}
 
 	static VanillaConfig officialConfig;

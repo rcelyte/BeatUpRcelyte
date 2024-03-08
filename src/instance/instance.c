@@ -254,7 +254,7 @@ static void mapPool_init(const char *filename) {
 	}
 	fseek(file, 0, SEEK_END);
 	size_t raw_len = (size_t)ftell(file);
-	fseek(file, 0, SEEK_SET);
+	rewind(file);
 	uint8_t raw[3145728], *raw_end = &raw[raw_len];
 	if(raw_len > sizeof(raw)) {
 		uprintf("Failed to read %s: File too large\n", filename);

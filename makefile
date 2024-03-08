@@ -9,9 +9,8 @@ HOST := $(shell uname -m)
 NATIVE_CC ?= cc
 OBJDIR := .obj/$(shell $(CC) -dumpmachine)
 FILES := $(wildcard src/*.c src/*/*.c)
-HTMLS := $(wildcard src/status/*.html)
 LIBS := libmbedtls.a libmbedx509.a libmbedcrypto.a
-OBJS := $(FILES:%=$(OBJDIR)/%.o) $(HTMLS:%=$(OBJDIR)/%.s) $(LIBS:%=$(OBJDIR)/%)
+OBJS := $(FILES:%=$(OBJDIR)/%.o) $(LIBS:%=$(OBJDIR)/%)
 DEPS := $(FILES:%=$(OBJDIR)/%.d)
 
 CFLAGS := -std=gnu2x -ffunction-sections -fdata-sections -isystem thirdparty/mbedtls/include -isystem thirdparty/enet/Source/Native -DMP_EXTENDED_ROUTING
@@ -37,11 +36,6 @@ $(OBJDIR)/%.c.o: %.c src/packets.gen.h $(OBJDIR)/libs.mk thirdparty/mbedtls/.git
 	@echo "[cc $(notdir $@)]"
 	@mkdir -p "$(@D)"
 	$(CC) $(CFLAGS) -c "$<" -o "$@" -MMD -MP
-
-$(OBJDIR)/%.html.s: %.html makefile # waiting for `#embed`...
-	@mkdir -p "$(@D)"
-	tr -d '\r\n\t' < "$<" > "$(basename $@)"
-	printf "\t.global $(basename $(notdir $<))_html\n$(basename $(notdir $<))_html:\n\t.incbin \"$(basename $@)\"\n\t.global $(basename $(notdir $<))_html_end\n$(basename $(notdir $<))_html_end:\n.section \".note.GNU-stack\"\n" > "$@"
 
 $(OBJDIR)/libmbed%.a: thirdparty/mbedtls/.git
 	@echo "[make $(notdir $@)]"

@@ -20,13 +20,13 @@ static partial class BeatUpClient {
 		WaitingForCountdown
 	}
 
-	static async System.Threading.Tasks.Task<BeatmapLevelLoader.LoadBeatmapLevelDataResult> DownloadLevel(ShareTracker.DownloadPreview preview, System.Threading.CancellationToken cancellationToken) {
+	static async System.Threading.Tasks.Task<LoadBeatmapLevelDataResult> DownloadLevel(ShareTracker.DownloadPreview preview, System.Threading.CancellationToken cancellationToken) {
 		byte[]? data = await preview.Fetch(progress => {
 			Net.SetLocalProgressUnreliable(new LoadProgress(LoadState.Downloading, progress));
 		});
 		if(!(data?.Length > 0)) {
 			Log.Debug("Fetch failed");
-			return new(true, null);
+			return LoadBeatmapLevelDataResult.Error;
 		}
 		Net.SetLocalProgress(new LoadProgress(LoadState.Loading, 0));
 		Log.Debug("Unzipping level");
@@ -35,20 +35,20 @@ static partial class BeatUpClient {
 		System.Threading.CancellationTokenSource? loaderCTS = Resolve<MultiplayerLevelLoader>()?._getBeatmapCancellationTokenSource;
 		if(!haveMpCore && loaderCTS != null && cancellationToken == loaderCTS.Token && (int)HarmonyLib.AccessTools.Field(typeof(MultiplayerLevelLoader), "_loaderState").GetValue(Resolve<MultiplayerLevelLoader>()) == (int)MultiplayerBeatmapLoaderState.LoadingBeatmap)
 			Resolve<IMenuRpcManager>()?.SetIsEntitledToLevel(preview.levelID, /*(level == null) ? EntitlementsStatus.NotOwned :*/ EntitlementsStatus.Ok);
-		return new(level == null, level); // TODO: free zipped data to cut down on memory usage
+		return LoadBeatmapLevelDataResult.FromValue(level); // TODO: free zipped data to cut down on memory usage
 	}
 
 	[Detour(typeof(BeatmapLevelLoader), nameof(BeatmapLevelLoader.LoadBeatmapLevelDataAsync))]
-	static System.Threading.Tasks.Task<BeatmapLevelLoader.LoadBeatmapLevelDataResult> BeatmapLevelLoader_LoadBeatmapLevelDataAsync(BeatmapLevelLoader self, BeatmapLevel beatmapLevel, System.Threading.CancellationToken cancellationToken) {
+	static System.Threading.Tasks.Task<LoadBeatmapLevelDataResult> BeatmapLevelLoader_LoadBeatmapLevelDataAsync(BeatmapLevelLoader self, BeatmapLevel beatmapLevel, System.Threading.CancellationToken cancellationToken) {
 		ShareTracker.DownloadPreview? preview = beatmapLevel as ShareTracker.DownloadPreview;
 		if(preview == null)
-			return (System.Threading.Tasks.Task<BeatmapLevelLoader.LoadBeatmapLevelDataResult>)Base(self, beatmapLevel, cancellationToken);
+			return (System.Threading.Tasks.Task<LoadBeatmapLevelDataResult>)Base(self, beatmapLevel, cancellationToken);
 		System.Threading.CancellationTokenSource? loaderCTS = Resolve<MultiplayerLevelLoader>()?._getBeatmapCancellationTokenSource;
 		if(loaderCTS == null || cancellationToken != loaderCTS.Token)
-			return System.Threading.Tasks.Task.FromResult<BeatmapLevelLoader.LoadBeatmapLevelDataResult>(new(true, null));
+			return System.Threading.Tasks.Task.FromResult(LoadBeatmapLevelDataResult.Error);
 		if(waitForMpCore) { // MultiplayerCore causes this method to run twice, discarding the first result
 			waitForMpCore = false;
-			return System.Threading.Tasks.Task.FromResult<BeatmapLevelLoader.LoadBeatmapLevelDataResult>(new(true, null));
+			return System.Threading.Tasks.Task.FromResult(LoadBeatmapLevelDataResult.Error);
 		}
 		return DownloadLevel(preview, cancellationToken);
 	}

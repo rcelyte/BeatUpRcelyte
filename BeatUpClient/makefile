@@ -1,5 +1,5 @@
 #!/bin/make
-VERSION := 0.8.2
+VERSION := 0.9.0
 
 .SILENT:
 
@@ -71,7 +71,7 @@ BeatUpClient.dll: $(CSFILES) .obj/MakeThingsPublic.exe makefile
 		\"\$$schema\": \"https://raw.githubusercontent.com/bsmg/BSIPA-MetadataFileSchema/master/Schema.json\",\n\
 		\"author\": \"rcelyte\",\n\
 		\"description\": \"Tweaks and enhancements for enabling modded multiplayer\",\n\
-		\"gameVersion\": \"1.34.5_7757266186\",\n\
+		\"gameVersion\": \"1.35.0_8016709773\",\n\
 		\"dependsOn\": {\"BSIPA\": \"^4.3.0\"},\n\
 		\"conflictsWith\": {\"BeatTogether\": \"*\"},\n\
 		\"loadBefore\": [\"MultiplayerCore\"],\n\
@@ -90,6 +90,7 @@ BeatUpClient.dll: $(CSFILES) .obj/MakeThingsPublic.exe makefile
 		-r:.obj/Refs/Libs/MonoMod.Utils.dll \
 		-r:.obj/Refs/Libs/Newtonsoft.Json.dll \
 		-r:.obj/Refs/Managed/BeatmapCore.dll \
+		-r:.obj/Refs/Managed/BeatSaber.Init.dll \
 		-r:.obj/Refs/Managed/BGNetCore.dll \
 		-r:.obj/Refs/Managed/Colors.dll \
 		-r:.obj/Refs/Managed/GameplayCore.dll \

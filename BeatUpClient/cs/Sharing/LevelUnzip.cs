@@ -9,11 +9,12 @@ static partial class BeatUpClient {
 		public struct DifficultyData {
 			public string lightshowFilename, beatmapFilename;
 		};
+		public string songName;
 		public string? audioData;
 		public System.Collections.Generic.Dictionary<DifficultyKey, (string? lightshow, string? beatmap)> difficulties;
 		UnityEngine.AudioClip songAudio;
 		public string hash;
-		public static async System.Threading.Tasks.Task<SharedBeatmapLevelData> From(System.IO.Compression.ZipArchive archive, byte[] infoData, string songFilename, string audioDataFilename, System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<DifficultyKey, DifficultyData>> difficultyFilenames) {
+		public static async System.Threading.Tasks.Task<SharedBeatmapLevelData> From(System.IO.Compression.ZipArchive archive, byte[] infoData, string songName, string songFilename, string audioDataFilename, System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<DifficultyKey, DifficultyData>> difficultyFilenames) {
 			using System.Security.Cryptography.SHA1 hash = System.Security.Cryptography.SHA1.Create();
 			hash.HashCore(infoData, 0, infoData.Length);
 			string? ReadFile(string filename) {
@@ -27,6 +28,7 @@ static partial class BeatUpClient {
 			}
 			System.IO.Compression.ZipArchiveEntry songFile = archive.GetEntry(songFilename) ?? throw new System.IO.FileNotFoundException("File not found in archive: " + songFilename);
 			return new SharedBeatmapLevelData {
+				songName = songName,
 				audioData = ReadFile(audioDataFilename),
 				difficulties = new(difficultyFilenames.Select(difficulty => System.Collections.Generic.KeyValuePair.Create(
 					difficulty.Key, (ReadFile(difficulty.Value.lightshowFilename), ReadFile(difficulty.Value.beatmapFilename))))),
@@ -43,6 +45,7 @@ static partial class BeatUpClient {
 			difficulties.TryGetValue(new DifficultyKey {characteristic = key.beatmapCharacteristic, difficulty = key.difficulty}, out var difficulty);
 			return difficulty.lightshow;
 		}
+		string IBeatmapLevelData.name => songName;
 		System.Threading.Tasks.Task<string?> IBeatmapLevelData.GetAudioDataStringAsync() =>
 			System.Threading.Tasks.Task.FromResult(GetAudioDataString());
 		System.Threading.Tasks.Task<string?> IBeatmapLevelData.GetBeatmapStringAsync(in BeatmapKey key) =>
@@ -76,7 +79,7 @@ static partial class BeatUpClient {
 	}
 	static System.Threading.Tasks.Task<SharedBeatmapLevelData> UnzipV3(string infoText, byte[] infoData, System.IO.Compression.ZipArchive archive) {
 		StandardLevelInfoSaveData info = StandardLevelInfoSaveData.DeserializeFromJSONString(infoText);
-		return SharedBeatmapLevelData.From(archive, infoData, info.songFilename, string.Empty, info.difficultyBeatmapSets
+		return SharedBeatmapLevelData.From(archive, infoData, info.songName, info.songFilename, string.Empty, info.difficultyBeatmapSets
 			.SelectMany((StandardLevelInfoSaveData.DifficultyBeatmapSet set) => {
 				BeatmapCharacteristicSO? characteristic = Resolve<BeatmapCharacteristicCollection>()!
 					.GetBeatmapCharacteristicBySerializedName(set.beatmapCharacteristicName);
@@ -96,7 +99,7 @@ static partial class BeatUpClient {
 	static System.Threading.Tasks.Task<SharedBeatmapLevelData> UnzipV4(string infoText, byte[] infoData, System.IO.Compression.ZipArchive archive) {
 		BeatmapLevelSaveDataVersion4.BeatmapLevelSaveData info =
 			UnityEngine.JsonUtility.FromJson<BeatmapLevelSaveDataVersion4.BeatmapLevelSaveData>(infoText);
-		return SharedBeatmapLevelData.From(archive, infoData, info.audio.songFilename, info.audio.audioDataFilename, info.difficultyBeatmaps
+		return SharedBeatmapLevelData.From(archive, infoData, info.song.title, info.audio.songFilename, info.audio.audioDataFilename, info.difficultyBeatmaps
 			.Select((BeatmapLevelSaveDataVersion4.BeatmapLevelSaveData.DifficultyBeatmap beatmap) => {
 				BeatmapCharacteristicSO? characteristic = Resolve<BeatmapCharacteristicCollection>()!
 					.GetBeatmapCharacteristicBySerializedName(beatmap.characteristic);

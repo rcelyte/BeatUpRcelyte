@@ -153,7 +153,7 @@ void HttpContext_respond(struct HttpContext *const self, const uint16_t code, co
 		default: uprintf("unexpected HTTP response code: %hu\n", code); abort();
 	}
 	char header[0x400] = {0};
-	const uint32_t header_len = (uint32_t)snprintf(header, sizeof(header), "%s%s%s%zu%s%s%s",
+	const uint32_t header_len = (uint32_t)snprintf(header, lengthof(header), "%s%s%s%zu%s%s%s",
 		"HTTP/1.1 ", codeText, "\r\n"
 		"Connection: close\r\n"
 		"Content-Length: ", data_len, "\r\n"
