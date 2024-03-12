@@ -64,7 +64,27 @@ extern:
 	csc -nologo -o+ -debug- -nullable+ -w:4 -warnaserror+ -langversion:9 "$<" -out:"$@" -r:$(BSINSTALL)/Libs/Mono.Cecil.dll
 	MONO_PATH=$(BSINSTALL)/Libs mono --aot -O=all "$@"
 
-BeatUpClient.dll: $(CSFILES) .obj/MakeThingsPublic.exe makefile
+thirdparty/ILRepack.exe:
+	@echo "[curl $(notdir $@)]"
+	@mkdir -p "$(@D)"
+	curl https://globalcdn.nuget.org/packages/ilrepack.2.0.27.nupkg -o .obj/ILRepack.nupkg
+	unzip -ojd .obj/ .obj/ILRepack.nupkg tools/ILRepack.exe
+	rm .obj/ILRepack.nupkg
+	echo "09acb91db953828f7f46ec79a51c2a65f73969e34f888ec95e0aa8029e66e2ac .obj/ILRepack.exe" | \
+		sha256sum -c || (rm .obj/ILRepack.exe; false)
+	mv .obj/ILRepack.exe $@
+
+thirdparty/System.IO.Compression.dll:
+	@echo "[curl $(notdir $@)]"
+	@mkdir -p "$(@D)"
+	curl https://beatmods.com/uploads/65779c825e029208799de4dd/universal/System.IO.Compression-4.6.57.zip -o .obj/System.IO.Compression.zip
+	unzip -ojd .obj/ .obj/System.IO.Compression.zip Libs/System.IO.Compression.dll
+	rm .obj/System.IO.Compression.zip
+	echo "c457ab509c57506c08c52d23ff0581ba677f2af930efc882c8ce8b03e1eb46ec .obj/System.IO.Compression.dll" | \
+		sha256sum -c || (rm .obj/System.IO.Compression.dll; false)
+	mv .obj/System.IO.Compression.dll $@
+
+BeatUpClient.dll: $(CSFILES) .obj/MakeThingsPublic.exe thirdparty/ILRepack.exe thirdparty/System.IO.Compression.dll makefile
 	@echo "[csc $@]"
 	@mkdir -p .obj/
 	printf "{\n\
@@ -82,53 +102,9 @@ BeatUpClient.dll: $(CSFILES) .obj/MakeThingsPublic.exe makefile
 	}" > .obj/manifest.json
 	MONO_PATH=$(BSINSTALL)/Libs mono .obj/MakeThingsPublic.exe $(BSINSTALL)
 	csc -nologo -t:library -nostdlib -o+ -debug- -nullable+ -unsafe+ -w:4 -warnaserror+ -langversion:9 $(CSFILES) \
-		-res:.obj/manifest.json,.manifest.json -res:assets/cover.png,BeatUpClient.cover -res:assets/create.png,BeatUpClient.create -out:"$@" \
-		-r:.obj/Refs/Libs/0Harmony.dll \
-		-r:.obj/Refs/Libs/Hive.Versioning.dll \
-		-r:.obj/Refs/Libs/Mono.Cecil.dll \
-		-r:.obj/Refs/Libs/MonoMod.RuntimeDetour.dll \
-		-r:.obj/Refs/Libs/MonoMod.Utils.dll \
-		-r:.obj/Refs/Libs/Newtonsoft.Json.dll \
-		-r:.obj/Refs/Managed/BeatmapCore.dll \
-		-r:.obj/Refs/Managed/BeatSaber.Init.dll \
-		-r:.obj/Refs/Managed/BGNetCore.dll \
-		-r:.obj/Refs/Managed/Colors.dll \
-		-r:.obj/Refs/Managed/GameplayCore.dll \
-		-r:.obj/Refs/Managed/HMLib.dll \
-		-r:.obj/Refs/Managed/HMUI.dll \
-		-r:.obj/Refs/Managed/IPA.Loader.dll \
-		-r:.obj/Refs/Managed/LiteNetLib.dll \
-		-r:.obj/Refs/Managed/Main.dll \
-		-r:.obj/Refs/Managed/mscorlib.dll \
-		-r:.obj/Refs/Managed/netstandard.dll \
-		-r:.obj/Refs/Managed/BGLib.Polyglot.dll \
-		-r:.obj/Refs/Libs/System.IO.Compression.dll \
-		-r:.obj/Refs/Managed/UnityEngine.AssetBundleModule.dll \
-		-r:.obj/Refs/Managed/UnityEngine.AudioModule.dll \
-		-r:.obj/Refs/Managed/UnityEngine.CoreModule.dll \
-		-r:.obj/Refs/Managed/UnityEngine.ImageConversionModule.dll \
-		-r:.obj/Refs/Managed/UnityEngine.JSONSerializeModule.dll \
-		-r:.obj/Refs/Managed/UnityEngine.UI.dll \
-		-r:.obj/Refs/Managed/UnityEngine.UIModule.dll \
-		-r:.obj/Refs/Managed/UnityEngine.UnityWebRequestAudioModule.dll \
-		-r:.obj/Refs/Managed/UnityEngine.UnityWebRequestModule.dll \
-		-r:.obj/Refs/Managed/Unity.TextMeshPro.dll \
-		-r:.obj/Refs/Managed/VRUI.dll \
-		-r:.obj/Refs/Managed/Zenject.dll \
-		-r:.obj/Refs/Managed/Zenject-usage.dll \
-		-r:.obj/Refs/Plugins/MultiplayerCore.dll \
-		-r:.obj/Refs/Plugins/SiraUtil.dll \
-		-r:.obj/Refs/Plugins/SongCore.dll \
-		-r:.obj/Refs/Managed/Unity.ResourceManager.dll \
-		-r:.obj/Refs/Managed/System.Net.Http.dll \
-		-r:.obj/Refs/Managed/Ignorance.dll \
-		-r:.obj/Refs/Managed/BGLib.AppFlow.dll \
-		-r:.obj/Refs/Managed/BGLib.DotnetExtension.dll \
-		-r:.obj/Refs/Managed/BGLib.UnityExtension.dll \
-		-r:.obj/Refs/Managed/Networking.dll \
-		-r:.obj/Refs/Managed/Menu.CommonLib.dll \
-		-r:.obj/Refs/Managed/MediaLoader.dll \
-		-r:.obj/Refs/Managed/DataModels.dll
+		-res:.obj/manifest.json,.manifest.json -res:assets/cover.png,BeatUpClient.cover -res:assets/create.png,BeatUpClient.create -out:.obj/$@ \
+		`find .obj/Refs/ -name "*.dll" | sed -e 's/^/-r:/'`
+	mono thirdparty/ILRepack.exe /lib:.obj/Refs/Libs /lib:.obj/Refs/Managed /lib:.obj/Refs/Plugins /out:$@ .obj/$@ thirdparty/System.IO.Compression.dll
 
 AudioPluginMsHRTF.dll: cs/loader.c BeatUpClient.dll
 	@echo "[cc $@]"

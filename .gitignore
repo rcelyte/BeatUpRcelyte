@@ -1,11 +1,11 @@
 *.sublime-project
 *.sublime-workspace
 /.obj
+/BeatUpClient/*.dll
 /BeatUpClient/.folderNameWithoutSpaces
 /BeatUpClient/.obj
 /BeatUpClient/.tmp
 /BeatUpClient/BeatUpClient.csproj.user
-/BeatUpClient/*.dll
 /BeatUpClient/BeatUpClient.qmod
 /BeatUpClient/bin
 /BeatUpClient/extern
@@ -15,6 +15,7 @@
 /BeatUpClient/obj
 /BeatUpClient/qpm.shared.json
 /BeatUpClient/qpm_defines.cmake
+/BeatUpClient/thirdparty
 /beatupserver*
 /build.sh
 /makefile.user
