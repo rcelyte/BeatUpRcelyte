@@ -43,7 +43,7 @@ struct EncryptionState *EncryptionState_init(const mbedtls_ssl_config *config, i
 	EncryptionState_ref(state);
 	mbedtls_ssl_init(&state->dtls.ssl);
 	mbedtls_aes_init(&state->bgnet.aes);
-	state->dtls.resetNeeded = true;
+	state->tlsResetNeeded = true;
 	state->dtls.sendfd = sendfd;
 
 	if(mbedtls_ssl_setup(&state->dtls.ssl, config)) {
@@ -52,7 +52,7 @@ struct EncryptionState *EncryptionState_init(const mbedtls_ssl_config *config, i
 	}
 	mbedtls_ssl_set_mtu(&state->dtls.ssl, 1200); // TODO: actual MTU
 	mbedtls_ssl_set_timer_cb(&state->dtls.ssl, &state->dtls.timer, mbedtls_timing_set_delay, mbedtls_timing_get_delay);
-	state->dtls.initialized = true;
+	state->initialized = true;
 	return state;
 }
 
@@ -71,7 +71,7 @@ struct EncryptionState *EncryptionState_unref(struct EncryptionState *state) {
 }
 
 bool EncryptionState_setKeys(struct EncryptionState *state, const mbedtls_mpi *secret, const struct Cookie32 random[static 2], bool client) {
-	state->bgnet.initialized = false;
+	state->initialized = false;
 	uint8_t sourceArray[510], scratch[510];
 	size_t secret_len = mbedtls_mpi_size(secret);
 	if(secret_len > sizeof(sourceArray)) {
@@ -92,7 +92,7 @@ bool EncryptionState_setKeys(struct EncryptionState *state, const mbedtls_mpi *s
 	state->bgnet.outboundSequence = ~0u;
 	state->bgnet.receiveWindowEnd = 0;
 	state->bgnet.receiveWindow = 0;
-	state->bgnet.initialized = true;
+	state->initialized = true;
 	return false;
 }
 
@@ -202,17 +202,17 @@ static bool FastHMAC(const uint8_t key[restrict static 64], const uint8_t *restr
 uint32_t EncryptionState_decrypt(struct EncryptionState *state, const struct SS *sendAddr, const uint8_t raw[static 1536], const uint8_t *raw_end, uint8_t out[restrict static 1536]) {
 	if(raw_end == raw)
 		return 0;
-	if(state->dtls.enet || *raw >= MBEDTLS_SSL_MSG_CHANGE_CIPHER_SPEC) {
-		if(!state->dtls.initialized)
+	if(state->forceENet || *raw >= MBEDTLS_SSL_MSG_CHANGE_CIPHER_SPEC) {
+		if(!state->initialized)
 			return 0;
-		state->dtls.latch |= (*raw == MBEDTLS_SSL_MSG_HANDSHAKE);
-		if(!state->dtls.latch) {
-			state->dtls.enet |= (*raw == EENET_CONNECT_BYTE);
+		state->encrypt |= (*raw == MBEDTLS_SSL_MSG_HANDSHAKE);
+		if(!state->encrypt) {
+			state->forceENet |= (*raw == EENET_CONNECT_BYTE);
 			uint32_t length = (uint32_t)(raw_end - raw);
 			memcpy(out, raw, length);
 			return length;
 		}
-		if(state->dtls.resetNeeded) {
+		if(state->tlsResetNeeded) {
 			mbedtls_ssl_session_reset(&state->dtls.ssl);
 			switch(sendAddr->ss.ss_family) {
 				case AF_INET: mbedtls_ssl_set_client_transport_id(&state->dtls.ssl, (const uint8_t*)&sendAddr->in.sin_addr.s_addr, sizeof(sendAddr->in.sin_addr.s_addr)); break;
@@ -228,18 +228,18 @@ uint32_t EncryptionState_decrypt(struct EncryptionState *state, const struct SS 
 		}, (mbedtls_ssl_send_t*)DtlsBio_send, (mbedtls_ssl_recv_t*)DtlsBio_recv, NULL);
 		const int res = mbedtls_ssl_read(&state->dtls.ssl, out, 1536);
 		mbedtls_ssl_set_bio(&state->dtls.ssl, NULL, NULL, NULL, NULL);
-		state->dtls.resetNeeded = (res == MBEDTLS_ERR_SSL_HELLO_VERIFY_REQUIRED);
+		state->tlsResetNeeded = (res == MBEDTLS_ERR_SSL_HELLO_VERIFY_REQUIRED);
 		return (res < 0) ? 0 : (uint32_t)res;
 	}
 	struct PacketEncryptionLayer header;
 	if(!pkt_read(&header, &raw, raw_end, (struct PacketContext){0}))
 		return 0;
 	uint32_t length = (uint32_t)(raw_end - raw);
-	if(!header.encrypted) {
+	if(!header.encrypted) { // TODO: latch encryption (reject unencrypted packets following encrypted ones)
 		memcpy(out, raw, length);
 		return length;
 	}
-	if(!state->bgnet.initialized || header.encrypted != 1 || length == 0 || length % 16 || InvalidSequenceNum(state, header.sequenceId))
+	if(!state->initialized || header.encrypted != 1 || length == 0 || length % 16 || InvalidSequenceNum(state, header.sequenceId))
 		return 0;
 	mbedtls_aes_setkey_dec(&state->bgnet.aes, state->bgnet.receiveKey, sizeof(state->bgnet.receiveKey) * 8);
 	mbedtls_aes_crypt_cbc(&state->bgnet.aes, MBEDTLS_AES_DECRYPT, length, header.iv, raw, out);
@@ -256,6 +256,7 @@ uint32_t EncryptionState_decrypt(struct EncryptionState *state, const struct SS 
 	}
 	if(PutSequenceNum(state, header.sequenceId))
 		return 0;
+	state->encrypt = true;
 	return length;
 }
 
@@ -269,7 +270,7 @@ uint32_t EncryptionState_encrypt(struct EncryptionState *state, const struct SS 
 			return header_len + buf_len;
 		}
 		case EncryptMode_BGNet: {
-			if(!state->bgnet.initialized)
+			if(!state->initialized)
 				break;
 			struct PacketEncryptionLayer header = {
 				.encrypted = true,
@@ -293,9 +294,9 @@ uint32_t EncryptionState_encrypt(struct EncryptionState *state, const struct SS 
 			return header_len + cut_len + cap_len;
 		}
 		case EncryptMode_DTLS: {
-			if(!state->dtls.initialized)
+			if(!state->initialized)
 				break;
-			if(!state->dtls.latch) {
+			if(!state->encrypt) {
 				memcpy(out, buf, buf_len);
 				return buf_len;
 			}

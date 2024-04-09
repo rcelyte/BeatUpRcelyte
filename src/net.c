@@ -33,10 +33,10 @@ static const uint16_t PossibleMtu[] = {
 	1500 - ENCRYPTION_LAYER_SIZE - 68,
 };
 
-const struct Cookie32 *NetKeypair_get_random(const struct NetKeypair *keys) {
+const struct Cookie32 *NetKeypair_get_random(const struct NetKeypair *const keys) {
 	return &keys->random;
 }
-static uint32_t NetKeypair_write_key_internal(const struct NetKeypair *keys, const struct NetContext *ctx, uint8_t *out, size_t out_len) {
+static uint32_t NetKeypair_write_key_internal(const struct NetKeypair *const keys, const struct NetContext *ctx, uint8_t *out, size_t out_len) {
 	size_t keylen = 0;
 	int32_t err = mbedtls_ecp_tls_write_point(&ctx->grp, &keys->public, MBEDTLS_ECP_PF_UNCOMPRESSED, &keylen, out, out_len);
 	if(err) {
@@ -45,14 +45,17 @@ static uint32_t NetKeypair_write_key_internal(const struct NetKeypair *keys, con
 	}
 	return (uint32_t)keylen;
 }
-bool NetKeypair_write_key(const struct NetKeypair *keys, struct NetContext *ctx, struct ByteArrayNetSerializable *out) {
+bool NetKeypair_write_key(const struct NetKeypair *const keys, struct NetContext *ctx, struct ByteArrayNetSerializable *out) {
 	out->length = NetKeypair_write_key_internal(keys, ctx, out->data, sizeof(out->data));
 	return out->length == 0;
 }
-const struct Cookie32 *NetSession_get_cookie(const struct NetSession *session) {
+const struct Cookie32 *NetSession_get_cookie(const struct NetSession *const session) {
 	return &session->cookie;
 }
-bool NetSession_signature(const struct NetSession *session, struct NetContext *ctx, const mbedtls_pk_context *key, struct ByteArrayNetSerializable *out) {
+bool NetSession_isEncrypted(const struct NetSession *const session) {
+	return session->encryptionState->encrypt;
+}
+bool NetSession_signature(const struct NetSession *const session, struct NetContext *ctx, const mbedtls_pk_context *key, struct ByteArrayNetSerializable *out) {
 	out->length = 0;
 	if(mbedtls_pk_get_type(key) != MBEDTLS_PK_RSA) {
 		uprintf("Key should be RSA\n");
@@ -84,8 +87,8 @@ bool NetSession_signature(const struct NetSession *session, struct NetContext *c
 	out->length = (uint32_t)mbedtls_rsa_get_len(rsa);
 	return false;
 }
-bool NetSession_set_remotePublicKey(struct NetSession *session, struct NetContext *ctx, const struct ByteArrayNetSerializable *in, bool client) {
-	session->encryptionState->bgnet.initialized = false;
+bool NetSession_set_remotePublicKey(struct NetSession *const session, struct NetContext *ctx, const struct ByteArrayNetSerializable *in, bool client) {
+	session->encryptionState->initialized = false;
 	mbedtls_ecp_point clientPublicKey;
 	mbedtls_mpi sharedSecret;
 	mbedtls_ecp_point_init(&clientPublicKey);
@@ -104,16 +107,16 @@ bool NetSession_set_remotePublicKey(struct NetSession *session, struct NetContex
 	fail:
 	mbedtls_mpi_free(&sharedSecret);
 	mbedtls_ecp_point_free(&clientPublicKey);
-	return !session->encryptionState->bgnet.initialized;
+	return !session->encryptionState->initialized;
 }
-uint32_t NetSession_get_lastKeepAlive(struct NetSession *session) {
+uint32_t NetSession_get_lastKeepAlive(struct NetSession *const session) {
 	return session->lastKeepAlive;
 }
-const struct SS *NetSession_get_addr(struct NetSession *session) {
+const struct SS *NetSession_get_addr(struct NetSession *const session) {
 	return &session->addr;
 }
 
-uint32_t NetSession_decrypt(struct NetSession *session, const uint8_t packet[static 1536], uint32_t packet_len, uint8_t out[static 1536]) {
+uint32_t NetSession_decrypt(struct NetSession *const session, const uint8_t packet[static 1536], uint32_t packet_len, uint8_t out[static 1536]) {
 	return EncryptionState_decrypt(session->encryptionState, &session->addr, packet, &packet[packet_len], out);
 }
 
@@ -184,7 +187,7 @@ uint32_t net_time() {
 	return (uint32_t)((uint64_t)now.tv_sec * UINT64_C(1000) + (uint64_t)now.tv_nsec / UINT64_C(1000000));
 }
 
-void net_send_internal(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint32_t len, enum EncryptMode encryptMode) {
+void net_send_internal(struct NetContext *ctx, struct NetSession *const session, const uint8_t *buf, uint32_t len, enum EncryptMode encryptMode) {
 	uint8_t body[1536];
 	uint32_t body_len = EncryptionState_encrypt(session->encryptionState, &session->addr, &ctx->ctr_drbg, encryptMode, buf, len, body);
 	if(body_len != 0)
@@ -311,7 +314,7 @@ bool net_init(struct NetContext *ctx, uint16_t port) {
 	return true;
 }
 
-static void net_set_mtu(struct NetSession *session, uint8_t idx) {
+static void net_set_mtu(struct NetSession *const session, uint8_t idx) {
 	session->mtu = PossibleMtu[idx];
 	session->mtuIdx = idx;
 	uint8_t buf[NET_MAX_PKT_SIZE], *buf_end = buf;
@@ -321,7 +324,7 @@ static void net_set_mtu(struct NetSession *session, uint8_t idx) {
 	session->maxFragmentSize = session->maxChanneledSize - (uint16_t)pkt_write_c(&buf_end, endof(buf), session->version, FragmentedHeader, {0});
 }
 
-void NetSession_init(struct NetSession *session, struct NetContext *ctx, struct SS addr, const mbedtls_ssl_config *config) {
+void NetSession_init(struct NetSession *const session, struct NetContext *ctx, struct SS addr, const mbedtls_ssl_config *config) {
 	*session = (struct NetSession){
 		.version = PV_LEGACY_DEFAULT,
 		.cookie = net_cookie(&ctx->ctr_drbg),
@@ -336,7 +339,7 @@ void NetSession_init(struct NetSession *session, struct NetContext *ctx, struct 
 	net_flush_merged(ctx, session);
 }
 
-void NetSession_initFrom(struct NetSession *session, const struct NetSession *from) {
+void NetSession_initFrom(struct NetSession *const session, const struct NetSession *from) {
 	*session = (struct NetSession){
 		.keys.random = from->keys.random,
 		.version = from->version,
@@ -355,13 +358,13 @@ void NetSession_initFrom(struct NetSession *session, const struct NetSession *fr
 	net_set_mtu(session, from->mtuIdx);
 }
 
-void NetSession_free(struct NetSession *session) {
+void NetSession_free(struct NetSession *const session) {
 	EncryptionState_unref(session->encryptionState);
 	session->encryptionState = NULL;
 	net_keypair_free(&session->keys);
 }
 
-void net_keypair_init(struct NetContext *ctx, struct NetKeypair *keys) {
+void net_keypair_init(struct NetContext *ctx, struct NetKeypair *const keys) {
 	keys->random = net_cookie(&ctx->ctr_drbg);
 	mbedtls_mpi_init(&keys->secret);
 	mbedtls_ecp_point_init(&keys->public);
@@ -371,7 +374,7 @@ void net_keypair_init(struct NetContext *ctx, struct NetKeypair *keys) {
 	}
 }
 
-void net_keypair_free(struct NetKeypair *keys) {
+void net_keypair_free(struct NetKeypair *const keys) {
 	mbedtls_mpi_free(&keys->secret);
 	mbedtls_ecp_point_free(&keys->public);
 }
@@ -471,7 +474,7 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSe
 	}
 	return length;
 }
-void net_flush_merged(struct NetContext *ctx, struct NetSession *session) {
+void net_flush_merged(struct NetContext *ctx, struct NetSession *const session) {
 	if(session->mergeData_end - session->mergeData > 3)
 		net_send_internal(ctx, session, session->mergeData, (uint32_t)(session->mergeData_end - session->mergeData), EncryptMode_BGNet);
 	session->mergeData_end = session->mergeData;
@@ -481,7 +484,7 @@ void net_flush_merged(struct NetContext *ctx, struct NetSession *session) {
 		.isFragmented = 0,
 	});
 }
-void net_queue_merged(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint16_t len, const struct NetPacketHeader *header) {
+void net_queue_merged(struct NetContext *ctx, struct NetSession *const session, const uint8_t *buf, uint16_t len, const struct NetPacketHeader *header) {
 	uint8_t scratch[128];
 	const size_t scratch_len = (header != NULL) ? pkt_write(header, (uint8_t*[]){scratch}, endof(scratch), session->version) : 0;
 	if((size_t)(session->mergeData_end - session->mergeData) + 2 + scratch_len + len > session->mtu)

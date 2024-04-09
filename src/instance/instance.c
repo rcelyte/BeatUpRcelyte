@@ -1430,8 +1430,9 @@ static void handle_MpCore(struct InstanceContext *const ctx, struct Room *const 
 			if(session->chatProtocol != 0 || !mpCore->mpcCapabilities.canText)
 				break;
 			session->chatProtocol = mpCore->mpcCapabilities.protocolVersion;
-			chat(ctx, *room, session, "Welcome to BeatUpServer | BETA!\n* Per-player difficulty is %s\n* Per-player modifiers are %s",
-				(*room)->perPlayerDifficulty ? "enabled" : "disabled", (*room)->perPlayerModifiers ? "enabled" : "disabled");
+			chat(ctx, *room, session, "Welcome to BeatUpServer | BETA!\n* Per-player difficulty is %s\n* Per-player modifiers are %s%s",
+				(*room)->perPlayerDifficulty ? "enabled" : "disabled", (*room)->perPlayerModifiers ? "enabled" : "disabled",
+				NetSession_isEncrypted(&session->net) ? "" : "\nYour connection is unencrypted");
 			break;
 		}
 		default:;

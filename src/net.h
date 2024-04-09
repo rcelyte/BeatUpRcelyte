@@ -88,6 +88,7 @@ bool NetKeypair_write_key(const struct NetKeypair *keys, struct NetContext *ctx,
 bool NetSession_signature(const struct NetSession *session, struct NetContext *ctx, const mbedtls_pk_context *key, struct ByteArrayNetSerializable *out);
 
 const struct Cookie32 *NetSession_get_cookie(const struct NetSession *session);
+bool NetSession_isEncrypted(const struct NetSession *session);
 bool NetSession_set_remotePublicKey(struct NetSession *session, struct NetContext *ctx, const struct ByteArrayNetSerializable *in, bool client);
 uint32_t NetSession_get_lastKeepAlive(struct NetSession *session);
 const struct SS *NetSession_get_addr(struct NetSession *session);
@@ -98,7 +99,7 @@ void net_stop(struct NetContext *ctx);
 void net_cleanup(struct NetContext *ctx);
 void net_lock(struct NetContext *ctx);
 void net_unlock(struct NetContext *ctx);
-void NetSession_init(struct NetSession *session, struct NetContext *ctx, struct SS addr, const mbedtls_ssl_config *config);
+void NetSession_init(struct NetSession *session, struct NetContext *ctx, struct SS addr, const mbedtls_ssl_config *config); // TODO: report errors
 void NetSession_initFrom(struct NetSession *session, const struct NetSession *from);
 void NetSession_free(struct NetSession *session);
 uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSession **session, void **userdata_out);

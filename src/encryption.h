@@ -13,14 +13,13 @@ enum EncryptMode {
 
 struct EncryptionState {
 	uint32_t refCount;
+	bool initialized, encrypt, forceENet, tlsResetNeeded;
 	struct {
-		bool initialized, resetNeeded, enet, latch;
 		int32_t sendfd;
 		mbedtls_ssl_context ssl;
 		mbedtls_timing_delay_context timer;
 	} dtls;
 	struct {
-		bool initialized;
 		mbedtls_aes_context aes;
 		uint8_t sendKey[32];
 		uint8_t receiveKey[32];
