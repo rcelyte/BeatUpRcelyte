@@ -189,6 +189,11 @@ var refs = new (string path, string name, string[]? overrides)[] {
 		"PlatformAuthenticationTokenProvider::_userId",
 		"PlatformAuthenticationTokenProvider::_userName",
 	}),
+	(managed, "PlatformUserModel.dll", new[] {
+		"PlatformAuthenticationTokenProvider::_platform",
+		"PlatformAuthenticationTokenProvider::_userId",
+		"PlatformAuthenticationTokenProvider::_userName",
+	}),
 	(managed, "System.Net.Http.dll", null),
 	(managed, "Unity.ResourceManager.dll", new[] {
 		"MonoBehaviourCallbackHooks",

@@ -52,7 +52,7 @@ static partial class BeatUpClient {
 			System.Threading.Tasks.Task.FromResult(GetBeatmapString(key));
 		System.Threading.Tasks.Task<string?> IBeatmapLevelData.GetLightshowStringAsync(in BeatmapKey key) =>
 			System.Threading.Tasks.Task.FromResult(GetLightshowString(key));
-		string? IBeatmapLevelData.GetBeatmapChecksum(in BeatmapKey beatmapKey) => string.Empty;
+		public string? GetBeatmapChecksum(in BeatmapKey beatmapKey) => string.Empty; // 1.35.0 compat
 		UnityEngine.AudioClip IAssetSongAudioClipProvider.songAudioClip => songAudio;
 	}
 	static async System.Threading.Tasks.Task<UnityEngine.AudioClip> DecodeAudio(System.IO.Compression.ZipArchiveEntry song, UnityEngine.AudioType type) {

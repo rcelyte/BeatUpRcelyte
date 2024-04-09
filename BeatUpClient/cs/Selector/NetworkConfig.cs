@@ -74,7 +74,7 @@ static partial class BeatUpClient {
 	[Detour(typeof(IgnoranceCore.IgnoranceClient), nameof(IgnoranceCore.IgnoranceClient.Start))]
 	static void IgnoranceClient_Start(IgnoranceCore.IgnoranceClient self) {
 		if(!currentServerIsOfficial) {
-			self.UseSsl = currentServerIsBeatUp;
+			self.UseSsl = currentServerIsBeatUp; // TODO: read `useSsl` value from MultiplayerStatusData
 			self.ValidateCertificate = false;
 		}
 		Base(self);
