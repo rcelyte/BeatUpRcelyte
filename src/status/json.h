@@ -52,7 +52,7 @@ static void json_skip_string(struct JsonIterator *const iter) {
 }
 
 static void json_skip_number(struct JsonIterator *const iter) {
-	while(iter->head < iter->end && (*iter->head == '+' || (*iter->head >= '-' && *iter->head <= '9' && *iter->head != '/') || (*iter->head & 223) == 'E'))
+	while(iter->head < iter->end && (*iter->head == '+' || (*iter->head >= '-' && *iter->head <= '9' && *iter->head != '/') || (*iter->head & 0xdf) == 'E'))
 		++iter->head;
 }
 
@@ -167,4 +167,16 @@ static uint64_t json_read_uint64(struct JsonIterator *const iter) {
 	if(iter->head == start)
 		json_error(iter, "JSON parse error: expected integer\n");
 	return res;
+}
+
+static float json_read_float(struct JsonIterator *const iter) {
+	const char *const start = iter->head;
+	json_skip_number(iter);
+	char view[0x400], *end = NULL;
+	size_t length = (size_t)(iter->head - start);
+	if(length >= sizeof(view))
+		length = sizeof(view) - 1;
+	memcpy(view, start, length);
+	view[length] = 0;
+	return strtof(view, &end);
 }

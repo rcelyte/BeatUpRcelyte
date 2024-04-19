@@ -1,3 +1,10 @@
+n WireServerConfiguration
+	GameplayServerConfiguration base
+	vu32 shortCountdownMs
+	vu32 longCountdownMs
+	b skipResults:1
+	b perPlayerDifficulty:1
+	b perPlayerModifiers:1
 n WireAddress
 	vu32 length
 	u8 data[128, .length]
@@ -24,7 +31,7 @@ n WireSessionAllocResp
 		ByteArrayNetSerializable publicKey
 n WireRoomSpawn
 	WireSessionAlloc base
-	GameplayServerConfiguration configuration
+	WireServerConfiguration configuration
 n WireRoomJoin
 	WireSessionAlloc base
 n WireRoomSpawnResp
@@ -77,7 +84,7 @@ n WireGraphConnect
 	u32 code
 	String secret
 	String userId
-	GameplayServerConfiguration configuration
+	WireServerConfiguration configuration
 	u32 protocolVersion
 	GameVersion gameVersion
 n WireGraphConnectResp

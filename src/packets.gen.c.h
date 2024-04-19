@@ -2786,6 +2786,26 @@ void _pkt_PacketEncryptionLayer_write(const struct PacketEncryptionLayer *restri
 		_pkt_raw_write(data->iv, pkt, end, ctx, 16);
 	}
 }
+static void _pkt_WireServerConfiguration_read(struct WireServerConfiguration *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_GameplayServerConfiguration_read(&data->base, pkt, end, ctx);
+	_pkt_vu32_read(&data->shortCountdownMs, pkt, end, ctx);
+	_pkt_vu32_read(&data->longCountdownMs, pkt, end, ctx);
+	uint8_t bitfield0;
+	_pkt_u8_read(&bitfield0, pkt, end, ctx);
+	data->skipResults = bitfield0 >> 0 & 1;
+	data->perPlayerDifficulty = bitfield0 >> 1 & 1;
+	data->perPlayerModifiers = bitfield0 >> 2 & 1;
+}
+static void _pkt_WireServerConfiguration_write(const struct WireServerConfiguration *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_GameplayServerConfiguration_write(&data->base, pkt, end, ctx);
+	_pkt_vu32_write(&data->shortCountdownMs, pkt, end, ctx);
+	_pkt_vu32_write(&data->longCountdownMs, pkt, end, ctx);
+	uint8_t bitfield0 = 0;
+	bitfield0 |= (data->skipResults & 1u) << 0;
+	bitfield0 |= (data->perPlayerDifficulty & 1u) << 1;
+	bitfield0 |= (data->perPlayerModifiers & 1u) << 2;
+	_pkt_u8_write(&bitfield0, pkt, end, ctx);
+}
 static void _pkt_WireInstanceAttach_read(struct WireInstanceAttach *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_read(&data->capacity, pkt, end, ctx);
 	_pkt_b_read(&data->discover, pkt, end, ctx);
@@ -2840,11 +2860,11 @@ static void _pkt_WireSessionAllocResp_write(const struct WireSessionAllocResp *r
 }
 static void _pkt_WireRoomSpawn_read(struct WireRoomSpawn *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_WireSessionAlloc_read(&data->base, pkt, end, ctx);
-	_pkt_GameplayServerConfiguration_read(&data->configuration, pkt, end, ctx);
+	_pkt_WireServerConfiguration_read(&data->configuration, pkt, end, ctx);
 }
 static void _pkt_WireRoomSpawn_write(const struct WireRoomSpawn *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_WireSessionAlloc_write(&data->base, pkt, end, ctx);
-	_pkt_GameplayServerConfiguration_write(&data->configuration, pkt, end, ctx);
+	_pkt_WireServerConfiguration_write(&data->configuration, pkt, end, ctx);
 }
 static void _pkt_WireRoomJoin_read(struct WireRoomJoin *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_WireSessionAlloc_read(&data->base, pkt, end, ctx);
@@ -2956,7 +2976,7 @@ static void _pkt_WireGraphConnect_read(struct WireGraphConnect *restrict data, c
 	_pkt_u32_read(&data->code, pkt, end, ctx);
 	_pkt_String_read(&data->secret, pkt, end, ctx);
 	_pkt_String_read(&data->userId, pkt, end, ctx);
-	_pkt_GameplayServerConfiguration_read(&data->configuration, pkt, end, ctx);
+	_pkt_WireServerConfiguration_read(&data->configuration, pkt, end, ctx);
 	_pkt_u32_read(&data->protocolVersion, pkt, end, ctx);
 	_pkt_u8_read(&data->gameVersion, pkt, end, ctx);
 }
@@ -2964,7 +2984,7 @@ static void _pkt_WireGraphConnect_write(const struct WireGraphConnect *restrict 
 	_pkt_u32_write(&data->code, pkt, end, ctx);
 	_pkt_String_write(&data->secret, pkt, end, ctx);
 	_pkt_String_write(&data->userId, pkt, end, ctx);
-	_pkt_GameplayServerConfiguration_write(&data->configuration, pkt, end, ctx);
+	_pkt_WireServerConfiguration_write(&data->configuration, pkt, end, ctx);
 	_pkt_u32_write(&data->protocolVersion, pkt, end, ctx);
 	_pkt_u8_write(&data->gameVersion, pkt, end, ctx);
 }

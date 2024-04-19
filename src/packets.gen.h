@@ -2372,6 +2372,14 @@ struct PacketEncryptionLayer {
 	uint32_t sequenceId;
 	uint8_t iv[16];
 };
+struct WireServerConfiguration {
+	struct GameplayServerConfiguration base;
+	uint32_t shortCountdownMs;
+	uint32_t longCountdownMs;
+	bool skipResults;
+	bool perPlayerDifficulty;
+	bool perPlayerModifiers;
+};
 struct WireAddress {
 	uint32_t length;
 	uint8_t data[128];
@@ -2400,7 +2408,7 @@ struct WireSessionAllocResp {
 };
 struct WireRoomSpawn {
 	struct WireSessionAlloc base;
-	struct GameplayServerConfiguration configuration;
+	struct WireServerConfiguration configuration;
 };
 struct WireRoomJoin {
 	struct WireSessionAlloc base;
@@ -2457,7 +2465,7 @@ struct WireGraphConnect {
 	uint32_t code;
 	struct String secret;
 	struct String userId;
-	struct GameplayServerConfiguration configuration;
+	struct WireServerConfiguration configuration;
 	uint32_t protocolVersion;
 	GameVersion gameVersion;
 };

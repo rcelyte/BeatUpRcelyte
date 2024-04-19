@@ -68,10 +68,8 @@ struct InstanceSession {
 struct Room {
 	struct NetKeypair keys;
 	playerid_t serverOwner;
-	struct GameplayServerConfiguration configuration;
+	struct WireServerConfiguration configuration;
 	struct timespec syncBase;
-	time_t shortCountdown, longCountdown;
-	bool skipResults, perPlayerDifficulty, perPlayerModifiers;
 	uint32_t joinCount;
 
 	ServerState state;
@@ -201,25 +199,25 @@ static struct String OwnUserId(struct String userId) {
 
 static inline struct PlayerLobbyPermissionConfiguration session_get_permissions(const struct Room *room, const struct InstanceSession *session, bool self) {
 	bool serverOwner = (indexof(room->players, session) == room->serverOwner);
-	bool canSuggest = (room->configuration.songSelectionMode != SongSelectionMode_Random);
+	bool canSuggest = (room->configuration.base.songSelectionMode != SongSelectionMode_Random);
 	return (struct PlayerLobbyPermissionConfiguration){
 		.userId = self ? OwnUserId(session->userId) : session->userId,
 		.serverOwner = serverOwner,
 		.recommendBeatmaps = canSuggest,
-		.recommendModifiers = canSuggest && (room->configuration.gameplayServerControlSettings & GameplayServerControlSettings_AllowModifierSelection),
+		.recommendModifiers = canSuggest && (room->configuration.base.gameplayServerControlSettings & GameplayServerControlSettings_AllowModifierSelection),
 		.kickVote = serverOwner,
-		.invite = (bool[]){true, serverOwner, false}[room->configuration.invitePolicy],
+		.invite = (bool[]){true, serverOwner, false}[room->configuration.base.invitePolicy],
 	};
 }
 
 static struct BeatmapIdentifierNetSerializable session_get_beatmap(const struct Room *room, const struct InstanceSession *session) {
-	if(room->perPlayerDifficulty && BeatmapIdentifier_eq(&session->recommendedBeatmap, &room->global.selectedBeatmap, 1))
+	if(room->configuration.perPlayerDifficulty && BeatmapIdentifier_eq(&session->recommendedBeatmap, &room->global.selectedBeatmap, 1))
 		return session->recommendedBeatmap;
 	return room->global.selectedBeatmap;
 }
 
 static struct GameplayModifiers session_get_modifiers(const struct Room *room, const struct InstanceSession *session) {
-	if(room->perPlayerModifiers && GameplayModifiers_eq(&session->recommendedModifiers, &room->global.selectedModifiers, false))
+	if(room->configuration.perPlayerModifiers && GameplayModifiers_eq(&session->recommendedModifiers, &room->global.selectedModifiers, false))
 		return session->recommendedModifiers;
 	return room->global.selectedModifiers;
 }
@@ -279,7 +277,7 @@ static void mapPool_update(struct Room *room) {
 		uprintf("No map pool to select from!\n");
 		return;
 	}
-	room->lobby.requester = (playerid_t)room->configuration.maxPlayerCount;
+	room->lobby.requester = (playerid_t)room->configuration.base.maxPlayerCount;
 	room->global.selectedBeatmap = (struct BeatmapIdentifierNetSerializable){
 		.levelID = LongString_from("custom_level_"),
 		.characteristic = instance_mapPool[room->global.roundRobin].characteristic,
@@ -324,7 +322,7 @@ static struct STimestamp STimestamp_FromTime(time_t time) {
 
 static struct STimestamp room_get_countdownEnd(const struct Room *room, struct UTimestamp defaultTime) {
 	switch(room->state) {
-		case ServerState_Lobby_LongCountdown: return STimestamp_FromTime(room->global.timeout + room->shortCountdown);
+		case ServerState_Lobby_LongCountdown: return STimestamp_FromTime(room->global.timeout + room->configuration.shortCountdownMs);
 		case ServerState_Lobby_ShortCountdown: return STimestamp_FromTime(room->global.timeout);
 		default: return (struct STimestamp){defaultTime.legacy, (int64_t)defaultTime.value};
 	}
@@ -368,15 +366,15 @@ static void room_notify(struct InstanceContext *const ctx, struct Room *const *c
 			endof(message.roomStatusNotify.entry), PV_WIRE, WireStatusEntry, {
 		.protocolVersion = room_get_protocol(room).protocolVersion,
 		.playerCount = (uint8_t)CounterP_count((*room)->playerSort),
-		.playerCapacity = (uint8_t)(uint32_t)(*room)->configuration.maxPlayerCount,
+		.playerCapacity = (uint8_t)(uint32_t)(*room)->configuration.base.maxPlayerCount,
 		.playerNPS = (*room)->global.playerNPS,
 		.levelNPS = (*room)->global.levelNPS,
-		.public = ((*room)->configuration.discoveryPolicy == DiscoveryPolicy_Public),
-		.quickplay = ((*room)->configuration.gameplayServerMode == GameplayServerMode_Countdown),
-		.skipResults = (*room)->skipResults,
-		.perPlayerDifficulty = (*room)->perPlayerDifficulty,
-		.perPlayerModifiers = (*room)->perPlayerModifiers,
-		.selectionMode = (*room)->configuration.songSelectionMode,
+		.public = ((*room)->configuration.base.discoveryPolicy == DiscoveryPolicy_Public),
+		.quickplay = ((*room)->configuration.base.gameplayServerMode == GameplayServerMode_Countdown),
+		.skipResults = (*room)->configuration.skipResults,
+		.perPlayerDifficulty = (*room)->configuration.perPlayerDifficulty,
+		.perPlayerModifiers = (*room)->configuration.perPlayerModifiers,
+		.selectionMode = (*room)->configuration.base.songSelectionMode,
 		.levelName = (*room)->global.selectedBeatmapName,
 		.levelID = LongString_truncate(&(*room)->global.selectedBeatmap.levelID),
 		.levelCover = (*room)->global.selectedBeatmapCover,
@@ -398,7 +396,7 @@ static void session_set_state(struct InstanceContext *ctx, struct Room *room, st
 		CounterP_set(&room->connected, (uint32_t)indexof(room->players, session));
 	} else if(STATE_EDGE(state, session->state, ServerState_Connected)) {
 		CounterP_clear(&room->connected, (uint32_t)indexof(room->players, session));
-		if(room->configuration.songSelectionMode != SongSelectionMode_Random && room->global.roundRobin == indexof(room->players, session))
+		if(room->configuration.base.songSelectionMode != SongSelectionMode_Random && room->global.roundRobin == indexof(room->players, session))
 			room->global.roundRobin = roundRobin_next(room->global.roundRobin, room->connected);
 		struct InternalMessage r_disconnect = {
 			.type = InternalMessageType_PlayerDisconnected,
@@ -443,7 +441,7 @@ static void session_set_state(struct InstanceContext *ctx, struct Room *room, st
 			});
 		}
 		if(needSetSelectedBeatmap) {
-			if(room->configuration.songSelectionMode == SongSelectionMode_Random && instance_mapPool) {
+			if(room->configuration.base.songSelectionMode == SongSelectionMode_Random && instance_mapPool) {
 				SERIALIZE_MPCORE(&resp_end, endof(resp), session->net.version, {
 					.type = String_from("MpBeatmapPacket"),
 					.mpBeatmap = instance_mapPool[room->global.roundRobin],
@@ -661,7 +659,7 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 		room->lobby.isReady = COUNTERP_CLEAR;
 		room->lobby.reason = CannotStartGameReason_NoSongSelected;
 		room->lobby.requester = (playerid_t)~0u;
-		if(room->configuration.songSelectionMode == SongSelectionMode_Random) {
+		if(room->configuration.base.songSelectionMode == SongSelectionMode_Random) {
 			mapPool_update(room);
 			state = ServerState_Lobby_Entitlement;
 			uprintf("state %s -> %s\n", ServerState_toString(room->state), ServerState_toString(state));
@@ -673,7 +671,7 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 	switch(state) {
 		case ServerState_Lobby_Entitlement: {
 			playerid_t select = ~UINT32_C(0);
-			switch(room->configuration.songSelectionMode) {
+			switch(room->configuration.base.songSelectionMode) {
 				case SongSelectionMode_Vote: {
 					uint32_t max = 0;
 					FOR_SOME_PLAYERS(id, room->connected,) {
@@ -683,7 +681,7 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 						time_t requestTime = room->players[id].recommendTime;
 						playerid_t firstRequest = id;
 						FOR_EXCLUDING_PLAYER(cmp, room->connected, id) { // TODO: this scales horribly
-							if(!BeatmapIdentifier_eq(&room->players[id].recommendedBeatmap, &room->players[cmp].recommendedBeatmap, room->perPlayerDifficulty))
+							if(!BeatmapIdentifier_eq(&room->players[id].recommendedBeatmap, &room->players[cmp].recommendedBeatmap, room->configuration.perPlayerDifficulty))
 								continue;
 							++biasedVotes;
 							if(room->players[cmp].recommendTime >= requestTime)
@@ -698,12 +696,12 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 					}
 					break;
 				}
-				case SongSelectionMode_Random: select = (playerid_t)room->configuration.maxPlayerCount; break;
+				case SongSelectionMode_Random: select = (playerid_t)room->configuration.base.maxPlayerCount; break;
 				case SongSelectionMode_OwnerPicks: select = room->serverOwner; break;
 				case SongSelectionMode_RandomPlayerPicks: select = room->global.roundRobin; break;
 			}
 			room->lobby.requester = select;
-			if(select > (playerid_t)room->configuration.maxPlayerCount || room->players[select].recommendedBeatmap.characteristic.length == 0) {
+			if(select > (playerid_t)room->configuration.base.maxPlayerCount || room->players[select].recommendedBeatmap.characteristic.length == 0) {
 				uprintf("    no selection from user \"%.*s\"\n", room->players[select].userName.length, room->players[select].userName.data);
 				room->lobby.isEntitled = room->connected;
 				room->global.selectedBeatmap = CLEAR_BEATMAP;
@@ -766,13 +764,13 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 			} else if((room->state & ServerState_Selected) >= ServerState_Lobby_LongCountdown) {
 				return;
 			}
-			room->global.timeout = room_get_syncTime(room) + room->longCountdown;
+			room->global.timeout = room_get_syncTime(room) + room->configuration.longCountdownMs;
 			break;
 		}
 		case ServerState_Lobby_ShortCountdown: {
 			if((room->state & ServerState_Selected) >= ServerState_Lobby_ShortCountdown)
 				return;
-			room->global.timeout = room_get_syncTime(room) + room->shortCountdown;
+			room->global.timeout = room_get_syncTime(room) + room->configuration.shortCountdownMs;
 			break;
 		}
 		case ServerState_Lobby_Downloading: {
@@ -871,7 +869,7 @@ static void handle_MenuRpc(struct InstanceContext *ctx, struct Room *room, struc
 			}
 			if(r_missing.setPlayersMissingEntitlementsToLevel.count == 0) {
 				room_set_state(ctx, room, ServerState_Lobby_Ready);
-			} else if(room->configuration.songSelectionMode == SongSelectionMode_Random) {
+			} else if(room->configuration.base.songSelectionMode == SongSelectionMode_Random) {
 				room->global.roundRobin = roundRobin_next(room->global.roundRobin, COUNTERP_CLEAR);
 				mapPool_update(room);
 				room_set_state(ctx, room, ServerState_Lobby_Entitlement);
@@ -906,7 +904,7 @@ static void handle_MenuRpc(struct InstanceContext *ctx, struct Room *room, struc
 			}
 			if(!((room->state & ServerState_Lobby) && session_get_permissions(room, session, false).recommendBeatmaps))
 				break;
-			if(!BeatmapIdentifier_eq(&session->recommendedBeatmap, &beatmap.identifier, room->perPlayerDifficulty))
+			if(!BeatmapIdentifier_eq(&session->recommendedBeatmap, &beatmap.identifier, room->configuration.perPlayerDifficulty))
 				session->recommendTime = room_get_syncTime(room);
 			session->recommendedBeatmap = beatmap.identifier;
 			room_set_state(ctx, room, ServerState_Lobby_Entitlement);
@@ -965,7 +963,7 @@ static void handle_MenuRpc(struct InstanceContext *ctx, struct Room *room, struc
 				break;
 			} else if(!(room->state & ServerState_Game)) {
 				session_set_state(ctx, room, session, room->state);
-				if(room->configuration.songSelectionMode == SongSelectionMode_Random && (room->state & ServerState_Lobby))
+				if(room->configuration.base.songSelectionMode == SongSelectionMode_Random && (room->state & ServerState_Lobby))
 					room_set_state(ctx, room, ServerState_Lobby_Entitlement);
 				break;
 			}
@@ -1115,7 +1113,7 @@ static void handle_MenuRpc(struct InstanceContext *ctx, struct Room *room, struc
 static bool room_try_finish(struct InstanceContext *ctx, struct Room *room) {
 	if(!CounterP_isEmpty(room->game.activePlayers))
 		return false;
-	room->global.roundRobin = roundRobin_next(room->global.roundRobin, (room->configuration.songSelectionMode == SongSelectionMode_Random) ? COUNTERP_CLEAR : room->connected);
+	room->global.roundRobin = roundRobin_next(room->global.roundRobin, (room->configuration.base.songSelectionMode == SongSelectionMode_Random) ? COUNTERP_CLEAR : room->connected);
 	room_set_state(ctx, room, ServerState_Game_Results);
 	return true;
 }
@@ -1171,7 +1169,7 @@ static void handle_GameplayRpc(struct InstanceContext *ctx, struct Room *const *
 				break;
 			if(!CounterP_clear(&room->game.activePlayers, (uint32_t)indexof(room->players, session)))
 				break;
-			if(!room->skipResults) {
+			if(!room->configuration.skipResults) {
 				if(session->net.version.protocolVersion < 7)
 					room->game.showResults |= (rpc->levelFinished.results.levelEndState == MultiplayerLevelEndState_Cleared);
 				else
@@ -1316,12 +1314,12 @@ static void handle_ChatCommand(struct InstanceContext *const ctx, struct Room *c
 				chat(ctx, room, session, "Command not yet implemented");
 				break;
 			}
-			chat(ctx, room, session, "Wait time is %lldms; countdown is %lldms", room->longCountdown, room->shortCountdown);
+			chat(ctx, room, session, "Wait time is %ums; countdown is %ums", room->configuration.longCountdownMs, room->configuration.shortCountdownMs);
 			break;
 		}
 		case ChatCommand_PerPlayerDifficulty: [[fallthrough]];
 		case ChatCommand_PerPlayerModifiers: {
-			bool *const option = (verb == ChatCommand_PerPlayerDifficulty) ? &room->perPlayerDifficulty : &room->perPlayerModifiers, value = *option;
+			bool *const option = (verb == ChatCommand_PerPlayerDifficulty) ? &room->configuration.perPlayerDifficulty : &room->configuration.perPlayerModifiers, value = *option;
 			if(cmd++ < cmd_end) { // skip ' '
 				if(indexof(room->players, session) != room->serverOwner) {
 					chat(ctx, room, session, "Error: unexpected argument");
@@ -1371,12 +1369,12 @@ static void handle_ChatCommand(struct InstanceContext *const ctx, struct Room *c
 				break;
 			}
 			const char *mode = NULL;
-			switch(room->configuration.songSelectionMode) {
+			switch(room->configuration.base.songSelectionMode) {
 				case SongSelectionMode_Vote: mode = "vote"; break;
 				case SongSelectionMode_Random: mode = "pool"; break;
 				case SongSelectionMode_OwnerPicks: mode = "host"; break;
 				case SongSelectionMode_RandomPlayerPicks: mode = "cycle"; break;
-				default: mode = reflect(SongSelectionMode, room->configuration.songSelectionMode);
+				default: mode = reflect(SongSelectionMode, room->configuration.base.songSelectionMode);
 			}
 			chat(ctx, room, session, "Song selection mode is '%s'", mode);
 			break;
@@ -1411,7 +1409,7 @@ static void handle_MpCore(struct InstanceContext *const ctx, struct Room *const 
 				break;
 			session->chatProtocol = mpCore->mpcCapabilities.protocolVersion;
 			chat(ctx, *room, session, "Welcome to BeatUpServer | BETA!\n* Per-player difficulty is %s\n* Per-player modifiers are %s%s",
-				(*room)->perPlayerDifficulty ? "enabled" : "disabled", (*room)->perPlayerModifiers ? "enabled" : "disabled",
+				(*room)->configuration.perPlayerDifficulty ? "enabled" : "disabled", (*room)->configuration.perPlayerModifiers ? "enabled" : "disabled",
 				NetSession_isEncrypted(&session->net) ? "" : "\nYour connection is unencrypted");
 			break;
 		}
@@ -1575,7 +1573,7 @@ static void handle_PlayerIdentity(struct InstanceContext *ctx, struct Room *room
 
 static bool handle_RoutingHeader(struct InstanceContext *ctx, struct Room *room, struct InstanceSession *session, const uint8_t **data, const uint8_t *end, bool reliable, DeliveryMethod channelId) {
 	struct RoutingHeader routing;
-	if(room->configuration.maxPlayerCount >= 127) {
+	if(room->configuration.base.maxPlayerCount >= 127) {
 		struct BTRoutingHeader extendedRouting;
 		if(!pkt_read(&extendedRouting, data, end, session->net.version))
 			return true;
@@ -1590,7 +1588,7 @@ static bool handle_RoutingHeader(struct InstanceContext *ctx, struct Room *room,
 		mask = room->connected;
 	} else {
 		uint32_t index = ConnectionId_index(routing.connectionId);
-		if(index < (uint32_t)room->configuration.maxPlayerCount && CounterP_get(room->connected, index)) {
+		if(index < (uint32_t)room->configuration.base.maxPlayerCount && CounterP_get(room->connected, index)) {
 			CounterP_set(&mask, index);
 		} else {
 			uprintf("connectionId %hhu points to nonexistent player!\n", routing.connectionId);
@@ -1728,10 +1726,10 @@ static bool handle_ConnectMessage(const struct ConnectMessage *message, struct R
 		session->net.version.beatUpVersion = (uint8_t)info.base.protocolId;
 		directDownloads = info.directDownloads;
 		if(indexof(room->players, session) == room->serverOwner) {
-			room->shortCountdown = info.countdownDuration * 250;
-			room->skipResults = info.skipResults;
-			room->perPlayerDifficulty = info.perPlayerDifficulty;
-			room->perPlayerModifiers = info.perPlayerModifiers;
+			room->configuration.shortCountdownMs = info.countdownDuration * 250;
+			room->configuration.skipResults = info.skipResults;
+			room->configuration.perPlayerDifficulty = info.perPlayerDifficulty;
+			room->configuration.perPlayerModifiers = info.perPlayerModifiers;
 		}
 		pkt_debug("BAD MOD HEADER LENGTH", sub, *data, mod.length, session->net.version);
 	}
@@ -1741,11 +1739,11 @@ static bool handle_ConnectMessage(const struct ConnectMessage *message, struct R
 			.blockSize = 398,
 		},
 		.windowSize = 256,
-		.countdownDuration = (uint8_t)(room->shortCountdown / 250),
+		.countdownDuration = (uint8_t)(room->configuration.shortCountdownMs / 250),
 		.directDownloads = directDownloads,
-		.skipResults = room->skipResults,
-		.perPlayerDifficulty = room->perPlayerDifficulty,
-		.perPlayerModifiers = room->perPlayerModifiers,
+		.skipResults = room->configuration.skipResults,
+		.perPlayerDifficulty = room->configuration.perPlayerDifficulty,
+		.perPlayerModifiers = room->configuration.perPlayerModifiers,
 	};
 	return false;
 }
@@ -1883,13 +1881,13 @@ static void log_players(const struct Room *room, const struct SS *addr, const ch
 	char addrstr[INET6_ADDRSTRLEN + 8] = {0}, bitText[sizeof(room->playerSort) * 3], *bitText_end = bitText;
 	if(addr != NULL)
 		net_tostr(addr, addrstr);
-	for(uint32_t offset = 0; offset < (uint32_t)room->configuration.maxPlayerCount; offset += 8) {
+	for(uint32_t offset = 0; offset < (uint32_t)room->configuration.base.maxPlayerCount; offset += 8) {
 		uint8_t byte = CounterP_byte(room->playerSort, offset);
 		*bitText_end++ = (char)(226u);
 		*bitText_end++ = (char)(160u | (byte >> 6));
 		*bitText_end++ = (char)(128u | (byte & 63));
 	}
-	uprintf("%s %s | player slots (%u/%d): [%.*s]\n", prefix, addrstr, CounterP_count(room->playerSort), room->configuration.maxPlayerCount, (int)(bitText_end - bitText), bitText);
+	uprintf("%s %s | player slots (%u/%d): [%.*s]\n", prefix, addrstr, CounterP_count(room->playerSort), room->configuration.base.maxPlayerCount, (int)(bitText_end - bitText), bitText);
 }
 
 static inline struct Room **instance_get_room(struct InstanceContext *ctx, uint32_t roomID) {
@@ -2237,26 +2235,26 @@ static struct IPEndPoint instance_get_endpoint(struct NetContext *net, bool ipv4
 	return out;
 }
 
-static struct Room **room_open(struct InstanceContext *ctx, uint32_t roomID, struct GameplayServerConfiguration configuration) {
+static struct Room **room_open(struct InstanceContext *ctx, uint32_t roomID, struct WireServerConfiguration configuration) {
 	uprintf("opening room (%zu,%hu)\n", indexof(contexts, ctx), roomID);
 	if(instance_get_room(ctx, roomID) == NULL || *instance_get_room(ctx, roomID) != NULL) {
 		uprintf("\tBad room ID\n");
 		return NULL;
 	}
 	#ifdef FORCE_LOBBY_SIZE
-	configuration.maxPlayerCount = FORCE_LOBBY_SIZE;
-	configuration.songSelectionMode = SongSelectionMode_Vote;
+	configuration.base.maxPlayerCount = FORCE_LOBBY_SIZE;
+	configuration.base.songSelectionMode = SongSelectionMode_Vote;
 	#endif
 	// TODO: restore extended lobbies once MpCore patches the 128 player "halt & catch fire" bug
-	if(configuration.maxPlayerCount < 1 || (uint32_t)configuration.maxPlayerCount > 126/*bitsize(struct CounterP) - 2*/) {
+	if(configuration.base.maxPlayerCount < 1 || (uint32_t)configuration.base.maxPlayerCount > 126/*bitsize(struct CounterP) - 2*/) {
 		uprintf("Requested room size out of range!\n");
 		return NULL;
 	}
-	if(configuration.invitePolicy >= 3 || configuration.invitePolicy < 0)
-		configuration.invitePolicy = InvitePolicy_NobodyCanInvite;
+	if(configuration.base.invitePolicy >= 3 || configuration.base.invitePolicy < 0)
+		configuration.base.invitePolicy = InvitePolicy_NobodyCanInvite;
 	if(instance_mapPool) {
-		configuration = (struct GameplayServerConfiguration){
-			.maxPlayerCount = configuration.maxPlayerCount,
+		configuration.base = (struct GameplayServerConfiguration){
+			.maxPlayerCount = configuration.base.maxPlayerCount,
 			.discoveryPolicy = DiscoveryPolicy_Public,
 			.invitePolicy = InvitePolicy_AnyoneCanInvite,
 			.gameplayServerMode = GameplayServerMode_Managed,
@@ -2265,7 +2263,7 @@ static struct Room **room_open(struct InstanceContext *ctx, uint32_t roomID, str
 		};
 	}
 	// Allocate extra slot for fake player in `SongSelectionMode_Random`
-	struct Room *room = malloc(sizeof(struct Room) + ((uint32_t)configuration.maxPlayerCount + 1) * sizeof(*room->players));
+	struct Room *room = malloc(sizeof(struct Room) + ((uint32_t)configuration.base.maxPlayerCount + 1) * sizeof(*room->players));
 	if(room == NULL) {
 		uprintf("alloc error\n");
 		return NULL;
@@ -2275,11 +2273,6 @@ static struct Room **room_open(struct InstanceContext *ctx, uint32_t roomID, str
 	room->configuration = configuration;
 	if(clock_gettime(CLOCK_MONOTONIC, &room->syncBase))
 		room->syncBase = (struct timespec){0};
-	room->shortCountdown = 5000;
-	room->longCountdown = 15000;
-	room->skipResults = false;
-	room->perPlayerDifficulty = false;
-	room->perPlayerModifiers = false;
 	room->joinCount = 0;
 	room->connected = COUNTERP_CLEAR;
 	room->playerSort = COUNTERP_CLEAR;
@@ -2294,8 +2287,8 @@ static struct Room **room_open(struct InstanceContext *ctx, uint32_t roomID, str
 	room->global.levelNPS = room->global.playerNPS = 0;
 	room->global.roundRobin = 0;
 	if(instance_mapPool) {
-		room->serverOwner = (playerid_t)room->configuration.maxPlayerCount;
-		room->players[room->configuration.maxPlayerCount].userId = String_from("");
+		room->serverOwner = (playerid_t)room->configuration.base.maxPlayerCount;
+		room->players[room->configuration.base.maxPlayerCount].userId = String_from("");
 	}
 	room_set_state(ctx, room, ServerState_Lobby_Idle);
 	*instance_get_room(ctx, roomID) = room;
@@ -2321,8 +2314,8 @@ static struct WireSessionAllocResp room_resolve_session(struct InstanceContext *
 	{
 		struct CounterP tmp = room->playerSort;
 		uint32_t id = 0;
-		if((!CounterP_set_next(&tmp, &id)) || id >= (uint32_t)room->configuration.maxPlayerCount) {
-			uprintf("ROOM FULL: %u >= %d\n", id ? id : (uint32_t)bitsize(tmp), room->configuration.maxPlayerCount);
+		if((!CounterP_set_next(&tmp, &id)) || id >= (uint32_t)room->configuration.base.maxPlayerCount) {
+			uprintf("ROOM FULL: %u >= %d\n", id ? id : (uint32_t)bitsize(tmp), room->configuration.base.maxPlayerCount);
 			return (struct WireSessionAllocResp){.result = ConnectToServerResponse_Result_ServerAtCapacity};
 		}
 		session = &room->players[id];
@@ -2344,7 +2337,7 @@ static struct WireSessionAllocResp room_resolve_session(struct InstanceContext *
 
 	struct WireSessionAllocResp resp = {
 		.result = ConnectToServerResponse_Result_Success,
-		.configuration = room->configuration,
+		.configuration = room->configuration.base,
 		.managerId = instance_room_get_managerId(room, session),
 		.endPoint = instance_get_endpoint(&ctx->net, req->ipv4),
 		.playerSlot = (uint32_t)indexof(room->players, session),
@@ -2388,7 +2381,7 @@ static struct InstanceSession *instance_onGraphAuth(struct NetContext *net, stru
 		return NULL;
 	}
 	const playerid_t id = ((uint32_t)sep[1] - '0') * 100 | ((uint32_t)sep[2] - '0') * 10 | ((uint32_t)sep[3] - '0');
-	if(id >= (uint32_t)room->configuration.maxPlayerCount) {
+	if(id >= (uint32_t)room->configuration.base.maxPlayerCount) {
 		uprintf("Auth failed: player slot out of range\n");
 		return NULL;
 	}

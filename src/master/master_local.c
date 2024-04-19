@@ -35,7 +35,7 @@ struct GraphConnectCookie {
 	WireCookie cookie;
 };
 
-static ConnectToServerResponse_Result SendWireSessionAlloc(struct WireSessionAlloc *const allocInfo, struct ConnectCookie *const state, const size_t state_len, const struct GameplayServerConfiguration configuration, const ServerCode code, mbedtls_ctr_drbg_context *const ctr_drbg) {
+static ConnectToServerResponse_Result SendWireSessionAlloc(struct WireSessionAlloc *const allocInfo, struct ConnectCookie *const state, const size_t state_len, const struct WireServerConfiguration configuration, const ServerCode code, mbedtls_ctr_drbg_context *const ctr_drbg) {
 	state->room = ~UINT32_C(0);
 	if(allocInfo->clientVersion.protocolVersion >= 10) {
 		uprintf("Connect to Server Error: Game version too new\n");
@@ -49,7 +49,7 @@ static ConnectToServerResponse_Result SendWireSessionAlloc(struct WireSessionAll
 			uprintf("Connect to Server Error: Quickplay not supported\n");
 			return ConnectToServerResponse_Result_NoAvailableDedicatedServers;
 		}
-		struct PoolHost *host = pool_handle_new(&state->room, (configuration.discoveryPolicy == DiscoveryPolicy_Public) ? NULL : ctr_drbg);
+		struct PoolHost *host = pool_handle_new(&state->room, (configuration.base.discoveryPolicy == DiscoveryPolicy_Public) ? NULL : ctr_drbg);
 		if(host == NULL) {
 			uprintf("Connect to Server Error: pool_handle_new() failed\n");
 			return ConnectToServerResponse_Result_NoAvailableDedicatedServers;
@@ -138,7 +138,7 @@ static bool handle_WireSessionAllocResp_graph(struct LocalMasterContext *ctx, st
 	return resp.result != MultiplayerPlacementErrorCode_Success;
 }
 
-static void handle_WireGraphConnect(struct LocalMasterContext *ctx, WireCookie cookie, const struct WireGraphConnect *req) {
+static void handle_WireGraphConnect(struct LocalMasterContext *ctx, WireCookie cookie, const struct WireGraphConnect *const req) {
 	struct GraphConnectCookie state = {
 		.base.cookieType = MasterCookieType_GraphConnect,
 		.secret = req->secret,
@@ -333,7 +333,11 @@ void LocalMasterContext_process_ConnectToServerRequest(struct NetContext *const 
 		case 7: allocInfo.clientVersion.gameVersion = GameVersion_1_19_1; break;
 		default: allocInfo.clientVersion.gameVersion = GameVersion_1_20_0;
 	}
-	const ConnectToServerResponse_Result result = SendWireSessionAlloc(&allocInfo, &state.base, sizeof(state), req->configuration, req->code, &net->ctr_drbg);
+	const ConnectToServerResponse_Result result = SendWireSessionAlloc(&allocInfo, &state.base, sizeof(state), (struct WireServerConfiguration){
+		.base = req->configuration,
+		.shortCountdownMs = 5000,
+		.longCountdownMs = 15000,
+	}, req->code, &net->ctr_drbg);
 	if(result == ConnectToServerResponse_Result_Success)
 		return;
 	handle_WireSessionAllocResp_local(net, session, NULL, &state, &(const struct WireSessionAllocResp){

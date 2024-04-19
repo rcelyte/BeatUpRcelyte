@@ -2,6 +2,7 @@
 #include "status.h"
 #include "json.h"
 #include <inttypes.h>
+#include <math.h>
 #include <stdatomic.h>
 
 #define READ_SYM(dest, sym) _read_sym(dest, sym, (uint32_t)(sym##_end - sym))
@@ -235,30 +236,42 @@ static UserAgent ProbeHeaders(const char *buf, const char *end, size_t *contentL
 #define PUT(...) (msg_end += (uint32_t)snprintf(msg_end, (msg_end >= endof(msg)) ? 0 : (uint32_t)(endof(msg) - msg_end), __VA_ARGS__))
 static void status_status(struct HttpContext *http, bool isGame) {
 	char msg[65536], *msg_end = msg;
-	PUT("{\"minimum_app_version\":\"1.19.0%s\""
-	    ",\"maximumAppVersion\":\"1.36.0_🅱️\""
-	    ",\"status\":%u", isGame ? "b2147483647" : STATUS_APPVER_POSTFIX, TEST_maintenanceStartTime != 0);
+	PUT("%s%s%s%u%c", "{"
+		"\"minimum_app_version\":\"1.19.0", isGame ? "b2147483647" : STATUS_APPVER_POSTFIX, "\","
+		"\"maximumAppVersion\":\"1.36.0_🅱️\","
+		"\"status\":", TEST_maintenanceStartTime != 0, ',');
 	if(TEST_maintenanceStartTime) {
-		PUT(",\"maintenance_start_time\":%" PRIu64, TEST_maintenanceStartTime);
-		PUT(",\"maintenance_end_time\":%" PRIu64, TEST_maintenanceEndTime);
-		PUT(",\"maintenanceEndTime\":%" PRIu64, TEST_maintenanceEndTime); // legacy
-		PUT(",\"user_message\":{\"localizations\":[{\"language\":0,\"message\":\"%s\"}]}", TEST_maintenanceMessage);
+		PUT("%s%"PRIu64"%s%"PRIu64"%s%"PRIu64"%s%s%s",
+			"\"maintenance_start_time\":", TEST_maintenanceStartTime, ","
+			"\"maintenance_end_time\":", TEST_maintenanceEndTime, ","
+			"\"maintenanceEndTime\":", TEST_maintenanceEndTime, "," // legacy
+			"\"user_message\":{\"localizations\":[{\"language\":0,\"message\":\"", TEST_maintenanceMessage, "\"}]},");
 	}
-	PUT(",\"requiredMods\": ["
-	    "{\"id\":\"BeatUpClient\",\"version\":\"0.4.6\"},"
-	    "{\"id\":\"MultiplayerCore\",\"version\":\"1.1.1\"},"
-	    "{\"id\":\"BeatTogether\",\"version\":\"2.0.1\"},"
-	    "{\"id\":\"BeatSaberPlus_SongOverlay\",\"version\":\"4.6.1\"},"
-	    "{\"id\":\"_Heck\",\"version\":\"1.4.1\"},"
-	    "{\"id\":\"NoodleExtensions\",\"version\":\"1.5.1\"},"
-	    "{\"id\":\"Chroma\",\"version\":\"2.6.1\"},"
-	    "{\"id\":\"EditorEX\",\"version\":\"1.2.0\"},"
-	    "{\"id\":\"LeaderboardCore\",\"version\":\"1.2.2\"}"
-	"]}");
+	PUT("%s",
+		"\"use_ssl\": true,"
+		"\"max_players\": 126,"
+		"\"supports_pp_modifiers\": true,"
+		"\"supports_pp_difficulties\": true,"
+		"\"requiredMods\": ["
+			"{\"id\":\"BeatUpClient\",\"version\":\"0.4.6\"},"
+			"{\"id\":\"MultiplayerCore\",\"version\":\"1.1.1\"},"
+			"{\"id\":\"BeatTogether\",\"version\":\"2.0.1\"},"
+			"{\"id\":\"BeatSaberPlus_SongOverlay\",\"version\":\"4.6.1\"},"
+			"{\"id\":\"_Heck\",\"version\":\"1.4.1\"},"
+			"{\"id\":\"NoodleExtensions\",\"version\":\"1.5.1\"},"
+			"{\"id\":\"Chroma\",\"version\":\"2.6.1\"},"
+			"{\"id\":\"EditorEX\",\"version\":\"1.2.0\"},"
+			"{\"id\":\"LeaderboardCore\",\"version\":\"1.2.2\"}"
+		"]"
+	"}");
 	if(msg_end >= endof(msg))
 		HttpContext_respond(http, 500, "text/plain; charset=utf-8", NULL, 0);
 	else
 		HttpContext_respond(http, 200, "application/json; charset=utf-8", msg, (size_t)(msg_end - msg));
+}
+
+static float ClampFloat(const float value, const float min, const float max) {
+	return (value <= min) ? min : (value >= max) ? max : value;
 }
 
 static void status_graph(struct HttpContext *http, struct HttpRequest req, struct WireLink *master) {
@@ -266,7 +279,12 @@ static void status_graph(struct HttpContext *http, struct HttpRequest req, struc
 		.cookieType = StatusCookieType_GraphConnect,
 		.http = http,
 	};
-	struct WireGraphConnect connectInfo = {0};
+	struct WireGraphConnect connectInfo = {
+		.configuration = {
+			.shortCountdownMs = 5000,
+			.longCountdownMs = 15000,
+		},
+	};
 	struct JsonIterator iter = {(const char*)req.body, (const char*)&req.body[req.body_len], false, {0}};
 	JSON_ITER_OBJECT(&iter, key0) {
 		if(String_is(key0, "version")) {
@@ -340,17 +358,17 @@ static void status_graph(struct HttpContext *http, struct HttpRequest req, struc
 		} else if(String_is(key0, "gameplay_server_configuration")) {
 			JSON_ITER_OBJECT(&iter, key1) {
 				if(String_is(key1, "max_player_count"))
-					connectInfo.configuration.maxPlayerCount = (int32_t)json_read_uint64(&iter);
+					connectInfo.configuration.base.maxPlayerCount = (int32_t)json_read_uint64(&iter);
 				else if(String_is(key1, "discovery_policy"))
-					connectInfo.configuration.discoveryPolicy = (DiscoveryPolicy)json_read_uint64(&iter);
+					connectInfo.configuration.base.discoveryPolicy = (DiscoveryPolicy)json_read_uint64(&iter);
 				else if(String_is(key1, "invite_policy"))
-					connectInfo.configuration.invitePolicy = (InvitePolicy)json_read_uint64(&iter);
+					connectInfo.configuration.base.invitePolicy = (InvitePolicy)json_read_uint64(&iter);
 				else if(String_is(key1, "gameplay_server_mode"))
-					connectInfo.configuration.gameplayServerMode = (GameplayServerMode)json_read_uint64(&iter);
+					connectInfo.configuration.base.gameplayServerMode = (GameplayServerMode)json_read_uint64(&iter);
 				else if(String_is(key1, "song_selection_mode"))
-					connectInfo.configuration.songSelectionMode = (SongSelectionMode)json_read_uint64(&iter);
+					connectInfo.configuration.base.songSelectionMode = (SongSelectionMode)json_read_uint64(&iter);
 				else if(String_is(key1, "gameplay_server_control_settings"))
-					connectInfo.configuration.gameplayServerControlSettings = (GameplayServerControlSettings)json_read_uint64(&iter);
+					connectInfo.configuration.base.gameplayServerControlSettings = (GameplayServerControlSettings)json_read_uint64(&iter);
 				else
 					json_skip_any(&iter);
 			}
@@ -361,11 +379,36 @@ static void status_graph(struct HttpContext *http, struct HttpRequest req, struc
 		} else if(String_is(key0, "private_game_code")) {
 			const struct String code = json_read_string(&iter);
 			connectInfo.code = StringToServerCode(code.data, code.length);
+		} else if(String_is(key0, "extra_server_configuration")) {
+			uint32_t totalCountdownMs = 0;
+			JSON_ITER_OBJECT(&iter, key1) {
+				// bool permenant_manager - IGNORED
+				// float instance_destroy_timeout - IGNORED
+				// string server_name - IGNORED
+				if(String_is(key1, "lock_in_beatmap_time"))
+					connectInfo.configuration.shortCountdownMs = (uint32_t)(ClampFloat(json_read_float(&iter), 0, 60 * 60 * 24) * 1000);
+				else if(String_is(key1, "countdown_time"))
+					totalCountdownMs = (uint32_t)(ClampFloat(json_read_float(&iter), 0, 60 * 60 * 24) * 1000);
+				else if(String_is(key1, "per_player_modifiers"))
+					connectInfo.configuration.perPlayerModifiers = json_read_bool(&iter);
+				else if(String_is(key1, "per_player_difficulties"))
+					connectInfo.configuration.perPlayerDifficulty = json_read_bool(&iter);
+				// bool enable_chroma - IGNORED
+				// bool enable_mapping_extensions - IGNORED
+				// bool enable_noodle_extensions - IGNORED
+				else
+					json_skip_any(&iter);
+			}
+			if(totalCountdownMs == 0)
+				totalCountdownMs = 15000 + 5000;
+			if(connectInfo.configuration.shortCountdownMs > totalCountdownMs)
+				connectInfo.configuration.shortCountdownMs = totalCountdownMs;
+			connectInfo.configuration.longCountdownMs = totalCountdownMs - connectInfo.configuration.shortCountdownMs;
 		} else {
 			json_skip_any(&iter);
 		}
 	}
-	if(iter.fault || connectInfo.gameVersion == GameVersion_Unknown || connectInfo.userId.length == 0 || connectInfo.configuration.maxPlayerCount == 0) {
+	if(iter.fault || connectInfo.gameVersion == GameVersion_Unknown || connectInfo.userId.length == 0 || connectInfo.configuration.base.maxPlayerCount == 0) {
 		status_graph_resp((struct DataView){&state, sizeof(state)}, &(struct WireGraphConnectResp){
 			.result = MultiplayerPlacementErrorCode_Unknown,
 		});
@@ -393,53 +436,37 @@ void status_graph_resp(struct DataView cookieView, const struct WireGraphConnect
 	const MultiplayerPlacementErrorCode result = (resp != NULL) ? resp->result : MultiplayerPlacementErrorCode_MatchmakingTimeout;
 	const char *const packMask = state->shortMask ? "/////////////////////w" : "//////////////////////////////////////////8";
 	if(result != MultiplayerPlacementErrorCode_Success) {
-		PUT("{\"error_code\":%hhu,\"player_session_info\":{\"game_session_id\":\"\",\"port\":-1,\"dns_name\":\"\",\"player_session_id\":\"\","
+		PUT("%s%hhu%s%s%s", "{\"error_code\":", result, ",\"player_session_info\":{\"game_session_id\":\"\",\"port\":-1,\"dns_name\":\"\",\"player_session_id\":\"\","
 		    "\"private_game_code\":\"\",\"gameplay_server_configuration\":{\"max_player_count\":5,\"discovery_policy\":1,\"invite_policy\":0,"
 		    "\"gameplay_server_mode\":1,\"song_selection_mode\":2,\"gameplay_server_control_settings\":3},\"beatmap_level_selection_mask\":{"
-		    "\"difficulties\":31,\"modifiers\":65535,\"song_packs\":\"%s\"},\"private_game_secret\":\"\"},\"poll_interval_ms\":-1}",
-		    result, packMask);
+		    "\"difficulties\":31,\"modifiers\":65535,\"song_packs\":\"", packMask, "\"},\"private_game_secret\":\"\"},\"poll_interval_ms\":-1}");
 	} else {
 		uprintf("TODO: encode songPackMask\n");
-		PUT("{"
-				"\"error_code\":0," // resp->result
-				"\"player_session_info\":{"
-					"\"game_session_id\":\"beatupserver:%08x\"," // resp->hostId
-					"\"port\":%u," // resp->endPoint.port
-					"\"dns_name\":\"%.*s\"," // resp->endPoint.address.length, resp->endPoint.address.data
-					"\"player_session_id\":\"pslot$%u,%03u\"," // resp->roomSlot, resp->playerSlot
-					"\"private_game_code\":\"%s\"," // ServerCodeToString((char[8]){0}, resp->code)
-					"\"private_game_secret\":\"%.*s\"," // state->secret.length, state->secret.data
-					"\"beatmap_level_selection_mask\":{"
-						"\"difficulties\":%hhu," // state->selectionMask.difficulties
-						"\"modifiers\":%u," // state->selectionMask.modifiers
-						"\"song_packs\":\"%s\"" // packMask
-					"},"
-					"\"gameplay_server_configuration\":{"
-						"\"max_player_count\":%d," // resp->configuration.maxPlayerCount
-						"\"discovery_policy\":%d," // resp->configuration.discoveryPolicy
-						"\"invite_policy\":%d," // resp->configuration.invitePolicy
-						"\"gameplay_server_mode\":%d," // resp->configuration.gameplayServerMode
-						"\"song_selection_mode\":%d," // resp->configuration.songSelectionMode
-						"\"gameplay_server_control_settings\":%d" // resp->configuration.gameplayServerControlSettings
-					"}"
+		PUT("%s%08x%s%u%s%.*s%s%u%c%03u%s%s%s%.*s%s%hhu%s%u%s%s%s%d%s%d%s%d%s%d%s%d%s%d%s", "{"
+			"\"error_code\":0,"
+			"\"player_session_info\":{"
+				"\"game_session_id\":\"beatupserver:", resp->hostId, "\","
+				"\"port\":", resp->endPoint.port, ","
+				"\"dns_name\":\"", resp->endPoint.address.length, resp->endPoint.address.data, "\","
+				"\"player_session_id\":\"pslot$", resp->roomSlot, ',', resp->playerSlot, "\","
+				"\"private_game_code\":\"", ServerCodeToString((char[8]){0}, resp->code), "\","
+				"\"private_game_secret\":\"", state->secret.length, state->secret.data, "\","
+				"\"beatmap_level_selection_mask\":{"
+					"\"difficulties\":", state->selectionMask.difficulties, ","
+					"\"modifiers\":", state->selectionMask.modifiers, ","
+					"\"song_packs\":\"", packMask, "\""
 				"},"
-				"\"poll_interval_ms\":-1"
-			"}",
-			resp->hostId,
-			resp->endPoint.port,
-			resp->endPoint.address.length, resp->endPoint.address.data,
-			resp->roomSlot, resp->playerSlot,
-			ServerCodeToString((char[8]){0}, resp->code),
-			state->secret.length, state->secret.data,
-			state->selectionMask.difficulties,
-			state->selectionMask.modifiers,
-			packMask,
-			resp->configuration.maxPlayerCount,
-			resp->configuration.discoveryPolicy,
-			resp->configuration.invitePolicy,
-			resp->configuration.gameplayServerMode,
-			resp->configuration.songSelectionMode,
-			resp->configuration.gameplayServerControlSettings);
+				"\"gameplay_server_configuration\":{"
+					"\"max_player_count\":", resp->configuration.maxPlayerCount, ","
+					"\"discovery_policy\":", resp->configuration.discoveryPolicy, ","
+					"\"invite_policy\":", resp->configuration.invitePolicy, ","
+					"\"gameplay_server_mode\":", resp->configuration.gameplayServerMode, ","
+					"\"song_selection_mode\":", resp->configuration.songSelectionMode, ","
+					"\"gameplay_server_control_settings\":", resp->configuration.gameplayServerControlSettings,
+				"}"
+			"},"
+			"\"poll_interval_ms\":-1"
+		"}");
 	}
 	if(msg_end >= endof(msg))
 		HttpContext_respond(state->http, 500, "text/plain; charset=utf-8", NULL, 0);
