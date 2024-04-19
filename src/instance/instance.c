@@ -38,26 +38,6 @@ typedef uint32_t playerid_t;
 		for(struct Room **(room) = (ctx)->rooms[group]; (room) < endof((ctx)->rooms[group]); ++(room)) \
 			if(*room)
 
-typedef uint8_t MpHash[20];
-static void MpHash_fromString(MpHash hash, const char from[static 40]) {
-	static const uint8_t table[128] = {
-		['0'] = 0, ['1'] = 1, ['2'] = 2, ['3'] = 3, ['4'] = 4, ['5'] = 5, ['6'] = 6, ['7'] = 7, ['8'] = 8, ['9'] = 9,
-		['a'] = 10, ['b'] = 11, ['c'] = 12, ['d'] = 13, ['e'] = 14, ['f'] = 15,
-		['A'] = 10, ['B'] = 11, ['C'] = 12, ['D'] = 13, ['E'] = 14, ['F'] = 15,
-	};
-	const char *text = from;
-	for(uint8_t *bin = hash; bin < &hash[sizeof(MpHash)]; ++bin, text += 2)
-		*bin = (uint8_t)(unsigned)(table[text[0] & 127] << 4) | table[text[1] & 127]; // TODO: is this the right order?
-}
-
-static bool MpHash_matches(MpHash hash, const struct LongString *const levelID) {
-	if(levelID->length != 13 + sizeof(MpHash) * 2 || memcmp(levelID->data, "custom_level_", 13) != 0)
-		return false;
-	MpHash cmp;
-	MpHash_fromString(cmp, &levelID->data[13]);
-	return memcmp(hash, cmp, sizeof(MpHash)) == 0;
-}
-
 struct InstanceSession {
 	struct NetSession net;
 	struct String secret;

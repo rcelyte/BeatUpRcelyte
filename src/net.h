@@ -40,7 +40,7 @@ struct SS {
 bool SS_equal(const struct SS *a0, const struct SS *a1);
 void net_tostr(const struct SS *a, char out[static INET6_ADDRSTRLEN + 8]);
 const char *net_strerror(int32_t err);
-void net_close(int32_t sockfd);
+void net_close(NetSocket sockfd);
 
 struct NetKeypair {
 	struct Cookie32 NET_H_PRIVATE(random);
@@ -65,7 +65,7 @@ struct NetSession {
 };
 
 struct NetContext {
-	int32_t NET_H_PRIVATE(sockfd);
+	NetSocket NET_H_PRIVATE(sockfd);
 	atomic_bool NET_H_PRIVATE(run);
 	pthread_mutex_t NET_H_PRIVATE(mutex);
 	mbedtls_ctr_drbg_context ctr_drbg;
@@ -106,7 +106,7 @@ uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSe
 void net_flush_merged(struct NetContext *ctx, struct NetSession *session);
 void net_queue_merged(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint16_t len, const struct NetPacketHeader *header);
 void net_send_internal(struct NetContext *ctx, struct NetSession *session, const uint8_t *buf, uint32_t len, enum EncryptMode encryptMode);
-int32_t net_get_sockfd(struct NetContext *ctx);
+NetSocket net_get_sockfd(struct NetContext *ctx);
 mbedtls_ctr_drbg_context *net_get_ctr_drbg(struct NetContext *ctx);
 
 uint32_t net_time(void);

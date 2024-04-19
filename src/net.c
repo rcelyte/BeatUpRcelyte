@@ -120,7 +120,7 @@ uint32_t NetSession_decrypt(struct NetSession *const session, const uint8_t pack
 	return EncryptionState_decrypt(session->encryptionState, &session->addr, packet, &packet[packet_len], out);
 }
 
-int32_t net_get_sockfd(struct NetContext *ctx) {
+NetSocket net_get_sockfd(struct NetContext *ctx) {
 	return ctx->sockfd;
 }
 
@@ -190,8 +190,13 @@ uint32_t net_time() {
 void net_send_internal(struct NetContext *ctx, struct NetSession *const session, const uint8_t *buf, uint32_t len, enum EncryptMode encryptMode) {
 	uint8_t body[1536];
 	uint32_t body_len = EncryptionState_encrypt(session->encryptionState, &session->addr, &ctx->ctr_drbg, encryptMode, buf, len, body);
-	if(body_len != 0)
-		sendto(ctx->sockfd, (char*)body, body_len, 0, &session->addr.sa, session->addr.len);
+	if(body_len == 0)
+		return;
+	#ifdef WINDOWS
+	sendto(ctx->sockfd, (char*)body, (int)(unsigned)body_len, 0, &session->addr.sa, session->addr.len);
+	#else
+	sendto(ctx->sockfd, (char*)body, body_len, 0, &session->addr.sa, session->addr.len);
+	#endif
 }
 
 static struct NetSession *onResolve_stub(struct NetContext*, struct SS, const uint8_t*, uint32_t, uint8_t*, uint32_t*, void**) {return NULL;}
@@ -201,7 +206,7 @@ const char *net_strerror(int32_t err) {
 	static _Thread_local char message[1024];
 	*message = 0;
 	#if defined(WINDOWS)
-	FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, err, 0, message, sizeof(message), NULL);
+	FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, (uint32_t)err, 0, message, sizeof(message), NULL);
 	#elif defined(__STDC_LIB_EXT1__)
 	strerror_s(message, lengthof(message), err);
 	#elif (_POSIX_C_SOURCE >= 200112L || _XOPEN_SOURCE >= 600) && !defined(_GNU_SOURCE)
@@ -215,21 +220,21 @@ const char *net_strerror(int32_t err) {
 }
 
 bool net_useIPv4 = 0;
-static int32_t net_bind_udp(uint16_t port) {
+static NetSocket net_bind_udp(uint16_t port) {
 	#ifdef WINDOWS
 	int err = WSAStartup(MAKEWORD(2,0), &(WSADATA){0});
 	if(err) {
 		uprintf("WSAStartup failed: %s\n", net_strerror(err));
-		return -1;
+		return NetSocket_Invalid;
 	}
 	#endif
-	int32_t sockfd = socket(net_useIPv4 ? AF_INET : AF_INET6, SOCK_DGRAM, 0);
-	if(sockfd == -1) {
+	NetSocket sockfd = socket(net_useIPv4 ? AF_INET : AF_INET6, SOCK_DGRAM, 0);
+	if(sockfd == NetSocket_Invalid) {
 		uprintf("Failed to open UDP socket: %s\n", net_strerror(net_error()));
 		#ifdef WINDOWS
 		WSACleanup();
 		#endif
-		return -1;
+		return NetSocket_Invalid;
 	}
 	struct SS addr;
 	if(net_useIPv4) {
@@ -252,17 +257,19 @@ static int32_t net_bind_udp(uint16_t port) {
 	if(bind(sockfd, &addr.sa, addr.len) < 0) {
 		uprintf("Cannot bind socket to port %hu: %s\n", port, net_strerror(net_error()));
 		net_close(sockfd);
-		return -1;
+		return NetSocket_Invalid;
 	}
 	return sockfd;
 }
 
-void net_close(int32_t sockfd) {
-	if(sockfd == -1)
+void net_close(const NetSocket sockfd) {
+	if(sockfd == NetSocket_Invalid)
 		return;
-	close(sockfd);
 	#ifdef WINDOWS
+	closesocket(sockfd);
 	WSACleanup();
+	#else
+	close(sockfd);
 	#endif
 }
 
@@ -289,7 +296,7 @@ bool net_init(struct NetContext *ctx, uint16_t port) {
 		uprintf("pthread_mutex_init() failed\n");
 		goto fail;
 	}
-	if(ctx->sockfd == -1) {
+	if(ctx->sockfd == NetSocket_Invalid) {
 		uprintf("Socket creation failed\n");
 		goto fail;
 	}
@@ -380,7 +387,7 @@ void net_keypair_free(struct NetKeypair *const keys) {
 }
 
 void net_stop(struct NetContext *ctx) {
-	if(ctx->sockfd == -1)
+	if(ctx->sockfd == NetSocket_Invalid)
 		return;
 	atomic_store(&ctx->run, false);
 	shutdown(ctx->sockfd, SHUT_RDWR);
@@ -411,10 +418,10 @@ void net_unlock(struct NetContext *ctx) {
 static bool net_poll(struct NetContext *ctx, fd_set *fdSet, uint32_t timeout) {
 	FD_ZERO(fdSet);
 	FD_SET(ctx->sockfd, fdSet);
-	const int32_t fdMax = ctx->sockfd;
+	const NetSocket fdMax = ctx->sockfd;
 	net_unlock(ctx);
 	[[maybe_unused]] struct timespec sleepStart = GetTime();
-	int nfd = select(fdMax + 1, fdSet, NULL, NULL, &(struct timeval){
+	int nfd = select((int32_t)(uint32_t)(fdMax + 1), fdSet, NULL, NULL, &(struct timeval){
 		.tv_sec = timeout / 1000,
 		.tv_usec = (timeout % 1000) * 1000,
 	});

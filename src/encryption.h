@@ -1,4 +1,5 @@
 #pragma once
+#include "global.h"
 #include "packets.h"
 #include <mbedtls/bignum.h>
 #include <mbedtls/ctr_drbg.h>
@@ -15,7 +16,7 @@ struct EncryptionState {
 	uint32_t refCount;
 	bool initialized, encrypt, forceENet, tlsResetNeeded;
 	struct {
-		int32_t sendfd;
+		NetSocket sendfd;
 		mbedtls_ssl_context ssl;
 		mbedtls_timing_delay_context timer;
 	} dtls;
@@ -33,7 +34,7 @@ struct EncryptionState {
 
 struct Cookie32;
 struct SS;
-struct EncryptionState *EncryptionState_init(const mbedtls_ssl_config *config, int32_t sendfd);
+struct EncryptionState *EncryptionState_init(const mbedtls_ssl_config *config, NetSocket sendfd);
 struct EncryptionState *EncryptionState_ref(struct EncryptionState *state);
 struct EncryptionState *EncryptionState_unref(struct EncryptionState *state);
 bool EncryptionState_setKeys(struct EncryptionState *state, const mbedtls_mpi *secret, const struct Cookie32 random[static 2], bool client);

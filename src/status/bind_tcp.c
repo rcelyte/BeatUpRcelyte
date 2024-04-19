@@ -10,23 +10,23 @@
 #endif
 
 // TODO: cut dependency on `net`
-int32_t status_bind_tcp(uint16_t port, uint32_t backlog) {
+NetSocket status_bind_tcp(uint16_t port, uint32_t backlog) {
 	#ifdef WINDOWS
 	int err = WSAStartup(MAKEWORD(2,0), &(WSADATA){0});
 	if(err) {
 		uprintf("WSAStartup failed: %s\n", net_strerror(err));
-		return -1;
+		return NetSocket_Invalid;
 	}
 	#else
 	signal(SIGPIPE, SIG_IGN);
 	#endif
-	int32_t listenfd = socket(AF_INET6, SOCK_STREAM, 0);
-	if(listenfd == -1) {
+	const NetSocket listenfd = socket(AF_INET6, SOCK_STREAM, 0);
+	if(listenfd == NetSocket_Invalid) {
 		uprintf("Failed to open TCP socket: %s\n", net_strerror(net_error()));
 		#ifdef WINDOWS
 		WSACleanup();
 		#endif
-		return -1;
+		return NetSocket_Invalid;
 	}
 	setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, (char*)(int32_t[]){1}, sizeof(int32_t));
 	struct sockaddr_in6 addr = {
@@ -47,5 +47,5 @@ int32_t status_bind_tcp(uint16_t port, uint32_t backlog) {
 	return listenfd;
 	fail:
 	net_close(listenfd);
-	return -1;
+	return NetSocket_Invalid;
 }

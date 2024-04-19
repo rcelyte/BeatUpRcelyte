@@ -2,6 +2,7 @@
 #include "status.h"
 #include "json.h"
 #include <inttypes.h>
+#include <stdatomic.h>
 
 #define READ_SYM(dest, sym) _read_sym(dest, sym, (uint32_t)(sym##_end - sym))
 static inline uint32_t _read_sym(char *restrict dest, const uint8_t *restrict sym, uint32_t length) {
@@ -33,7 +34,7 @@ static inline struct PacketBuffer **roomIndex_get(const uint32_t sequence) {
 
 static _Atomic(bool) quietMode = false;
 void status_internal_init(const bool quiet) {
-	quietMode = quiet;
+	atomic_store(&quietMode, quiet);
 	/*uint8_t data[0x200];
 	status_update_index(0, data, pkt_write_c((uint8_t*[]){data}, endof(data), PV_WIRE, WireStatusEntry, {
 		.code = StringToServerCode("TEST", 4),
@@ -90,7 +91,7 @@ static uint32_t escape(uint8_t *out, size_t limit, const uint8_t *in, size_t in_
 
 static char *base64_encode(char *out, const struct ByteArrayNetSerializable *const buffer) {
 	static const char table[64] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-	const div_t length = div(buffer->length, 3);
+	const div_t length = div((int32_t)buffer->length, 3);
 	const uint8_t *bin = buffer->data;
 	for(uint32_t i = 0; i < (uint32_t)length.quot; ++i, bin += 3) {
 		*out++ = table[bin[0] >> 2];
@@ -176,8 +177,7 @@ static void status_web_index(struct HttpContext *const http) {
 	HttpContext_respond(http, 200, "text/html; charset=utf-8", page, page_len);
 }
 
-static void status_web_room(struct HttpContext *const http, const ServerCode code) {
-	bool index = (code == ServerCode_NONE);
+static void status_web_room(struct HttpContext *const http, const ServerCode /*code*/) {
 	char page[65536];
 	uint32_t page_len = READ_SYM(page, head_html);
 	page_len += (uint32_t)sprintf(&page[page_len], "<div id=main>This page is still under construction</div>");
@@ -462,7 +462,7 @@ void status_resp(struct HttpContext *http, const char path[], struct HttpRequest
 	size_t contentLength = 0;
 	UserAgent userAgent = ProbeHeaders(req, req_end, &contentLength);
 	const char *reqPath_end = (char*)memchr(req, ' ', (uint32_t)(req_end - req));
-	if(!quietMode || userAgent != UserAgent_BSSB || reqPath_end != req || post)
+	if(!atomic_load(&quietMode) || userAgent != UserAgent_BSSB || reqPath_end != req || post)
 		uprintf("(%s,%s): %.*s\n", http->encrypt ? "HTTPS" : "HTTP", UserAgent_ToString[userAgent],
 			(reqPath_end != NULL) ? (int)(reqPath_end - httpRequest.header) : (int)(httpRequest.header_len), httpRequest.header);
 	if(!post && startsWith(req, req_end, "robots.txt")) {

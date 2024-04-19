@@ -30,7 +30,7 @@ static void PRF(uint8_t out[restrict static 510], uint8_t out_len, uint8_t *key,
 	}
 }
 
-struct EncryptionState *EncryptionState_init(const mbedtls_ssl_config *config, int32_t sendfd) {
+struct EncryptionState *EncryptionState_init(const mbedtls_ssl_config *const config, const NetSocket sendfd) {
 	if(!mbedtls_md_info_from_type(MBEDTLS_MD_SHA256)) {
 		uprintf("mbedtls_md_info_from_type(MBEDTLS_MD_SHA256) failed\n");
 		return NULL;
@@ -97,14 +97,18 @@ bool EncryptionState_setKeys(struct EncryptionState *state, const mbedtls_mpi *s
 }
 
 struct DtlsBio {
-	int32_t sendfd;
+	NetSocket sendfd;
 	struct SS sendAddr;
 	size_t recvBuf_len;
 	const uint8_t *recvBuf;
 };
 
 static int DtlsBio_send(const struct DtlsBio *bio, const uint8_t *data, const size_t data_len) {
+	#ifdef WINDOWS
+	const ssize_t ret = sendto(bio->sendfd, (const char*)data, (int)(unsigned)data_len, 0, &bio->sendAddr.sa, bio->sendAddr.len);
+	#else
 	const ssize_t ret = sendto(bio->sendfd, (const char*)data, data_len, 0, &bio->sendAddr.sa, bio->sendAddr.len);
+	#endif
 	if(ret >= 0)
 		return (int)ret;
 	if(errno == EPIPE || errno == ECONNRESET)

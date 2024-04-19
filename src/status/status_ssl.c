@@ -9,7 +9,7 @@
 #include <string.h>
 
 struct StatusContext {
-	int32_t listenfd;
+	NetSocket listenfd;
 	void *(*handleClient)(void*);
 	const char *path;
 	mbedtls_ssl_config conf;
@@ -24,7 +24,7 @@ struct StatusContext {
 	bool quiet;
 };
 static struct StatusContext ctx = {
-	.listenfd = -1,
+	.listenfd = NetSocket_Invalid,
 };
 
 static void status_onWireMessage(struct WireContext *wire, struct WireLink *link, const struct WireMessage *message) {
@@ -56,7 +56,7 @@ static void status_onWireMessage(struct WireContext *wire, struct WireLink *link
 	unlock: pthread_mutex_unlock(&ctx->mutex);
 }
 
-static void handle_client(int fd, mbedtls_ssl_config *config) {
+static void handle_client(const NetSocket fd, mbedtls_ssl_config *const config) {
 	struct HttpContext http;
 	if(HttpContext_init(&http, fd, config, ctx.quiet))
 		goto fail0;
@@ -65,24 +65,29 @@ static void handle_client(int fd, mbedtls_ssl_config *config) {
 		status_resp(&http, ctx.path, req, ctx.master);
 	// TODO: wait for `status_graph_resp()` to finish asynchronously
 	HttpContext_cleanup(&http);
-	fail0: close(fd);
+	fail0:
+	#ifdef WINDOWS
+	closesocket(fd);
+	#else
+	close(fd);
+	#endif
 }
 
 static void *handle_client_http(void *fd) {
-	handle_client((int)(uintptr_t)fd, NULL);
+	handle_client((NetSocket)(uintptr_t)fd, NULL);
 	return NULL;
 }
 
 static void *handle_client_https(void *fd) {
-	handle_client((int)(uintptr_t)fd, &ctx.conf);
+	handle_client((NetSocket)(uintptr_t)fd, &ctx.conf);
 	return NULL;
 }
 
-static int status_accept(struct StatusContext *ctx, struct SS *addr_out) {
-	const int listenfd = ctx->listenfd;
+static NetSocket status_accept(struct StatusContext *ctx, struct SS *addr_out) {
+	const NetSocket listenfd = ctx->listenfd;
 	pthread_mutex_unlock(&ctx->mutex);
 	addr_out->len = sizeof(struct sockaddr_storage);
-	const int clientfd = accept(listenfd, &addr_out->sa, &addr_out->len);
+	const NetSocket clientfd = accept(listenfd, &addr_out->sa, &addr_out->len);
 	pthread_mutex_lock(&ctx->mutex);
 	return clientfd;
 }
@@ -119,7 +124,7 @@ static void *status_handler(struct StatusContext *ctx) {
 	}
 	uprintf("Started HTTP%s\n", (ctx->handleClient == handle_client_http) ? "" : "S");
 	struct SS addr;
-	for(int clientfd; (clientfd = status_accept(ctx, &addr)) != -1;) {
+	for(NetSocket clientfd; (clientfd = status_accept(ctx, &addr)) != NetSocket_Invalid;) {
 		// TODO: shared poll thread (current system is NOT threadsafe); non-blocking I/O
 		if(pthread_create((pthread_t[]){NET_THREAD_INVALID}, &attr, ctx->handleClient, (void*)(uintptr_t)clientfd))
 			uprintf("pthread_create() failed\n");
@@ -151,7 +156,7 @@ bool status_ssl_init(const char *path, uint16_t port, mbedtls_x509_crt certs[2],
 		.path = path,
 		.quiet = quiet,
 	};
-	if(ctx.listenfd == -1)
+	if(ctx.listenfd == NetSocket_Invalid)
 		return true;
 	if(mbedtls_pk_get_type(&keys[1]) != MBEDTLS_PK_NONE) {
 		mbedtls_ssl_config_init(&ctx.conf);
@@ -200,12 +205,12 @@ bool status_ssl_init(const char *path, uint16_t port, mbedtls_x509_crt certs[2],
 	fail1: pthread_mutex_destroy(&ctx.mutex);
 	fail0:
 	net_close(ctx.listenfd);
-	ctx.listenfd = -1;
+	ctx.listenfd = NetSocket_Invalid;
 	return true;
 }
 
 void status_ssl_cleanup() {
-	if(ctx.listenfd == -1)
+	if(ctx.listenfd == NetSocket_Invalid)
 		return;
 	uprintf("Stopping HTTPS\n");
 	shutdown(ctx.listenfd, SHUT_RD);
@@ -214,7 +219,7 @@ void status_ssl_cleanup() {
 		status_thread = NET_THREAD_INVALID;
 	}
 	net_close(ctx.listenfd);
-	ctx.listenfd = -1;
+	ctx.listenfd = NetSocket_Invalid;
 	WireContext_cleanup(&ctx.wire);
 	pthread_mutex_destroy(&ctx.mutex);
 	if(ctx.handleClient == handle_client_https) {

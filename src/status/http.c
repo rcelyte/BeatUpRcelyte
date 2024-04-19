@@ -28,21 +28,29 @@ static inline int ssl_error(int intr) {
 	return -1;
 }
 
-static int ssl_send_internal(void *fd, const uint8_t *data, size_t data_len) {
-	ssize_t ret = send((int)(uintptr_t)fd, (const char*)data, data_len, 0);
+static int ssl_send_internal(void *fd, const uint8_t *data, const size_t data_len) {
+	#ifdef WINDOWS
+	const ssize_t ret = send((NetSocket)(uintptr_t)fd, (const char*)data, (int)(unsigned)data_len, 0);
+	#else
+	const ssize_t ret = send((NetSocket)(uintptr_t)fd, (const char*)data, data_len, 0);
+	#endif
 	if(ret >= 0)
 		return (int)ret;
 	return ssl_error(MBEDTLS_ERR_SSL_WANT_WRITE);
 }
 
-static int ssl_recv_internal(void *fd, uint8_t *data, size_t data_len) {
-	ssize_t ret = recv((int)(uintptr_t)fd, (char*)data, data_len, 0);
+static int ssl_recv_internal(void *fd, uint8_t *data, const size_t data_len) {
+	#ifdef WINDOWS
+	const ssize_t ret = recv((NetSocket)(uintptr_t)fd, (char*)data, (int)(unsigned)data_len, 0);
+	#else
+	const ssize_t ret = recv((NetSocket)(uintptr_t)fd, (char*)data, data_len, 0);
+	#endif
 	if(ret >= 0)
 		return (int)ret;
 	return ssl_error(MBEDTLS_ERR_SSL_WANT_READ);
 }
 
-bool HttpContext_init(struct HttpContext *const self, const int fd, mbedtls_ssl_config *const sslConfig, const bool quiet) {
+bool HttpContext_init(struct HttpContext *const self, const NetSocket fd, mbedtls_ssl_config *const sslConfig, const bool quiet) {
 	*self = (struct HttpContext){
 		.encrypt = (sslConfig != NULL),
 		.quiet = quiet,
