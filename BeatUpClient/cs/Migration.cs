@@ -15,7 +15,7 @@ static class BeatUpClient_Migration {
 				continue;
 			BeatUpClient_Config.Instance.Servers.TryAdd(graphUrl, statusUrl);
 			BeatUpClient_Config.Instance.Servers.Remove(hostname);
-			if(hostname == BeatUpClient.customServerHostName.value)
+			if(hostname == BeatUpClient.customServerSettings.customServerHostName)
 				newHostname = (graphUrl, statusUrl);
 		}
 		BeatUpClient_Config.Instance.Changed();

@@ -48,7 +48,7 @@ static partial class BeatUpClient {
 		foreach(UnityEngine.Transform tr in serverDropdown)
 			tr.localPosition = new UnityEngine.Vector3(0, 0, 0);
 
-		BeatUpClient_Config.Instance.Servers.TryGetValue(customServerHostName.value, out string? statusUrl);
-		UpdateNetworkConfig(customServerHostName, statusUrl ?? string.Empty);
+		BeatUpClient_Config.Instance.Servers.TryGetValue(customServerSettings.customServerHostName, out string? statusUrl);
+		UpdateNetworkConfig(customServerSettings.customServerHostName, statusUrl ?? string.Empty);
 	}
 }

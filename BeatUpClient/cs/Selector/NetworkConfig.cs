@@ -24,7 +24,7 @@ static partial class BeatUpClient {
 	}
 
 	static bool SetNetworkConfig(string hostname, string statusUrl) {
-		customServerHostName.value = hostname;
+		customServerSettings.customServerHostName = hostname;
 		CustomNetworkConfig? customNetworkConfig = Resolve<CustomNetworkConfig>();
 		if(customNetworkConfig == null)
 			return false;

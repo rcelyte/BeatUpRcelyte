@@ -20,7 +20,7 @@ static partial class BeatUpClient {
 			trackedLevels.RemoveAll(level => {
 				level.variants.RemoveAll(filter);
 				if(level.variants.Count == 0)
-					Resolve<BeatmapLevelsModel>()!._loadedBeatmapLevels.Remove(level.levelID);
+					Resolve<BeatmapLevelsModel>()!._allLoadedBeatmapLevelsRepository._idToBeatmapLevel.Remove(level.levelID);
 				return level.variants.Count == 0;
 			});
 		}
@@ -38,7 +38,7 @@ static partial class BeatUpClient {
 			}
 			if(info.id.usage != ShareableType.BeatmapSet || info.id.mimeType != "application/json" || info.meta.byteLength < 1)
 				return false;
-			if(Resolve<BeatmapLevelsModel>()!._loadedBeatmapLevels.TryGetValue(info.id.name, out BeatmapLevel preview)) {
+			if(Resolve<BeatmapLevelsModel>()!._allLoadedBeatmapLevelsRepository._idToBeatmapLevel.TryGetValue(info.id.name, out BeatmapLevel preview)) {
 				DownloadPreview? share = preview as DownloadPreview;
 				if(share == null)
 					return false;
@@ -49,7 +49,7 @@ static partial class BeatUpClient {
 					source.Add(connectedPlayer, info.offset);
 			} else {
 				DownloadPreview share = new DownloadPreview(info, connectedPlayer);
-				Resolve<BeatmapLevelsModel>()!._loadedBeatmapLevels[info.id.name] = share;
+				Resolve<BeatmapLevelsModel>()!._allLoadedBeatmapLevelsRepository._idToBeatmapLevel[info.id.name] = share;
 				trackedLevels.Add(share);
 			}
 			return true;

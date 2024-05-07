@@ -50,7 +50,6 @@ static partial class BeatUpClient {
 		public static UnityEngine.RectTransform CreateToggle(UnityEngine.Transform parent, string name, string headerKey, IValue<bool> value) {
 			UnityEngine.GameObject toggleTemplate = UnityEngine.Resources.FindObjectsOfTypeAll<UnityEngine.UI.Toggle>().Select(x => x.transform.parent.gameObject).First(p => p.name == "Fullscreen");
 			UnityEngine.GameObject gameObject = CreateElementWithText(toggleTemplate, parent, name, headerKey);
-			UnityEngine.Object.Destroy(gameObject.GetComponent<BoolSettingsController>());
 			ToggleSetting toggleSetting = gameObject.AddComponent<ToggleSetting>();
 			toggleSetting.setting = value;
 			gameObject.SetActive(true);
