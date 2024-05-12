@@ -209,24 +209,15 @@ static const char *UserAgent_ToString[] = {
 	[UserAgent_BSSB] = "bssb",
 };
 
-static UserAgent ProbeHeaders(const char *buf, const char *end, size_t *contentLength_out) {
-	uint32_t lineCount = 0;
-	for(; (buf = nextLine(buf, end)); ++lineCount) {
-		if(startsWith(buf, end, "Host: ") ||
-		   startsWith(buf, end, "Connection: ") ||
-		   startsWith(buf, end, "Content-Type: application/json") ||
-		   startsWith(buf, end, "Authorization: "))
-			continue;
-		if(startsWith(buf, end, "Content-Length: ")) {
-			size_t length = 0;
-			for(const char *it = &buf[16]; it < end && *it >= '0' && *it <= '9'; ++it)
-				length = length * 10 + ((size_t)*it - '0');
-			*contentLength_out = length;
-			continue;
-		}
-		return startsWith(buf, end, "User-Agent: BeatSaberServerBrowser") ? UserAgent_BSSB : UserAgent_Web;
-	}
-	return lineCount ? UserAgent_Game : UserAgent_Web;
+static UserAgent ProbeHeaders(const char *buf, const char *const end) {
+	buf = nextLine(buf, end);
+	for(const char *line = buf; line != NULL; line = nextLine(line, end))
+		if(startsWith(line, end, "User-Agent: "))
+			return startsWith(&line[12], end, "BeatSaberServerBrowser API") ? UserAgent_BSSB : UserAgent_Web;
+	for(const char *line = buf; line != NULL; line = nextLine(line, end))
+		if(startsWith(line, end, "Accept: "))
+			return UserAgent_Web;
+	return UserAgent_Game;
 }
 
 #ifndef STATUS_APPVER_POSTFIX
@@ -488,8 +479,7 @@ void status_resp(struct HttpContext *http, const char path[], struct HttpRequest
 		HttpContext_respond(http, 404, "text/plain; charset=utf-8", NULL, 0);
 		return;
 	}
-	size_t contentLength = 0;
-	UserAgent userAgent = ProbeHeaders(req, req_end, &contentLength);
+	const UserAgent userAgent = ProbeHeaders(req, req_end);
 	const char *reqPath_end = (char*)memchr(req, ' ', (uint32_t)(req_end - req));
 	if(!atomic_load(&quietMode) || userAgent != UserAgent_BSSB || reqPath_end != req || post)
 		uprintf("(%s,%s): %.*s\n", http->encrypt ? "HTTPS" : "HTTP", UserAgent_ToString[userAgent],
