@@ -3,7 +3,6 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <assert.h>
-#include "code_filter.h"
 
 struct PoolHost {
 	struct PoolHost *next;
@@ -19,6 +18,31 @@ struct PoolHost {
 static uint32_t globalSequence = 0;
 static uint16_t lastId = 0;
 static struct PoolHost *firstHost = NULL;
+
+__asm__(
+	".section .rodata, \"a\";"
+	".global code_filter_bin;"
+"code_filter_bin:"
+	".incbin \"src/master/code_filter.bin\";"
+	".global code_filter_bin_end;"
+"code_filter_bin_end:");
+static uint8_t RoomCodeFilter[4329488];
+[[gnu::constructor]] static void pool_init_filter_() {
+	extern const uint8_t code_filter_bin[], code_filter_bin_end[];
+	uint8_t *out = RoomCodeFilter;
+	for(const uint8_t *head = code_filter_bin; head < code_filter_bin_end;) {
+		uint32_t span = 0, shift = 0;
+		do {
+			span |= (*head & 127llu) << shift;
+			shift += 7;
+		} while(*head++ & 128);
+		const uint32_t byte = (span & 1) * 0xff, length = span >> 1;
+		memset(out, (int32_t)byte, length);
+		out += length;
+		*out++ = *head++;
+	}
+	assert(out == endof(RoomCodeFilter));
+}
 
 void pool_reset() {
 	while(firstHost != NULL) {
