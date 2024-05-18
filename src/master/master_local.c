@@ -236,22 +236,20 @@ static void handle_WireSessionAllocResp(struct LocalMasterContext *const ctx, st
 	switch((view.length >= sizeof(*state)) ? state->cookieType : MasterCookieType_INVALID) {
 		case MasterCookieType_LocalConnect: {
 			if(view.length != sizeof(struct LocalConnectCookie))
-				break;
+				goto badCookie;
 			const struct LocalConnectCookie *const localState = (const struct LocalConnectCookie*)view.data;
 			dropped &= handle_WireSessionAllocResp_local(&ctx->net, MasterContext_lookup(&ctx->base, localState->addr), host, localState, sessionAlloc);
-			return;
-		}
+		} break;
 		case MasterCookieType_GraphConnect: {
 			if(view.length != sizeof(struct GraphConnectCookie))
-				break;
+				goto badCookie;
 			dropped &= handle_WireSessionAllocResp_graph(ctx, host, (const struct GraphConnectCookie*)view.data, sessionAlloc);
-			return;
-		}
+		} break;
 		default: dropped = false;
+		badCookie: uprintf("Connect to Server Error: Malformed wire cookie\n");
 	}
 	if(dropped)
 		pool_handle_free(host, state->room);
-	uprintf("Connect to Server Error: Malformed wire cookie\n");
 }
 
 static void master_onWireMessage(struct WireContext *wire, struct WireLink *link, const struct WireMessage *message) {
