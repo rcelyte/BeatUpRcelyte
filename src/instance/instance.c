@@ -838,9 +838,8 @@ static void handle_MenuRpc(struct InstanceContext *ctx, struct Room *room, struc
 			} else if(entitlement.entitlementStatus == EntitlementsStatus_Ok) {
 				if(!PlayerStateHash_contains(session->stateHash, "modded") && entitlement.levelId.length >= 13 && memcmp(entitlement.levelId.data, "custom_level_", 13) == 0)
 					entitlement.entitlementStatus = EntitlementsStatus_NotOwned; // Vanilla clients will misreport all custom IDs as owned
-				else if(!CounterP_set(&room->lobby.isDownloaded, (uint32_t)indexof(room->players, session)))
-					if((room->state & ServerState_Lobby_Downloading) && CounterP_contains(room->lobby.isDownloaded, room->connected))
-						room_set_state(ctx, room, ServerState_Game_LoadingScene);
+				else if(!CounterP_set(&room->lobby.isDownloaded, (uint32_t)indexof(room->players, session)) && (room->state & ServerState_Lobby_Downloading) != 0)
+					room_set_state(ctx, room, ServerState_Lobby_Downloading);
 			}
 			if(!(room->state & ServerState_Lobby_Entitlement))
 				break;
@@ -1945,8 +1944,10 @@ static void room_disconnect(struct InstanceContext *ctx, struct Room **room, str
 
 	if(!CounterP_isEmpty((*room)->playerSort)) {
 		session_set_state(ctx, *room, session, 0);
-		if((*room)->state & ServerState_Lobby)
+		if(((*room)->state & ServerState_Lobby) != 0)
 			room_set_state(ctx, *room, ServerState_Lobby_Entitlement);
+		if(((*room)->state & ServerState_Lobby_Downloading) != 0)
+			room_set_state(ctx, *room, ServerState_Lobby_Downloading);
 		if(!hold)
 			room_notify(ctx, room);
 		hold = true;
