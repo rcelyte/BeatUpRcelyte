@@ -35,7 +35,7 @@ u32 GameplayModifierMask
 n BitMask128
 	u64 d0
 	u64 d1
-// TODO: need to test if 1.32.0 and 1.33.0 clients break >=1.34.0 clients
+// TODO: implement packet translation; 1.32.0 and 1.33.0 players will not show up for >=1.34.0 players because of this mismatch
 n SongPackMask
 	BitMask128 bloomFilter
 	if($gameVersion >= GameVersion_1_34_0)

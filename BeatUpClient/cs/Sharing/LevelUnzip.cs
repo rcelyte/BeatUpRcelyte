@@ -9,6 +9,7 @@ static partial class BeatUpClient {
 		public struct DifficultyData {
 			public string lightshowFilename, beatmapFilename;
 		};
+		public int version => -1;
 		public string songName;
 		public string? audioData;
 		public System.Collections.Generic.Dictionary<DifficultyKey, (string? lightshow, string? beatmap)> difficulties;

@@ -110,13 +110,13 @@ static partial class BeatUpClient {
 		}
 	}
 
-	internal static async void HandleGetIsEntitledToLevel<T>(T instance, string levelId, IMenuRpcManager _rpcManager) where T : NetworkPlayerEntitlementChecker =>
-		_rpcManager.SetIsEntitledToLevel(levelId, await EntitlementWrapper(instance.GetEntitlementStatus(levelId), _rpcManager, levelId));
+	internal static async void HandleGetIsEntitledToLevel(System.Threading.Tasks.Task<EntitlementsStatus> task, string levelId, IMenuRpcManager _rpcManager) =>
+		_rpcManager.SetIsEntitledToLevel(levelId, await EntitlementWrapper(task, _rpcManager, levelId));
 
 	[Patch(PatchType.Prefix, typeof(NetworkPlayerEntitlementChecker), nameof(NetworkPlayerEntitlementChecker.HandleGetIsEntitledToLevel))]
 	public static bool NetworkPlayerEntitlementChecker_HandleGetIsEntitledToLevel(NetworkPlayerEntitlementChecker __instance, string levelId, IMenuRpcManager ____rpcManager) {
 		Log.Debug($"NetworkPlayerEntitlementChecker_HandleGetIsEntitledToLevel(levelId=\"{levelId}\")");
-		HandleGetIsEntitledToLevel(__instance, levelId, ____rpcManager);
+		HandleGetIsEntitledToLevel(__instance.GetEntitlementStatus(levelId), levelId, ____rpcManager);
 		return false;
 	}
 

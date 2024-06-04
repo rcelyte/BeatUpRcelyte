@@ -7,7 +7,7 @@ static partial class BeatUpClient {
 		public class DownloadPreview : BeatmapLevel {
 			public System.Collections.Generic.List<Downloader> variants;
 			public DownloadPreview(ShareInfo info, ConnectedPlayerManager.ConnectedPlayer connectedPlayer) :
-					base(false, info.id.name, string.Empty, string.Empty, string.Empty, new string[0], new string[0], 0, -6f, 0, 0, 0, 0, PlayerSensitivityFlag.Safe, new StaticPreviewMediaData(defaultPackCover, null), null) {
+					base(-1, false, info.id.name, string.Empty, string.Empty, string.Empty, new string[0], new string[0], 0, -6f, 0, 0, 0, 0, PlayerSensitivityFlag.Safe, new StaticPreviewMediaData(defaultPackCover, null), null) {
 				this.variants = new System.Collections.Generic.List<Downloader>() {new Downloader(info, connectedPlayer)};
 			}
 			public System.Threading.Tasks.Task<byte[]?> Fetch(System.Action<ushort>? progress = null) =>
