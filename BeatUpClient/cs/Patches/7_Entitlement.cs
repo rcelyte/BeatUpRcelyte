@@ -6,7 +6,8 @@ static partial class BeatUpClient {
 		Log.Debug($"AnnounceWrapper(task.Result={status})");
 		ShareInfo info = new ShareInfo(0, new ShareMeta(0), new ShareId {usage = ShareableType.BeatmapSet, mimeType = "application/json", name = levelId});
 		if(status == EntitlementsStatus.Ok) {
-			IBeatmapLevelData? beatmapLevelData = (await Resolve<BeatmapLevelsModel>()!.LoadBeatmapLevelDataAsync(levelId, System.Threading.CancellationToken.None)).beatmapLevelData;
+			BeatmapLevelDataVersion version = await Resolve<BeatmapLevelsModel>()!._entitlements.GetLevelDataVersionAsync(levelId, System.Threading.CancellationToken.None);
+			IBeatmapLevelData? beatmapLevelData = (await Resolve<BeatmapLevelsModel>()!.LoadBeatmapLevelDataAsync(levelId, version, System.Threading.CancellationToken.None)).beatmapLevelData;
 			if(beatmapLevelData == null) {
 				Log.Debug("    Announce: failed to load beatmap");
 				status = EntitlementsStatus.NotOwned;

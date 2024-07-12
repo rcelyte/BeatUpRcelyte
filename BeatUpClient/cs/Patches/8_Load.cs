@@ -39,10 +39,10 @@ static partial class BeatUpClient {
 	}
 
 	[Detour(typeof(BeatmapLevelLoader), nameof(BeatmapLevelLoader.LoadBeatmapLevelDataAsync))]
-	static System.Threading.Tasks.Task<LoadBeatmapLevelDataResult> BeatmapLevelLoader_LoadBeatmapLevelDataAsync(BeatmapLevelLoader self, BeatmapLevel beatmapLevel, System.Threading.CancellationToken cancellationToken) {
+	static System.Threading.Tasks.Task<LoadBeatmapLevelDataResult> BeatmapLevelLoader_LoadBeatmapLevelDataAsync(BeatmapLevelLoader self, BeatmapLevel beatmapLevel, BeatmapLevelDataVersion beatmapLevelDataVersion, System.Threading.CancellationToken cancellationToken) {
 		ShareTracker.DownloadPreview? preview = beatmapLevel as ShareTracker.DownloadPreview;
 		if(preview == null)
-			return (System.Threading.Tasks.Task<LoadBeatmapLevelDataResult>)Base(self, beatmapLevel, cancellationToken);
+			return (System.Threading.Tasks.Task<LoadBeatmapLevelDataResult>)Base(self, beatmapLevel, beatmapLevelDataVersion, cancellationToken);
 		System.Threading.CancellationTokenSource? loaderCTS = Resolve<MultiplayerLevelLoader>()?._getBeatmapCancellationTokenSource;
 		if(loaderCTS == null || cancellationToken != loaderCTS.Token)
 			return System.Threading.Tasks.Task.FromResult(LoadBeatmapLevelDataResult.Error);

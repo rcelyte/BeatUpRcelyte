@@ -1162,6 +1162,9 @@ static void _pkt_LevelCompletionResults_read(struct LevelCompletionResults *rest
 		_pkt_f32_read(&data->averageTimeDeviation, pkt, end, ctx);
 	}
 	_pkt_f32_read(&data->endSongTime, pkt, end, ctx);
+	if(ctx.gameVersion >= GameVersion_1_37_1) {
+		_pkt_b_read(&data->invalidated, pkt, end, ctx);
+	}
 }
 static void _pkt_LevelCompletionResults_write(const struct LevelCompletionResults *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_GameplayModifiers_write(&data->gameplayModifiers, pkt, end, ctx);
@@ -1207,6 +1210,9 @@ static void _pkt_LevelCompletionResults_write(const struct LevelCompletionResult
 		_pkt_f32_write(&data->averageTimeDeviation, pkt, end, ctx);
 	}
 	_pkt_f32_write(&data->endSongTime, pkt, end, ctx);
+	if(ctx.gameVersion >= GameVersion_1_37_1) {
+		_pkt_b_write(&data->invalidated, pkt, end, ctx);
+	}
 }
 static void _pkt_MultiplayerLevelCompletionResults_read(struct MultiplayerLevelCompletionResults *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	if(ctx.protocolVersion < 7) {

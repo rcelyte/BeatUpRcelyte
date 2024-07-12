@@ -159,6 +159,7 @@ var refs = new (string path, string name, string[]? overrides)[] {
 	("Libs", "Newtonsoft.Json.dll", null),
 	("Libs", "System.IO.Compression.dll", null),
 	("Plugins", "SongCore.dll", null),
+	(managed, "AdditionalContentModel.Interfaces.dll", null),
 	(managed, "BeatmapCore.dll", null),
 	(managed, "BeatSaber.GameSettings.dll", null),
 	(managed, "BeatSaber.Init.dll", null),
@@ -220,6 +221,7 @@ var refs = new (string path, string name, string[]? overrides)[] {
 	(managed, "DataModels.dll", new[] {
 		"BeatmapKey::beatmapCharacteristic",
 		"BeatmapLevelsModel::_allLoadedBeatmapLevelsRepository",
+		"BeatmapLevelsModel::_entitlements",
 		"BeatmapLevelsRepository::_idToBeatmapLevel",
 		"FileDifficultyBeatmap::_beatmapPath",
 		"FileDifficultyBeatmap::_lightshowPath",

@@ -45,14 +45,14 @@ n BeatmapLevelSelectionMask
 	GameplayModifierMask modifiers
 	SongPackMask songPacks
 n UTimestamp
-	if(ctx.protocolVersion < 9)
+	if($protocolVersion < 9)
 		f32 legacy
-	if(ctx.protocolVersion >= 9)
+	if($protocolVersion >= 9)
 		vu64 value
 n STimestamp
-	if(ctx.protocolVersion < 9)
+	if($protocolVersion < 9)
 		f32 legacy
-	if(ctx.protocolVersion >= 9)
+	if($protocolVersion >= 9)
 		vi64 value
 n RemoteProcedureCall
 	UTimestamp syncTime
@@ -389,7 +389,7 @@ n NoteCutInfoNetSerializable
 	Vector3Serializable notePosition
 	Vector3Serializable noteScale
 	QuaternionSerializable noteRotation
-	if(ctx.protocolVersion >= 8)
+	if($protocolVersion >= 8)
 		GameplayType gameplayType
 	ColorType colorType
 	NoteLineLayer lineLayer
@@ -465,7 +465,7 @@ n LevelCompletionResults
 	f32 rightSaberMovementDistance
 	f32 leftHandMovementDistance
 	f32 rightHandMovementDistance
-	if(ctx.protocolVersion < 8)
+	if($protocolVersion < 8)
 		f32 songDuration
 	LevelEndStateType levelEndStateType
 	LevelEndAction levelEndAction
@@ -475,18 +475,18 @@ n LevelCompletionResults
 	vi32 missedCount
 	vi32 notGoodCount
 	vi32 okCount
-	if(ctx.protocolVersion < 8)
+	if($protocolVersion < 8)
 		vi32 averageCutScore
 	vi32 maxCutScore
-	if(ctx.protocolVersion >= 8)
+	if($protocolVersion >= 8)
 		vi32 totalCutScore
 		vi32 goodCutsCountForNotesWithFullScoreScoringType
 		i32 averageCenterDistanceCutScoreForNotesWithFullScoreScoringType
 		i32 averageCutScoreForNotesWithFullScoreScoringType
-	if(ctx.protocolVersion < 8)
+	if($protocolVersion < 8)
 		f32 averageCutDistanceRawScore
 	vi32 maxCombo
-	if(ctx.protocolVersion < 8)
+	if($protocolVersion < 8)
 		f32 minDirDeviation
 		f32 maxDirDeviation
 		f32 averageDirDeviation
@@ -494,13 +494,15 @@ n LevelCompletionResults
 		f32 maxTimeDeviation
 		f32 averageTimeDeviation
 	f32 endSongTime
+	if($gameVersion >= GameVersion_1_37_1)
+		b invalidated
 n MultiplayerLevelCompletionResults
-	if(ctx.protocolVersion < 7)
+	if($protocolVersion < 7)
 		MultiplayerLevelEndState levelEndState
-	if(ctx.protocolVersion >= 7)
+	if($protocolVersion >= 7)
 		MultiplayerPlayerLevelEndState playerLevelEndState
 		MultiplayerPlayerLevelEndReason playerLevelEndReason
-	if((ctx.protocolVersion < 7 && .levelEndState < MultiplayerLevelEndState_GivenUp) || (ctx.protocolVersion >= 7 && .playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted))
+	if(($protocolVersion < 7 && .levelEndState < MultiplayerLevelEndState_GivenUp) || ($protocolVersion >= 7 && .playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted))
 		LevelCompletionResults levelCompletionResults
 n LevelFinished
 	RemoteProcedureCall base
@@ -535,7 +537,7 @@ n NoteSpawnInfoNetSerializable
 	vi32 lineIndex
 	NoteLineLayer noteLineLayer
 	NoteLineLayer beforeJumpNoteLineLayer
-	if(ctx.protocolVersion >= 8)
+	if($protocolVersion >= 8)
 		GameplayType gameplayType
 		ScoringType scoringType
 	ColorType colorType
@@ -552,7 +554,7 @@ n NoteSpawnInfoNetSerializable
 	f32 jumpDuration
 	f32 rotation
 	f32 cutDirectionAngleOffset
-	if(ctx.protocolVersion >= 8)
+	if($protocolVersion >= 8)
 		f32 cutSfxVolumeMultiplier
 n NoteSpawned
 	RemoteProcedureCall base
@@ -567,13 +569,13 @@ vi32 ObstacleType
 n ObstacleSpawnInfoNetSerializable
 	f32 time
 	vi32 lineIndex
-	if(ctx.protocolVersion >= 8)
+	if($protocolVersion >= 8)
 		NoteLineLayer lineLayer
-	if(ctx.protocolVersion < 8)
+	if($protocolVersion < 8)
 		ObstacleType obstacleType
 	f32 duration
 	vi32 width
-	if(ctx.protocolVersion >= 8)
+	if($protocolVersion >= 8)
 		vi32 height
 	Vector3Serializable moveStartPos
 	Vector3Serializable moveEndPos
@@ -833,9 +835,9 @@ n OpaqueAvatarData
 	u16 length
 	u8 data[4096, .length]
 n MultiplayerAvatarsData
-	if(ctx.protocolVersion < 9)
+	if($protocolVersion < 9)
 		LegacyAvatarData legacy
-	if(ctx.protocolVersion >= 9)
+	if($protocolVersion >= 9)
 		i32 count
 		OpaqueAvatarData avatars[6, .count]
 		BitMask128 supportedTypes
@@ -904,12 +906,12 @@ d RoutingHeader
 	u8 remoteConnectionId
 	u8 connectionId:7
 	b encrypted:1
-	if(ctx.protocolVersion >= 9)
+	if($protocolVersion >= 9)
 		u8 packetOptions
 r BTRoutingHeader
 	u8 remoteConnectionId
 	u8 connectionId
-	if(ctx.protocolVersion >= 9)
+	if($protocolVersion >= 9)
 		u8 packetOptions
 n BaseMasterServerReliableRequest
 	u32 requestId

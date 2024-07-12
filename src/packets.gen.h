@@ -38,6 +38,7 @@ enum {
 	GameVersion_1_36_1,
 	GameVersion_1_36_2,
 	GameVersion_1_37_0,
+	GameVersion_1_37_1,
 };
 [[maybe_unused]] static const char *_reflect_GameVersion(GameVersion value) {
 	switch(value) {
@@ -75,6 +76,7 @@ enum {
 		case GameVersion_1_36_1: return "1_36_1";
 		case GameVersion_1_36_2: return "1_36_2";
 		case GameVersion_1_37_0: return "1_37_0";
+		case GameVersion_1_37_1: return "1_37_1";
 		default: return "???";
 	}
 }
@@ -1674,6 +1676,7 @@ struct LevelCompletionResults {
 	float maxTimeDeviation;
 	float averageTimeDeviation;
 	float endSongTime;
+	bool invalidated;
 };
 struct MultiplayerLevelCompletionResults {
 	MultiplayerLevelEndState levelEndState;
