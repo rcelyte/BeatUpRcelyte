@@ -5,6 +5,7 @@ static partial class BeatUpClient {
 		void Warn(string message);
 		void Error(string message);
 		void Critical(string message);
+		void Exception(System.Exception error);
 	}
 	struct DefaultLogger : ILogger {
 		public void Debug(string message) =>
@@ -17,5 +18,7 @@ static partial class BeatUpClient {
 			UnityEngine.Debug.Log("[BeatUpClient|Error] " + message);
 		public void Critical(string message) =>
 			UnityEngine.Debug.Log("[BeatUpClient|Critical] " + message);
+		public void Exception(System.Exception error) =>
+			UnityEngine.Debug.Log($"[BeatUpClient|Exception] {error}");
 	}
 }

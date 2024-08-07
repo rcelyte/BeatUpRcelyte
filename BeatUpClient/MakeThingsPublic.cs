@@ -157,7 +157,6 @@ var refs = new (string path, string name, string[]? overrides)[] {
 	("Libs", "MonoMod.RuntimeDetour.dll", null),
 	("Libs", "MonoMod.Utils.dll", null),
 	("Libs", "Newtonsoft.Json.dll", null),
-	("Libs", "System.IO.Compression.dll", null),
 	("Plugins", "SongCore.dll", null),
 	(managed, "AdditionalContentModel.Interfaces.dll", null),
 	(managed, "BeatmapCore.dll", null),

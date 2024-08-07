@@ -7,7 +7,7 @@ static partial class BeatUpClient {
 	[System.AttributeUsage(System.AttributeTargets.Method)]
 	internal class InitAttribute : System.Attribute {}
 
-	internal static System.Action GatherMethods(System.Type type, ref uint patchCount) {
+	internal static System.Action GatherMethods(System.Type type, ref int patchCount) {
 		// Log.Debug($"GatherMethods({type})");
 		System.Action applyMethods = delegate {};
 		foreach(System.Type nested in type.GetNestedTypes(HarmonyLib.AccessTools.all))
@@ -20,14 +20,23 @@ static partial class BeatUpClient {
 			if(!method.ContainsGenericParameters) {
 				try {
 					method.MethodHandle.GetFunctionPointer(); // Force JIT compilation
-				} catch(System.Exception) {
+				} catch(System.Exception ex) {
 					Log.Error($"Failed to preload {method.DeclaringType.FullName} :: {method}");
-					throw;
+					Log.Exception(ex);
+					patchCount = int.MinValue;
+					continue;
 				}
 			}
 			foreach(IPatch patch in method.GetCustomAttributes(typeof(IPatch), false)) {
 				// Log.Debug($"    {method}");
-				applyMethods += patch.Bind(method);
+				try {
+					applyMethods += patch.Bind(method);
+				} catch(System.Exception ex) {
+					Log.Error($"Failed to load patch {method}");
+					Log.Exception(ex);
+					patchCount = int.MinValue;
+					continue;
+				}
 				++patchCount;
 			}
 			if(method.GetCustomAttributes(typeof(InitAttribute), false).Length != 0)
@@ -92,7 +101,7 @@ static partial class BeatUpClient {
 			if(err.Length != 0)
 				BeatUpClient_Error.Init("Unsupported BeatUpClient Version", err);
 			else
-				BeatUpClient_Error.Init("BeatUpClient Validation Error", "BeatUpClient encountered a critical error. Please message rcelyte#5372.");
+				BeatUpClient_Error.Init("BeatUpClient Validation Error", "BeatUpClient encountered a critical error. Please message @rcelyte on Discord.");
 			return;
 		}
 
@@ -107,7 +116,7 @@ static partial class BeatUpClient {
 
 		try {
 			Log.Debug("Gathering patches");
-			uint patchCount = 0;
+			int patchCount = 0;
 			System.Action applyPatches = new (System.Type type, bool enable)[] {
 				(typeof(BeatUpClient), true),
 				(typeof(BeatUpClient_SongCore), haveSongCore),
@@ -119,15 +128,18 @@ static partial class BeatUpClient {
 					acc += GatherMethods(section.type, ref patchCount);
 				return acc;
 			});
-			Log.Debug($"Applying {patchCount} patches");
-			applyPatches();
-			if(GameLiftRequired)
-				BeatUpClient_Migration.Init();
-			UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnSceneLoaded;
+			if(patchCount >= 0) {
+				Log.Debug($"Applying {patchCount} patches");
+				applyPatches();
+				if(GameLiftRequired)
+					BeatUpClient_Migration.Init();
+				UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnSceneLoaded;
+				return;
+			}
 		} catch(System.Exception ex) {
 			Log.Error($"Error applying patches: {ex}");
-			Disable();
 		}
+		Disable();
 	}
 
 	internal static void Disable() {

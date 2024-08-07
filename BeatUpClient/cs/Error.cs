@@ -16,7 +16,9 @@ static class BeatUpClient_Error {
 	}
 	public static void Init(string header, string message) {
 		(BeatUpClient_Error.header, BeatUpClient_Error.message) = (header, message);
-		uint patchCount = 0;
-		BeatUpClient.GatherMethods(typeof(BeatUpClient_Error), ref patchCount)();
+		int patchCount = 0;
+		System.Action applyPatches = BeatUpClient.GatherMethods(typeof(BeatUpClient_Error), ref patchCount);
+		if(patchCount >= 0)
+			applyPatches();
 	}
 }

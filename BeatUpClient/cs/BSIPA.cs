@@ -15,6 +15,8 @@ public class BeatUpClient_BSIPA {
 			logger.Error(message);
 		public void Critical(string message) =>
 			logger.Critical(message);
+		public void Exception(System.Exception error) =>
+			logger.Error(error);
 	}
 
 	internal static Hive.Versioning.Version? GetVersion(string id) =>

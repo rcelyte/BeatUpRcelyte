@@ -74,7 +74,9 @@ static class BeatUpClient_Migration {
 
 	public static void Init() {
 		legacyHostnameMapping = MigrateLegacyHostnames();
-		uint patchCount = 0;
-		BeatUpClient.GatherMethods(typeof(BeatUpClient_Migration), ref patchCount)();
+		int patchCount = 0;
+		System.Action applyPatches = BeatUpClient.GatherMethods(typeof(BeatUpClient_Migration), ref patchCount);
+		if(patchCount >= 0)
+			applyPatches();
 	}
 }
