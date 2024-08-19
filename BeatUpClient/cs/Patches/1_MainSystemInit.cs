@@ -15,14 +15,14 @@ static partial class BeatUpClient {
 	static void MainSettingsAsyncLoader_InstallBindings(MainSettingsAsyncLoader self) {
 		Base(self);
 
-		customServerSettings = self._mainSettingsHandler.instance.customServerSettings;
-		string hostname = customServerSettings.customServerHostName.ToLower();
+		Zenject.DiContainer container = self.Container;
+		SettingsManager settingsManager = Injected<SettingsManager>.Resolve(container)!;
+		string hostname = settingsManager.settings.customServer.hostName.ToLower();
 		int port = self._networkConfig.masterServerEndPoint.port;
 		if(hostname.Contains(":")) {
 			int.TryParse(hostname.Split(':')[1], out port);
 			hostname = hostname.Split(':')[0];
 		}
-		Zenject.DiContainer container = self.Container;
 		container.Rebind<INetworkConfig>().FromInstance(new CustomNetworkConfig(self._networkConfig, hostname, port, true)).AsSingle();
 		NetworkConfigSetup(self._networkConfig);
 		Injected<CustomNetworkConfig>.Resolve<INetworkConfig>(container);

@@ -13,7 +13,7 @@ static partial class BeatUpClient {
 			setupData.Init(setupData.gameMode, in selectedKey, beatmapLevel, setupData.beatmapLevelData,
 				setupData.colorScheme, setupData.gameplayCoreSceneSetupData.gameplayModifiers,
 				setupData.gameplayCoreSceneSetupData.playerSpecificSettings, setupData.gameplayCoreSceneSetupData.practiceSettings,
-				Resolve<AudioClipAsyncLoader>(), setupData.gameplayCoreSceneSetupData._performancePreset, Resolve<BeatmapDataLoader>(),
+				Resolve<AudioClipAsyncLoader>(), Resolve<SettingsManager>(), Resolve<BeatmapDataLoader>(),
 				setupData.gameplayCoreSceneSetupData.useTestNoteCutSoundEffects);
 			menuTransitionsHelper._gameScenesManager.ReplaceScenes(menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData, null,
 					.35f, null, (Zenject.DiContainer container) => {

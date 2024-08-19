@@ -86,7 +86,6 @@ var refs = new (string path, string name, string[]? overrides)[] {
 		"DropdownSettingsController::_idx",
 		"EditColorSchemeController::_closeButton",
 		"EnterPlayerGuestNameViewController::_nameInputFieldView",
-		"GameplayCoreSceneSetupData::_performancePreset",
 		"GameplayCoreSceneSetupData::gameplayModifiers",
 		"GameServerPlayerTableCell::_localPlayerBackgroundImage",
 		"GameSongController::_beatmapCallbacksController",
@@ -160,9 +159,8 @@ var refs = new (string path, string name, string[]? overrides)[] {
 	("Plugins", "SongCore.dll", null),
 	(managed, "AdditionalContentModel.Interfaces.dll", null),
 	(managed, "BeatmapCore.dll", null),
-	(managed, "BeatSaber.GameSettings.dll", null),
+	(managed, "BeatSaber.Settings.dll", null),
 	(managed, "BeatSaber.Init.dll", null),
-	(managed, "BeatSaber.PerformancePresets.dll", null),
 	(managed, "BGLib.AppFlow.dll", new[] {
 		"SceneInfo::_sceneName",
 	}),
