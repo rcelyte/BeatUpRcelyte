@@ -28,10 +28,34 @@ static partial class BeatUpClient_MpCore {
 
 	static System.Exception? MultiplayerStatusModel_MoveNext() => null;
 
+	[Detour(typeof(MultiplayerCore.Objects.MpPlayersDataModel), nameof(MultiplayerCore.Objects.MpPlayersDataModel.Activate))]
+	static void MpPlayersDataModel_Activate(MultiplayerCore.Objects.MpPlayersDataModel self) {
+		Log.Debug($"MpPlayersDataModel.Activate()");
+		((LobbyPlayersDataModel)self).Activate();
+	}
+
+	[Detour(typeof(MultiplayerCore.Objects.MpPlayersDataModel), nameof(MultiplayerCore.Objects.MpPlayersDataModel.Deactivate))]
+	static void MpPlayersDataModel_Deactivate(MultiplayerCore.Objects.MpPlayersDataModel self) {
+		Log.Debug($"MpPlayersDataModel.Deactivate()");
+		((LobbyPlayersDataModel)self).Deactivate();
+	}
+
+	[Detour(typeof(MultiplayerCore.Patchers.NetworkConfigPatcher), "get_IsOverridingApi")]
+	static bool NetworkConfigPatcher_get_IsOverridingApi(MultiplayerCore.Patchers.NetworkConfigPatcher self) {
+		CustomNetworkConfig? customNetworkConfig = Resolve<CustomNetworkConfig>();
+		if(customNetworkConfig == null)
+			return false;
+		return customNetworkConfig.graphUrl != officialConfig.graphUrl;
+	}
+
+	[Detour(typeof(MultiplayerCore.UI.MpPerPlayerUI), nameof(MultiplayerCore.UI.MpPerPlayerUI.Initialize))]
+	static void MpPerPlayerUI_Initialize(MultiplayerCore.UI.MpPerPlayerUI self) {
+		Base(self);
+		self.segmentVert?.transform.SetParent(null); // disable MultiplayerCore's selector since it's missing characteristic buttons
+	}
+
 	[Init]
 	public static void Patch() {
-		MultiplayerCore.Patches.DataModelBinderPatch._playersDataModelMethod = HarmonyLib.AccessTools.DeclaredMethod(typeof(BeatUpClient_MpCore), nameof(BeatUpClient_MpCore.Patch)); // Suppress transpiler
-
 		new Patch(PatchType.Finalizer, typeof(MultiplayerStatusModel).Assembly.GetType("MultiplayerStatusModel+<GetMultiplayerStatusAsyncInternal>d__9", true), "MoveNext")
 			.Bind(HarmonyLib.AccessTools.DeclaredMethod(typeof(BeatUpClient_MpCore), nameof(MultiplayerStatusModel_MoveNext)))();
 	}

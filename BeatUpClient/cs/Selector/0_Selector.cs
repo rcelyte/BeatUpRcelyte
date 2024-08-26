@@ -13,12 +13,16 @@ static partial class BeatUpClient {
 		if(Resolve<CustomNetworkConfig>() == null)
 			return;
 		UnityEngine.Transform CreateServerFormView = UnityEngine.Resources.FindObjectsOfTypeAll<CreateServerFormController>()[0].transform;
-		BeatUpServerUI = new[] {
-			UI.CreateValuePicker(CreateServerFormView, "CountdownDuration", "BEATUP_COUNTDOWN_DURATION", new Property<float>(BeatUpClient_Config.Instance, nameof(BeatUpClient_Config.CountdownDuration)), new byte[] {(byte)(BeatUpClient_Config.Instance.CountdownDuration * 4), 0, 12, 20, 32, 40, 60}).gameObject,
-			UI.CreateToggle(CreateServerFormView, "SkipResults", "BEATUP_SKIP_RESULTS_PYRAMID", new Property<bool>(BeatUpClient_Config.Instance, nameof(BeatUpClient_Config.SkipResults))).gameObject,
-			UI.CreateToggle(CreateServerFormView, "PerPlayerDifficulty", "BEATUP_PER_PLAYER_DIFFICULTY", new Property<bool>(BeatUpClient_Config.Instance, nameof(BeatUpClient_Config.PerPlayerDifficulty))).gameObject,
-			UI.CreateToggle(CreateServerFormView, "PerPlayerModifiers", "BEATUP_PER_PLAYER_MODIFIERS", new Property<bool>(BeatUpClient_Config.Instance, nameof(BeatUpClient_Config.PerPlayerModifiers))).gameObject,
-		};
+		BeatUpServerUI = new UnityEngine.GameObject[haveMpCore ? 2 : 4];
+		BeatUpServerUI[0] = UI.CreateValuePicker(CreateServerFormView, "CountdownDuration", "BEATUP_COUNTDOWN_DURATION", new Property<float>(BeatUpClient_Config.Instance, nameof(BeatUpClient_Config.CountdownDuration)), new byte[] {(byte)(BeatUpClient_Config.Instance.CountdownDuration * 4), 0, 12, 20, 32, 40, 60}).gameObject;
+		BeatUpServerUI[1] = UI.CreateToggle(CreateServerFormView, "SkipResults", "BEATUP_SKIP_RESULTS_PYRAMID", new Property<bool>(BeatUpClient_Config.Instance, nameof(BeatUpClient_Config.SkipResults))).gameObject;
+		if(haveMpCore) { // MultiplayerCore provides its own in-lobby UI for per-player difficulty
+			BeatUpClient_Config.Instance.PerPlayerDifficulty = false;
+			BeatUpClient_Config.Instance.PerPlayerModifiers = false;
+		} else {
+			BeatUpServerUI[2] = UI.CreateToggle(CreateServerFormView, "PerPlayerDifficulty", "BEATUP_PER_PLAYER_DIFFICULTY", new Property<bool>(BeatUpClient_Config.Instance, nameof(BeatUpClient_Config.PerPlayerDifficulty))).gameObject;
+			BeatUpServerUI[3] = UI.CreateToggle(CreateServerFormView, "PerPlayerModifiers", "BEATUP_PER_PLAYER_MODIFIERS", new Property<bool>(BeatUpClient_Config.Instance, nameof(BeatUpClient_Config.PerPlayerModifiers))).gameObject;
+		}
 		{
 			UnityEngine.Transform parent = CreateServerFormView.parent;
 			foreach(UnityEngine.RectTransform child in parent) {
