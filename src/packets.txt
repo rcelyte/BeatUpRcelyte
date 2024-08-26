@@ -740,6 +740,10 @@ r MpBeatmapPacket
 	String contributors[24,.contributors_len*3]
 	u8 mapColors_len
 	MpMapColor mapColors[5,.mapColors_len]
+n MpPerPlayerPacket
+	b ppdEnabled
+	b ppmEnabled
+n GetMpPerPlayerPacket
 i32 MpPlatform
 	Unknown
 	Steam
@@ -770,6 +774,8 @@ n MpCore
 	u8 MpCoreType(MpCoreType_From(&.type))
 		MpcTextChatPacket mpcTextChat
 		MpBeatmapPacket mpBeatmap
+		MpPerPlayerPacket mpPerPlayer
+		GetMpPerPlayerPacket getMpPerPlayer
 		CustomAvatarPacket customAvatar
 		MpcCapabilitiesPacket mpcCapabilities
 		MpPlayerData mpPlayerData

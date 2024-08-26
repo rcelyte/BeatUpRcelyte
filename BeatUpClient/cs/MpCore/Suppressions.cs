@@ -8,6 +8,7 @@ static partial class BeatUpClient_MpCore {
 		typeof(MultiplayerCore.Patchers.CustomLevelsPatcher),
 		typeof(MultiplayerCore.Patchers.ModeSelectionPatcher),
 		typeof(MultiplayerCore.Patchers.NetworkConfigPatcher), // TODO: likely isn't needed since BeatUpClient uses CustomNetworkConfig instead of the patched NetworkConfigSO
+		typeof(MultiplayerCore.Patches.OverridePatches.PlayersDataModelOverride),
 	};
 
 	[Patch(PatchType.Prefix, typeof(SiraUtil.Affinity.Harmony.HarmonyAffinityPatcher), nameof(SiraUtil.Affinity.Harmony.HarmonyAffinityPatcher.Patch))]

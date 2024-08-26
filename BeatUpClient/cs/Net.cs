@@ -96,14 +96,14 @@ static partial class BeatUpClient {
 			}
 		}
 
-		internal static void ProcessMpPreview(PreviewBeatmapLevel preview, IConnectedPlayer player, string[]? requirements = null) {
+		static void ProcessMpPreview(PreviewBeatmapLevel preview, IConnectedPlayer player, string[]? requirements = null) {
 			Log.Debug($"ProcessMpPreview(player=\"{player}\")");
 			RecommendPreview current = playerData.previews[PlayerIndex(player)];
 			if(preview.levelID != current.levelID || current.previewDifficultyBeatmapSets == null) // Ignore if we already have a BeatUpClient preview for this level
 				playerData.previews[PlayerIndex(player)] = new RecommendPreview(preview, requirements);
 		}
 
-		static void HandleMpPacket(LiteNetLib.Utils.NetDataReader reader, int length, IConnectedPlayer player) {
+		internal static void HandleMpPacket(LiteNetLib.Utils.NetDataReader reader, int length, IConnectedPlayer player) {
 			int end = reader.Position + length;
 			try {
 				if(reader.GetString() == "MpBeatmapPacket")

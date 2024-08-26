@@ -734,6 +734,8 @@ typedef uint8_t MpCoreType;
 enum {
 	MpCoreType_MpcTextChatPacket,
 	MpCoreType_MpBeatmapPacket,
+	MpCoreType_MpPerPlayerPacket,
+	MpCoreType_GetMpPerPlayerPacket,
 	MpCoreType_CustomAvatarPacket,
 	MpCoreType_MpcCapabilitiesPacket,
 	MpCoreType_MpPlayerData,
@@ -743,6 +745,8 @@ enum {
 	switch(value) {
 		case MpCoreType_MpcTextChatPacket: return "MpcTextChatPacket";
 		case MpCoreType_MpBeatmapPacket: return "MpBeatmapPacket";
+		case MpCoreType_MpPerPlayerPacket: return "MpPerPlayerPacket";
+		case MpCoreType_GetMpPerPlayerPacket: return "GetMpPerPlayerPacket";
 		case MpCoreType_CustomAvatarPacket: return "CustomAvatarPacket";
 		case MpCoreType_MpcCapabilitiesPacket: return "MpcCapabilitiesPacket";
 		case MpCoreType_MpPlayerData: return "MpPlayerData";
@@ -1888,6 +1892,13 @@ struct MpBeatmapPacket {
 	uint8_t mapColors_len;
 	struct MpMapColor mapColors[5];
 };
+struct MpPerPlayerPacket {
+	bool ppdEnabled;
+	bool ppmEnabled;
+};
+struct GetMpPerPlayerPacket {
+	uint8_t _empty;
+};
 struct MpPlayerData {
 	struct String platformId;
 	MpPlatform platform;
@@ -1914,6 +1925,8 @@ struct MpCore {
 	union {
 		struct MpcTextChatPacket mpcTextChat;
 		struct MpBeatmapPacket mpBeatmap;
+		struct MpPerPlayerPacket mpPerPlayer;
+		struct GetMpPerPlayerPacket getMpPerPlayer;
 		struct CustomAvatarPacket customAvatar;
 		struct MpcCapabilitiesPacket mpcCapabilities;
 		struct MpPlayerData mpPlayerData;

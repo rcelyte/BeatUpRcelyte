@@ -137,7 +137,10 @@ var refs = new (string path, string name, string[]? overrides)[] {
 		"MultiplayerCore.Patchers.ModeSelectionPatcher",
 		"MultiplayerCore.Patches.DataModelBinderPatch",
 		"MultiplayerCore.Patches.DataModelBinderPatch::_playersDataModelMethod",
+		"MultiplayerCore.Patches.OverridePatches.PlayersDataModelOverride",
 		"MultiplayerCore.Plugin",
+		"MultiplayerCore.UI.MpPerPlayerUI",
+		"MultiplayerCore.UI.MpPerPlayerUI::segmentVert",
 	}),
 	(managed, "BGLib.Polyglot.dll", new[] {
 		"BGLib.Polyglot.LocalizationImporter::Import",

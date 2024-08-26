@@ -54,6 +54,11 @@ static inline bool CounterP_set(struct CounterP *set, uint32_t bit) {
 	set->bits[bit / 64] |= UINT64_C(1) << (bit % 64);
 	return prev;
 }
+static inline struct CounterP CounterP_single(uint32_t bit) {
+	struct CounterP out = COUNTERP_CLEAR;
+	CounterP_set(&out, bit);
+	return out;
+}
 static inline bool CounterP_overwrite(struct CounterP *set, uint32_t bit, bool state) {
 	return (state ? CounterP_set : CounterP_clear)(set, bit);
 }

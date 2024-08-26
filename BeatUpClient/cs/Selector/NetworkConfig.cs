@@ -1,5 +1,5 @@
 static partial class BeatUpClient {
-	struct VanillaConfig : INetworkConfig {
+	internal struct VanillaConfig : INetworkConfig {
 		public int maxPartySize {get; set;}
 		public int discoveryPort {get;}
 		public int partyPort {get;}
@@ -17,7 +17,7 @@ static partial class BeatUpClient {
 				(/*from._maxPartySize*/5, from._discoveryPort, from._partyPort, from._multiplayerPort, new DnsEndPoint(from._masterServerHostName, from._masterServerPort), from._multiplayerStatusUrl, from._quickPlaySetupUrl, from.graphUrl, from.graphAccessToken, from._forceGameLift, from._serviceEnvironment, from.appId);
 	}
 
-	static VanillaConfig officialConfig;
+	internal static VanillaConfig officialConfig;
 	static void NetworkConfigSetup(NetworkConfigSO networkConfig) {
 		if(officialConfig.masterServerEndPoint == null)
 			officialConfig = new VanillaConfig(networkConfig);

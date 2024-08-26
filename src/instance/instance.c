@@ -1384,11 +1384,12 @@ static void handle_ChatCommand(struct InstanceContext *const ctx, struct Room *c
 	}
 }
 
-static void handle_MpCore(struct InstanceContext *const ctx, struct Room *const *const room, struct InstanceSession *const session, const struct MpCore *const mpCore) {
+static void handle_MpCore(struct InstanceContext *const ctx, struct Room *const *const roomPtr, struct InstanceSession *const session, const struct MpCore *const mpCore) {
+	struct Room *const room = *roomPtr;
 	switch(MpCoreType_From(&mpCore->type)) {
 		case MpCoreType_MpcTextChatPacket: {
 			if(session->chatProtocol && mpCore->mpcTextChat.text.length && mpCore->mpcTextChat.text.data[0] == '/')
-				handle_ChatCommand(ctx, room, session, &mpCore->mpcTextChat.text.data[1], &mpCore->mpcTextChat.text.data[mpCore->mpcTextChat.text.length]);
+				handle_ChatCommand(ctx, roomPtr, session, &mpCore->mpcTextChat.text.data[1], &mpCore->mpcTextChat.text.data[mpCore->mpcTextChat.text.length]);
 			break;
 		}
 		case MpCoreType_MpBeatmapPacket: {
@@ -1403,12 +1404,38 @@ static void handle_MpCore(struct InstanceContext *const ctx, struct Room *const 
 			}
 			session->customBeatmapName = LongString_truncate(&mpCore->mpBeatmap.songName);
 		} break;
+		case MpCoreType_MpPerPlayerPacket: {
+			bool broadcast;
+			if(indexof(room->players, session) == room->serverOwner && (room->state & ServerState_Lobby & ~ServerState_Lobby_Downloading) != 0 &&
+					(mpCore->mpPerPlayer.ppdEnabled != room->configuration.perPlayerDifficulty || mpCore->mpPerPlayer.ppmEnabled != room->configuration.perPlayerModifiers)) {
+				room->configuration.perPlayerDifficulty = mpCore->mpPerPlayer.ppdEnabled;
+				room->configuration.perPlayerModifiers = mpCore->mpPerPlayer.ppmEnabled;
+				room_set_state(ctx, room, ServerState_Lobby_Entitlement);
+				room_notify(ctx, roomPtr);
+				broadcast = true;
+			} else {
+				case MpCoreType_GetMpPerPlayerPacket:
+				broadcast = false;
+			}
+			FOR_SOME_PLAYERS(id, broadcast ? room->connected : CounterP_single((uint32_t)indexof(room->players, session)),) {
+				uint8_t resp[65536], *resp_end = resp;
+				pkt_write_c(&resp_end, endof(resp), room->players[id].net.version, RoutingHeader, {0, broadcast ? 127 : 0, false, 0});
+				SERIALIZE_MPCORE(&resp_end, endof(resp), room->players[id].net.version, {
+					.type = String_from("MpPerPlayerPacket"),
+					.mpPerPlayer = {
+						.ppdEnabled = room->configuration.perPlayerDifficulty,
+						.ppmEnabled = room->configuration.perPlayerModifiers,
+					},
+				});
+				instance_send(ctx, &room->players[id], resp, (uint32_t)(resp_end - resp), true);
+			}
+		} break;
 		case MpCoreType_MpcCapabilitiesPacket: {
 			if(session->chatProtocol != 0 || !mpCore->mpcCapabilities.canText)
 				break;
 			session->chatProtocol = mpCore->mpcCapabilities.protocolVersion;
-			chat(ctx, *room, session, "Welcome to BeatUpServer | BETA!\n* Per-player difficulty is %s\n* Per-player modifiers are %s%s",
-				(*room)->configuration.perPlayerDifficulty ? "enabled" : "disabled", (*room)->configuration.perPlayerModifiers ? "enabled" : "disabled",
+			chat(ctx, room, session, "Welcome to BeatUpServer | BETA!\n* Per-player difficulty is %s\n* Per-player modifiers are %s%s",
+				room->configuration.perPlayerDifficulty ? "enabled" : "disabled", room->configuration.perPlayerModifiers ? "enabled" : "disabled",
 				NetSession_isEncrypted(&session->net) ? "" : "\nYour connection is unencrypted");
 			break;
 		}
