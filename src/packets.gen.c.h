@@ -1738,6 +1738,18 @@ static void _pkt_MpBeatmapPacket_write(const struct MpBeatmapPacket *restrict da
 	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->mapColors_len), 5, "MpBeatmapPacket.mapColors"); i < count; ++i)
 		_pkt_MpMapColor_write(&data->mapColors[i], pkt, end, ctx);
 }
+static void _pkt_MpPerPlayerPacket_read(struct MpPerPlayerPacket *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_b_read(&data->ppdEnabled, pkt, end, ctx);
+	_pkt_b_read(&data->ppmEnabled, pkt, end, ctx);
+}
+static void _pkt_MpPerPlayerPacket_write(const struct MpPerPlayerPacket *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_b_write(&data->ppdEnabled, pkt, end, ctx);
+	_pkt_b_write(&data->ppmEnabled, pkt, end, ctx);
+}
+static void _pkt_GetMpPerPlayerPacket_read(struct GetMpPerPlayerPacket *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+}
+static void _pkt_GetMpPerPlayerPacket_write(const struct GetMpPerPlayerPacket *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+}
 static void _pkt_MpPlayerData_read(struct MpPlayerData *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_String_read(&data->platformId, pkt, end, ctx);
 	_pkt_i32_read(&data->platform, pkt, end, ctx);
@@ -1797,6 +1809,8 @@ static void _pkt_MpCore_read(struct MpCore *restrict data, const uint8_t **pkt, 
 	switch(MpCoreType_From(&data->type)) {
 		case MpCoreType_MpcTextChatPacket: _pkt_MpcTextChatPacket_read(&data->mpcTextChat, pkt, end, ctx); break;
 		case MpCoreType_MpBeatmapPacket: _pkt_MpBeatmapPacket_read(&data->mpBeatmap, pkt, end, ctx); break;
+		case MpCoreType_MpPerPlayerPacket: _pkt_MpPerPlayerPacket_read(&data->mpPerPlayer, pkt, end, ctx); break;
+		case MpCoreType_GetMpPerPlayerPacket: _pkt_GetMpPerPlayerPacket_read(&data->getMpPerPlayer, pkt, end, ctx); break;
 		case MpCoreType_CustomAvatarPacket: _pkt_CustomAvatarPacket_read(&data->customAvatar, pkt, end, ctx); break;
 		case MpCoreType_MpcCapabilitiesPacket: _pkt_MpcCapabilitiesPacket_read(&data->mpcCapabilities, pkt, end, ctx); break;
 		case MpCoreType_MpPlayerData: _pkt_MpPlayerData_read(&data->mpPlayerData, pkt, end, ctx); break;
@@ -1809,6 +1823,8 @@ static void _pkt_MpCore_write(const struct MpCore *restrict data, uint8_t **pkt,
 	switch(MpCoreType_From(&data->type)) {
 		case MpCoreType_MpcTextChatPacket: _pkt_MpcTextChatPacket_write(&data->mpcTextChat, pkt, end, ctx); break;
 		case MpCoreType_MpBeatmapPacket: _pkt_MpBeatmapPacket_write(&data->mpBeatmap, pkt, end, ctx); break;
+		case MpCoreType_MpPerPlayerPacket: _pkt_MpPerPlayerPacket_write(&data->mpPerPlayer, pkt, end, ctx); break;
+		case MpCoreType_GetMpPerPlayerPacket: _pkt_GetMpPerPlayerPacket_write(&data->getMpPerPlayer, pkt, end, ctx); break;
 		case MpCoreType_CustomAvatarPacket: _pkt_CustomAvatarPacket_write(&data->customAvatar, pkt, end, ctx); break;
 		case MpCoreType_MpcCapabilitiesPacket: _pkt_MpcCapabilitiesPacket_write(&data->mpcCapabilities, pkt, end, ctx); break;
 		case MpCoreType_MpPlayerData: _pkt_MpPlayerData_write(&data->mpPlayerData, pkt, end, ctx); break;
