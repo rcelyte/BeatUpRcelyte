@@ -18,7 +18,8 @@ static partial class BeatUpClient {
 		readonly UnityEngine.GameObject addButton, saveButton, removeButton;
 		public ServerDropdown() {
 			_dropdown = GetComponent<HMUI.SimpleTextDropdown>();
-			_dropdown._modalView._dismissPanelAnimation._duration = 0; // Animations will break the UI if the player clicks too fast
+			if(_dropdown._modalView is HMUI.ModalView view)
+				view._dismissPanelAnimation._duration = 0; // Animations will break the UI if the player clicks too fast
 			flowCoordinator = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerModeSelectionFlowCoordinator>()[0];
 			ephemeralEntry = new Entry(Resolve<SettingsManager>()!.settings.customServer.hostName, "");
 

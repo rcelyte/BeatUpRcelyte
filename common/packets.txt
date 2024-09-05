@@ -36,6 +36,7 @@ u8 GameVersion
 	1_37_1
 	1_37_2
 	1_37_3
+	1_37_4
 n PacketContext
 	u8 netVersion
 	u8 protocolVersion

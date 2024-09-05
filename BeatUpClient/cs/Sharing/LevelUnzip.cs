@@ -53,7 +53,8 @@ static partial class BeatUpClient {
 			System.Threading.Tasks.Task.FromResult(GetBeatmapString(key));
 		System.Threading.Tasks.Task<string?> IBeatmapLevelData.GetLightshowStringAsync(in BeatmapKey key) =>
 			System.Threading.Tasks.Task.FromResult(GetLightshowString(key));
-		public string? GetBeatmapChecksum(in BeatmapKey beatmapKey) => string.Empty; // 1.35.0 compat
+		bool IBeatmapLevelData.ContainsBeatmapData(in BeatmapKey key) =>
+			difficulties.ContainsKey(new DifficultyKey {characteristic = key.beatmapCharacteristic, difficulty = key.difficulty});
 		UnityEngine.AudioClip IAssetSongAudioClipProvider.songAudioClip => songAudio;
 	}
 	static async System.Threading.Tasks.Task<UnityEngine.AudioClip> DecodeAudio(System.IO.Compression.ZipArchiveEntry song, UnityEngine.AudioType type) {

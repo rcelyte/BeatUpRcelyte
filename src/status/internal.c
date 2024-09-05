@@ -159,7 +159,7 @@ static void status_web_index(struct HttpContext *const http) {
 			[6] = "1.19.0",
 			[7] = "1.19.1",
 			[8] = "1.20.0 ⬌ 1.31.1",
-			[9] = "1.32.0 ⬌ 1.37.3",
+			[9] = "1.32.0 ⬌ 1.37.4",
 		};
 		char cover[(sizeof(entry.levelCover.data) * 4 + 3) / 3 + 53] = "\0style=background-image:url(data:image/jpeg;base64,";
 		if(entry.levelCover.length > 4 && memcmp(entry.levelCover.data, (const uint8_t[4]){0xff,0xd8,0xff,0xe0}, 4) == 0) {
@@ -229,7 +229,7 @@ static void status_status(struct HttpContext *http, bool isGame) {
 	char msg[65536], *msg_end = msg;
 	PUT("%s%s%s%u%c", "{"
 		"\"minimum_app_version\":\"1.19.0", isGame ? "b2147483647" : STATUS_APPVER_POSTFIX, "\","
-		"\"maximumAppVersion\":\"1.37.3_🅱️\","
+		"\"maximumAppVersion\":\"1.37.4_🅱️\","
 		"\"status\":", TEST_maintenanceStartTime != 0, ',');
 	if(TEST_maintenanceStartTime) {
 		PUT("%s%"PRIu64"%s%"PRIu64"%s%"PRIu64"%s%s%s",
@@ -325,6 +325,7 @@ static void status_graph(struct HttpContext *http, struct HttpRequest req, struc
 				case '37.1': connectInfo.gameVersion = GameVersion_1_37_1; break;
 				case '37.2': connectInfo.gameVersion = GameVersion_1_37_2; break;
 				case '37.3': connectInfo.gameVersion = GameVersion_1_37_3; break;
+				case '37.4': connectInfo.gameVersion = GameVersion_1_37_4; break;
 				default: {
 					connectInfo.gameVersion = GameVersion_Unknown;
 					uprintf("Unexpected game version: %.*s\n", version.length, version.data);
