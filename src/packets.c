@@ -23,7 +23,8 @@ bool pkt_debug(const char *errorMessage, const uint8_t *head, const uint8_t *end
 	if(head == end)
 		return false;
 	const uint8_t *start = end - expect;
-	uprintf("%s [netVersion=%hhu, protocolVersion=%hhu, beatUpVersion=%hhu, windowSize=%u] (expected %zu, read %zu)\n    ", errorMessage, ctx.netVersion, ctx.protocolVersion, ctx.beatUpVersion, ctx.windowSize, expect, head - start);
+	uprintf("%s [netVersion=%hhu protocolVersion=%hhu beatUpVersion=%hhu gameVersion=%s windowSize=%u] (expected %zu, read %zu)\n    ", errorMessage,
+		ctx.netVersion, ctx.protocolVersion, ctx.beatUpVersion, reflect(GameVersion, ctx.gameVersion), ctx.windowSize, expect, head - start);
 	for(const uint8_t *it = start; it < end; ++it)
 		uprintf("%02hhx", *it);
 	if((uintptr_t)(head - start) < expect) {

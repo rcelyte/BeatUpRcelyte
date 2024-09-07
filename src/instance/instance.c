@@ -1787,8 +1787,9 @@ static void TryInitiateSession(struct InstanceContext *ctx, struct Room **room, 
 	if(pkt_serialize(&r_sync, &resp_end, endof(resp), session->net.version))
 		instance_send(ctx, session, resp, (uint32_t)(resp_end - resp), true);
 
-	uprintf("connect [slot=(%zu,%zu)@%zu userName=\"%.*s\" userId=(%.*s) protocolVersion=%hhu beatUpVersion=%hhu]\n", indexof(contexts, ctx), indexof(*ctx->rooms, room), indexof((*room)->players, session),
-		session->userName.length, session->userName.data, session->userId.length, session->userId.data, session->net.version.protocolVersion, session->net.version.beatUpVersion);
+	uprintf("connect [slot=(%zu,%zu)@%zu userName=\"%.*s\" userId=(%.*s) protocolVersion=%hhu beatUpVersion=%hhu gameVersion=%s]\n", indexof(contexts, ctx),
+		indexof(*ctx->rooms, room), indexof((*room)->players, session), session->userName.length, session->userName.data, session->userId.length,
+		session->userId.data, session->net.version.protocolVersion, session->net.version.beatUpVersion, reflect(GameVersion, session->net.version.gameVersion));
 
 	resp_end = resp;
 	pkt_write_c(&resp_end, endof(resp), session->net.version, RoutingHeader, {0, 0, false, 0});
