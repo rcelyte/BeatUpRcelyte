@@ -59,7 +59,7 @@ $(OBJDIR)/libs.mk: makefile
 	#endif
 	#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(_WIN64) || defined(WINAPI_FAMILY) || defined(_MSC_VER) || defined(__MINGW32__) || defined(__MINGW64__) || defined(__CYGWIN32__)
 	CFLAGS += -DWINDOWS
-	LDFLAGS += -lws2_32 -lbcrypt
+	LDFLAGS += -Wl,--stack,8388608 -lws2_32 -lbcrypt
 	#endif
 	EOF
 
