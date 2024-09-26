@@ -28,7 +28,8 @@ NetSocket status_bind_tcp(uint16_t port, uint32_t backlog) {
 		#endif
 		return NetSocket_Invalid;
 	}
-	setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, (char*)(int32_t[]){1}, sizeof(int32_t));
+	setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, (char*)(const int[]){1}, sizeof(int));
+	setsockopt(listenfd, IPPROTO_IPV6, IPV6_V6ONLY, (char*)(const int[]){0}, sizeof(int));
 	struct sockaddr_in6 addr = {
 		.sin6_family = AF_INET6,
 		.sin6_port = htons(port),

@@ -245,6 +245,7 @@ static NetSocket net_bind_udp(uint16_t port) {
 			.sin_addr.s_addr = htonl(INADDR_ANY),
 		};
 	} else {
+		setsockopt(sockfd, IPPROTO_IPV6, IPV6_V6ONLY, (char*)(const int[]){0}, sizeof(int));
 		addr.len = sizeof(struct sockaddr_in6);
 		addr.in6 = (struct sockaddr_in6){
 			.sin6_family = AF_INET6,
