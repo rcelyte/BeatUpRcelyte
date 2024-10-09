@@ -7,7 +7,7 @@ if(args.Length < 1) {
 }
 
 string managed = Path.Combine("Beat Saber_Data", "Managed");
-var refs = new (string path, string name, string[]? overrides)[] {
+var refs = new (string? path, string name, string[]? overrides)[] {
 	(managed, "BGNetCore.dll", new[] {
 		"ClientCertificateValidator::ValidateCertificateChainInternal",
 		"ConnectedPlayerManager/ConnectedPlayer",
@@ -125,7 +125,7 @@ var refs = new (string path, string name, string[]? overrides)[] {
 		"System.Security.Cryptography.HashAlgorithm::HashCore",
 		"System.Security.Cryptography.HashAlgorithm::HashFinal",
 	}),
-	("Plugins", "MultiplayerCore.dll", new[] {
+	(null, "MultiplayerCore.dll", new[] {
 		"MultiplayerCore.Beatmaps.Abstractions.MpBeatmapLevel::set_previewDifficultyBeatmapSets",
 		"MultiplayerCore.Networking.MpPacketSerializer::registeredTypes",
 		"MultiplayerCore.Objects.MpEntitlementChecker",
@@ -144,7 +144,7 @@ var refs = new (string path, string name, string[]? overrides)[] {
 		"BGLib.Polyglot.LocalizationImporter::Initialize",
 		"BGLib.Polyglot.LocalizedTextComponent`1::localizedComponent",
 	}),
-	("Plugins", "SiraUtil.dll", new[] {
+	(null, "SiraUtil.dll", new[] {
 		"SiraUtil.Affinity.Harmony.HarmonyAffinityPatcher",
 	}),
 	(managed, "Zenject.dll", new[] {
@@ -157,7 +157,7 @@ var refs = new (string path, string name, string[]? overrides)[] {
 	("Libs", "MonoMod.RuntimeDetour.dll", null),
 	("Libs", "MonoMod.Utils.dll", null),
 	("Libs", "Newtonsoft.Json.dll", null),
-	("Plugins", "SongCore.dll", null),
+	(null, "SongCore.dll", null),
 	(managed, "AdditionalContentModel.Interfaces.dll", null),
 	(managed, "BeatmapCore.dll", null),
 	(managed, "BeatSaber.Settings.dll", null),
@@ -193,9 +193,6 @@ var refs = new (string path, string name, string[]? overrides)[] {
 		"NetworkConfigSO::_partyPort",
 		"NetworkConfigSO::_quickPlaySetupUrl",
 		"NetworkConfigSO::_serviceEnvironment",
-		"NetworkPlayerEntitlementChecker::_additionalContentModel",
-		"NetworkPlayerEntitlementChecker::GetEntitlementStatus",
-		"NetworkPlayerEntitlementChecker::HandleGetIsEntitledToLevel",
 		"PlatformAuthenticationTokenProvider::_platform",
 		"PlatformAuthenticationTokenProvider::_userId",
 		"PlatformAuthenticationTokenProvider::_userName",
@@ -220,6 +217,11 @@ var refs = new (string path, string name, string[]? overrides)[] {
 	(managed, "UnityEngine.JSONSerializeModule.dll", null),
 	(managed, "UnityEngine.UI.dll", null),
 	(managed, "UnityEngine.UIModule.dll", null),
+	(managed, "Networking.NetworkPlayerEntitlementsChecker.dll", new[] {
+		"NetworkPlayerEntitlementChecker::_additionalContentModel",
+		"NetworkPlayerEntitlementChecker::GetEntitlementStatus",
+		"NetworkPlayerEntitlementChecker::HandleGetIsEntitledToLevel",
+	}),
 	(managed, "UnityEngine.UnityWebRequestAudioModule.dll", null),
 	(managed, "UnityEngine.UnityWebRequestModule.dll", null),
 	(managed, "VRUI.dll", null),
@@ -246,8 +248,8 @@ var refs = new (string path, string name, string[]? overrides)[] {
 
 string outDir = Path.Combine(".obj", "Refs"), beatSaberDir = string.Join(" ", args);
 foreach(var lib in refs) {
-	FileInfo target = new(Path.Combine(Path.Combine(outDir, Path.GetFileName(lib.path)), lib.name));
-	FileInfo source = new(Path.Combine(Path.Combine(beatSaberDir, lib.path), lib.name));
+	FileInfo target = new(Path.Combine(Path.Combine(outDir, Path.GetFileName(lib.path ?? "Plugins")), lib.name));
+	FileInfo source = new(Path.Combine((lib.path != null) ? Path.Combine(beatSaberDir, lib.path) : "thirdparty", lib.name));
 	if(!source.Exists) {
 		System.Console.WriteLine("File not found: " + source.FullName);
 		System.Environment.Exit(1);

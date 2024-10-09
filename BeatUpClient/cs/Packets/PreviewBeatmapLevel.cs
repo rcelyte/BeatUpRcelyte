@@ -138,7 +138,7 @@ static partial class BeatUpClient {
 						.ToArray()))
 				.ToArray();
 			if(!mpCore) {
-				System.Threading.Tasks.Task<UnityEngine.Sprite> spriteTask = from.previewMediaData.GetCoverSpriteAsync(System.Threading.CancellationToken.None);
+				System.Threading.Tasks.Task<UnityEngine.Sprite> spriteTask = from.previewMediaData.GetCoverSpriteAsync();
 				if(spriteTask.IsCompleted) { // `Wait()`ing on an async method will deadlock
 					SetCover(spriteTask.Result);
 					Log.Debug($"    Cover size: {cover.length} bytes");

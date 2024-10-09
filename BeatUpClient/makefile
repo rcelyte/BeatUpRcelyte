@@ -1,5 +1,5 @@
 #!/bin/make
-VERSION := 0.14.2
+VERSION := 0.15.0
 
 .SILENT:
 
@@ -80,18 +80,44 @@ thirdparty/System.IO.Compression.dll:
 	curl https://beatmods.com/uploads/65779c825e029208799de4dd/universal/System.IO.Compression-4.6.57.zip -o .obj/System.IO.Compression.zip
 	unzip -ojd .obj/ .obj/System.IO.Compression.zip Libs/System.IO.Compression.dll
 	rm .obj/System.IO.Compression.zip
-	echo "c457ab509c57506c08c52d23ff0581ba677f2af930efc882c8ce8b03e1eb46ec .obj/System.IO.Compression.dll" | \
-		sha256sum -c || (rm .obj/System.IO.Compression.dll; false)
+	echo "c457ab509c57506c08c52d23ff0581ba677f2af930efc882c8ce8b03e1eb46ec .obj/System.IO.Compression.dll" | sha256sum -c || (rm .obj/System.IO.Compression.dll; false)
 	mv .obj/System.IO.Compression.dll $@
 
-BeatUpClient.dll: $(CSFILES) .obj/MakeThingsPublic.exe thirdparty/ILRepack.exe thirdparty/System.IO.Compression.dll makefile
+thirdparty/MultiplayerCore.dll:
+	@echo "[curl $(notdir $@)]"
+	@mkdir -p "$(@D)"
+	curl https://beatmods.com/uploads/66f45eba80755b61c5ab81d8/universal/MultiplayerCore-1.5.2.zip -o .obj/MultiplayerCore.zip
+	unzip -ojd .obj/ .obj/MultiplayerCore.zip Plugins/MultiplayerCore.dll
+	rm .obj/MultiplayerCore.zip
+	echo "d569e5ec362e6700f3ea1bd2fc5aae3cb878f5645bd49c026772f750377cccef .obj/MultiplayerCore.dll" | sha256sum -c || (rm .obj/MultiplayerCore.dll; false)
+	mv .obj/MultiplayerCore.dll $@
+
+thirdparty/SiraUtil.dll:
+	@echo "[curl $(notdir $@)]"
+	@mkdir -p "$(@D)"
+	curl https://beatmods.com/uploads/6705bfed9011dc298a9e84d6/universal/SiraUtil-3.1.12.zip -o .obj/SiraUtil.zip
+	unzip -ojd .obj/ .obj/SiraUtil.zip Plugins/SiraUtil.dll
+	rm .obj/SiraUtil.zip
+	echo "a159854628d95ec767bffaded4accd8ba537ab753ddfd8a31c8caacc3387dcd0 .obj/SiraUtil.dll" | sha256sum -c || (rm .obj/SiraUtil.dll; false)
+	mv .obj/SiraUtil.dll $@
+
+thirdparty/SongCore.dll:
+	@echo "[curl $(notdir $@)]"
+	@mkdir -p "$(@D)"
+	curl https://beatmods.com/uploads/6705f6b29011dc298a9e85e0/universal/SongCore-3.14.15.zip -o .obj/SongCore.zip
+	unzip -ojd .obj/ .obj/SongCore.zip Plugins/SongCore.dll
+	rm .obj/SongCore.zip
+	echo "cf6fdc49573e0079cbcdc04ef87044ec315cb2524852d84cd855ad2d4d8d514e .obj/SongCore.dll" | sha256sum -c || (rm .obj/SongCore.dll; false)
+	mv .obj/SongCore.dll $@
+
+BeatUpClient.dll: $(CSFILES) .obj/MakeThingsPublic.exe thirdparty/ILRepack.exe thirdparty/System.IO.Compression.dll thirdparty/MultiplayerCore.dll thirdparty/SiraUtil.dll thirdparty/SongCore.dll makefile
 	@echo "[csc $@]"
 	@mkdir -p .obj/
 	printf "{\n\
 		\"\$$schema\": \"https://raw.githubusercontent.com/bsmg/BSIPA-MetadataFileSchema/master/Schema.json\",\n\
 		\"author\": \"rcelyte\",\n\
 		\"description\": \"Tweaks and enhancements for enabling modded multiplayer\",\n\
-		\"gameVersion\": \"1.37.4_10582574123\",\n\
+		\"gameVersion\": \"1.38.0_11020369061\",\n\
 		\"dependsOn\": {\"BSIPA\": \"^4.3.0\"},\n\
 		\"conflictsWith\": {\"BeatTogether\": \"*\"},\n\
 		\"loadBefore\": [\"MultiplayerCore\"],\n\
@@ -101,7 +127,7 @@ BeatUpClient.dll: $(CSFILES) .obj/MakeThingsPublic.exe thirdparty/ILRepack.exe t
 		\"links\": {\"project-source\": \"https://github.com/rcelyte/BeatUpRcelyte/BeatUpClient\"}\n\
 	}" > .obj/manifest.json
 	MONO_PATH=$(BSINSTALL)/Libs mono .obj/MakeThingsPublic.exe $(BSINSTALL)
-	csc -nologo -t:library -nostdlib -o+ -debug- -nullable+ -unsafe+ -w:4 -nowarn:CS1702 -warnaserror+ -langversion:9 -define:MPCORE_SUPPORT $(CSFILES) \
+	csc -nologo -t:library -nostdlib -o+ -debug- -nullable+ -unsafe+ -w:4 -nowarn:CS1702 -warnaserror+ -langversion:9 $(CSFILES) \
 		-res:.obj/manifest.json,.manifest.json -res:assets/cover.png,BeatUpClient.cover -res:assets/create.png,BeatUpClient.create -out:.obj/$@ \
 		`find .obj/Refs/ -name "*.dll" | sed -e 's/^/-r:/'` -r:thirdparty/System.IO.Compression.dll
 	mono thirdparty/ILRepack.exe /lib:.obj/Refs/Libs /lib:.obj/Refs/Managed /lib:.obj/Refs/Plugins /out:$@ .obj/$@ thirdparty/System.IO.Compression.dll

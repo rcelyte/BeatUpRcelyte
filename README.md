@@ -2,7 +2,7 @@
 ============
 *"beat saber gettin violent these days" -some Discord user*
 
-A lightweight server to enable modded multiplayer in Beat Saber 1.19.0 and newer. Cross-version lobbies supported for 1.20.0<->1.31.1 or experimentally 1.32.0<->1.37.5 (ranges broader than 1.32.0-1.34.0, 1.34.2-1.37.0, and 1.37.1+ are not fully tested and may have issues).
+A lightweight server to enable modded multiplayer in Beat Saber 1.19.0 and newer. Cross-version lobbies supported for 1.20.0<->1.31.1 or experimentally 1.32.0<->1.38.0 (ranges broader than 1.32.0-1.34.0, 1.34.2-1.37.0, and 1.37.1+ are not fully tested and may have issues).
 
 Ways to Join
 ------------
