@@ -2,7 +2,7 @@ using static System.Linq.Enumerable;
 
 static partial class BeatUpClient {
 	static bool SupportedMpCoreVersion(string? v) =>
-		v == null || v == "1.5.3";
+		v == null || v == "1.5.3" || v == "1.5.4";
 
 	[System.AttributeUsage(System.AttributeTargets.Method)]
 	internal class InitAttribute : System.Attribute {}
