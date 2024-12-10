@@ -160,6 +160,7 @@ var refs = new (string? path, string name, string[]? overrides)[] {
 	(null, "SongCore.dll", null),
 	(managed, "AdditionalContentModel.Interfaces.dll", null),
 	(managed, "BeatmapCore.dll", null),
+	(managed, "BeatSaber.GameSettings.dll", null),
 	(managed, "BeatSaber.Settings.dll", null),
 	(managed, "BeatSaber.Init.dll", null),
 	(managed, "BGLib.AppFlow.dll", new[] {
