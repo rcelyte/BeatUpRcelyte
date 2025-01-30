@@ -77,26 +77,31 @@ static partial class BeatUpClient {
 		LobbyUISetup();
 	}
 
-	internal static void Enable(Hive.Versioning.Version version, System.Func<string, Hive.Versioning.Version?> getModVersion) {
+	internal static void Enable(string version, System.Func<string, string?> getModVersion) {
 		modVersion = version;
 		uint protocolVersion = (uint)HarmonyLib.AccessTools.Field(typeof(NetworkConstants), nameof(NetworkConstants.kProtocolVersion)).GetValue(null);
 		if(protocolVersion != 9u) {
 			BeatUpClient_Error.Init("Incompatible BeatUpClient Version", $"This version of BeatUpClient requires a{((protocolVersion < 9u) ? " newer" : "n older")} version of Beat Saber.");
 			return;
 		}
-		Hive.Versioning.Version? mpCoreVersion = getModVersion("MultiplayerCore");
+		string? mpCoreVersion = getModVersion("MultiplayerCore");
 		#if MPCORE_SUPPORT
-		if(!SupportedMpCoreVersion(mpCoreVersion?.ToString())) {
+		if(!SupportedMpCoreVersion(mpCoreVersion)) {
 			BeatUpClient_Error.Init("Incompatible BeatUpClient Version", "This version of BeatUpClient only supports MultiplayerCore 1.5.3");
 			return;
 		}
 		#else
-		if(mpCoreVersion?.ToString() != null) {
+		if(mpCoreVersion != null) {
 			BeatUpClient_Error.Init("Incompatible BeatUpClient Version", "This version of BeatUpClient is incompatible with MultiplayerCore");
 			return;
 		}
 		#endif
-		string? err = BeatUpClient_Beta.CheckVersion(version);
+		string? err = null;
+		try {
+			err = BeatUpClient_Beta.CheckVersion(version);
+		} catch(System.Exception ex) {
+			Log.Exception(ex);
+		}
 		if(err != null) {
 			if(err.Length != 0)
 				BeatUpClient_Error.Init("Unsupported BeatUpClient Version", err);
@@ -153,7 +158,7 @@ static partial class BeatUpClient {
 	}
 
 	private static void NativeEnable(string version) =>
-		Enable(new Hive.Versioning.Version(version), name => null);
+		Enable(version, name => null);
 	private static void NativeEnable_BSIPA(string version) =>
-		Enable(new Hive.Versioning.Version(version), BeatUpClient_BSIPA.GetVersion);
+		Enable(version, BeatUpClient_BSIPA.GetVersion);
 }

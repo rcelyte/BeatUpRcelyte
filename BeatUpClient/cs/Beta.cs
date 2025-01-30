@@ -32,13 +32,14 @@ static unsafe class BeatUpClient_Beta {
 		}
 		return result;
 	}
-	public static string? CheckVersion(Hive.Versioning.Version version) {
+	public static string? CheckVersion(string version) {
 		foreach(string record in GetTxtRecords("beatup_beta.battletrains.org")) {
 			string[] parts = record.Split(new[] {'|'}, 2);
 			if(parts.Length != 2)
 				continue;
+			// TODO: cut dependency on Hive.Versioning
 			foreach(string range in parts[0].Split(new[] {';'}))
-				if((new Hive.Versioning.VersionRange(range)).Matches(version))
+				if((new Hive.Versioning.VersionRange(range)).Matches(new Hive.Versioning.Version(version)))
 					return null;
 			return parts[1];
 		}

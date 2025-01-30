@@ -110,8 +110,8 @@ thirdparty/SongCore.dll:
 	echo "cf6fdc49573e0079cbcdc04ef87044ec315cb2524852d84cd855ad2d4d8d514e .obj/SongCore.dll" | sha256sum -c || (rm .obj/SongCore.dll; false)
 	mv .obj/SongCore.dll $@
 
-BeatUpClient.dll: $(CSFILES) .obj/MakeThingsPublic.exe thirdparty/ILRepack.exe thirdparty/System.IO.Compression.dll thirdparty/MultiplayerCore.dll thirdparty/SiraUtil.dll thirdparty/SongCore.dll makefile
-	@echo "[csc $@]"
+.obj/BeatUpClient.dll: $(CSFILES) .obj/MakeThingsPublic.exe thirdparty/System.IO.Compression.dll thirdparty/MultiplayerCore.dll thirdparty/SiraUtil.dll thirdparty/SongCore.dll makefile
+	@echo "[csc $(notdir $@)]"
 	@mkdir -p .obj/
 	printf "{\n\
 		\"\$$schema\": \"https://raw.githubusercontent.com/bsmg/BSIPA-MetadataFileSchema/master/Schema.json\",\n\
@@ -128,15 +128,20 @@ BeatUpClient.dll: $(CSFILES) .obj/MakeThingsPublic.exe thirdparty/ILRepack.exe t
 	}" > .obj/manifest.json
 	MONO_PATH=$(BSINSTALL)/Libs mono .obj/MakeThingsPublic.exe $(BSINSTALL)
 	csc -nologo -t:library -nostdlib -o+ -debug- -nullable+ -unsafe+ -w:4 -nowarn:CS1702 -warnaserror+ -langversion:9 -define:MPCORE_SUPPORT $(CSFILES) \
-		-res:.obj/manifest.json,.manifest.json -res:assets/cover.png,BeatUpClient.cover -res:assets/create.png,BeatUpClient.create -out:.obj/$@ \
+		-res:.obj/manifest.json,.manifest.json -res:assets/cover.png,BeatUpClient.cover -res:assets/create.png,BeatUpClient.create -out:$@ \
 		`find .obj/Refs/ -name "*.dll" | sed -e 's/^/-r:/'` -r:thirdparty/System.IO.Compression.dll
-	mono thirdparty/ILRepack.exe /lib:.obj/Refs/Libs /lib:.obj/Refs/Managed /lib:.obj/Refs/Plugins /out:$@ .obj/$@ thirdparty/System.IO.Compression.dll
 
-AudioPluginMsHRTF.dll: cs/loader.c BeatUpClient.dll
+BeatUpClient.dll: thirdparty/ILRepack.exe .obj/BeatUpClient.dll thirdparty/System.IO.Compression.dll
+	@echo "[ILRepack $@]"
+	mono $^ -lib:.obj/Refs/Libs -lib:.obj/Refs/Managed -lib:.obj/Refs/Plugins -out:$@
+
+.obj/BeatUpClientFreestanding.dll: thirdparty/ILRepack.exe .obj/BeatUpClient.dll thirdparty/System.IO.Compression.dll $(BSINSTALL)/Libs/Mono.Cecil.dll $(BSINSTALL)/Libs/MonoMod.Utils.dll $(BSINSTALL)/Libs/MonoMod.RuntimeDetour.dll $(BSINSTALL)/Libs/0Harmony.dll
+	@echo "[ILRepack $@]"
+	mono $^ -lib:.obj/Refs/Libs -lib:.obj/Refs/Managed -lib:.obj/Refs/Plugins -out:$@
+
+loader.dll: cs/loader.c .obj/BeatUpClientFreestanding.dll
 	@echo "[cc $@]"
-	@mkdir -p .obj/
-	printf "\t.global BeatUpClient_dll\nBeatUpClient_dll:\n\t.incbin \"BeatUpClient.dll\"\n\t.global BeatUpClient_dll_end\nBeatUpClient_dll_end:\n" > .obj/BeatUpClient.dll.S
-	$(CC) -mwindows -m64 -static -static-libgcc -shared -s -Wl,--gc-sections,--no-undefined -L$(BSINSTALL)/MonoBleedingEdge/EmbedRuntime -l:mono-2.0-bdwgc.dll "$<" .obj/BeatUpClient.dll.S -o "$@" -DMOD_VERSION=\"$(VERSION)\"
+	$(CC) -static -static-libgcc -shared -s -Wl,--gc-sections,--no-undefined "$<" -o "$@" -DMOD_VERSION=\"$(VERSION)\"
 
 clean:
 	@echo "[cleaning]"

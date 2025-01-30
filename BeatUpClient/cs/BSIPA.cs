@@ -19,8 +19,8 @@ public class BeatUpClient_BSIPA {
 			logger.Error(error);
 	}
 
-	internal static Hive.Versioning.Version? GetVersion(string id) =>
-		IPA.Loader.PluginManager.GetPluginFromId(id)?.HVersion;
+	internal static string? GetVersion(string id) =>
+		IPA.Loader.PluginManager.GetPluginFromId(id)?.HVersion?.ToString();
 
 	[IPA.Init]
 	public BeatUpClient_BSIPA(IPA.Logging.Logger pluginLogger, IPA.Loader.PluginMetadata metadata, IPA.Config.Config conf) {
@@ -33,7 +33,7 @@ public class BeatUpClient_BSIPA {
 
 	[IPA.OnEnable]
 	public void OnEnable() =>
-		BeatUpClient.Enable(version, GetVersion);
+		BeatUpClient.Enable(version.ToString(), GetVersion);
 
 	[IPA.OnDisable]
 	public void OnDisable() =>
