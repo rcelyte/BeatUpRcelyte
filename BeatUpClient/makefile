@@ -67,7 +67,7 @@ extern:
 thirdparty/ILRepack.exe:
 	@echo "[curl $(notdir $@)]"
 	@mkdir -p "$(@D)"
-	curl https://globalcdn.nuget.org/packages/ilrepack.2.0.27.nupkg -o .obj/ILRepack.nupkg
+	curl -o .obj/ILRepack.nupkg https://globalcdn.nuget.org/packages/ilrepack.2.0.27.nupkg
 	unzip -ojd .obj/ .obj/ILRepack.nupkg tools/ILRepack.exe
 	rm .obj/ILRepack.nupkg
 	echo "09acb91db953828f7f46ec79a51c2a65f73969e34f888ec95e0aa8029e66e2ac .obj/ILRepack.exe" | \
@@ -77,7 +77,7 @@ thirdparty/ILRepack.exe:
 thirdparty/System.IO.Compression.dll:
 	@echo "[curl $(notdir $@)]"
 	@mkdir -p "$(@D)"
-	curl https://beatmods.com/uploads/6705bfe99011dc298a9e84b2/universal/System.IO.Compression-4.6.57.zip -o .obj/System.IO.Compression.zip
+	curl -o .obj/System.IO.Compression.zip https://beatmods.com/cdn/mod/a4e9e26f61967e56168e08eecb01ab88.zip # 4.6.57
 	unzip -ojd .obj/ .obj/System.IO.Compression.zip Libs/System.IO.Compression.dll
 	rm .obj/System.IO.Compression.zip
 	echo "c457ab509c57506c08c52d23ff0581ba677f2af930efc882c8ce8b03e1eb46ec .obj/System.IO.Compression.dll" | sha256sum -c || (rm .obj/System.IO.Compression.dll; false)
@@ -86,16 +86,16 @@ thirdparty/System.IO.Compression.dll:
 thirdparty/MultiplayerCore.dll:
 	@echo "[curl $(notdir $@)]"
 	@mkdir -p "$(@D)"
-	curl https://beatmods.com/uploads/6706e99e9011dc298a9e8623/universal/MultiplayerCore-1.5.3.zip -o .obj/MultiplayerCore.zip
+	curl -Lo .obj/MultiplayerCore.zip https://github.com/Goobwabber/MultiplayerCore/releases/download/v1.5.3/MultiplayerCore-1.5.3-bs1.38.0-206ebf3.zip
 	unzip -ojd .obj/ .obj/MultiplayerCore.zip Plugins/MultiplayerCore.dll
 	rm .obj/MultiplayerCore.zip
-	echo "6ca9eab07d1f1ec432153a10478b76f8c86ff43155772c86693e8964134a9dd6 .obj/MultiplayerCore.dll" | sha256sum -c || (rm .obj/MultiplayerCore.dll; false)
+	echo "a6423140df3fab109cfe34e79116c192b0861f5ea47d98951de946635372f2bb .obj/MultiplayerCore.dll" | sha256sum -c || (rm .obj/MultiplayerCore.dll; false)
 	mv .obj/MultiplayerCore.dll $@
 
 thirdparty/SiraUtil.dll:
 	@echo "[curl $(notdir $@)]"
 	@mkdir -p "$(@D)"
-	curl https://beatmods.com/uploads/6705bfed9011dc298a9e84d6/universal/SiraUtil-3.1.12.zip -o .obj/SiraUtil.zip
+	curl -o .obj/SiraUtil.zip https://beatmods.com/cdn/mod/36eda431ac40738390362de70fe4e6c7.zip # 3.1.12
 	unzip -ojd .obj/ .obj/SiraUtil.zip Plugins/SiraUtil.dll
 	rm .obj/SiraUtil.zip
 	echo "a159854628d95ec767bffaded4accd8ba537ab753ddfd8a31c8caacc3387dcd0 .obj/SiraUtil.dll" | sha256sum -c || (rm .obj/SiraUtil.dll; false)
@@ -104,7 +104,7 @@ thirdparty/SiraUtil.dll:
 thirdparty/SongCore.dll:
 	@echo "[curl $(notdir $@)]"
 	@mkdir -p "$(@D)"
-	curl https://beatmods.com/uploads/6705f6b29011dc298a9e85e0/universal/SongCore-3.14.15.zip -o .obj/SongCore.zip
+	curl -o .obj/SongCore.zip https://beatmods.com/cdn/mod/d6d96830b7755e1a1f44d7faf328ddc5.zip # 3.14.15
 	unzip -ojd .obj/ .obj/SongCore.zip Plugins/SongCore.dll
 	rm .obj/SongCore.zip
 	echo "cf6fdc49573e0079cbcdc04ef87044ec315cb2524852d84cd855ad2d4d8d514e .obj/SongCore.dll" | sha256sum -c || (rm .obj/SongCore.dll; false)
