@@ -54,6 +54,8 @@ static partial class BeatUpClient {
 	[Patch(PatchType.Prefix, typeof(LobbyPlayersDataModel), nameof(LobbyPlayersDataModel.HandleMenuRpcManagerGetRecommendedBeatmap))]
 	static void LobbyPlayersDataModel_HandleMenuRpcManagerGetRecommendedBeatmap(LobbyPlayersDataModel __instance, string userId) {
 		BeatmapKey key = __instance[__instance.localUserId].beatmapKey;
+		if(string.IsNullOrEmpty(key.levelId))
+			return;
 		BeatmapLevel? beatmapLevel = Resolve<BeatmapLevelsModel>()!.GetBeatmapLevel(key.levelId);
 		RecommendPreview preview = playerData.previews[PlayerIndex(Resolve<MultiplayerSessionManager>()?.localPlayer)];
 		if(!string.IsNullOrEmpty(HashForLevelID(beatmapLevel?.levelID)))
