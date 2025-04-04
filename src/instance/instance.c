@@ -877,7 +877,7 @@ static void handle_MenuRpc(struct InstanceContext *ctx, struct Room *room, struc
 			}
 			break;
 		}
-		NOT_IMPLEMENTED(MenuRpcType_InvalidateLevelEntitlementStatuses);
+		case MenuRpcType_InvalidateLevelEntitlementStatuses: break; // TODO: do we need to re-check entitlement here?
 		NOT_IMPLEMENTED(MenuRpcType_SelectLevelPack);
 		case MenuRpcType_SetSelectedBeatmap: uprintf("BAD TYPE: MenuRpcType_SetSelectedBeatmap\n"); break;
 		case MenuRpcType_GetSelectedBeatmap: {
@@ -1668,12 +1668,14 @@ static void process_message(struct InstanceContext *ctx, struct Room *const *con
 		}
 		struct InternalMessage message = {0};
 		if(!pkt_read(&message, &sub, *data, session->net.version)) { // TODO: experiment with packet dropping and reserialization for better bandwidth usage
-			if(message.type == InternalMessageType_MultiplayerSession) {
-				if(message.multiplayerSession.type == MultiplayerSessionMessageType_MenuRpc)
-					uprintf("Error [length=%zd menuRpc=%s]\n", *data - sub, reflect(MenuRpcType, message.multiplayerSession.menuRpc.type));
-				else
-					uprintf("Error [length=%zd type=%s]\n", *data - sub, reflect(MultiplayerSessionMessageType, message.multiplayerSession.type));
+			if(message.type != InternalMessageType_MultiplayerSession)
+				continue;
+			switch(message.multiplayerSession.type) {
+				case MultiplayerSessionMessageType_MenuRpc: uprintf("Error [length=%"PRIu32" menuRpc=%s]\n", serial.length, reflect(MenuRpcType, message.multiplayerSession.menuRpc.type)); break;
+				case MultiplayerSessionMessageType_GameplayRpc: uprintf("Error [length=%"PRIu32" gameplayRpc=%s]\n", serial.length, reflect(GameplayRpcType, message.multiplayerSession.gameplayRpc.type)); break;
+				default: uprintf("Error [length=%"PRIu32" type=%s]\n", serial.length, reflect(MultiplayerSessionMessageType, message.multiplayerSession.type));
 			}
+			// pkt_debug(">", sub, *data, serial.length, session->net.version);
 			continue;
 		}
 		bool validateLength = true;
