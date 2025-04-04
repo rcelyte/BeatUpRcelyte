@@ -15,7 +15,7 @@ static partial class BeatUpClient {
 	static UnityEngine.Sprite defaultPackCover = null!;
 
 	static UnityEngine.GameObject? infoText = null;
-	static DifficultyPanel lobbyDifficultyPanel = null!;
+	static DifficultyPanel? lobbyDifficultyPanel = null;
 	internal static PlayerData playerData = new PlayerData(0);
 
 	static void IConnection_SendUnreliable(IConnection connection, LiteNetLib.Utils.NetDataWriter writer) { // avoids referencing `BGNet.Core.DeliveryMethod` for backwards compatibility

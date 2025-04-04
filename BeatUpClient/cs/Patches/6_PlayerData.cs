@@ -85,11 +85,11 @@ static partial class BeatUpClient {
 		void OnSelect(BeatmapCharacteristicSO newCharacteristic, BeatmapDifficulty newDifficulty) {
 			self.SetLocalPlayerBeatmapLevel(new(levelId, newCharacteristic, newDifficulty));
 		}
-		lobbyDifficultyPanel.Update(beatmapLevel, beatmapKey.beatmapCharacteristic, beatmapKey.difficulty, OnSelect);
+		lobbyDifficultyPanel?.Update(beatmapLevel, beatmapKey.beatmapCharacteristic, beatmapKey.difficulty, OnSelect);
 		Base(self, PassRef(ref beatmapKey));
 	}
 
 	[Patch(PatchType.Prefix, typeof(LobbyPlayersDataModel), nameof(LobbyPlayersDataModel.ClearLocalPlayerBeatmapLevel))]
 	static void LobbyPlayersDataModel_ClearLocalPlayerBeatmapLevel() =>
-		lobbyDifficultyPanel.Clear();
+		lobbyDifficultyPanel?.Clear();
 }

@@ -91,9 +91,9 @@ static partial class BeatUpClient {
 		protected override void DidActivate(bool firstActivation, bool addedToHierarchy, bool screenSystemEnabling) {
 			if(firstActivation)
 				base.buttonBinder.AddBinding(cancelButton, () => Dismiss());
-			string? status = null;
-			if(edit && BeatUpClient_Config.Instance.Servers.TryGetValue(Resolve<SettingsManager>()!.settings.customServer.hostName, out status))
-				activeKey = Resolve<SettingsManager>()!.settings.customServer.hostName;
+			string? hostName = Resolve<SettingsManager>()!.settings.customServer.hostName ?? string.Empty, status = null;
+			if(edit && BeatUpClient_Config.Instance.Servers.TryGetValue(hostName, out status))
+				activeKey = hostName;
 			else
 				activeKey = null;
 			editHostnameTextbox.SetText(activeKey ?? string.Empty);
