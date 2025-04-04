@@ -17,9 +17,9 @@ static partial class BeatUpClient {
 
 		Zenject.DiContainer container = self.Container;
 		SettingsManager settingsManager = Injected<SettingsManager>.Resolve(container)!;
-		string hostname = settingsManager.settings.customServer.hostName.ToLower();
+		string hostname = settingsManager.settings.customServer.hostName?.ToLower() ?? string.Empty;
 		int port = self._networkConfig.masterServerEndPoint.port;
-		if(hostname.Contains(":")) {
+		if(hostname.Contains(":") == true) {
 			int.TryParse(hostname.Split(':')[1], out port);
 			hostname = hostname.Split(':')[0];
 		}

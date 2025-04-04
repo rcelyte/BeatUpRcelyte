@@ -21,7 +21,8 @@ static partial class BeatUpClient {
 			if(_dropdown._modalView is HMUI.ModalView view)
 				view._dismissPanelAnimation._duration = 0; // Animations will break the UI if the player clicks too fast
 			flowCoordinator = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerModeSelectionFlowCoordinator>()[0];
-			ephemeralEntry = new Entry(Resolve<SettingsManager>()!.settings.customServer.hostName, "");
+			if(Resolve<SettingsManager>()!.settings.customServer.hostName is string hostName)
+				ephemeralEntry = new Entry(hostName, "");
 
 			UnityEngine.GameObject colorSchemeButton = UnityEngine.Resources.FindObjectsOfTypeAll<ColorsOverrideSettingsPanelController>()[0]._editColorSchemeButton.gameObject;
 			UnityEngine.GameObject okButton = UnityEngine.Resources.FindObjectsOfTypeAll<EditColorSchemeController>()[0]._closeButton.gameObject;

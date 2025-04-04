@@ -61,8 +61,8 @@ extern:
 .obj/MakeThingsPublic.exe: MakeThingsPublic.cs makefile
 	@echo "[csc $(notdir $@)]"
 	@mkdir -p "$(@D)"
-	csc -nologo -o+ -debug- -nullable+ -w:4 -warnaserror+ -langversion:9 "$<" -out:"$@" -r:$(BSINSTALL)/Libs/Mono.Cecil.dll
-	MONO_PATH=$(BSINSTALL)/Libs mono --aot -O=all "$@"
+	csc -nologo -o+ -debug- -nullable+ -w:4 -warnaserror+ -langversion:9 "$<" -out:"$@" -r:$(BSINSTALL)/IPA/Libs/Mono.Cecil.dll
+	MONO_PATH=$(BSINSTALL)/IPA/Libs mono --aot -O=all "$@"
 
 thirdparty/ILRepack.exe:
 	@echo "[curl $(notdir $@)]"
@@ -126,18 +126,18 @@ thirdparty/SongCore.dll:
 		\"version\": \"$(VERSION)\",\n\
 		\"links\": {\"project-source\": \"https://github.com/rcelyte/BeatUpRcelyte/BeatUpClient\"}\n\
 	}" > .obj/manifest.json
-	MONO_PATH=$(BSINSTALL)/Libs mono .obj/MakeThingsPublic.exe $(BSINSTALL)
+	MONO_PATH=$(BSINSTALL)/IPA/Libs mono .obj/MakeThingsPublic.exe $(BSINSTALL)
 	csc -nologo -t:library -nostdlib -o+ -debug- -nullable+ -unsafe+ -w:4 -nowarn:CS1702 -warnaserror+ -langversion:9 -define:MPCORE_SUPPORT $(CSFILES) \
 		-res:.obj/manifest.json,.manifest.json -res:assets/cover.png,BeatUpClient.cover -res:assets/create.png,BeatUpClient.create -out:$@ \
 		`find .obj/Refs/ -name "*.dll" | sed -e 's/^/-r:/'` -r:thirdparty/System.IO.Compression.dll
 
 BeatUpClient.dll: thirdparty/ILRepack.exe .obj/BeatUpClient.dll thirdparty/System.IO.Compression.dll
 	@echo "[ILRepack $@]"
-	mono $^ -lib:.obj/Refs/Libs -lib:.obj/Refs/Managed -lib:.obj/Refs/Plugins -out:$@
+	mono $^ -lib:.obj/Refs/IPA/Libs -lib:.obj/Refs/Managed -lib:.obj/Refs/Plugins -out:$@
 
-.obj/BeatUpClientFreestanding.dll: thirdparty/ILRepack.exe .obj/BeatUpClient.dll thirdparty/System.IO.Compression.dll $(BSINSTALL)/Libs/Mono.Cecil.dll $(BSINSTALL)/Libs/MonoMod.Utils.dll $(BSINSTALL)/Libs/MonoMod.RuntimeDetour.dll $(BSINSTALL)/Libs/0Harmony.dll
+.obj/BeatUpClientFreestanding.dll: thirdparty/ILRepack.exe .obj/BeatUpClient.dll thirdparty/System.IO.Compression.dll $(patsubst %,$(BSINSTALL)/IPA/Libs/%,0Harmony.dll Hive.Versioning.dll Mono.Cecil.dll MonoMod.RuntimeDetour.dll MonoMod.Utils.dll)
 	@echo "[ILRepack $@]"
-	mono $^ -lib:.obj/Refs/Libs -lib:.obj/Refs/Managed -lib:.obj/Refs/Plugins -out:$@
+	mono $^ -lib:.obj/Refs/IPA/Libs -lib:.obj/Refs/Managed -lib:.obj/Refs/Plugins -out:$@
 
 loader.dll: cs/loader.c .obj/BeatUpClientFreestanding.dll
 	@echo "[cc $@]"

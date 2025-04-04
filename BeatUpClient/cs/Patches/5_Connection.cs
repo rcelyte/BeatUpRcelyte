@@ -7,7 +7,7 @@ static partial class BeatUpClient {
 		Log.Debug($"HandleConnectToServerSuccess(currentServerIsOfficial={currentServerIsOfficial}, maxPlayerCount={configuration.maxPlayerCount})");
 		BeatUpClient.enableCustomLevels = !currentServerIsOfficial;
 		playerData = new PlayerData(configuration.maxPlayerCount);
-		lobbyDifficultyPanel.Clear();
+		lobbyDifficultyPanel?.Clear();
 		connectInfo = ServerConnectInfo.Default;
 		infoText?.SetActive(false);
 	}
