@@ -1,9 +1,6 @@
 using static System.Linq.Enumerable;
 
 static partial class BeatUpClient {
-	static bool SupportedMpCoreVersion(string? v) =>
-		v == null || v == "1.5.3" || v == "1.5.4" || v == "1.6.0";
-
 	[System.AttributeUsage(System.AttributeTargets.Method)]
 	internal class InitAttribute : System.Attribute {}
 
@@ -84,14 +81,18 @@ static partial class BeatUpClient {
 			BeatUpClient_Error.Init("Incompatible BeatUpClient Version", $"This version of BeatUpClient requires a{((protocolVersion < 9u) ? " newer" : "n older")} version of Beat Saber.");
 			return;
 		}
-		string? mpCoreVersion = getModVersion("MultiplayerCore");
-		#if MPCORE_SUPPORT
-		if(!SupportedMpCoreVersion(mpCoreVersion)) {
-			BeatUpClient_Error.Init("Incompatible BeatUpClient Version", "This version of BeatUpClient only supports MultiplayerCore 1.5.3");
-			return;
-		}
-		#else
-		if(mpCoreVersion != null) {
+
+		haveSiraUtil = getModVersion("SiraUtil") != null;
+		haveSongCore = getModVersion("SongCore") != null;
+		haveMpCore = getModVersion("MultiplayerCore") != null;
+		haveMpEx = getModVersion("MultiplayerExtensions") != null;
+		Log.Debug($"haveSiraUtil={haveSiraUtil}");
+		Log.Debug($"haveSongCore={haveSongCore}");
+		Log.Debug($"haveMpCore={haveMpCore}");
+		Log.Debug($"haveMpEx={haveMpEx}");
+
+		#if !MPCORE_SUPPORT
+		if(haveMpCore) {
 			BeatUpClient_Error.Init("Incompatible BeatUpClient Version", "This version of BeatUpClient is incompatible with MultiplayerCore");
 			return;
 		}
@@ -109,15 +110,6 @@ static partial class BeatUpClient {
 				BeatUpClient_Error.Init("BeatUpClient Validation Error", "BeatUpClient encountered a critical error. Please message @rcelyte on Discord.");
 			return;
 		}
-
-		haveSiraUtil = getModVersion("SiraUtil") != null;
-		haveSongCore = getModVersion("SongCore") != null;
-		haveMpCore = getModVersion("MultiplayerCore") != null;
-		haveMpEx = getModVersion("MultiplayerExtensions") != null;
-		Log.Debug($"haveSiraUtil={haveSiraUtil}");
-		Log.Debug($"haveSongCore={haveSongCore}");
-		Log.Debug($"haveMpCore={haveMpCore}");
-		Log.Debug($"haveMpEx={haveMpEx}");
 
 		try {
 			Log.Debug("Gathering patches");
