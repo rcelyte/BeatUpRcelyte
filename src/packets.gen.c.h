@@ -1279,12 +1279,20 @@ static void _pkt_NoteSpawnInfoNetSerializable_read(struct NoteSpawnInfoNetSerial
 	_pkt_f32_read(&data->timeToPrevColorNote, pkt, end, ctx);
 	_pkt_vi32_read(&data->flipLineIndex, pkt, end, ctx);
 	_pkt_vi32_read(&data->flipYSide, pkt, end, ctx);
-	_pkt_Vector3Serializable_read(&data->moveStartPos, pkt, end, ctx);
-	_pkt_Vector3Serializable_read(&data->moveEndPos, pkt, end, ctx);
-	_pkt_Vector3Serializable_read(&data->jumpEndPos, pkt, end, ctx);
-	_pkt_f32_read(&data->jumpGravity, pkt, end, ctx);
-	_pkt_f32_read(&data->moveDuration, pkt, end, ctx);
-	_pkt_f32_read(&data->jumpDuration, pkt, end, ctx);
+	if(ctx.gameVersion < GameVersion_1_40_0) {
+		_pkt_Vector3Serializable_read(&data->moveStartPos, pkt, end, ctx);
+		_pkt_Vector3Serializable_read(&data->moveEndPos, pkt, end, ctx);
+		_pkt_Vector3Serializable_read(&data->jumpEndPos, pkt, end, ctx);
+		_pkt_f32_read(&data->jumpGravity, pkt, end, ctx);
+		_pkt_f32_read(&data->moveDuration, pkt, end, ctx);
+		_pkt_f32_read(&data->jumpDuration, pkt, end, ctx);
+	}
+	if(ctx.gameVersion >= GameVersion_1_40_0) {
+		_pkt_Vector3Serializable_read(&data->moveStartOffset, pkt, end, ctx);
+		_pkt_Vector3Serializable_read(&data->moveEndOffset, pkt, end, ctx);
+		_pkt_Vector3Serializable_read(&data->jumpEndOffset, pkt, end, ctx);
+		_pkt_f32_read(&data->gravityBase, pkt, end, ctx);
+	}
 	_pkt_f32_read(&data->rotation, pkt, end, ctx);
 	_pkt_f32_read(&data->cutDirectionAngleOffset, pkt, end, ctx);
 	if(ctx.protocolVersion >= 8) {
@@ -1306,12 +1314,20 @@ static void _pkt_NoteSpawnInfoNetSerializable_write(const struct NoteSpawnInfoNe
 	_pkt_f32_write(&data->timeToPrevColorNote, pkt, end, ctx);
 	_pkt_vi32_write(&data->flipLineIndex, pkt, end, ctx);
 	_pkt_vi32_write(&data->flipYSide, pkt, end, ctx);
-	_pkt_Vector3Serializable_write(&data->moveStartPos, pkt, end, ctx);
-	_pkt_Vector3Serializable_write(&data->moveEndPos, pkt, end, ctx);
-	_pkt_Vector3Serializable_write(&data->jumpEndPos, pkt, end, ctx);
-	_pkt_f32_write(&data->jumpGravity, pkt, end, ctx);
-	_pkt_f32_write(&data->moveDuration, pkt, end, ctx);
-	_pkt_f32_write(&data->jumpDuration, pkt, end, ctx);
+	if(ctx.gameVersion < GameVersion_1_40_0) {
+		_pkt_Vector3Serializable_write(&data->moveStartPos, pkt, end, ctx);
+		_pkt_Vector3Serializable_write(&data->moveEndPos, pkt, end, ctx);
+		_pkt_Vector3Serializable_write(&data->jumpEndPos, pkt, end, ctx);
+		_pkt_f32_write(&data->jumpGravity, pkt, end, ctx);
+		_pkt_f32_write(&data->moveDuration, pkt, end, ctx);
+		_pkt_f32_write(&data->jumpDuration, pkt, end, ctx);
+	}
+	if(ctx.gameVersion >= GameVersion_1_40_0) {
+		_pkt_Vector3Serializable_write(&data->moveStartOffset, pkt, end, ctx);
+		_pkt_Vector3Serializable_write(&data->moveEndOffset, pkt, end, ctx);
+		_pkt_Vector3Serializable_write(&data->jumpEndOffset, pkt, end, ctx);
+		_pkt_f32_write(&data->gravityBase, pkt, end, ctx);
+	}
 	_pkt_f32_write(&data->rotation, pkt, end, ctx);
 	_pkt_f32_write(&data->cutDirectionAngleOffset, pkt, end, ctx);
 	if(ctx.protocolVersion >= 8) {
@@ -1352,13 +1368,21 @@ static void _pkt_ObstacleSpawnInfoNetSerializable_read(struct ObstacleSpawnInfoN
 	if(ctx.protocolVersion >= 8) {
 		_pkt_vi32_read(&data->height, pkt, end, ctx);
 	}
-	_pkt_Vector3Serializable_read(&data->moveStartPos, pkt, end, ctx);
-	_pkt_Vector3Serializable_read(&data->moveEndPos, pkt, end, ctx);
-	_pkt_Vector3Serializable_read(&data->jumpEndPos, pkt, end, ctx);
+	if(ctx.gameVersion < GameVersion_1_40_0) {
+		_pkt_Vector3Serializable_read(&data->moveStartPos, pkt, end, ctx);
+		_pkt_Vector3Serializable_read(&data->moveEndPos, pkt, end, ctx);
+		_pkt_Vector3Serializable_read(&data->jumpEndPos, pkt, end, ctx);
+	}
+	if(ctx.gameVersion >= GameVersion_1_40_0) {
+		_pkt_Vector3Serializable_read(&data->moveOffset, pkt, end, ctx);
+		_pkt_f32_read(&data->obstacleWidth, pkt, end, ctx);
+	}
 	_pkt_f32_read(&data->obstacleHeight, pkt, end, ctx);
-	_pkt_f32_read(&data->moveDuration, pkt, end, ctx);
-	_pkt_f32_read(&data->jumpDuration, pkt, end, ctx);
-	_pkt_f32_read(&data->noteLinesDistance, pkt, end, ctx);
+	if(ctx.gameVersion < GameVersion_1_40_0) {
+		_pkt_f32_read(&data->moveDuration, pkt, end, ctx);
+		_pkt_f32_read(&data->jumpDuration, pkt, end, ctx);
+		_pkt_f32_read(&data->noteLinesDistance, pkt, end, ctx);
+	}
 	_pkt_f32_read(&data->rotation, pkt, end, ctx);
 }
 static void _pkt_ObstacleSpawnInfoNetSerializable_write(const struct ObstacleSpawnInfoNetSerializable *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -1375,13 +1399,21 @@ static void _pkt_ObstacleSpawnInfoNetSerializable_write(const struct ObstacleSpa
 	if(ctx.protocolVersion >= 8) {
 		_pkt_vi32_write(&data->height, pkt, end, ctx);
 	}
-	_pkt_Vector3Serializable_write(&data->moveStartPos, pkt, end, ctx);
-	_pkt_Vector3Serializable_write(&data->moveEndPos, pkt, end, ctx);
-	_pkt_Vector3Serializable_write(&data->jumpEndPos, pkt, end, ctx);
+	if(ctx.gameVersion < GameVersion_1_40_0) {
+		_pkt_Vector3Serializable_write(&data->moveStartPos, pkt, end, ctx);
+		_pkt_Vector3Serializable_write(&data->moveEndPos, pkt, end, ctx);
+		_pkt_Vector3Serializable_write(&data->jumpEndPos, pkt, end, ctx);
+	}
+	if(ctx.gameVersion >= GameVersion_1_40_0) {
+		_pkt_Vector3Serializable_write(&data->moveOffset, pkt, end, ctx);
+		_pkt_f32_write(&data->obstacleWidth, pkt, end, ctx);
+	}
 	_pkt_f32_write(&data->obstacleHeight, pkt, end, ctx);
-	_pkt_f32_write(&data->moveDuration, pkt, end, ctx);
-	_pkt_f32_write(&data->jumpDuration, pkt, end, ctx);
-	_pkt_f32_write(&data->noteLinesDistance, pkt, end, ctx);
+	if(ctx.gameVersion < GameVersion_1_40_0) {
+		_pkt_f32_write(&data->moveDuration, pkt, end, ctx);
+		_pkt_f32_write(&data->jumpDuration, pkt, end, ctx);
+		_pkt_f32_write(&data->noteLinesDistance, pkt, end, ctx);
+	}
 	_pkt_f32_write(&data->rotation, pkt, end, ctx);
 }
 static void _pkt_ObstacleSpawned_read(struct ObstacleSpawned *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -1426,16 +1458,24 @@ static void _pkt_SliderSpawnInfoNetSerializable_read(struct SliderSpawnInfoNetSe
 	_pkt_vi32_read(&data->midAnchorMode, pkt, end, ctx);
 	_pkt_vi32_read(&data->sliceCount, pkt, end, ctx);
 	_pkt_f32_read(&data->squishAmount, pkt, end, ctx);
-	_pkt_Vector3Serializable_read(&data->headMoveStartPos, pkt, end, ctx);
-	_pkt_Vector3Serializable_read(&data->headJumpStartPos, pkt, end, ctx);
-	_pkt_Vector3Serializable_read(&data->headJumpEndPos, pkt, end, ctx);
-	_pkt_f32_read(&data->headJumpGravity, pkt, end, ctx);
-	_pkt_Vector3Serializable_read(&data->tailMoveStartPos, pkt, end, ctx);
-	_pkt_Vector3Serializable_read(&data->tailJumpStartPos, pkt, end, ctx);
-	_pkt_Vector3Serializable_read(&data->tailJumpEndPos, pkt, end, ctx);
-	_pkt_f32_read(&data->tailJumpGravity, pkt, end, ctx);
-	_pkt_f32_read(&data->moveDuration, pkt, end, ctx);
-	_pkt_f32_read(&data->jumpDuration, pkt, end, ctx);
+	if(ctx.gameVersion < GameVersion_1_40_0) {
+		_pkt_Vector3Serializable_read(&data->headMoveStartPos, pkt, end, ctx);
+		_pkt_Vector3Serializable_read(&data->headJumpStartPos, pkt, end, ctx);
+		_pkt_Vector3Serializable_read(&data->headJumpEndPos, pkt, end, ctx);
+		_pkt_f32_read(&data->headJumpGravity, pkt, end, ctx);
+		_pkt_Vector3Serializable_read(&data->tailMoveStartPos, pkt, end, ctx);
+		_pkt_Vector3Serializable_read(&data->tailJumpStartPos, pkt, end, ctx);
+		_pkt_Vector3Serializable_read(&data->tailJumpEndPos, pkt, end, ctx);
+		_pkt_f32_read(&data->tailJumpGravity, pkt, end, ctx);
+		_pkt_f32_read(&data->moveDuration, pkt, end, ctx);
+		_pkt_f32_read(&data->jumpDuration, pkt, end, ctx);
+	}
+	if(ctx.gameVersion >= GameVersion_1_40_0) {
+		_pkt_Vector3Serializable_read(&data->headNoteOffset, pkt, end, ctx);
+		_pkt_f32_read(&data->headGravityBase, pkt, end, ctx);
+		_pkt_Vector3Serializable_read(&data->tailNoteOffset, pkt, end, ctx);
+		_pkt_f32_read(&data->tailGravityBase, pkt, end, ctx);
+	}
 	_pkt_f32_read(&data->rotation, pkt, end, ctx);
 }
 static void _pkt_SliderSpawnInfoNetSerializable_write(const struct SliderSpawnInfoNetSerializable *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
@@ -1460,16 +1500,24 @@ static void _pkt_SliderSpawnInfoNetSerializable_write(const struct SliderSpawnIn
 	_pkt_vi32_write(&data->midAnchorMode, pkt, end, ctx);
 	_pkt_vi32_write(&data->sliceCount, pkt, end, ctx);
 	_pkt_f32_write(&data->squishAmount, pkt, end, ctx);
-	_pkt_Vector3Serializable_write(&data->headMoveStartPos, pkt, end, ctx);
-	_pkt_Vector3Serializable_write(&data->headJumpStartPos, pkt, end, ctx);
-	_pkt_Vector3Serializable_write(&data->headJumpEndPos, pkt, end, ctx);
-	_pkt_f32_write(&data->headJumpGravity, pkt, end, ctx);
-	_pkt_Vector3Serializable_write(&data->tailMoveStartPos, pkt, end, ctx);
-	_pkt_Vector3Serializable_write(&data->tailJumpStartPos, pkt, end, ctx);
-	_pkt_Vector3Serializable_write(&data->tailJumpEndPos, pkt, end, ctx);
-	_pkt_f32_write(&data->tailJumpGravity, pkt, end, ctx);
-	_pkt_f32_write(&data->moveDuration, pkt, end, ctx);
-	_pkt_f32_write(&data->jumpDuration, pkt, end, ctx);
+	if(ctx.gameVersion < GameVersion_1_40_0) {
+		_pkt_Vector3Serializable_write(&data->headMoveStartPos, pkt, end, ctx);
+		_pkt_Vector3Serializable_write(&data->headJumpStartPos, pkt, end, ctx);
+		_pkt_Vector3Serializable_write(&data->headJumpEndPos, pkt, end, ctx);
+		_pkt_f32_write(&data->headJumpGravity, pkt, end, ctx);
+		_pkt_Vector3Serializable_write(&data->tailMoveStartPos, pkt, end, ctx);
+		_pkt_Vector3Serializable_write(&data->tailJumpStartPos, pkt, end, ctx);
+		_pkt_Vector3Serializable_write(&data->tailJumpEndPos, pkt, end, ctx);
+		_pkt_f32_write(&data->tailJumpGravity, pkt, end, ctx);
+		_pkt_f32_write(&data->moveDuration, pkt, end, ctx);
+		_pkt_f32_write(&data->jumpDuration, pkt, end, ctx);
+	}
+	if(ctx.gameVersion >= GameVersion_1_40_0) {
+		_pkt_Vector3Serializable_write(&data->headNoteOffset, pkt, end, ctx);
+		_pkt_f32_write(&data->headGravityBase, pkt, end, ctx);
+		_pkt_Vector3Serializable_write(&data->tailNoteOffset, pkt, end, ctx);
+		_pkt_f32_write(&data->tailGravityBase, pkt, end, ctx);
+	}
 	_pkt_f32_write(&data->rotation, pkt, end, ctx);
 }
 static void _pkt_SliderSpawned_read(struct SliderSpawned *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {

@@ -1742,6 +1742,10 @@ struct NoteSpawnInfoNetSerializable {
 	float jumpGravity;
 	float moveDuration;
 	float jumpDuration;
+	struct Vector3Serializable moveStartOffset;
+	struct Vector3Serializable moveEndOffset;
+	struct Vector3Serializable jumpEndOffset;
+	float gravityBase;
 	float rotation;
 	float cutDirectionAngleOffset;
 	float cutSfxVolumeMultiplier;
@@ -1763,6 +1767,8 @@ struct ObstacleSpawnInfoNetSerializable {
 	struct Vector3Serializable moveStartPos;
 	struct Vector3Serializable moveEndPos;
 	struct Vector3Serializable jumpEndPos;
+	struct Vector3Serializable moveOffset;
+	float obstacleWidth;
 	float obstacleHeight;
 	float moveDuration;
 	float jumpDuration;
@@ -1807,6 +1813,10 @@ struct SliderSpawnInfoNetSerializable {
 	float tailJumpGravity;
 	float moveDuration;
 	float jumpDuration;
+	struct Vector3Serializable headNoteOffset;
+	float headGravityBase;
+	struct Vector3Serializable tailNoteOffset;
+	float tailGravityBase;
 	float rotation;
 };
 struct SliderSpawned {

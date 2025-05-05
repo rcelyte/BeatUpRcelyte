@@ -546,12 +546,18 @@ n NoteSpawnInfoNetSerializable
 	f32 timeToPrevColorNote
 	vi32 flipLineIndex
 	vi32 flipYSide
-	Vector3Serializable moveStartPos
-	Vector3Serializable moveEndPos
-	Vector3Serializable jumpEndPos
-	f32 jumpGravity
-	f32 moveDuration
-	f32 jumpDuration
+	if($gameVersion < GameVersion_1_40_0)
+		Vector3Serializable moveStartPos
+		Vector3Serializable moveEndPos
+		Vector3Serializable jumpEndPos
+		f32 jumpGravity
+		f32 moveDuration
+		f32 jumpDuration
+	if($gameVersion >= GameVersion_1_40_0)
+		Vector3Serializable moveStartOffset
+		Vector3Serializable moveEndOffset
+		Vector3Serializable jumpEndOffset
+		f32 gravityBase
 	f32 rotation
 	f32 cutDirectionAngleOffset
 	if($protocolVersion >= 8)
@@ -577,13 +583,18 @@ n ObstacleSpawnInfoNetSerializable
 	vi32 width
 	if($protocolVersion >= 8)
 		vi32 height
-	Vector3Serializable moveStartPos
-	Vector3Serializable moveEndPos
-	Vector3Serializable jumpEndPos
+	if($gameVersion < GameVersion_1_40_0)
+		Vector3Serializable moveStartPos
+		Vector3Serializable moveEndPos
+		Vector3Serializable jumpEndPos
+	if($gameVersion >= GameVersion_1_40_0)
+		Vector3Serializable moveOffset
+		f32 obstacleWidth
 	f32 obstacleHeight
-	f32 moveDuration
-	f32 jumpDuration
-	f32 noteLinesDistance
+	if($gameVersion < GameVersion_1_40_0)
+		f32 moveDuration
+		f32 jumpDuration
+		f32 noteLinesDistance
 	f32 rotation
 n ObstacleSpawned
 	RemoteProcedureCall base
@@ -621,16 +632,22 @@ n SliderSpawnInfoNetSerializable
 	SliderMidAnchorMode midAnchorMode
 	vi32 sliceCount
 	f32 squishAmount
-	Vector3Serializable headMoveStartPos
-	Vector3Serializable headJumpStartPos
-	Vector3Serializable headJumpEndPos
-	f32 headJumpGravity
-	Vector3Serializable tailMoveStartPos
-	Vector3Serializable tailJumpStartPos
-	Vector3Serializable tailJumpEndPos
-	f32 tailJumpGravity
-	f32 moveDuration
-	f32 jumpDuration
+	if($gameVersion < GameVersion_1_40_0)
+		Vector3Serializable headMoveStartPos
+		Vector3Serializable headJumpStartPos
+		Vector3Serializable headJumpEndPos
+		f32 headJumpGravity
+		Vector3Serializable tailMoveStartPos
+		Vector3Serializable tailJumpStartPos
+		Vector3Serializable tailJumpEndPos
+		f32 tailJumpGravity
+		f32 moveDuration
+		f32 jumpDuration
+	if($gameVersion >= GameVersion_1_40_0)
+		Vector3Serializable headNoteOffset
+		f32 headGravityBase
+		Vector3Serializable tailNoteOffset
+		f32 tailGravityBase
 	f32 rotation
 n SliderSpawned
 	RemoteProcedureCall base
