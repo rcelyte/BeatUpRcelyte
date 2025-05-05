@@ -2454,19 +2454,29 @@ static void instance_room_spawn(struct InstanceContext *ctx, struct WireLink *li
 	WireLink_send(link, &r_alloc);
 }
 
+// we don't currently support routed message translation, so rooms must reject clients with incompatible ABIs
+static unsigned ProtocolABI(const GameVersion version) {
+	return
+		(version >= GameVersion_1_40_0) ? 3 :
+		(version >= GameVersion_1_37_1) ? 2 :
+		(version >= GameVersion_1_34_2) ? 1 :
+		0;
+}
+
 static void instance_room_join(struct InstanceContext *ctx, struct WireLink *link, uint32_t cookie, const struct WireRoomJoin *req) {
 	struct WireMessage r_alloc = {
 		.type = WireMessageType_WireRoomJoinResp,
 		.cookie = cookie,
 	};
-	uint32_t roomProtocol = room_get_protocol(instance_get_room(ctx, req->base.room)).protocolVersion;
-	if(roomProtocol == 0) {
+	const struct PacketContext roomProtocol = room_get_protocol(instance_get_room(ctx, req->base.room));
+	if(roomProtocol.protocolVersion == 0) {
 		// This condition can happen if a player joins while the WireRoomCloseNotify message still in flight,
 		//     or if the instance and master have desynced.
-		uprintf("Connect to Server Error: Room closed (room=%u, client=%u)\n", roomProtocol, req->base.clientVersion.protocolVersion);
+		uprintf("Connect to Server Error: Room closed (room=%u, client=%u)\n", roomProtocol.protocolVersion, req->base.clientVersion.protocolVersion);
 		r_alloc.roomJoinResp.base.result = ConnectToServerResponse_Result_InvalidCode;
-	} else if(roomProtocol != req->base.clientVersion.protocolVersion) {
-		uprintf("Connect to Server Error: Version mismatch (room=%u, client=%u)\n", roomProtocol, req->base.clientVersion.protocolVersion);
+	} else if(roomProtocol.protocolVersion != req->base.clientVersion.protocolVersion || ProtocolABI(roomProtocol.gameVersion) != ProtocolABI(req->base.clientVersion.gameVersion)) {
+		uprintf("Connect to Server Error: Version mismatch (room=%u.%u, client=%u.%u)\n", roomProtocol.protocolVersion,
+			ProtocolABI(roomProtocol.gameVersion), req->base.clientVersion.protocolVersion, ProtocolABI(req->base.clientVersion.gameVersion));
 		r_alloc.roomJoinResp.base.result = ConnectToServerResponse_Result_VersionMismatch;
 	} else {
 		r_alloc.roomJoinResp.base = room_resolve_session(ctx, &req->base);
