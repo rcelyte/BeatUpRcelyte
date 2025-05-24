@@ -51,6 +51,7 @@ enum {
 	GameVersion_1_40_2,
 	GameVersion_1_40_3,
 	GameVersion_1_40_4,
+	GameVersion_1_40_5,
 };
 [[maybe_unused]] static const char *_reflect_GameVersion(GameVersion value) {
 	switch(value) {
@@ -101,6 +102,7 @@ enum {
 		case GameVersion_1_40_2: return "1_40_2";
 		case GameVersion_1_40_3: return "1_40_3";
 		case GameVersion_1_40_4: return "1_40_4";
+		case GameVersion_1_40_5: return "1_40_5";
 		default: return "???";
 	}
 }
