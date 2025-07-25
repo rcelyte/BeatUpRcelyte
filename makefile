@@ -39,8 +39,9 @@ $(OBJDIR)/%.c.o: %.c src/packets.gen.h $(OBJDIR)/libs.mk thirdparty/mbedtls/.git
 
 $(OBJDIR)/libmbed%.a: thirdparty/mbedtls/.git
 	@echo "[make $(notdir $@)]"
-	mkdir -p "$@.build/"
-	cp -r thirdparty/mbedtls/3rdparty/ thirdparty/mbedtls/include/ thirdparty/mbedtls/library/ thirdparty/mbedtls/scripts/ "$@.build/"
+	mkdir -p "$@.build/framework/scripts/"
+	touch "$@.build/framework/scripts/generate_ssl_debug_helpers.py"
+	cp -r thirdparty/mbedtls/3rdparty thirdparty/mbedtls/include thirdparty/mbedtls/scripts thirdparty/mbedtls/library "$@.build/"
 	$(MAKE) -C "$@.build/library" CC=$(CC) AR=$(AR) PYTHON=true PERL=true $(notdir $@)
 	mv "$@.build/library/$(notdir $@)" "$@"
 	rm -r "$@.build/"
