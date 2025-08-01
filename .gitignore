@@ -16,6 +16,7 @@
 /BeatUpClient/qpm.shared.json
 /BeatUpClient/qpm_defines.cmake
 /BeatUpClient/thirdparty
+/BeatUpClient/UnitySubsystemsManifest.json
 /beatupserver*
 /build.sh
 /makefile.user

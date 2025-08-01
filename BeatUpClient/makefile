@@ -1,28 +1,28 @@
 #!/bin/make
-VERSION := 0.15.4
+VERSION ::= 0.15.4
 
 .SILENT:
 
 sinclude ../makefile.user
 sinclude makefile.user
 
-HOST := $(shell uname -m)
-CC := $(NDK)/toolchains/llvm/prebuilt/linux-x86_64/bin/clang --target=aarch64-linux-android26
-CXX := $(NDK)/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-linux-android26
-CFLAGS := -g -std=c2x -fPIC -fvisibility=hidden -Wall -Wextra -Werror -pedantic-errors
-CXXFLAGS := -g -std=c++20 -fPIC -fvisibility=hidden -Wall -Wextra -Wno-dollar-in-identifier-extension -Wno-zero-length-array -Wno-gnu-statement-expression -Wno-format-pedantic -Wno-vla-extension -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Werror -pedantic-errors -Iextern/includes/libil2cpp/il2cpp/libil2cpp -Iextern/includes/codegen/include -Iextern/includes -DVERSION=\"$(VERSION)\" -DDISABLE_POOLABLE -DDISABLE_DOWNLOADER -DDISABLE_SELECTORS -DDISABLE_LOCALIZATION -DDISABLE_360
-LDFLAGS := -static-libstdc++ -shared -Wl,--no-undefined,--gc-sections,--fatal-warnings -Lextern/libs -lbeatsaber-hook_3_13_0 -lcodegen -lcustom-types
+HOST ::= $(shell uname -m)
+CC ::= $(NDK)/toolchains/llvm/prebuilt/linux-x86_64/bin/clang --target=aarch64-linux-android26
+CXX ::= $(NDK)/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-linux-android26
+CFLAGS ::= -g -std=c2x -fPIC -fvisibility=hidden -Wall -Wextra -Werror -pedantic-errors
+CXXFLAGS ::= -g -std=c++20 -fPIC -fvisibility=hidden -Wall -Wextra -Wno-dollar-in-identifier-extension -Wno-zero-length-array -Wno-gnu-statement-expression -Wno-format-pedantic -Wno-vla-extension -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Werror -pedantic-errors -Iextern/includes/libil2cpp/il2cpp/libil2cpp -Iextern/includes/codegen/include -Iextern/includes -DVERSION=\"$(VERSION)\" -DDISABLE_POOLABLE -DDISABLE_DOWNLOADER -DDISABLE_SELECTORS -DDISABLE_LOCALIZATION -DDISABLE_360
+LDFLAGS ::= -static-libstdc++ -shared -Wl,--no-undefined,--gc-sections,--fatal-warnings -Lextern/libs -lbeatsaber-hook_3_13_0 -lcodegen -lcustom-types
 ifdef NDK
-OBJDIR := .obj/$(shell $(CXX) -dumpmachine)
+OBJDIR ::= .obj/$(shell $(CXX) -dumpmachine)
 else
-OBJDIR := .obj/unknown
+OBJDIR ::= .obj/unknown
 ndk:
 	$(error Android NDK path not set)
 endif
-FILES := $(wildcard src/*.c src/*.cpp src/*/*.cpp)
-OBJS := $(FILES:%=$(OBJDIR)/%.o)
+FILES ::= $(wildcard src/*.c src/*.cpp src/*/*.cpp)
+OBJS ::= $(FILES:%=$(OBJDIR)/%.o)
 
-CSFILES := $(wildcard cs/*.cs cs/*/*.cs)
+CSFILES ::= $(wildcard cs/*.cs cs/*/*.cs)
 
 libBeatUpClient.so: $(OBJS) | ndk
 	@echo "[cxx $@]"
@@ -139,13 +139,21 @@ BeatUpClient.dll: thirdparty/ILRepack.exe .obj/BeatUpClient.dll thirdparty/Syste
 	@echo "[ILRepack $@]"
 	mono $^ -lib:.obj/Refs/IPA/Libs -lib:.obj/Refs/Managed -lib:.obj/Refs/Plugins -out:$@
 
-loader.dll: cs/loader.c .obj/BeatUpClientFreestanding.dll
+BeatUpClientNative.dll: cs/loader.c .obj/BeatUpClientFreestanding.dll
 	@echo "[cc $@]"
-	$(CC) -static -static-libgcc -shared -s -Wl,--gc-sections,--no-undefined "$<" -o "$@" -DMOD_VERSION=\"$(VERSION)\"
+	$(CC) -static -static-libgcc -shared -s -Wl,--gc-sections,--no-undefined -std=c99 "$<" -o "$@" -DMOD_VERSION=\"$(VERSION)\"
+
+UnitySubsystemsManifest.json: makefile
+	printf "{\n\
+		\"name\": \"BeatUpClient\",\n\
+		\"version\": \"$(VERSION)\",\n\
+		\"libraryName\": \"BeatUpClientNative\",\n\
+		\"displays\": [{\"id\": \"OpenXR Display\"}]\n\
+	}" > "$@"
 
 clean:
 	@echo "[cleaning]"
-	rm -rf .obj/ bin/ obj/ include/ shared/ BeatUpClient.dll BeatUpClient.qmod libBeatUpClient.so
+	$(RM) -r .obj/ bin/ obj/ include/ shared/ BeatUpClient.dll BeatUpClientNative.dll UnitySubsystemsManifest.json BeatUpClient.qmod libBeatUpClient.so
 	qpm-rust clear || true
 
 .PHONY: clean ndk

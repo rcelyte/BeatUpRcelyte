@@ -43,53 +43,78 @@ static void *res;
 
 static void *domain = NULL;
 static bool IPALoaded() {
-	void *image = RETURN_UNLESS(mono_image_loaded("IPA.Injector"));
-	void *class = RETURN_UNLESS(mono_class_from_name(image, "IPA.Injector", "Injector"));
-	void *field = RETURN_UNLESS(mono_class_get_field_from_name(class, "bootstrapped"));
-	void *vtable = RETURN_UNLESS(mono_class_vtable(domain, class));
+	void *const image = RETURN_UNLESS(mono_image_loaded("IPA.Injector"));
+	void *const class = RETURN_UNLESS(mono_class_from_name(image, "IPA.Injector", "Injector"));
+	void *const field = RETURN_UNLESS(mono_class_get_field_from_name(class, "bootstrapped"));
+	void *const vtable = RETURN_UNLESS(mono_class_vtable(domain, class));
 	int32_t bootstrapped = false;
 	mono_field_static_get_value(vtable, field, &bootstrapped);
 	return bootstrapped;
 }
 
+enum UnityLogType {
+	UnityLogType_Error = 0,
+	UnityLogType_Warning = 2,
+	UnityLogType_Log = 3,
+	UnityLogType_Exception = 4,
+};
+
+typedef void (__stdcall *PFN_unityLog)(enum UnityLogType type, const char *message, const char *file, int line);
+static PFN_unityLog unityLog = NULL;
+static void LogUnity(const enum UnityLogType type, const unsigned line, const char function[], const char message[]) {
+	char buffer[0x1000];
+	const int buffer_len = snprintf(buffer, sizeof(buffer), "[BeatUpClient|Native] " __FILE__ ":%u(%s): %s\n", line, function, message);
+	if(buffer_len < 0)
+		return;
+	if(unityLog != NULL) {
+		unityLog(type, buffer, __FILE__, line);
+	} else {
+		fwrite(buffer, (unsigned)buffer_len, 1, stderr);
+		fflush(stderr);
+	}
+}
+
 static void *LateLoad(void *sceneName, int32_t sceneBuildIndex, void *parameters, bool mustCompleteNextFrame) {
 	if(called)
 		goto end;
-	fprintf(stderr, "[BeatUpClient|Native] Loading\n");
+	LogUnity(UnityLogType_Log, __LINE__, __FUNCTION__, "Loading");
 	called = true;
 	int32_t status = 1;
-	void *image = mono_image_open_from_data(BeatUpClientFreestanding_dll, sizeof_BeatUpClientFreestanding_dll, 0, &status);
+	void *const image = mono_image_open_from_data(BeatUpClientFreestanding_dll, sizeof_BeatUpClientFreestanding_dll, 0, &status);
 	if(status || !image) {
-		fprintf(stderr, "[BeatUpClient|Native] mono_image_open_from_data() failed\n");
+		LogUnity(UnityLogType_Error, __LINE__, __FUNCTION__, "mono_image_open_from_data() failed");
 		goto end;
 	}
-	void *assembly = mono_assembly_load_from(image, "", &status);
+	void *const assembly = mono_assembly_load_from(image, "", &status);
 	if(status || !assembly) {
-		fprintf(stderr, "[BeatUpClient|Native] mono_assembly_load_from() failed\n");
+		LogUnity(UnityLogType_Error, __LINE__, __FUNCTION__, "mono_assembly_load_from() failed");
 		goto end;
 	}
-	void *desc = mono_method_desc_new(IPALoaded() ? "BeatUpClient:NativeEnable_BSIPA" : "BeatUpClient:NativeEnable", 1);
-	void *run = mono_method_desc_search_in_image(desc, image);
+	void *const desc = mono_method_desc_new(IPALoaded() ? "BeatUpClient:NativeEnable_BSIPA" : "BeatUpClient:NativeEnable", 1);
+	void *const run = mono_method_desc_search_in_image(desc, image);
 	mono_method_desc_free(desc);
 	if(!run) {
-		fprintf(stderr, "[BeatUpClient|Native] mono_method_desc_search_in_image(\"BeatUpClient:NativeEnable\") failed\n");
+		LogUnity(UnityLogType_Error, __LINE__, __FUNCTION__, "mono_method_desc_search_in_image(\"BeatUpClient:NativeEnable\") failed");
 		goto end;
 	}
 	void *version = mono_string_new_len(domain, MOD_VERSION, sizeof(MOD_VERSION) - sizeof(""));
 	mono_runtime_invoke(run, NULL, &version, NULL);
-	end:
-	return LoadSceneAsyncNameIndexInternal_Injected(sceneName, sceneBuildIndex, parameters, mustCompleteNextFrame);
+	end: return LoadSceneAsyncNameIndexInternal_Injected(sceneName, sceneBuildIndex, parameters, mustCompleteNextFrame);
 }
 
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-bool __declspec(dllexport) __stdcall LoadOVRPlugin() {
-	fprintf(stderr, "[BeatUpClient|Native] Bootstrapping\n");
+__declspec(dllexport) void __stdcall UnityPluginLoad(PFN_unityLog *(__stdcall **const getInterface)(const unsigned long long (*guid)[2]));
+[[gnu::visibility("default")]] void __stdcall UnityPluginLoad(PFN_unityLog *(__stdcall **const getInterface)(const unsigned long long (*guid)[2])) {
+	unityLog = *(*getInterface)(&(unsigned long long[]){0x9E7507fA5B444D5DULL, 0x92FB979515EA83FCULL});
+
+	LogUnity(UnityLogType_Log, __LINE__, __FUNCTION__, "Bootstrapping");
 
 	const HINSTANCE libmono_dll = LoadLibraryA("mono-2.0-bdwgc.dll");
 	if(libmono_dll == NULL) {
-		fprintf(stderr, "[BeatUpClient|Native] Failed to load library mono-2.0-bdwgc.dll\n");
+		LogUnity(UnityLogType_Error, __LINE__, __FUNCTION__, "Failed to load library mono-2.0-bdwgc.dll");
 		MessageBoxA(NULL, "BeatUpClient Loader", "Failed to load library mono-2.0-bdwgc.dll", MB_OK);
-		return true;
+		return;
 	}
 	#define LOAD_PROC(proc_) { \
 		*(void**)&(proc_) = GetProcAddress(libmono_dll, #proc_); \
@@ -115,20 +140,25 @@ bool __declspec(dllexport) __stdcall LoadOVRPlugin() {
 	LOAD_PROC(mono_assembly_get_image)
 	#undef LOAD_PROC
 	if(false) fail0: {
-		fprintf(stderr, "[BeatUpClient|Native] GetProcAddress() failed\n");
+		LogUnity(UnityLogType_Error, __LINE__, __FUNCTION__, "GetProcAddress() failed");
 		MessageBoxA(NULL, "BeatUpClient Loader", "GetProcAddress() failed", MB_OK);
-		return true;
+		return;
 	}
 
 	domain = mono_domain_get();
-	void *assembly = mono_domain_assembly_open(domain, "./Beat Saber_Data/Managed/UnityEngine.CoreModule.dll");
-	void *image = mono_assembly_get_image(assembly);
+	void *const assembly = mono_domain_assembly_open(domain, "./Beat Saber_Data/Managed/UnityEngine.CoreModule.dll");
+	void *const image = mono_assembly_get_image(assembly);
 	// interop_debug_class(image, "UnityEngine.SceneManagement", "SceneManagerAPIInternal");
-	void *desc = mono_method_desc_new("UnityEngine.SceneManagement.SceneManagerAPIInternal:LoadSceneAsyncNameIndexInternal_Injected", 1);
-	void *method = mono_method_desc_search_in_image(desc, image);
+	void *const desc = mono_method_desc_new("UnityEngine.SceneManagement.SceneManagerAPIInternal:LoadSceneAsyncNameIndexInternal_Injected", 1);
+	void *const method = mono_method_desc_search_in_image(desc, image);
 	*(void**)&LoadSceneAsyncNameIndexInternal_Injected = mono_lookup_internal_call(method);
-	void *(*LateLoad_ptr)(void *sceneName, int32_t sceneBuildIndex, void *parameters, bool mustCompleteNextFrame) = LateLoad;
+	void *(*const LateLoad_ptr)(void *sceneName, int32_t sceneBuildIndex, void *parameters, bool mustCompleteNextFrame) = LateLoad;
 	mono_add_internal_call("UnityEngine.SceneManagement.SceneManagerAPIInternal::LoadSceneAsyncNameIndexInternal_Injected", *(const void**)&LateLoad_ptr);
 	mono_method_desc_free(desc);
-	return true;
+	return;
+}
+
+__declspec(dllexport) void __stdcall UnityPluginUnload();
+[[gnu::visibility("default")]] void __stdcall UnityPluginUnload() {
+	unityLog = NULL;
 }
