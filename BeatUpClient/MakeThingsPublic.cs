@@ -140,8 +140,7 @@ var refs = new (string? path, string name, string[]? overrides)[] {
 		"MultiplayerCore.UI.MpPerPlayerUI::segmentVert",
 	}),
 	(managed, "BGLib.Polyglot.dll", new[] {
-		"BGLib.Polyglot.LocalizationImporter::Import",
-		"BGLib.Polyglot.LocalizationImporter::Initialize",
+		"BGLib.Polyglot.LocalizationAsset::.ctor",
 		"BGLib.Polyglot.LocalizedTextComponent`1::localizedComponent",
 	}),
 	(null, "SiraUtil.dll", new[] {
@@ -184,9 +183,9 @@ var refs = new (string? path, string name, string[]? overrides)[] {
 		"SwitchSettingsController::_toggle",
 	}),
 	(managed, "Networking.dll", new[] {
+		"NetworkConfigSO::_customLocation",
 		"NetworkConfigSO::_discoveryPort",
 		"NetworkConfigSO::_forceGameLift",
-		"NetworkConfigSO::_masterServerHostName",
 		"NetworkConfigSO::_masterServerPort",
 		"NetworkConfigSO::_maxPartySize",
 		"NetworkConfigSO::_multiplayerPort",

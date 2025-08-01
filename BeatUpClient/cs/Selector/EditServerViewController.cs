@@ -92,10 +92,7 @@ static partial class BeatUpClient {
 			if(firstActivation)
 				base.buttonBinder.AddBinding(cancelButton, () => Dismiss());
 			string? hostName = Resolve<SettingsManager>()!.settings.customServer.hostName ?? string.Empty, status = null;
-			if(edit && BeatUpClient_Config.Instance.Servers.TryGetValue(hostName, out status))
-				activeKey = hostName;
-			else
-				activeKey = null;
+			activeKey = (edit && BeatUpClient_Config.Instance.Servers.TryGetValue(hostName, out status)) ? hostName : null;
 			editHostnameTextbox.SetText(activeKey ?? string.Empty);
 			editHostnameTextbox.onValueChanged.Invoke(editHostnameTextbox);
 			editStatusTextbox.SetText(status ?? string.Empty);

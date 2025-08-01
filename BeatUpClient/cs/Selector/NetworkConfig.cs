@@ -4,7 +4,8 @@ static partial class BeatUpClient {
 		public int discoveryPort {get;}
 		public int partyPort {get;}
 		public int multiplayerPort {get;}
-		public DnsEndPoint masterServerEndPoint {get; set;}
+		public int masterServerPort {get; set;}
+		public string customLocation {get;}
 		public string multiplayerStatusUrl {get; set;}
 		public string quickPlaySetupUrl {get;}
 		public string graphUrl {get; set;}
@@ -13,13 +14,13 @@ static partial class BeatUpClient {
 		public ServiceEnvironment serviceEnvironment {get;}
 		public string appId {get;}
 		public VanillaConfig(NetworkConfigSO from) => // Bypass all getters other mods might patch
-			(this.maxPartySize, this.discoveryPort, this.partyPort, this.multiplayerPort, this.masterServerEndPoint, this.multiplayerStatusUrl, this.quickPlaySetupUrl, this.graphUrl, this.graphAccessToken, this.forceGameLift, this.serviceEnvironment, this.appId) = 
-				(/*from._maxPartySize*/5, from._discoveryPort, from._partyPort, from._multiplayerPort, new DnsEndPoint(from._masterServerHostName, from._masterServerPort), from._multiplayerStatusUrl, from._quickPlaySetupUrl, from.graphUrl, from.graphAccessToken, from._forceGameLift, from._serviceEnvironment, from.appId);
+			(this.maxPartySize, this.discoveryPort, this.partyPort, this.multiplayerPort, this.masterServerPort, this.customLocation, this.multiplayerStatusUrl, this.quickPlaySetupUrl, this.graphUrl, this.graphAccessToken, this.forceGameLift, this.serviceEnvironment, this.appId) = 
+				(/*from._maxPartySize*/5, from._discoveryPort, from._partyPort, from._multiplayerPort, from._masterServerPort, from._customLocation, from._multiplayerStatusUrl, from._quickPlaySetupUrl, from.graphUrl, from.graphAccessToken, from._forceGameLift, from._serviceEnvironment, from.appId);
 	}
 
-	internal static VanillaConfig officialConfig;
+	internal static VanillaConfig? officialConfig = null;
 	static void NetworkConfigSetup(NetworkConfigSO networkConfig) {
-		if(officialConfig.masterServerEndPoint == null)
+		if(officialConfig == null)
 			officialConfig = new VanillaConfig(networkConfig);
 	}
 
@@ -28,15 +29,15 @@ static partial class BeatUpClient {
 		CustomNetworkConfig? customNetworkConfig = Resolve<CustomNetworkConfig>();
 		if(customNetworkConfig == null)
 			return false;
-		VanillaConfig newConfig = officialConfig;
+		VanillaConfig newConfig = officialConfig ?? default;
 		if(!string.IsNullOrEmpty(hostname)) {
 			string[] splitHostname = hostname.ToLower().Split(new[] {':'});
-			int port = officialConfig.masterServerEndPoint.port;
+			int port = newConfig.masterServerPort;
 			if(splitHostname.Length >= 2)
 				if(int.TryParse(splitHostname[1], out int customPort) && customPort > 0)
 					port = customPort;
 			newConfig.maxPartySize = 254;
-			newConfig.masterServerEndPoint = new DnsEndPoint(splitHostname[0], port);
+			newConfig.masterServerPort = port;
 			newConfig.multiplayerStatusUrl = string.IsNullOrEmpty(statusUrl) ? "https://status." + splitHostname[0] : statusUrl;
 			newConfig.graphUrl = hostname;
 			newConfig.forceGameLift = hostname.StartsWith("http://") || hostname.StartsWith("https://");
@@ -66,7 +67,7 @@ static partial class BeatUpClient {
 
 	[Detour(typeof(ClientCertificateValidator), nameof(ClientCertificateValidator.ValidateCertificateChainInternal))]
 	static void ClientCertificateValidator_ValidateCertificateChainInternal(ClientCertificateValidator self, DnsEndPoint endPoint, System.Security.Cryptography.X509Certificates.X509Certificate2 certificate, byte[][] certificateChain) {
-		if(Resolve<CustomNetworkConfig>() is CustomNetworkConfig networkConfig && networkConfig.graphUrl != officialConfig.graphUrl)
+		if(Resolve<CustomNetworkConfig>() is CustomNetworkConfig networkConfig && networkConfig.graphUrl != officialConfig?.graphUrl)
 			return;
 		Base(self, endPoint, certificate, certificateChain);
 	}
