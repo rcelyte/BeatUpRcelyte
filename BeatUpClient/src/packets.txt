@@ -1,5 +1,0 @@
-@include ../../common/packets.txt
-
-s ServerConnectInfo_Prefixed
-	String name
-	ServerConnectInfo base
