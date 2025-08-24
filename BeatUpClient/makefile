@@ -69,7 +69,7 @@ thirdparty/SongCore.dll:
 		\"\$$schema\": \"https://raw.githubusercontent.com/bsmg/BSIPA-MetadataFileSchema/master/Schema.json\",\n\
 		\"author\": \"rcelyte\",\n\
 		\"description\": \"Tweaks and enhancements for enabling modded multiplayer\",\n\
-		\"gameVersion\": \"1.40.9_7906\",\n\
+		\"gameVersion\": \"1.40.9_8108\",\n\
 		\"dependsOn\": {\"BSIPA\": \"^4.3.0\"},\n\
 		\"conflictsWith\": {\"BeatTogether\": \"*\"},\n\
 		\"loadBefore\": [\"MultiplayerCore\"],\n\
