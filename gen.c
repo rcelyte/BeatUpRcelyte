@@ -443,9 +443,12 @@ static void gen_header_enum(char **out, struct Token *token) {
 	if(token[1].type == TType_Enum_end)
 		return;
 	write_str(out, "enum {\n");
+	bool writeCount = true;
 	TOKEN_ITER(token) {
 		case TType_Enum_start: ++scope; break;
 		case TType_Enum_end: {
+			if(writeCount)
+				write_fmt_indent(out, 1, "%s_COUNT,\n", enumName);
 			if(--scope)
 				break;
 			write_str(out, "};\n");
@@ -459,6 +462,7 @@ static void gen_header_enum(char **out, struct Token *token) {
 					write_fmt_indent(out, 1, "#define %s_%s %lldu\n", enumName, token->field.type, token->field.enumValue); // TODO: check subsequent values as well
 				else
 					write_fmt_indent(out, 1, "%s_%s = %lld,\n", enumName, token->field.type, token->field.enumValue);
+				writeCount = false;
 			} else {
 				write_fmt_indent(out, 1, "%s_%s,\n", enumName, token->field.type);
 			}

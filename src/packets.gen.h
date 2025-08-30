@@ -56,6 +56,8 @@ enum {
 	GameVersion_1_40_7,
 	GameVersion_1_40_8,
 	GameVersion_1_40_9,
+	GameVersion_1_40_10,
+	GameVersion_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_GameVersion(GameVersion value) {
 	switch(value) {
@@ -111,6 +113,7 @@ enum {
 		case GameVersion_1_40_7: return "1_40_7";
 		case GameVersion_1_40_8: return "1_40_8";
 		case GameVersion_1_40_9: return "1_40_9";
+		case GameVersion_1_40_10: return "1_40_10";
 		default: return "???";
 	}
 }
@@ -121,6 +124,7 @@ enum {
 	BeatmapDifficulty_Hard,
 	BeatmapDifficulty_Expert,
 	BeatmapDifficulty_ExpertPlus,
+	BeatmapDifficulty_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_BeatmapDifficulty(BeatmapDifficulty value) {
 	switch(value) {
@@ -139,6 +143,7 @@ enum {
 	ShareableType_BeatmapAudio,
 	ShareableType_BeatmapSet,
 	ShareableType_Avatar,
+	ShareableType_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_ShareableType(ShareableType value) {
 	switch(value) {
@@ -158,6 +163,7 @@ enum {
 	LoadState_Downloading,
 	LoadState_Loading,
 	LoadState_Done,
+	LoadState_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_LoadState(LoadState value) {
 	switch(value) {
@@ -179,6 +185,7 @@ enum {
 	BeatUpMessageType_DataFragment,
 	BeatUpMessageType_LoadProgress,
 	BeatUpMessageType_ServerConnectInfo,
+	BeatUpMessageType_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_BeatUpMessageType(BeatUpMessageType value) {
 	switch(value) {
@@ -204,6 +211,7 @@ enum {
 	EntitlementsStatus_NotOwned,
 	EntitlementsStatus_NotDownloaded,
 	EntitlementsStatus_Ok,
+	EntitlementsStatus_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_EntitlementsStatus(EntitlementsStatus value) {
 	switch(value) {
@@ -282,6 +290,7 @@ typedef uint8_t EnergyType;
 enum {
 	EnergyType_Bar,
 	EnergyType_Battery,
+	EnergyType_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_EnergyType(EnergyType value) {
 	switch(value) {
@@ -295,6 +304,7 @@ enum {
 	EnabledObstacleType_All,
 	EnabledObstacleType_FullHeightOnly,
 	EnabledObstacleType_NoObstacles,
+	EnabledObstacleType_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_EnabledObstacleType(EnabledObstacleType value) {
 	switch(value) {
@@ -310,6 +320,7 @@ enum {
 	SongSpeed_Faster,
 	SongSpeed_Slower,
 	SongSpeed_SuperFast,
+	SongSpeed_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_SongSpeed(SongSpeed value) {
 	switch(value) {
@@ -325,6 +336,7 @@ enum {
 	MultiplayerGameState_None,
 	MultiplayerGameState_Lobby,
 	MultiplayerGameState_Game,
+	MultiplayerGameState_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_MultiplayerGameState(MultiplayerGameState value) {
 	switch(value) {
@@ -394,6 +406,7 @@ enum {
 	MenuRpcType_SetIsStartButtonEnabled,
 	MenuRpcType_ClearSelectedBeatmap,
 	MenuRpcType_ClearSelectedGameplayModifiers,
+	MenuRpcType_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_MenuRpcType(MenuRpcType value) {
 	switch(value) {
@@ -447,6 +460,7 @@ enum {
 	GameplayType_BurstSliderHead,
 	GameplayType_BurstSliderElement,
 	GameplayType_BurstSliderElementFill,
+	GameplayType_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_GameplayType(GameplayType value) {
 	switch(value) {
@@ -477,6 +491,7 @@ enum {
 	NoteLineLayer_Base,
 	NoteLineLayer_Upper,
 	NoteLineLayer_Top,
+	NoteLineLayer_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_NoteLineLayer(NoteLineLayer value) {
 	switch(value) {
@@ -496,6 +511,7 @@ enum {
 	MultiplayerLevelEndState_HostEndedLevel,
 	MultiplayerLevelEndState_ConnectedAfterLevelEnded,
 	MultiplayerLevelEndState_Quit,
+	MultiplayerLevelEndState_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_MultiplayerLevelEndState(MultiplayerLevelEndState value) {
 	switch(value) {
@@ -515,6 +531,7 @@ enum {
 	MultiplayerPlayerLevelEndState_SongFinished,
 	MultiplayerPlayerLevelEndState_NotFinished,
 	MultiplayerPlayerLevelEndState_NotStarted,
+	MultiplayerPlayerLevelEndState_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_MultiplayerPlayerLevelEndState(MultiplayerPlayerLevelEndState value) {
 	switch(value) {
@@ -534,6 +551,7 @@ enum {
 	MultiplayerPlayerLevelEndReason_WasInactive,
 	MultiplayerPlayerLevelEndReason_StartupFailed,
 	MultiplayerPlayerLevelEndReason_ConnectedAfterLevelEnded,
+	MultiplayerPlayerLevelEndReason_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_MultiplayerPlayerLevelEndReason(MultiplayerPlayerLevelEndReason value) {
 	switch(value) {
@@ -558,6 +576,7 @@ enum {
 	Rank_S,
 	Rank_SS,
 	Rank_SSS,
+	Rank_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_Rank(Rank value) {
 	switch(value) {
@@ -577,6 +596,7 @@ enum {
 	LevelEndStateType_None,
 	LevelEndStateType_Cleared,
 	LevelEndStateType_Failed,
+	LevelEndStateType_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_LevelEndStateType(LevelEndStateType value) {
 	switch(value) {
@@ -591,6 +611,7 @@ enum {
 	LevelEndAction_None,
 	LevelEndAction_Quit,
 	LevelEndAction_Restart,
+	LevelEndAction_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_LevelEndAction(LevelEndAction value) {
 	switch(value) {
@@ -634,6 +655,7 @@ enum {
 	NoteCutDirection_DownRight,
 	NoteCutDirection_Any,
 	NoteCutDirection_None,
+	NoteCutDirection_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_NoteCutDirection(NoteCutDirection value) {
 	switch(value) {
@@ -654,6 +676,7 @@ typedef int32_t ObstacleType;
 enum {
 	ObstacleType_FullHeight,
 	ObstacleType_Top,
+	ObstacleType_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_ObstacleType(ObstacleType value) {
 	switch(value) {
@@ -666,6 +689,7 @@ typedef int32_t SliderType;
 enum {
 	SliderType_Normal,
 	SliderType_Burst,
+	SliderType_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_SliderType(SliderType value) {
 	switch(value) {
@@ -679,6 +703,7 @@ enum {
 	SliderMidAnchorMode_Straight,
 	SliderMidAnchorMode_Clockwise,
 	SliderMidAnchorMode_CounterClockwise,
+	SliderMidAnchorMode_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_SliderMidAnchorMode(SliderMidAnchorMode value) {
 	switch(value) {
@@ -705,6 +730,7 @@ enum {
 	GameplayRpcType_NoteSpawned,
 	GameplayRpcType_ObstacleSpawned,
 	GameplayRpcType_SliderSpawned,
+	GameplayRpcType_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_GameplayRpcType(GameplayRpcType value) {
 	switch(value) {
@@ -733,6 +759,7 @@ enum {
 	MpBeatmapDifficulty_Hard,
 	MpBeatmapDifficulty_Expert,
 	MpBeatmapDifficulty_ExpertPlus,
+	MpBeatmapDifficulty_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_MpBeatmapDifficulty(MpBeatmapDifficulty value) {
 	switch(value) {
@@ -751,6 +778,7 @@ enum {
 	MpPlatform_OculusPC,
 	MpPlatform_OculusQuest,
 	MpPlatform_PS4,
+	MpPlatform_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_MpPlatform(MpPlatform value) {
 	switch(value) {
@@ -772,6 +800,7 @@ enum {
 	MpCoreType_MpcCapabilitiesPacket,
 	MpCoreType_MpPlayerData,
 	MpCoreType_MpexPlayerData,
+	MpCoreType_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_MpCoreType(MpCoreType value) {
 	switch(value) {
@@ -798,6 +827,7 @@ enum {
 	DisconnectedReason_ClientConnectionClosed,
 	DisconnectedReason_NetworkDisconnected,
 	DisconnectedReason_ServerTerminated,
+	DisconnectedReason_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_DisconnectedReason(DisconnectedReason value) {
 	switch(value) {
@@ -853,6 +883,7 @@ enum {
 	InternalMessageType_PlayerAvatarUpdate,
 	InternalMessageType_PingMessage,
 	InternalMessageType_PongMessage,
+	InternalMessageType_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_InternalMessageType(InternalMessageType value) {
 	switch(value) {
@@ -900,6 +931,7 @@ enum {
 	AuthenticateUserResponse_Result_Success,
 	AuthenticateUserResponse_Result_Failed,
 	AuthenticateUserResponse_Result_UnknownError,
+	AuthenticateUserResponse_Result_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_AuthenticateUserResponse_Result(AuthenticateUserResponse_Result value) {
 	switch(value) {
@@ -920,6 +952,7 @@ enum {
 	ConnectToServerResponse_Result_VersionMismatch,
 	ConnectToServerResponse_Result_ConfigMismatch,
 	ConnectToServerResponse_Result_UnknownError,
+	ConnectToServerResponse_Result_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_ConnectToServerResponse_Result(ConnectToServerResponse_Result value) {
 	switch(value) {
@@ -940,6 +973,7 @@ enum {
 	DiscoveryPolicy_Hidden,
 	DiscoveryPolicy_WithCode,
 	DiscoveryPolicy_Public,
+	DiscoveryPolicy_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_DiscoveryPolicy(DiscoveryPolicy value) {
 	switch(value) {
@@ -954,6 +988,7 @@ enum {
 	InvitePolicy_OnlyConnectionOwnerCanInvite,
 	InvitePolicy_AnyoneCanInvite,
 	InvitePolicy_NobodyCanInvite,
+	InvitePolicy_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_InvitePolicy(InvitePolicy value) {
 	switch(value) {
@@ -968,6 +1003,7 @@ enum {
 	GameplayServerMode_Countdown,
 	GameplayServerMode_Managed,
 	GameplayServerMode_QuickStartOneSong,
+	GameplayServerMode_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_GameplayServerMode(GameplayServerMode value) {
 	switch(value) {
@@ -983,6 +1019,7 @@ enum {
 	SongSelectionMode_Random,
 	SongSelectionMode_OwnerPicks,
 	SongSelectionMode_RandomPlayerPicks,
+	SongSelectionMode_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_SongSelectionMode(SongSelectionMode value) {
 	switch(value) {
@@ -1013,6 +1050,7 @@ typedef uint8_t GetPublicServersResponse_Result;
 enum {
 	GetPublicServersResponse_Result_Success,
 	GetPublicServersResponse_Result_UnknownError,
+	GetPublicServersResponse_Result_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_GetPublicServersResponse_Result(GetPublicServersResponse_Result value) {
 	switch(value) {
@@ -1053,6 +1091,7 @@ enum {
 	GameLiftMessageType_AuthenticateUserResponse,
 	GameLiftMessageType_MessageReceivedAcknowledge,
 	GameLiftMessageType_MultipartMessage,
+	GameLiftMessageType_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_GameLiftMessageType(GameLiftMessageType value) {
 	switch(value) {
@@ -1109,6 +1148,7 @@ enum {
 	DeliveryMethod_Sequenced,
 	DeliveryMethod_ReliableOrdered,
 	DeliveryMethod_ReliableSequenced,
+	DeliveryMethod_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_DeliveryMethod(DeliveryMethod value) {
 	switch(value) {
@@ -1139,6 +1179,7 @@ enum {
 	PacketProperty_InvalidProtocol,
 	PacketProperty_NatMessage,
 	PacketProperty_Empty,
+	PacketProperty_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_PacketProperty(PacketProperty value) {
 	switch(value) {
@@ -1173,6 +1214,7 @@ enum {
 	MultiplayerPlacementErrorCode_AuthenticationFailed,
 	MultiplayerPlacementErrorCode_RequestTimeout,
 	MultiplayerPlacementErrorCode_MatchmakingTimeout,
+	MultiplayerPlacementErrorCode_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_MultiplayerPlacementErrorCode(MultiplayerPlacementErrorCode value) {
 	switch(value) {
@@ -1201,6 +1243,7 @@ enum {
 	WireMessageType_WireRoomQueryResp,
 	WireMessageType_WireGraphConnect,
 	WireMessageType_WireGraphConnectResp,
+	WireMessageType_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_WireMessageType(WireMessageType value) {
 	switch(value) {

@@ -1,6 +1,7 @@
 #include "internal.h"
 #include "status.h"
 #include "json.h"
+#include <assert.h>
 #include <inttypes.h>
 #include <math.h>
 #include <stdatomic.h>
@@ -158,7 +159,7 @@ static void status_web_index(struct HttpContext *const http) {
 			[6] = "1.19.0",
 			[7] = "1.19.1",
 			[8] = "1.20.0 ⬌ 1.31.1",
-			[9] = "1.32.0 ⬌ 1.40.9", // TODO: protocol ABI ranges
+			[9] = "1.32.0 ⬌ 1.40.10", // TODO: protocol ABI ranges
 		};
 		char cover[(sizeof(entry.levelCover.data) * 4 + 3) / 3 + 53] = "\0style=background-image:url(data:image/jpeg;base64,";
 		if(entry.levelCover.length > 4 && memcmp(entry.levelCover.data, (const uint8_t[4]){0xff,0xd8,0xff,0xe0}, 4) == 0) {
@@ -228,7 +229,7 @@ static void status_status(struct HttpContext *http, bool isGame) {
 	char msg[65536], *msg_end = msg;
 	PUT("%s%s%s%u%c", "{"
 		"\"minimum_app_version\":\"1.19.0", isGame ? "b2147483647" : STATUS_APPVER_POSTFIX, "\","
-		"\"maximumAppVersion\":\"1.40.9_\U0001f171\ufe0f\","
+		"\"maximumAppVersion\":\"1.40.10_\U0001f171\ufe0f\","
 		"\"status\":", TEST_maintenanceStartTime != 0, ',');
 	if(TEST_maintenanceStartTime) {
 		PUT("%s%"PRIu64"%s%"PRIu64"%s%"PRIu64"%s%s%s",
@@ -281,67 +282,15 @@ static void status_graph(struct HttpContext *http, struct HttpRequest req, struc
 			const struct String version = json_read_string(&iter);
 			if(version.length < 2 || version.data[0] != '1' || version.data[1] != '.')
 				continue;
-			const char *sep = memchr(version.data, '_', version.length);
-			#pragma GCC diagnostic push
-			#pragma GCC diagnostic ignored "-Wmultichar"
-			_Static_assert('abc' == ('a' << 16 | 'b' << 8 | 'c'));
-			uint64_t versionBE = 0;
-			for(const char *it = &version.data[2], *const it_end = sep ? sep : &version.data[version.length]; it < it_end; ++it)
-				versionBE = versionBE << 8 | *(const uint8_t*)it;
-			switch(versionBE) {
-				case '19.1': connectInfo.gameVersion = GameVersion_1_19_1; break;
-				case '20.0': connectInfo.gameVersion = GameVersion_1_20_0; break;
-				case '21.0': connectInfo.gameVersion = GameVersion_1_21_0; break;
-				case '22.0': connectInfo.gameVersion = GameVersion_1_22_0; break;
-				case '22.1': connectInfo.gameVersion = GameVersion_1_22_1; break;
-				case '23.0': connectInfo.gameVersion = GameVersion_1_23_0; break;
-				case '24.0': connectInfo.gameVersion = GameVersion_1_24_0; break;
-				case '24.1': connectInfo.gameVersion = GameVersion_1_24_1; break;
-				case '25.0': connectInfo.gameVersion = GameVersion_1_25_0; break;
-				case '25.1': connectInfo.gameVersion = GameVersion_1_25_1; break;
-				case '26.0': connectInfo.gameVersion = GameVersion_1_26_0; break;
-				case '27.0': connectInfo.gameVersion = GameVersion_1_27_0; break;
-				case '28.0': connectInfo.gameVersion = GameVersion_1_28_0; break;
-				case '29.0': connectInfo.gameVersion = GameVersion_1_29_0; break;
-				case '29.1': connectInfo.gameVersion = GameVersion_1_29_1; break;
-				case '29.4': connectInfo.gameVersion = GameVersion_1_29_4; break;
-				case '30.0': connectInfo.gameVersion = GameVersion_1_30_0; break;
-				case '30.2': connectInfo.gameVersion = GameVersion_1_30_2; break;
-				case '31.0': connectInfo.gameVersion = GameVersion_1_31_0; break;
-				case '31.1': connectInfo.gameVersion = GameVersion_1_31_1; break;
-				case '32.0': connectInfo.gameVersion = GameVersion_1_32_0; break;
-				case '33.0': connectInfo.gameVersion = GameVersion_1_33_0; break;
-				case '34.0': connectInfo.gameVersion = GameVersion_1_34_0; break;
-				case '34.2': connectInfo.gameVersion = GameVersion_1_34_2; break;
-				case '34.4': connectInfo.gameVersion = GameVersion_1_34_4; break;
-				case '34.5': connectInfo.gameVersion = GameVersion_1_34_5; break;
-				case '34.6': connectInfo.gameVersion = GameVersion_1_34_6; break;
-				case '35.0': connectInfo.gameVersion = GameVersion_1_35_0; break;
-				case '36.0': connectInfo.gameVersion = GameVersion_1_36_0; break;
-				case '36.1': connectInfo.gameVersion = GameVersion_1_36_1; break;
-				case '36.2': connectInfo.gameVersion = GameVersion_1_36_2; break;
-				case '37.0': connectInfo.gameVersion = GameVersion_1_37_0; break;
-				case '37.1': connectInfo.gameVersion = GameVersion_1_37_1; break;
-				case '37.2': connectInfo.gameVersion = GameVersion_1_37_2; break;
-				case '37.3': connectInfo.gameVersion = GameVersion_1_37_3; break;
-				case '37.4': connectInfo.gameVersion = GameVersion_1_37_4; break;
-				case '37.5': connectInfo.gameVersion = GameVersion_1_37_5; break;
-				case '38.0': connectInfo.gameVersion = GameVersion_1_38_0; break;
-				case '39.0': connectInfo.gameVersion = GameVersion_1_39_0; break;
-				case '39.1': connectInfo.gameVersion = GameVersion_1_39_1; break;
-				case '40.0': connectInfo.gameVersion = GameVersion_1_40_0; break;
-				case '40.1': connectInfo.gameVersion = GameVersion_1_40_1; break;
-				case '40.2': connectInfo.gameVersion = GameVersion_1_40_2; break;
-				case '40.3': connectInfo.gameVersion = GameVersion_1_40_3; break;
-				case '40.4': connectInfo.gameVersion = GameVersion_1_40_4; break;
-				case '40.5': connectInfo.gameVersion = GameVersion_1_40_5; break;
-				case '40.6': connectInfo.gameVersion = GameVersion_1_40_6; break;
-				case '40.7': connectInfo.gameVersion = GameVersion_1_40_7; break;
-				case '40.8': connectInfo.gameVersion = GameVersion_1_40_8; break;
-				case '40.9': connectInfo.gameVersion = GameVersion_1_40_9; break;
-				default: {
-					connectInfo.gameVersion = GameVersion_Unknown;
+			const char *end = memchr(version.data, '_', version.length);
+			struct String semver = {.length = (end != NULL) ? end - version.data : version.length};
+			for(unsigned i = 0; i < semver.length; ++i)
+				semver.data[i] = (version.data[i] != '.') ? version.data[i] : '_';
+			for(connectInfo.gameVersion = GameVersion_COUNT - 1; strncmp(semver.data, _reflect_GameVersion(connectInfo.gameVersion), semver.length) != 0;) {
+				static_assert(GameVersion_Unknown == 0);
+				if(--connectInfo.gameVersion == GameVersion_Unknown) {
 					uprintf("Unexpected game version: %.*s\n", version.length, version.data);
+					break;
 				}
 			}
 			connectInfo.protocolVersion =
@@ -350,7 +299,6 @@ static void status_graph(struct HttpContext *http, struct HttpRequest req, struc
 				(connectInfo.gameVersion < GameVersion_1_32_0) ? 8 :
 				9;
 			state.shortMask = (connectInfo.gameVersion != GameVersion_Unknown && connectInfo.gameVersion < GameVersion_1_34_0);
-			#pragma GCC diagnostic pop
 		} else if(String_is(key0, "beatmap_level_selection_mask")) {
 			JSON_ITER_OBJECT(&iter, key1) {
 				if(String_is(key1, "difficulties")) {
