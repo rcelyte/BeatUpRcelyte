@@ -229,7 +229,7 @@ static void status_status(struct HttpContext *http, bool isGame) {
 	char msg[65536], *msg_end = msg;
 	PUT("%s%s%s%u%c", "{"
 		"\"minimum_app_version\":\"1.19.0", isGame ? "b2147483647" : STATUS_APPVER_POSTFIX, "\","
-		"\"maximumAppVersion\":\"1.40.11_\U0001f171\ufe0f\","
+		"\"maximumAppVersion\":\"1.40.11\","
 		"\"status\":", TEST_maintenanceStartTime != 0, ',');
 	if(TEST_maintenanceStartTime) {
 		PUT("%s%"PRIu64"%s%"PRIu64"%s%"PRIu64"%s%s%s",
