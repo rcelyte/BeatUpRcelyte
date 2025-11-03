@@ -13,7 +13,7 @@ LIBS := libmbedtls.a libmbedx509.a libmbedcrypto.a
 OBJS := $(FILES:%=$(OBJDIR)/%.o) $(LIBS:%=$(OBJDIR)/%)
 DEPS := $(FILES:%=$(OBJDIR)/%.d)
 
-CFLAGS := -std=gnu2x -ffunction-sections -fdata-sections -isystem thirdparty/mbedtls/include -isystem thirdparty/enet/Source/Native -DMP_EXTENDED_ROUTING
+CFLAGS := -std=gnu23 -ffunction-sections -fdata-sections -isystem thirdparty/mbedtls/include -isystem thirdparty/enet/Source/Native -DMP_EXTENDED_ROUTING
 LDFLAGS := -O3 -Wl,--gc-sections,--fatal-warnings -fno-pie -pthread
 
 sinclude makefile.user
@@ -71,7 +71,7 @@ src/packets.gen.h: src/packets.txt common/packets.txt src/wire.txt .obj/gen.$(HO
 .obj/gen.$(HOST): gen.c
 	@echo "[cc $(notdir $@)]"
 	@mkdir -p "$(@D)"
-	$(NATIVE_CC) -std=c2x -no-pie "$<" -o "$@"
+	$(NATIVE_CC) -std=c23 -no-pie "$<" -o "$@"
 
 bsipa BeatUpClient/BeatUpClient.dll:
 	$(MAKE) -C BeatUpClient BeatUpClient.dll

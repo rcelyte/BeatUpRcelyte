@@ -92,7 +92,7 @@ static uint32_t escape(uint8_t *out, size_t limit, const uint8_t *in, size_t in_
 }
 
 static char *base64_encode(char *out, const struct ByteArrayNetSerializable *const buffer) {
-	static const char table[64] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	[[gnu::nonstring]] static const char table[64] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 	const div_t length = div((int32_t)buffer->length, 3);
 	const uint8_t *bin = buffer->data;
 	for(uint32_t i = 0; i < (uint32_t)length.quot; ++i, bin += 3) {
@@ -159,7 +159,7 @@ static void status_web_index(struct HttpContext *const http) {
 			[6] = "1.19.0",
 			[7] = "1.19.1",
 			[8] = "1.20.0 ⬌ 1.31.1",
-			[9] = "1.32.0 ⬌ 1.40.12", // TODO: protocol ABI ranges
+			[9] = "1.32.0 ⬌ 1.40.13", // TODO: protocol ABI ranges
 		};
 		char cover[(sizeof(entry.levelCover.data) * 4 + 3) / 3 + 53] = "\0style=background-image:url(data:image/jpeg;base64,";
 		if(entry.levelCover.length > 4 && memcmp(entry.levelCover.data, (const uint8_t[4]){0xff,0xd8,0xff,0xe0}, 4) == 0) {
@@ -229,7 +229,7 @@ static void status_status(struct HttpContext *http, bool isGame) {
 	char msg[65536], *msg_end = msg;
 	PUT("%s%s%s%u%c", "{"
 		"\"minimum_app_version\":\"1.19.0", isGame ? "b2147483647" : STATUS_APPVER_POSTFIX, "\","
-		"\"maximumAppVersion\":\"1.40.12\","
+		"\"maximumAppVersion\":\"1.40.13\","
 		"\"status\":", TEST_maintenanceStartTime != 0, ',');
 	if(TEST_maintenanceStartTime) {
 		PUT("%s%"PRIu64"%s%"PRIu64"%s%"PRIu64"%s%s%s",
