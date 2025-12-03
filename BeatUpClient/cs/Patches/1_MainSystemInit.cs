@@ -3,7 +3,7 @@ static partial class BeatUpClient {
 	static void MainSystemInit_InstallBindings(MainSystemInit self, Zenject.DiContainer container, bool isRunningFromTests) {
 		Base(self, container, isRunningFromTests);
 
-		MultiplayerSessionManager? multiplayerSessionManager = Injected<MultiplayerSessionManager>.Resolve<IMultiplayerSessionManager>(container);
+		BeatSaberMultiplayerSessionManager? multiplayerSessionManager = Injected<BeatSaberMultiplayerSessionManager>.Resolve<IMultiplayerSessionManager>(container);
 		IMenuRpcManager menuRpcManager = Injected<IMenuRpcManager>.Resolve(container)!;
 		Injected<AudioClipAsyncLoader>.Resolve(container);
 		Injected<BeatmapDataLoader>.Resolve(container);
@@ -28,6 +28,7 @@ static partial class BeatUpClient {
 		Injected<CustomNetworkConfig>.Resolve<INetworkConfig>(container);
 		Injected<IMultiplayerStatusModel>.Resolve(container);
 		Injected<IQuickPlaySetupModel>.Resolve(container);
+		Injected<BGNet.Core.GameLift.GameLiftPlayerSessionProvider>.Resolve<BGNet.Core.GameLift.IGameLiftPlayerSessionProvider>(container);
 	}
 
 	[Detour(typeof(BeatmapCharacteristicInstaller), nameof(BeatmapCharacteristicInstaller.InstallBindings))]

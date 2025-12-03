@@ -11,8 +11,8 @@ static partial class BeatUpClient {
 		UnityEngine.RectTransform switchButton = UI.CreateButtonFrom(__instance._resumeButton.gameObject, __instance._resumeButton.transform.parent, "SwitchDifficulty", () => {
 			MultiplayerLevelScenesTransitionSetupDataSO setupData = menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData;
 			setupData.Init(setupData.gameMode, in selectedKey, beatmapLevel, setupData.beatmapLevelData,
-				setupData.colorScheme, setupData.gameplayCoreSceneSetupData.gameplayModifiers,
-				setupData.gameplayCoreSceneSetupData.playerSpecificSettings, setupData.gameplayCoreSceneSetupData.practiceSettings,
+				setupData.colorScheme, setupData.gameplayCoreSceneSetupData.gameplayModifiers, setupData.gameplayCoreSceneSetupData.playerSpecificSettings,
+				setupData.gameplayCoreSceneSetupData.environmentsListModel, setupData.gameplayCoreSceneSetupData.practiceSettings,
 				Resolve<AudioClipAsyncLoader>(), Resolve<SettingsManager>(), Resolve<BeatmapDataLoader>(),
 				setupData.gameplayCoreSceneSetupData.useTestNoteCutSoundEffects);
 			menuTransitionsHelper._gameScenesManager.ReplaceScenes(menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData, null,
@@ -56,8 +56,8 @@ static partial class BeatUpClient {
 	}
 
 	// Hopefully we can get these patches into MultiplayerCore soon for large (~16 or more player) lobbies
-	/*[Patch.Generic(PatchType.Prefix, typeof(MultiplayerSessionManager), "Send", typeof(LiteNetLib.Utils.INetSerializable))]
-	public static bool MultiplayerSessionManager_Send(MultiplayerSessionManager __instance, LiteNetLib.Utils.INetSerializable message) =>
+	/*[Patch.Generic(PatchType.Prefix, typeof(BeatSaberMultiplayerSessionManager), "Send", typeof(LiteNetLib.Utils.INetSerializable))]
+	public static bool MultiplayerSessionManager_Send(BeatSaberMultiplayerSessionManager __instance, LiteNetLib.Utils.INetSerializable message) =>
 		(!(message is NodePoseSyncStateNetSerializable || message is StandardScoreSyncStateNetSerializable)).Or(() => __instance.SendUnreliable(message));
 
 	[Patch(PatchType.Postfix, typeof(NodePoseSyncStateManager), "get_deltaUpdateFrequency")]

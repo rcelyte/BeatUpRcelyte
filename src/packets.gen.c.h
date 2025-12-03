@@ -1222,7 +1222,7 @@ static void _pkt_MultiplayerLevelCompletionResults_read(struct MultiplayerLevelC
 		_pkt_vi32_read(&data->playerLevelEndState, pkt, end, ctx);
 		_pkt_vi32_read(&data->playerLevelEndReason, pkt, end, ctx);
 	}
-	if((ctx.protocolVersion < 7 && data->levelEndState < MultiplayerLevelEndState_GivenUp) || (ctx.protocolVersion >= 7 && data->playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted)) {
+	if((ctx.protocolVersion < 7) ? (data->levelEndState < MultiplayerLevelEndState_GivenUp) : (data->playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted)) {
 		_pkt_LevelCompletionResults_read(&data->levelCompletionResults, pkt, end, ctx);
 	}
 }
@@ -1234,7 +1234,7 @@ static void _pkt_MultiplayerLevelCompletionResults_write(const struct Multiplaye
 		_pkt_vi32_write(&data->playerLevelEndState, pkt, end, ctx);
 		_pkt_vi32_write(&data->playerLevelEndReason, pkt, end, ctx);
 	}
-	if((ctx.protocolVersion < 7 && data->levelEndState < MultiplayerLevelEndState_GivenUp) || (ctx.protocolVersion >= 7 && data->playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted)) {
+	if((ctx.protocolVersion < 7) ? (data->levelEndState < MultiplayerLevelEndState_GivenUp) : (data->playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted)) {
 		_pkt_LevelCompletionResults_write(&data->levelCompletionResults, pkt, end, ctx);
 	}
 }

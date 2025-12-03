@@ -26,7 +26,7 @@ static partial class BeatUpClient {
 		});
 		if(!(data?.Length > 0)) {
 			Log.Debug("Fetch failed");
-			return LoadBeatmapLevelDataResult.Error;
+			return LoadBeatmapLevelDataResult.BeatmapLevelDataNotFound;
 		}
 		Net.SetLocalProgress(new LoadProgress(LoadState.Loading, 0));
 		Log.Debug("Unzipping level");
@@ -45,10 +45,10 @@ static partial class BeatUpClient {
 			return (System.Threading.Tasks.Task<LoadBeatmapLevelDataResult>)Base(self, beatmapLevel, beatmapLevelDataVersion, cancellationToken);
 		System.Threading.CancellationTokenSource? loaderCTS = Resolve<MultiplayerLevelLoader>()?._getBeatmapCancellationTokenSource;
 		if(loaderCTS == null || cancellationToken != loaderCTS.Token)
-			return System.Threading.Tasks.Task.FromResult(LoadBeatmapLevelDataResult.Error);
+			return System.Threading.Tasks.Task.FromResult(LoadBeatmapLevelDataResult.BeatmapLevelDataNotFound);
 		if(waitForMpCore) { // MultiplayerCore causes this method to run twice, discarding the first result
 			waitForMpCore = false;
-			return System.Threading.Tasks.Task.FromResult(LoadBeatmapLevelDataResult.Error);
+			return System.Threading.Tasks.Task.FromResult(LoadBeatmapLevelDataResult.BeatmapLevelDataNotFound);
 		}
 		return DownloadLevel(preview, cancellationToken);
 	}

@@ -1,9 +1,7 @@
 static partial class BeatUpClient {
 	class BeatUpScenesTransitionSetupDataSO : ScenesTransitionSetupDataSO {
 		protected override void OnEnable() {
-			SceneInfo si = CreateInstance<SceneInfo>();
-			si._sceneName = "PCInit";
-			Init(new SceneInfo[] {si}, System.Array.Empty<SceneSetupData>());
+			Init(new string[] {"GameInit"}, System.Array.Empty<SceneSetupData>());
 			base.OnEnable();
 		}
 	}
@@ -23,7 +21,7 @@ static partial class BeatUpClient {
 		} else { // Fallback if SiraUtil isn't installed
 			restartTransitionData ??= UnityEngine.ScriptableObject.CreateInstance<BeatUpScenesTransitionSetupDataSO>();
 			self.ClearAndOpenScenes(restartTransitionData, finishCallback: container =>
-				UnityEngine.SceneManagement.SceneManager.GetSceneByName(self.GetCurrentlyLoadedSceneNames()[0]).GetRootGameObjects()[0].GetComponent<PCAppInit>().TransitionToNextScene());
+				UnityEngine.SceneManagement.SceneManager.GetSceneByName(self.GetCurrentlyLoadedSceneNames()[0]).GetRootGameObjects()[0].GetComponent<BeatSaberInit>().TransitionToNextSceneAsync());
 		}
 	}
 }

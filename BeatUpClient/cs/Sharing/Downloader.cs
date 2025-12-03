@@ -91,7 +91,7 @@ static partial class BeatUpClient {
 				throw new System.ArgumentException("`meta.byteLength` cannot be zero");
 			if(info.meta.byteLength >= 1U << 31)
 				throw new System.ArgumentException("`meta.byteLength` must be representable within a 32 bit signed integer");
-			connectedPlayerManager = Resolve<MultiplayerSessionManager>()?.connectedPlayerManager ?? throw new System.InvalidOperationException("Failed to resolve `ConnectedPlayerManager`");
+			connectedPlayerManager = Resolve<BeatSaberMultiplayerSessionManager>()?.connectedPlayerManager ?? throw new System.InvalidOperationException("Failed to resolve `ConnectedPlayerManager`");
 			writer = new LiteNetLib.Utils.NetDataWriter(false, ConnectedPlayerManager.kMaxUnreliableMessageLength);
 			connectedPlayerManager.Write(writer, new DataFragmentRequest(~0U).Wrap());
 			(meta, requestLength) = (info.meta, writer.Length);

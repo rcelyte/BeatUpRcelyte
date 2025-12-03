@@ -93,7 +93,7 @@ static partial class BeatUpClient {
 
 		#if !MPCORE_SUPPORT
 		if(haveMpCore) {
-			BeatUpClient_Error.Init("Incompatible BeatUpClient Version", "This version of BeatUpClient is incompatible with MultiplayerCore");
+			BeatUpClient_Error.Init("Incompatible BeatUpClient Version", "This version of BeatUpClient is incompatible with MultiplayerCore.");
 			return;
 		}
 		#endif
@@ -128,8 +128,7 @@ static partial class BeatUpClient {
 			if(patchCount >= 0) {
 				Log.Debug($"Applying {patchCount} patches");
 				applyPatches();
-				if(GameLiftRequired)
-					BeatUpClient_Migration.Init();
+				BeatUpClient_Migration.Init();
 				UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnSceneLoaded;
 				return;
 			}

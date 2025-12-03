@@ -21,7 +21,7 @@ static partial class BeatUpClient {
 		const ushort blockSize = LocalBlockSize;
 
 		public static IConnectedPlayer? GetPlayer(string userId) {
-			ConnectedPlayerManager? connectedPlayerManager = Resolve<MultiplayerSessionManager>()?.connectedPlayerManager;
+			ConnectedPlayerManager? connectedPlayerManager = Resolve<BeatSaberMultiplayerSessionManager>()?.connectedPlayerManager;
 			for(int i = 0; i < (connectedPlayerManager?.connectedPlayerCount ?? 0); ++i) {
 				IConnectedPlayer player = connectedPlayerManager!.GetConnectedPlayer(i);
 				if(player.userId == userId)
@@ -31,11 +31,11 @@ static partial class BeatUpClient {
 		}
 
 		public static void Send<T>(T message) where T : LiteNetLib.Utils.INetSerializable =>
-			Resolve<MultiplayerSessionManager>()?.Send(message); // TODO: guard `!`
+			Resolve<BeatSaberMultiplayerSessionManager>()?.Send(message); // TODO: guard `!`
 		public static void SendToPlayer<T>(T message, IConnectedPlayer player) where T : LiteNetLib.Utils.INetSerializable =>
-			Resolve<MultiplayerSessionManager>()?.SendToPlayer(message, player); // TODO: guard `!`
+			Resolve<BeatSaberMultiplayerSessionManager>()?.SendToPlayer(message, player); // TODO: guard `!`
 		public static void SendUnreliableToPlayer<T>(T message, IConnectedPlayer player) where T : LiteNetLib.Utils.INetSerializable {
-			ConnectedPlayerManager? connectedPlayerManager = Resolve<MultiplayerSessionManager>()?.connectedPlayerManager;
+			ConnectedPlayerManager? connectedPlayerManager = Resolve<BeatSaberMultiplayerSessionManager>()?.connectedPlayerManager;
 			if(connectedPlayerManager?.isConnected == true && player is ConnectedPlayerManager.ConnectedPlayer connectedPlayer)
 				IConnection_SendUnreliable(connectedPlayer.connection, connectedPlayerManager.WriteOne(((ConnectedPlayerManager.ConnectedPlayer)connectedPlayerManager.localPlayer).connectionId, connectedPlayer.remoteConnectionId, message));
 			else if(message is IPoolablePacket poolable)
@@ -43,11 +43,11 @@ static partial class BeatUpClient {
 		}
 
 		public static void SetLocalProgress(LoadProgress progress) {
-			playerData.UpdateLoadProgress(progress, Resolve<MultiplayerSessionManager>()?.connectedPlayerManager?.localPlayer);
+			playerData.UpdateLoadProgress(progress, Resolve<BeatSaberMultiplayerSessionManager>()?.connectedPlayerManager?.localPlayer);
 			Send(progress.Wrap());
 		}
 		public static void SetLocalProgressUnreliable(LoadProgress progress) {
-			MultiplayerSessionManager? sessionManager = Resolve<MultiplayerSessionManager>();
+			BeatSaberMultiplayerSessionManager? sessionManager = Resolve<BeatSaberMultiplayerSessionManager>();
 			playerData.UpdateLoadProgress(progress, sessionManager?.connectedPlayerManager?.localPlayer);
 			sessionManager?.SendUnreliable(progress.Wrap());
 		}
@@ -114,7 +114,7 @@ static partial class BeatUpClient {
 			reader.SkipBytes(end - reader.Position);
 		}
 
-		internal static void Setup(IMenuRpcManager rpcManager, MultiplayerSessionManager? multiplayerSessionManager) {
+		internal static void Setup(IMenuRpcManager rpcManager, BeatSaberMultiplayerSessionManager? multiplayerSessionManager) {
 			rpcManager.setIsEntitledToLevelEvent += (userId, levelId, status) =>
 				playerData.UpdateLoadProgress(new LoadProgress(status), GetPlayer(userId), true);
 			if(multiplayerSessionManager == null)

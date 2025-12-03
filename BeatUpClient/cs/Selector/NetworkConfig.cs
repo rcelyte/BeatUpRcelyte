@@ -1,21 +1,26 @@
 static partial class BeatUpClient {
-	internal struct VanillaConfig : INetworkConfig {
+	internal struct VanillaConfig : INetworkConfig { // `NetworkConfigSO` getters are hooked by MultiplayerCore, so avoid using that type
 		public int maxPartySize {get; set;}
 		public int discoveryPort {get;}
 		public int partyPort {get;}
 		public int multiplayerPort {get;}
 		public int masterServerPort {get; set;}
-		public string customLocation {get;}
 		public string multiplayerStatusUrl {get; set;}
 		public string quickPlaySetupUrl {get;}
 		public string graphUrl {get; set;}
+		public string graphQLUrl => graphUrl + "/graphql";
 		public string graphAccessToken {get;}
+		public ulong graphAppId {get;}
 		public bool forceGameLift {get; set;}
+		public int localServerPort {get;}
+		public bool useLocalServer {get;}
 		public ServiceEnvironment serviceEnvironment {get;}
-		public string appId {get;}
-		public VanillaConfig(NetworkConfigSO from) => // Bypass all getters other mods might patch
-			(this.maxPartySize, this.discoveryPort, this.partyPort, this.multiplayerPort, this.masterServerPort, this.customLocation, this.multiplayerStatusUrl, this.quickPlaySetupUrl, this.graphUrl, this.graphAccessToken, this.forceGameLift, this.serviceEnvironment, this.appId) = 
-				(/*from._maxPartySize*/5, from._discoveryPort, from._partyPort, from._multiplayerPort, from._masterServerPort, from._customLocation, from._multiplayerStatusUrl, from._quickPlaySetupUrl, from.graphUrl, from.graphAccessToken, from._forceGameLift, from._serviceEnvironment, from.appId);
+		public string customLocation {get;}
+		public VanillaConfig(NetworkConfigSO from) => // read private fields directly
+			(this.maxPartySize, this.discoveryPort, this.partyPort, this.multiplayerPort, this.masterServerPort, this.multiplayerStatusUrl, this.quickPlaySetupUrl, this.graphUrl,
+					this.graphAccessToken, this.graphAppId, this.forceGameLift, this.localServerPort, this.useLocalServer, this.serviceEnvironment, this.customLocation) = 
+				(5, from._discoveryPort, from._partyPort, from._multiplayerPort, from._masterServerPort, from._multiplayerStatusUrl, from._quickPlaySetupUrl, from._graphUrl,
+					from.graphAccessToken, from._graphAppId, from._forceGameLift, from._localServerPort, from._useLocalServer, from._serviceEnvironment, from._customLocation);
 	}
 
 	internal static VanillaConfig? officialConfig = null;
@@ -39,16 +44,16 @@ static partial class BeatUpClient {
 			newConfig.maxPartySize = 254;
 			newConfig.masterServerPort = port;
 			newConfig.multiplayerStatusUrl = string.IsNullOrEmpty(statusUrl) ? "https://status." + splitHostname[0] : statusUrl;
-			newConfig.graphUrl = hostname;
-			newConfig.forceGameLift = hostname.StartsWith("http://") || hostname.StartsWith("https://");
-			if(GameLiftRequired && !newConfig.forceGameLift) {
-				newConfig.graphUrl = newConfig.multiplayerStatusUrl;
-				newConfig.forceGameLift = true;
-			}
+			newConfig.graphUrl = (hostname.StartsWith("http://") || hostname.StartsWith("https://")) ? hostname : newConfig.multiplayerStatusUrl;
+			newConfig.forceGameLift = true;
 		}
 		string oldGraphUrl = customNetworkConfig.graphUrl, oldStatusUrl = customNetworkConfig.multiplayerStatusUrl;
 		typeof(CustomNetworkConfig).GetConstructors()[0].Invoke(customNetworkConfig, new object[] {newConfig, "", 0, true});
+		HarmonyLib.AccessTools.Field(typeof(CustomNetworkConfig), "<graphAppId>k__BackingField").SetValue(customNetworkConfig, (ulong)newConfig.graphAppId);
 		HarmonyLib.AccessTools.Field(typeof(CustomNetworkConfig), "<forceGameLift>k__BackingField").SetValue(customNetworkConfig, (bool)newConfig.forceGameLift);
+		if(Resolve<BGNet.Core.GameLift.GameLiftPlayerSessionProvider>() is BGNet.Core.GameLift.GameLiftPlayerSessionProvider provider &&
+				provider._networkConfig == customNetworkConfig)
+			provider._graphAPIClient = new GraphAPIClient(customNetworkConfig.graphUrl, customNetworkConfig.graphAccessToken);
 		if(customNetworkConfig.multiplayerStatusUrl == oldStatusUrl)
 			return newConfig.graphUrl != oldGraphUrl;
 		if(Resolve<IMultiplayerStatusModel>() is MultiplayerStatusModel multiplayerStatusModel)
@@ -63,13 +68,6 @@ static partial class BeatUpClient {
 		bool changed = SetNetworkConfig(hostname, statusUrl);
 		onNetworkConfigChanged?.Invoke(hostname, statusUrl);
 		return changed;
-	}
-
-	[Detour(typeof(ClientCertificateValidator), nameof(ClientCertificateValidator.ValidateCertificateChainInternal))]
-	static void ClientCertificateValidator_ValidateCertificateChainInternal(ClientCertificateValidator self, DnsEndPoint endPoint, System.Security.Cryptography.X509Certificates.X509Certificate2 certificate, byte[][] certificateChain) {
-		if(Resolve<CustomNetworkConfig>() is CustomNetworkConfig networkConfig && networkConfig.graphUrl != officialConfig?.graphUrl)
-			return;
-		Base(self, endPoint, certificate, certificateChain);
 	}
 
 	[Detour(typeof(IgnoranceCore.IgnoranceClient), nameof(IgnoranceCore.IgnoranceClient.Start))]

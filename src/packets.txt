@@ -502,7 +502,7 @@ n MultiplayerLevelCompletionResults
 	if($protocolVersion >= 7)
 		MultiplayerPlayerLevelEndState playerLevelEndState
 		MultiplayerPlayerLevelEndReason playerLevelEndReason
-	if(($protocolVersion < 7 && .levelEndState < MultiplayerLevelEndState_GivenUp) || ($protocolVersion >= 7 && .playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted))
+	if(($protocolVersion < 7) ? (.levelEndState < MultiplayerLevelEndState_GivenUp) : (.playerLevelEndState != MultiplayerPlayerLevelEndState_NotStarted))
 		LevelCompletionResults levelCompletionResults
 n LevelFinished
 	RemoteProcedureCall base

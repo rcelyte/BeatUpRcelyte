@@ -11,7 +11,6 @@ static partial class BeatUpClient {
 	internal static ILogger Log = new DefaultLogger();
 	static string modVersion = "";
 	static bool haveSiraUtil = false, haveSongCore = false, haveMpCore = false, haveMpEx = false;
-	static readonly bool GameLiftRequired = typeof(GameLiftConnectionManager).Assembly.GetType("MasterServerConnectionManager", false) == null;
 	static UnityEngine.Sprite defaultPackCover = null!;
 
 	static UnityEngine.GameObject? infoText = null;

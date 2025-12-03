@@ -57,7 +57,7 @@ static partial class BeatUpClient {
 		if(string.IsNullOrEmpty(key.levelId))
 			return;
 		BeatmapLevel? beatmapLevel = Resolve<BeatmapLevelsModel>()!.GetBeatmapLevel(key.levelId);
-		RecommendPreview preview = playerData.previews[PlayerIndex(Resolve<MultiplayerSessionManager>()?.localPlayer)];
+		RecommendPreview preview = playerData.previews[PlayerIndex(Resolve<BeatSaberMultiplayerSessionManager>()?.localPlayer)];
 		if(!string.IsNullOrEmpty(HashForLevelID(beatmapLevel?.levelID)))
 			Net.Send(new MpBeatmapPacket(preview, beatmapLevel!, key)); // TODO: maybe avoid alloc?
 		Net.Send(preview);
@@ -67,13 +67,13 @@ static partial class BeatUpClient {
 	static void LobbyPlayersDataModel_SetLocalPlayerBeatmapLevel(LobbyPlayersDataModel self, ref BeatmapKey beatmapKey) {
 		BeatmapLevel? beatmapLevel = Resolve<BeatmapLevelsModel>()!.GetBeatmapLevel(beatmapKey.levelId);
 		if(beatmapKey.IsValid()) {
-			RecommendPreview? preview = playerData.previews[PlayerIndex(Resolve<MultiplayerSessionManager>()?.localPlayer)];
+			RecommendPreview? preview = playerData.previews[PlayerIndex(Resolve<BeatSaberMultiplayerSessionManager>()?.localPlayer)];
 			if(preview.levelID != beatmapKey.levelId) {
 				preview = playerData.ResolvePreview(beatmapKey.levelId);
 				if(beatmapLevel != null)
 					preview ??= new RecommendPreview(beatmapLevel);
 				if(preview != null)
-					playerData.previews[PlayerIndex(Resolve<MultiplayerSessionManager>()?.localPlayer)] = preview;
+					playerData.previews[PlayerIndex(Resolve<BeatSaberMultiplayerSessionManager>()?.localPlayer)] = preview;
 			}
 			if(preview != null) {
 				if(beatmapLevel != null && !string.IsNullOrEmpty(HashForLevelID(beatmapKey.levelId)))
