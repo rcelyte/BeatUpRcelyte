@@ -60,6 +60,7 @@ enum {
 	GameVersion_1_40_11,
 	GameVersion_1_40_12,
 	GameVersion_1_40_13,
+	GameVersion_1_41_0,
 	GameVersion_1_41_1,
 	GameVersion_COUNT,
 };
@@ -121,6 +122,7 @@ enum {
 		case GameVersion_1_40_11: return "1_40_11";
 		case GameVersion_1_40_12: return "1_40_12";
 		case GameVersion_1_40_13: return "1_40_13";
+		case GameVersion_1_41_0: return "1_41_0";
 		case GameVersion_1_41_1: return "1_41_1";
 		default: return "???";
 	}

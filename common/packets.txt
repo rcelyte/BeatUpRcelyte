@@ -55,6 +55,7 @@ u8 GameVersion
 	1_40_11
 	1_40_12
 	1_40_13
+	1_41_0
 	1_41_1
 n PacketContext
 	u8 netVersion
