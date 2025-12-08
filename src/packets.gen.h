@@ -1272,6 +1272,7 @@ enum {
 	WireMessageType_WireStatusAttach,
 	WireMessageType_WireRoomStatusNotify,
 	WireMessageType_WireRoomCloseNotify,
+	WireMessageType_WireRoomManagedJoinResp,
 	WireMessageType_WireRoomSpawn,
 	WireMessageType_WireRoomSpawnResp,
 	WireMessageType_WireRoomJoin,
@@ -1288,6 +1289,7 @@ enum {
 		case WireMessageType_WireStatusAttach: return "WireStatusAttach";
 		case WireMessageType_WireRoomStatusNotify: return "WireRoomStatusNotify";
 		case WireMessageType_WireRoomCloseNotify: return "WireRoomCloseNotify";
+		case WireMessageType_WireRoomManagedJoinResp: return "WireRoomManagedJoinResp";
 		case WireMessageType_WireRoomSpawn: return "WireRoomSpawn";
 		case WireMessageType_WireRoomSpawnResp: return "WireRoomSpawnResp";
 		case WireMessageType_WireRoomJoin: return "WireRoomJoin";
@@ -2566,6 +2568,11 @@ struct WireRoomSpawn {
 };
 struct WireRoomJoin {
 	struct WireSessionAlloc base;
+	bool managed;
+};
+struct WireRoomManagedJoinResp {
+	struct WireSessionAllocResp base;
+	uint32_t room;
 };
 struct WireRoomSpawnResp {
 	struct WireSessionAllocResp base;
@@ -2588,7 +2595,7 @@ struct WireRoomQueryResp {
 	uint8_t players_len;
 	struct WireRoomQueryResp_PlayerInfo players[254];
 };
-struct WireStatusEntry {
+struct WireRoomStatusNotify {
 	uint32_t code;
 	uint8_t protocolVersion;
 	uint8_t playerCount;
@@ -2596,7 +2603,7 @@ struct WireStatusEntry {
 	uint16_t playerNPS;
 	uint16_t levelNPS;
 	bool public;
-	bool quickplay;
+	bool managed;
 	bool skipResults;
 	bool perPlayerDifficulty;
 	bool perPlayerModifiers;
@@ -2604,10 +2611,6 @@ struct WireStatusEntry {
 	struct String levelName;
 	struct String levelID;
 	struct ByteArrayNetSerializable levelCover;
-};
-struct WireRoomStatusNotify {
-	uint32_t entry_len;
-	uint8_t entry[8384];
 };
 struct WireRoomCloseNotify {
 	uint8_t _empty;
@@ -2640,6 +2643,7 @@ struct WireMessage {
 		struct WireStatusAttach statusAttach;
 		struct WireRoomStatusNotify roomStatusNotify;
 		struct WireRoomCloseNotify roomCloseNotify;
+		struct WireRoomManagedJoinResp roomManagedJoinResp;
 		struct WireRoomSpawn roomSpawn;
 		struct WireRoomSpawnResp roomSpawnResp;
 		struct WireRoomJoin roomJoin;
@@ -2705,8 +2709,8 @@ void _pkt_NetPacketHeader_write(const struct NetPacketHeader *restrict data, str
 void _pkt_MultipartMessageReadbackProxy_read(struct MultipartMessageReadbackProxy *restrict data, struct PacketRead parent);
 void _pkt_PacketEncryptionLayer_read(struct PacketEncryptionLayer *restrict data, struct PacketRead parent);
 void _pkt_PacketEncryptionLayer_write(const struct PacketEncryptionLayer *restrict data, struct PacketWrite parent);
-void _pkt_WireStatusEntry_read(struct WireStatusEntry *restrict data, struct PacketRead parent);
-void _pkt_WireStatusEntry_write(const struct WireStatusEntry *restrict data, struct PacketWrite parent);
+void _pkt_WireRoomStatusNotify_read(struct WireRoomStatusNotify *restrict data, struct PacketRead parent);
+void _pkt_WireRoomStatusNotify_write(const struct WireRoomStatusNotify *restrict data, struct PacketWrite parent);
 void _pkt_WireMessage_read(struct WireMessage *restrict data, struct PacketRead parent);
 void _pkt_WireMessage_write(const struct WireMessage *restrict data, struct PacketWrite parent);
 #define reflect(type, value) _reflect_##type(value)
@@ -2715,8 +2719,8 @@ typedef void PacketWriteFunc(const void *restrict, struct PacketWrite state);
 size_t _pkt_try_read(PacketReadFunc *inner, void *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 size_t _pkt_try_write(PacketWriteFunc *inner, const void *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);
 #define pkt_write_c(pkt, end, ctx, type, ...) _pkt_try_write((PacketWriteFunc*)_pkt_##type##_write, &(struct type)__VA_ARGS__, pkt, end, ctx)
-#define _pkt_read_func(data) ((PacketReadFunc*)_Generic(*(data), struct ServerConnectInfo: _pkt_ServerConnectInfo_read, struct BeatUpMessage: _pkt_BeatUpMessage_read, struct ModConnectHeader: _pkt_ModConnectHeader_read, struct MpBeatmapPacket: _pkt_MpBeatmapPacket_read, struct BeatAvatarData: _pkt_BeatAvatarData_read, struct InternalMessage: _pkt_InternalMessage_read, struct RoutingHeader: _pkt_RoutingHeader_read, struct BTRoutingHeader: _pkt_BTRoutingHeader_read, struct UserMessage: _pkt_UserMessage_read, struct GameLiftMessage: _pkt_GameLiftMessage_read, struct HandshakeMessage: _pkt_HandshakeMessage_read, struct SerializeHeader: _pkt_SerializeHeader_read, struct FragmentedHeader: _pkt_FragmentedHeader_read, struct ConnectMessage: _pkt_ConnectMessage_read, struct UnconnectedMessage: _pkt_UnconnectedMessage_read, struct MergedHeader: _pkt_MergedHeader_read, struct NetPacketHeader: _pkt_NetPacketHeader_read, struct MultipartMessageReadbackProxy: _pkt_MultipartMessageReadbackProxy_read, struct PacketEncryptionLayer: _pkt_PacketEncryptionLayer_read, struct WireStatusEntry: _pkt_WireStatusEntry_read, struct WireMessage: _pkt_WireMessage_read))
-#define _pkt_write_func(data) ((PacketWriteFunc*)_Generic(*(data), struct BeatUpMessage: _pkt_BeatUpMessage_write, struct ModConnectHeader: _pkt_ModConnectHeader_write, struct BeatAvatarData: _pkt_BeatAvatarData_write, struct InternalMessage: _pkt_InternalMessage_write, struct RoutingHeader: _pkt_RoutingHeader_write, struct MessageReceivedAcknowledgeProxy: _pkt_MessageReceivedAcknowledgeProxy_write, struct MultipartMessageProxy: _pkt_MultipartMessageProxy_write, struct UserMessage: _pkt_UserMessage_write, struct GameLiftMessage: _pkt_GameLiftMessage_write, struct HandshakeMessage: _pkt_HandshakeMessage_write, struct SerializeHeader: _pkt_SerializeHeader_write, struct FragmentedHeader: _pkt_FragmentedHeader_write, struct UnconnectedMessage: _pkt_UnconnectedMessage_write, struct MergedHeader: _pkt_MergedHeader_write, struct NetPacketHeader: _pkt_NetPacketHeader_write, struct PacketEncryptionLayer: _pkt_PacketEncryptionLayer_write, struct WireStatusEntry: _pkt_WireStatusEntry_write, struct WireMessage: _pkt_WireMessage_write))
+#define _pkt_read_func(data) ((PacketReadFunc*)_Generic(*(data), struct ServerConnectInfo: _pkt_ServerConnectInfo_read, struct BeatUpMessage: _pkt_BeatUpMessage_read, struct ModConnectHeader: _pkt_ModConnectHeader_read, struct MpBeatmapPacket: _pkt_MpBeatmapPacket_read, struct BeatAvatarData: _pkt_BeatAvatarData_read, struct InternalMessage: _pkt_InternalMessage_read, struct RoutingHeader: _pkt_RoutingHeader_read, struct BTRoutingHeader: _pkt_BTRoutingHeader_read, struct UserMessage: _pkt_UserMessage_read, struct GameLiftMessage: _pkt_GameLiftMessage_read, struct HandshakeMessage: _pkt_HandshakeMessage_read, struct SerializeHeader: _pkt_SerializeHeader_read, struct FragmentedHeader: _pkt_FragmentedHeader_read, struct ConnectMessage: _pkt_ConnectMessage_read, struct UnconnectedMessage: _pkt_UnconnectedMessage_read, struct MergedHeader: _pkt_MergedHeader_read, struct NetPacketHeader: _pkt_NetPacketHeader_read, struct MultipartMessageReadbackProxy: _pkt_MultipartMessageReadbackProxy_read, struct PacketEncryptionLayer: _pkt_PacketEncryptionLayer_read, struct WireRoomStatusNotify: _pkt_WireRoomStatusNotify_read, struct WireMessage: _pkt_WireMessage_read))
+#define _pkt_write_func(data) ((PacketWriteFunc*)_Generic(*(data), struct BeatUpMessage: _pkt_BeatUpMessage_write, struct ModConnectHeader: _pkt_ModConnectHeader_write, struct BeatAvatarData: _pkt_BeatAvatarData_write, struct InternalMessage: _pkt_InternalMessage_write, struct RoutingHeader: _pkt_RoutingHeader_write, struct MessageReceivedAcknowledgeProxy: _pkt_MessageReceivedAcknowledgeProxy_write, struct MultipartMessageProxy: _pkt_MultipartMessageProxy_write, struct UserMessage: _pkt_UserMessage_write, struct GameLiftMessage: _pkt_GameLiftMessage_write, struct HandshakeMessage: _pkt_HandshakeMessage_write, struct SerializeHeader: _pkt_SerializeHeader_write, struct FragmentedHeader: _pkt_FragmentedHeader_write, struct UnconnectedMessage: _pkt_UnconnectedMessage_write, struct MergedHeader: _pkt_MergedHeader_write, struct NetPacketHeader: _pkt_NetPacketHeader_write, struct PacketEncryptionLayer: _pkt_PacketEncryptionLayer_write, struct WireRoomStatusNotify: _pkt_WireRoomStatusNotify_write, struct WireMessage: _pkt_WireMessage_write))
 #define pkt_read(data, ...) _pkt_try_read(_pkt_read_func(data), data, __VA_ARGS__)
 #define pkt_write(data, ...) _pkt_try_write(_pkt_write_func(data), data, __VA_ARGS__)
 size_t pkt_write_bytes(const uint8_t *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx, size_t count);
