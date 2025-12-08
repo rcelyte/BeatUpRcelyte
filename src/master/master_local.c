@@ -1,5 +1,6 @@
 #include "master_internal.h"
 #include "pool.h"
+#include <assert.h>
 
 struct LocalMasterContext {
 	struct MasterContext base; // MUST be first
@@ -35,52 +36,52 @@ struct GraphConnectCookie {
 	WireCookie cookie;
 };
 
-static ConnectToServerResponse_Result SendWireSessionAlloc(struct WireSessionAlloc *const allocInfo, struct ConnectCookie *const state, const size_t state_len, const struct WireServerConfiguration configuration, const ServerCode code, mbedtls_ctr_drbg_context *const ctr_drbg) {
-	state->room = ~UINT32_C(0);
+static ConnectToServerResponse_Result SendWireSessionAlloc(const struct WireSessionAlloc *const allocInfo, struct ConnectCookie *const state, const size_t state_len, const struct WireServerConfiguration configuration, const ServerCode code, mbedtls_ctr_drbg_context *const ctr_drbg) {
+	state->room = UINT32_MAX;
 	if(allocInfo->clientVersion.protocolVersion >= 10) {
-		uprintf("Connect to Server Error: Game version too new\n");
+		uprintf("Connect to Server Error: Protocol version too new\n");
 		return ConnectToServerResponse_Result_VersionMismatch;
 	}
-	WireCookie cookie = 0;
-	bool failed = true;
-	struct WireLink *link = NULL;
-	if(code == ServerCode_NONE) {
-		if(!allocInfo->secret.length) {
-			uprintf("Connect to Server Error: Quickplay not supported\n");
-			return ConnectToServerResponse_Result_NoAvailableDedicatedServers;
+	struct PoolHost *host = NULL;
+	if(code != ServerCode_NONE || !allocInfo->secret.length) {
+		host = pool_handle_lookup(&state->room, code);
+		if(host == NULL) {
+			if(code == ServerCode_NONE)
+				uprintf("Connect to Server Error: Quickplay not available\n");
+			else
+				uprintf("Connect to Server Error: Room '%s' does not exist\n", ServerCode_toString(code, &(char[8]){0}));
+			return (code == ServerCode_NONE) ? ConnectToServerResponse_Result_NoAvailableDedicatedServers : ConnectToServerResponse_Result_InvalidCode;
 		}
-		struct PoolHost *host = pool_handle_new(&state->room, (configuration.base.discoveryPolicy == DiscoveryPolicy_Public) ? NULL : ctr_drbg);
+	}
+	struct WireMessage message;
+	if(host == NULL) {
+		host = pool_handle_new(&state->room, (configuration.base.discoveryPolicy == DiscoveryPolicy_Public) ? NULL : ctr_drbg, ServerCode_NONE);
 		if(host == NULL) {
 			uprintf("Connect to Server Error: pool_handle_new() failed\n");
 			return ConnectToServerResponse_Result_NoAvailableDedicatedServers;
 		}
-		allocInfo->room = state->room;
-		link = pool_host_wire(host);
-		cookie = WireLink_makeCookie(link, state, state_len);
-		failed = WireLink_send(link, &(struct WireMessage){
+		message = (struct WireMessage){
 			.type = WireMessageType_WireRoomSpawn,
-			.cookie = cookie,
 			.roomSpawn = {
 				.base = *allocInfo,
 				.configuration = configuration,
 			},
-		});
+		};
 	} else {
-		struct PoolHost *host = pool_handle_lookup(&state->room, code);
-		if(host == NULL) {
-			uprintf("Connect to Server Error: Room '%s' does not exist\n", ServerCodeToString((char[8]){0}, code));
-			return ConnectToServerResponse_Result_InvalidCode;
-		}
-		allocInfo->room = state->room;
-		link = pool_host_wire(host);
-		cookie = WireLink_makeCookie(link, state, state_len);
-		failed = WireLink_send(link, &(struct WireMessage){
+		message = (struct WireMessage){
 			.type = WireMessageType_WireRoomJoin,
-			.cookie = cookie,
-			.roomJoin.base = *allocInfo,
-		});
+			.roomJoin = {
+				.base = *allocInfo,
+				.managed = pool_handle_isManaged(host, state->room),
+			},
+		};
 	}
-	if(failed) {
+	static_assert(offsetof(struct WireMessage, roomJoin.base) == offsetof(struct WireMessage, roomSpawn.base));
+	message.roomJoin.base.room = state->room;
+	struct WireLink *const link = pool_host_wire(host);
+	const WireCookie cookie = WireLink_makeCookie(link, state, state_len);
+	message.cookie = cookie;
+	if(WireLink_send(link, &message)) {
 		WireLink_freeCookie(link, cookie);
 		return ConnectToServerResponse_Result_UnknownError;
 	}
@@ -120,7 +121,7 @@ static bool handle_WireSessionAllocResp_graph(struct LocalMasterContext *ctx, st
 				.playerSlot = sessionAlloc->playerSlot,
 				.code = pool_handle_code(host, state->base.room),
 			};
-			uprintf("Sending player to room '%s'\n", ServerCodeToString((char[8]){0}, resp.code));
+			uprintf("Sending player to room '%s'\n", ServerCode_toString(resp.code, &(char[8]){0}));
 			break;
 		}
 		case ConnectToServerResponse_Result_InvalidSecret: [[fallthrough]];
@@ -221,7 +222,7 @@ static bool handle_WireSessionAllocResp_local(struct NetContext *net, struct Mas
 			.configuration = sessionAlloc->configuration,
 			.managerId = sessionAlloc->managerId,
 		};
-		uprintf("Sending player to room '%s'\n", ServerCodeToString((char[8]){0}, r_conn.connectToServerResponse.code));
+		uprintf("Sending player to room '%s'\n", ServerCode_toString(r_conn.connectToServerResponse.code, &(char[8]){0}));
 	}
 
 	if(session != NULL)
@@ -229,21 +230,28 @@ static bool handle_WireSessionAllocResp_local(struct NetContext *net, struct Mas
 	return r_conn.connectToServerResponse.result != ConnectToServerResponse_Result_Success;
 }
 
-static void handle_WireSessionAllocResp(struct LocalMasterContext *const ctx, struct WireLink *const link, struct PoolHost *const host, const WireCookie cookie, const struct WireSessionAllocResp *const sessionAlloc, const bool spawn) {
+static void handle_WireSessionAllocResp(struct LocalMasterContext *const ctx, struct WireLink *const link, struct PoolHost *const host,
+		const WireCookie cookie, const struct WireSessionAllocResp *const response, const bool spawn, const uint32_t managedRoom) {
+	if(response == NULL || response->result == ConnectToServerResponse_Result_NoAvailableDedicatedServers) {
+		assert(pool_host_isFull(host));
+		// TODO: retry with a different instance if any are still alive
+	}
 	const struct DataView view = WireLink_getCookie(link, cookie);
-	const struct ConnectCookie *const state = (struct ConnectCookie*)view.data;
+	struct ConnectCookie *const state = (struct ConnectCookie*)view.data;
+	if(managedRoom != UINT32_MAX)
+		state->room = managedRoom;
 	bool dropped = spawn;
 	switch((view.length >= sizeof(*state)) ? state->cookieType : MasterCookieType_INVALID) {
 		case MasterCookieType_LocalConnect: {
 			if(view.length != sizeof(struct LocalConnectCookie))
 				goto badCookie;
 			const struct LocalConnectCookie *const localState = (const struct LocalConnectCookie*)view.data;
-			dropped &= handle_WireSessionAllocResp_local(&ctx->net, MasterContext_lookup(&ctx->base, localState->addr), host, localState, sessionAlloc);
+			dropped &= handle_WireSessionAllocResp_local(&ctx->net, MasterContext_lookup(&ctx->base, localState->addr), host, localState, response);
 		} break;
 		case MasterCookieType_GraphConnect: {
 			if(view.length != sizeof(struct GraphConnectCookie))
 				goto badCookie;
-			dropped &= handle_WireSessionAllocResp_graph(ctx, host, (const struct GraphConnectCookie*)view.data, sessionAlloc);
+			dropped &= handle_WireSessionAllocResp_graph(ctx, host, (const struct GraphConnectCookie*)view.data, response);
 		} break;
 		default: dropped = false;
 		badCookie: uprintf("Connect to Server Error: Malformed wire cookie\n");
@@ -256,34 +264,33 @@ static void master_onWireMessage(struct WireContext *wire, struct WireLink *link
 	struct LocalMasterContext *const ctx = (struct LocalMasterContext*)wire->userptr;
 	net_lock(&ctx->net);
 	struct PoolHost **const host = (struct PoolHost**)WireLink_userptr(link);
+	uint32_t managedRoom = UINT32_MAX;
 	if(*host == NULL) {
 		if(message == NULL || message->type != WireMessageType_WireInstanceAttach) {
 			master_onWireMessage_status(ctx, link, message);
-			goto unlock;
+		} else {
+			*host = pool_host_attach(link, message->instanceAttach.capacity, message->instanceAttach.discover);
+			if(*host == NULL)
+				uprintf("pool_host_attach() failed\n");
 		}
-		*host = pool_host_attach(link);
-		if(*host == NULL) {
-			uprintf("pool_host_attach() failed\n");
-			goto unlock;
-		}
-	}
-	if(message == NULL) {
+	} else if(message == NULL) {
+		pool_host_seal(*host);
 		for(WireCookie cookie = 1; cookie <= WireLink_lastCookieIndex(link); ++cookie) {
 			const struct DataView view = WireLink_getCookie(link, cookie);
 			const MasterCookieType cookieType = (view.length >= sizeof(cookieType)) ? *(MasterCookieType*)view.data : MasterCookieType_INVALID;
 			if(cookieType == MasterCookieType_LocalConnect || cookieType == MasterCookieType_GraphConnect)
-				handle_WireSessionAllocResp(ctx, link, *host, cookie, NULL, false); // TODO: retry with a different instance if any are still alive
+				handle_WireSessionAllocResp(ctx, link, *host, cookie, NULL, false, UINT32_MAX);
 			WireLink_freeCookie(link, cookie);
 		}
 		pool_host_detach(*host);
 		*host = NULL;
-		goto unlock;
-	}
-	switch(message->type) {
-		case WireMessageType_WireInstanceAttach: TEMPpool_host_setAttribs(*host, message->instanceAttach.capacity, message->instanceAttach.discover); break;
+	} else switch(message->type) {
+		case WireMessageType_WireRoomManagedJoinResp: if(message->roomManagedJoinResp.base.result == ConnectToServerResponse_Result_Success) {
+			managedRoom = message->roomManagedJoinResp.room; // named earlier while handling `WireMessageType_WireRoomStatusNotify`
+		} [[fallthrough]];
 		case WireMessageType_WireRoomSpawnResp: [[fallthrough]];
 		case WireMessageType_WireRoomJoinResp: {
-			handle_WireSessionAllocResp(ctx, link, *host, message->cookie, &message->roomJoinResp.base, message->type == WireMessageType_WireRoomSpawnResp);
+			handle_WireSessionAllocResp(ctx, link, *host, message->cookie, &message->roomJoinResp.base, message->type == WireMessageType_WireRoomSpawnResp, managedRoom);
 			WireLink_freeCookie(link, message->cookie);
 			break;
 		}
@@ -292,7 +299,7 @@ static void master_onWireMessage(struct WireContext *wire, struct WireLink *link
 			struct WireMessage forward = *message;
 			forward.cookie = pool_handle_sequence(*host, message->cookie);
 			if(message->type == WireMessageType_WireRoomStatusNotify)
-				*(uint32_t*)forward.roomStatusNotify.entry = pool_handle_code(*host, message->cookie);
+				forward.roomStatusNotify.code = message->roomStatusNotify.managed ? pool_handle_nameManaged(*host, message->cookie) : pool_handle_code(*host, message->cookie);
 			else
 				pool_handle_free(*host, message->cookie);
 			if(ctx->status == NULL)
@@ -301,7 +308,7 @@ static void master_onWireMessage(struct WireContext *wire, struct WireLink *link
 		} break;
 		default: uprintf("Unhandled wire message [%s]\n", reflect(WireMessageType, message->type));
 	}
-	unlock: net_unlock(&ctx->net);
+	net_unlock(&ctx->net);
 }
 
 // TODO: deduplicate requests

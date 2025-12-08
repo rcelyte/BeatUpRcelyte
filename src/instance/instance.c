@@ -71,6 +71,7 @@ struct Room {
 	struct WireServerConfiguration configuration;
 	struct timespec syncBase;
 	uint32_t joinCount;
+	bool managed;
 
 	ServerState state;
 	struct {
@@ -344,15 +345,12 @@ static struct PlayersLobbyPermissionConfiguration room_get_permissions(const str
 	return out;
 }
 
-static struct PacketContext room_get_protocol(struct Room *const *const room) {
-	struct PacketContext version = PV_LEGACY_DEFAULT;
+static struct PacketContext room_get_protocol(struct Room *const *const room, const struct PacketContext default_) {
 	if(room == NULL || *room == NULL)
 		return (struct PacketContext){0};
 	struct CounterP ct = (*room)->playerSort;
 	uint32_t id = 0;
-	if(CounterP_clear_next(&ct, &id))
-		version = (*room)->players[id].net.version;
-	return version;
+	return CounterP_clear_next(&ct, &id) ? (*room)->players[id].net.version : default_;
 }
 
 static void room_notify(struct InstanceContext *const ctx, struct Room *const *const room) {
@@ -361,26 +359,24 @@ static void room_notify(struct InstanceContext *const ctx, struct Room *const *c
 	struct WireMessage message = {
 		.type = WireMessageType_WireRoomStatusNotify,
 		.cookie = (uint32_t)indexof(*ctx->rooms, room),
+		.roomStatusNotify = {
+			.protocolVersion = room_get_protocol(room, PV_LEGACY_DEFAULT).protocolVersion,
+			.playerCount = (uint8_t)CounterP_count((*room)->playerSort),
+			.playerCapacity = (uint8_t)(uint32_t)(*room)->configuration.base.maxPlayerCount,
+			.playerNPS = (*room)->global.playerNPS,
+			.levelNPS = (*room)->global.levelNPS,
+			.public = ((*room)->configuration.base.discoveryPolicy == DiscoveryPolicy_Public),
+			.managed = (*room)->managed,
+			.skipResults = (*room)->configuration.skipResults,
+			.perPlayerDifficulty = (*room)->configuration.perPlayerDifficulty,
+			.perPlayerModifiers = (*room)->configuration.perPlayerModifiers,
+			.selectionMode = (*room)->configuration.base.songSelectionMode,
+			.levelName = (*room)->global.selectedBeatmapName,
+			.levelID = LongString_truncate(&(*room)->global.selectedBeatmap.levelID),
+			.levelCover = (*room)->global.selectedBeatmapCover,
+		},
 	};
-	message.roomStatusNotify.entry_len = (uint32_t)pkt_write_c((uint8_t*[]){message.roomStatusNotify.entry},
-			endof(message.roomStatusNotify.entry), PV_WIRE, WireStatusEntry, {
-		.protocolVersion = room_get_protocol(room).protocolVersion,
-		.playerCount = (uint8_t)CounterP_count((*room)->playerSort),
-		.playerCapacity = (uint8_t)(uint32_t)(*room)->configuration.base.maxPlayerCount,
-		.playerNPS = (*room)->global.playerNPS,
-		.levelNPS = (*room)->global.levelNPS,
-		.public = ((*room)->configuration.base.discoveryPolicy == DiscoveryPolicy_Public),
-		.quickplay = ((*room)->configuration.base.gameplayServerMode == GameplayServerMode_Countdown),
-		.skipResults = (*room)->configuration.skipResults,
-		.perPlayerDifficulty = (*room)->configuration.perPlayerDifficulty,
-		.perPlayerModifiers = (*room)->configuration.perPlayerModifiers,
-		.selectionMode = (*room)->configuration.base.songSelectionMode,
-		.levelName = (*room)->global.selectedBeatmapName,
-		.levelID = LongString_truncate(&(*room)->global.selectedBeatmap.levelID),
-		.levelCover = (*room)->global.selectedBeatmapCover,
-	});
-	if(message.roomStatusNotify.entry_len != 0)
-		WireLink_send(ctx->master, &message);
+	WireLink_send(ctx->master, &message);
 }
 
 #define STATE_EDGE(from, to, mask) ((to & (mask)) && !(from & (mask)))
@@ -654,9 +650,9 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 		room->global.selectedModifiers = CLEAR_MODIFIERS;
 		room->global.selectedBeatmapName = (struct String){.isNull = true};
 		room->global.selectedBeatmapCover = (struct ByteArrayNetSerializable){0};
-		room->lobby.isEntitled = COUNTERP_CLEAR;
-		room->lobby.isDownloaded = COUNTERP_CLEAR;
-		room->lobby.isReady = COUNTERP_CLEAR;
+		room->lobby.isEntitled = (struct CounterP){};
+		room->lobby.isDownloaded = (struct CounterP){};
+		room->lobby.isReady = (struct CounterP){};
 		room->lobby.reason = CannotStartGameReason_NoSongSelected;
 		room->lobby.requester = ~(playerid_t)0;
 		if(room->configuration.base.songSelectionMode == SongSelectionMode_Random) {
@@ -726,8 +722,8 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 			if(cached)
 				return;
 			room->lobby.reason = 0;
-			room->lobby.isEntitled = COUNTERP_CLEAR;
-			room->lobby.isDownloaded = COUNTERP_CLEAR;
+			room->lobby.isEntitled = (struct CounterP){};
+			room->lobby.isDownloaded = (struct CounterP){};
 			room->global.selectedBeatmap = room->players[select].recommendedBeatmap;
 			room->global.selectedModifiers = room->players[select].recommendedModifiers;
 			if(String_eq(room->players[select].customBeatmapID, LongString_truncate(&room->players[select].recommendedBeatmap.levelID))) {
@@ -737,7 +733,7 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 				room->global.selectedBeatmapName = (struct String){.isNull = true};
 				room->global.selectedBeatmapCover = (struct ByteArrayNetSerializable){0};
 			}
-			room->lobby.entitlement.missing = COUNTERP_CLEAR;
+			room->lobby.entitlement.missing = (struct CounterP){};
 			break;
 		}
 		case ServerState_Lobby_Idle: {
@@ -785,7 +781,7 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 			break;
 		}
 		case ServerState_Game_LoadingScene: {
-			room->game.loadingScene.isLoaded = COUNTERP_CLEAR;
+			room->game.loadingScene.isLoaded = (struct CounterP){};
 			room->global.timeout = room_get_syncTime(room) + LOAD_TIMEOUT_MS;
 			break;
 		}
@@ -798,7 +794,7 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 				}
 			}
 			mbedtls_ctr_drbg_random(&ctx->net.ctr_drbg, (uint8_t*)room->global.sessionId, sizeof(room->global.sessionId));
-			room->game.loadingSong.isLoaded = COUNTERP_CLEAR;
+			room->game.loadingSong.isLoaded = (struct CounterP){};
 			room->global.timeout = room_get_syncTime(room) + LOAD_TIMEOUT_MS;
 			break;
 		}
@@ -873,7 +869,7 @@ static void handle_MenuRpc(struct InstanceContext *ctx, struct Room *room, struc
 			if(r_missing.setPlayersMissingEntitlementsToLevel.count == 0) {
 				room_set_state(ctx, room, ServerState_Lobby_Ready);
 			} else if(room->configuration.base.songSelectionMode == SongSelectionMode_Random) {
-				room->global.roundRobin = roundRobin_next(room->global.roundRobin, COUNTERP_CLEAR);
+				room->global.roundRobin = roundRobin_next(room->global.roundRobin, (struct CounterP){});
 				mapPool_update(room);
 				room_set_state(ctx, room, ServerState_Lobby_Entitlement);
 			} else {
@@ -1116,7 +1112,7 @@ static void handle_MenuRpc(struct InstanceContext *ctx, struct Room *room, struc
 static bool room_try_finish(struct InstanceContext *ctx, struct Room *room) {
 	if(!CounterP_isEmpty(room->game.activePlayers))
 		return false;
-	room->global.roundRobin = roundRobin_next(room->global.roundRobin, (room->configuration.base.songSelectionMode == SongSelectionMode_Random) ? COUNTERP_CLEAR : room->connected);
+	room->global.roundRobin = roundRobin_next(room->global.roundRobin, (room->configuration.base.songSelectionMode == SongSelectionMode_Random) ? (struct CounterP){} : room->connected);
 	room_set_state(ctx, room, ServerState_Game_Results);
 	return true;
 }
@@ -1267,7 +1263,7 @@ static void chat(struct InstanceContext *const ctx, struct Room *const room, con
 			},
 		},
 	};
-	struct CounterP mask = COUNTERP_CLEAR;
+	struct CounterP mask = (struct CounterP){};
 	if(session != NULL)
 		CounterP_set(&mask, (uint32_t)indexof(room->players, session));
 	else
@@ -1613,7 +1609,7 @@ static bool handle_RoutingHeader(struct InstanceContext *ctx, struct Room *room,
 	}
 	if(routing.connectionId == 0)
 		return false;
-	struct CounterP mask = COUNTERP_CLEAR;
+	struct CounterP mask = (struct CounterP){};
 	if(routing.connectionId == 127) {
 		mask = room->connected;
 	} else {
@@ -1924,7 +1920,7 @@ static void log_players(const struct Room *room, const struct SS *addr, const ch
 }
 
 static inline struct Room **instance_get_room(struct InstanceContext *ctx, uint32_t roomID) {
-	if(roomID >= sizeof(ctx->rooms) / sizeof(struct Room*))
+	if(roomID >= sizeof(ctx->rooms) / sizeof(**ctx->rooms))
 		return NULL;
 	return &ctx->rooms[0][roomID];
 }
@@ -1949,7 +1945,7 @@ static void room_disconnect(struct InstanceContext *ctx, struct Room **room, str
 
 	if(id == (*room)->serverOwner) {
 		(*room)->serverOwner = 0;
-		uint32_t ownerOrder = ~UINT32_C(0);
+		uint32_t ownerOrder = UINT32_MAX;
 		FOR_SOME_PLAYERS(id, (*room)->playerSort,) {
 			if((*room)->players[id].joinOrder < ownerOrder) {
 				ownerOrder = (*room)->players[id].joinOrder;
@@ -2270,10 +2266,15 @@ static struct IPEndPoint instance_get_endpoint(struct NetContext *net, bool ipv4
 	return out;
 }
 
-static struct Room **room_open(struct InstanceContext *ctx, uint32_t roomID, struct WireServerConfiguration configuration) {
+static struct Room **room_open(struct InstanceContext *ctx, uint32_t roomID, struct WireServerConfiguration configuration, const bool managed) {
 	uprintf("opening room (%zu,%hu)\n", indexof(contexts, ctx), roomID);
-	if(instance_get_room(ctx, roomID) == NULL || *instance_get_room(ctx, roomID) != NULL) {
+	struct Room **const roomSlot = instance_get_room(ctx, roomID);
+	if(roomSlot == NULL) {
 		uprintf("\tBad room ID\n");
+		return NULL;
+	}
+	if(*roomSlot != NULL) {
+		uprintf("\tRoom already open\n");
 		return NULL;
 	}
 	#ifdef FORCE_LOBBY_SIZE
@@ -2309,12 +2310,13 @@ static struct Room **room_open(struct InstanceContext *ctx, uint32_t roomID, str
 	if(clock_gettime(CLOCK_MONOTONIC, &room->syncBase))
 		room->syncBase = (struct timespec){0};
 	room->joinCount = 0;
-	room->connected = COUNTERP_CLEAR;
-	room->playerSort = COUNTERP_CLEAR;
+	room->managed = managed;
+	room->connected = (struct CounterP){};
+	room->playerSort = (struct CounterP){};
 	room->state = 0;
 	room->global.sessionId[1] = room->global.sessionId[0] = 0;
-	room->global.inLobby = COUNTERP_CLEAR;
-	room->global.isSpectating = COUNTERP_CLEAR;
+	room->global.inLobby = (struct CounterP){};
+	room->global.isSpectating = (struct CounterP){};
 	room->global.selectedBeatmap = CLEAR_BEATMAP;
 	room->global.selectedModifiers = CLEAR_MODIFIERS;
 	room->global.selectedBeatmapName = (struct String){.isNull = true};
@@ -2326,35 +2328,64 @@ static struct Room **room_open(struct InstanceContext *ctx, uint32_t roomID, str
 		room->players[room->configuration.base.maxPlayerCount].userId = String_from("");
 	}
 	room_set_state(ctx, room, ServerState_Lobby_Idle);
-	*instance_get_room(ctx, roomID) = room;
+	*roomSlot = room;
 	Counter64_set(&ctx->roomMask, roomID / lengthof(*ctx->rooms));
-	return instance_get_room(ctx, roomID);
+	return roomSlot;
 }
 
 static struct String instance_room_get_managerId(struct Room *room, struct InstanceSession *self) {
 	return (&room->players[room->serverOwner] == self) ? OwnUserId(self->userId) : room->players[room->serverOwner].userId;
 }
 
-static struct WireSessionAllocResp room_resolve_session(struct InstanceContext *ctx, const struct WireSessionAlloc *req) {
+// we don't currently support routed message translation, so rooms must reject clients with incompatible ABIs
+static unsigned ProtocolABI(const GameVersion version) {
+	return
+		(version >= GameVersion_1_42_0) ? 4 :
+		(version >= GameVersion_1_40_0) ? 3 :
+		(version >= GameVersion_1_37_1) ? 2 :
+		(version >= GameVersion_1_34_2) ? 1 :
+		0;
+}
+
+static struct WireSessionAllocResp room_resolve_session(struct InstanceContext *ctx, const struct WireSessionAlloc *const req, const bool managed, const bool muteErrors) {
 	struct Room **const roomPtr = instance_get_room(ctx, req->room);
 	struct Room *const room = (roomPtr != NULL) ? *roomPtr : NULL;
-	if(room == NULL)
-		return (struct WireSessionAllocResp){.result = ConnectToServerResponse_Result_UnknownError};
-	if(!AnnotateIDs) {
-		FOR_SOME_PLAYERS(id, room->playerSort,)
-			if(String_eq(room->players[id].userId, req->userId))
-				room_disconnect(ctx, roomPtr, &room->players[id], true);
+	if(room == NULL) {
+		// This can happen if a player joins while the WireRoomCloseNotify message is still in flight, or if the instance and master have desynced.
+		if(!muteErrors)
+			uprintf("Connect to Server Error: Room %s\n", (roomPtr != NULL) ? "closed" : "does not exist");
+		return (struct WireSessionAllocResp){.result = ConnectToServerResponse_Result_InvalidCode};
+	}
+	if(room->managed != managed) {
+		// This can happen if the master and instance spawn rooms at the same time when the room list is full
+		if(!muteErrors)
+			uprintf("Connect to Server Error: Invalid request\n");
+		return (struct WireSessionAllocResp){.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers};
+	}
+	const struct PacketContext roomProtocol = room_get_protocol(roomPtr, req->clientVersion);
+	if(roomProtocol.protocolVersion != req->clientVersion.protocolVersion || ProtocolABI(roomProtocol.gameVersion) != ProtocolABI(req->clientVersion.gameVersion)) {
+		if(!muteErrors)
+			uprintf("Connect to Server Error: Version mismatch (room=%u.%u, client=%u.%u)\n", roomProtocol.protocolVersion,
+				ProtocolABI(roomProtocol.gameVersion), req->clientVersion.protocolVersion, ProtocolABI(req->clientVersion.gameVersion));
+		return (struct WireSessionAllocResp){.result = ConnectToServerResponse_Result_VersionMismatch};
 	}
 	struct InstanceSession *session = NULL;
 	{
-		struct CounterP tmp = room->playerSort;
-		uint32_t id = 0;
-		if((!CounterP_set_next(&tmp, &id)) || id >= (uint32_t)room->configuration.base.maxPlayerCount) {
-			uprintf("ROOM FULL: %u >= %d\n", id ? id : (uint32_t)bitsize(tmp), room->configuration.base.maxPlayerCount);
+		struct CounterP toKick = {};
+		FOR_SOME_PLAYERS(id, room->playerSort,)
+			if(String_eq(room->players[id].userId, req->userId))
+				CounterP_set(&toKick, id);
+		const uint32_t id = CounterP_get_next(CounterP_xor(room->playerSort, toKick), false);
+		if(id == COUNTERP_INVALID || id >= (uint32_t)room->configuration.base.maxPlayerCount) {
+			if(!muteErrors)
+				uprintf("ROOM FULL: %"PRIu32" >= %d\n", id, room->configuration.base.maxPlayerCount);
 			return (struct WireSessionAllocResp){.result = ConnectToServerResponse_Result_ServerAtCapacity};
 		}
+		// no side effects before this point
+		FOR_SOME_PLAYERS(id, toKick,)
+			room_disconnect(ctx, roomPtr, &room->players[id], true);
+		CounterP_set(&room->playerSort, id);
 		session = &room->players[id];
-		room->playerSort = tmp;
 	}
 	static_assert(CONNECT_TIMEOUT_MS >= IDLE_TIMEOUT_MS);
 	NetSession_init(&session->net, &ctx->net, (struct SS){.ss.ss_family = AF_UNSPEC}, &ctx->base.config, CONNECT_TIMEOUT_MS - IDLE_TIMEOUT_MS);
@@ -2448,9 +2479,9 @@ static void instance_room_spawn(struct InstanceContext *ctx, struct WireLink *li
 		.cookie = cookie,
 		.roomSpawnResp.base.result = ConnectToServerResponse_Result_UnknownError,
 	};
-	struct Room **room = room_open(ctx, req->base.room, req->configuration);
+	struct Room **room = room_open(ctx, req->base.room, req->configuration, false);
 	if(room) {
-		r_alloc.roomSpawnResp.base = room_resolve_session(ctx, &req->base);
+		r_alloc.roomSpawnResp.base = room_resolve_session(ctx, &req->base, false, false);
 		if(r_alloc.roomSpawnResp.base.result != ConnectToServerResponse_Result_Success)
 			room_free(ctx, room);
 	} else {
@@ -2459,35 +2490,66 @@ static void instance_room_spawn(struct InstanceContext *ctx, struct WireLink *li
 	WireLink_send(link, &r_alloc);
 }
 
-// we don't currently support routed message translation, so rooms must reject clients with incompatible ABIs
-static unsigned ProtocolABI(const GameVersion version) {
-	return
-		(version >= GameVersion_1_42_0) ? 4 :
-		(version >= GameVersion_1_40_0) ? 3 :
-		(version >= GameVersion_1_37_1) ? 2 :
-		(version >= GameVersion_1_34_2) ? 1 :
-		0;
-}
-
 static void instance_room_join(struct InstanceContext *ctx, struct WireLink *link, uint32_t cookie, const struct WireRoomJoin *req) {
-	struct WireMessage r_alloc = {
+	struct WireMessage r_join = {
 		.type = WireMessageType_WireRoomJoinResp,
 		.cookie = cookie,
+		.roomJoinResp.base.result = ConnectToServerResponse_Result_UnknownError,
 	};
-	const struct PacketContext roomProtocol = room_get_protocol(instance_get_room(ctx, req->base.room));
-	if(roomProtocol.protocolVersion == 0) {
-		// This condition can happen if a player joins while the WireRoomCloseNotify message still in flight,
-		//     or if the instance and master have desynced.
-		uprintf("Connect to Server Error: Room closed (room=%u, client=%u)\n", roomProtocol.protocolVersion, req->base.clientVersion.protocolVersion);
-		r_alloc.roomJoinResp.base.result = ConnectToServerResponse_Result_InvalidCode;
-	} else if(roomProtocol.protocolVersion != req->base.clientVersion.protocolVersion || ProtocolABI(roomProtocol.gameVersion) != ProtocolABI(req->base.clientVersion.gameVersion)) {
-		uprintf("Connect to Server Error: Version mismatch (room=%u.%u, client=%u.%u)\n", roomProtocol.protocolVersion,
-			ProtocolABI(roomProtocol.gameVersion), req->base.clientVersion.protocolVersion, ProtocolABI(req->base.clientVersion.gameVersion));
-		r_alloc.roomJoinResp.base.result = ConnectToServerResponse_Result_VersionMismatch;
-	} else {
-		r_alloc.roomJoinResp.base = room_resolve_session(ctx, &req->base);
+	uint32_t toOpen = UINT32_MAX;
+	if(!req->managed || instance_get_room(ctx, req->base.room) != NULL) {
+		r_join.roomJoinResp.base = room_resolve_session(ctx, &req->base, req->managed, false);
+		goto send; // TODO: C2Y `defer`
 	}
-	WireLink_send(link, &r_alloc);
+	// find or spawn a room
+	struct WireSessionAlloc request = req->base;
+	for(request.room = sizeof(ctx->rooms) / sizeof(**ctx->rooms); --request.room > 0;) {
+		r_join.roomJoinResp.base = room_resolve_session(ctx, &request, true, true);
+		switch(r_join.roomJoinResp.base.result) {
+			case ConnectToServerResponse_Result_Success: {
+				r_join.type = WireMessageType_WireRoomManagedJoinResp;
+				r_join.roomManagedJoinResp.room = request.room;
+			} [[fallthrough]];
+			case ConnectToServerResponse_Result_UnknownError: goto send;
+			case ConnectToServerResponse_Result_InvalidCode: if(toOpen == UINT32_MAX && *instance_get_room(ctx, request.room) == NULL) {
+				toOpen = request.room;
+			} break;
+			default:;
+		}
+	}
+	request.room = toOpen;
+	if(request.room == UINT32_MAX) {
+		uprintf("Connect to Server Error: No rooms available for quickplay\n");
+		r_join.roomJoinResp.base.result = ConnectToServerResponse_Result_NoAvailableDedicatedServers;
+		goto send;
+	}
+	struct Room **const room = room_open(ctx, request.room, (struct WireServerConfiguration){
+		.base = {
+			.maxPlayerCount = 5,
+			.discoveryPolicy = DiscoveryPolicy_Public,
+			.invitePolicy = InvitePolicy_AnyoneCanInvite,
+			.gameplayServerMode = GameplayServerMode_Countdown,
+			.songSelectionMode = SongSelectionMode_Vote,
+			.gameplayServerControlSettings = GameplayServerControlSettings_All,
+		},
+		.shortCountdownMs = 5000,
+		.longCountdownMs = 15000,
+		.perPlayerDifficulty = true,
+		.perPlayerModifiers = true,
+	}, true);
+	if(room == NULL) {
+		uprintf("room_open() failed\n");
+		r_join.roomJoinResp.base.result = ConnectToServerResponse_Result_UnknownError;
+		goto send;
+	}
+	r_join.roomJoinResp.base = room_resolve_session(ctx, &request, true, false);
+	if(r_join.roomJoinResp.base.result == ConnectToServerResponse_Result_Success) {
+		r_join.type = WireMessageType_WireRoomManagedJoinResp;
+		r_join.roomManagedJoinResp.room = request.room;
+	} else {
+		room_free(ctx, room);
+	}
+	send: WireLink_send(link, &r_join);
 }
 
 static void instance_onWireMessage(struct WireContext *wire, struct WireLink *link, const struct WireMessage *message) {
@@ -2547,7 +2609,7 @@ bool instance_init(const char *domainIPv4, const char *domain, const mbedtls_x50
 		ctx->net.onResolve = instance_onResolve;
 		ctx->net.onResend = instance_onResend;
 		ctx->wire.onMessage = instance_onWireMessage;
-		ctx->roomMask = COUNTER64_CLEAR;
+		ctx->roomMask = (struct Counter64){};
 		ctx->master = NULL;
 		memset(ctx->rooms, 0, sizeof(ctx->rooms));
 
@@ -2579,7 +2641,7 @@ void instance_cleanup() {
 			}
 			room_free(ctx, room);
 		}
-		ctx->roomMask = COUNTER64_CLEAR; // should be redundant, but just to be safe
+		ctx->roomMask = (struct Counter64){}; // should be redundant, but just to be safe
 		memset(ctx->rooms, 0, sizeof(ctx->rooms));
 		WireContext_cleanup(&ctx->wire);
 		net_cleanup(&ctx->net);

@@ -34,6 +34,10 @@ n WireRoomSpawn
 	WireServerConfiguration configuration
 n WireRoomJoin
 	WireSessionAlloc base
+	b managed
+n WireRoomManagedJoinResp
+	WireSessionAllocResp base
+	u32 room
 n WireRoomSpawnResp
 	WireSessionAllocResp base
 n WireRoomJoinResp
@@ -50,7 +54,7 @@ n WireRoomQueryResp
 	u8 hostIndex
 	u8 players_len
 	WireRoomQueryResp_PlayerInfo players[254, .players_len]
-d WireStatusEntry
+d WireRoomStatusNotify
 	u32 code
 	u8 protocolVersion
 	u8 playerCount
@@ -58,7 +62,7 @@ d WireStatusEntry
 	u16 playerNPS
 	u16 levelNPS
 	b public:1
-	b quickplay:1
+	b managed:1
 	b skipResults:1
 	b perPlayerDifficulty:1
 	b perPlayerModifiers:1
@@ -66,9 +70,6 @@ d WireStatusEntry
 	String levelName
 	String levelID
 	ByteArrayNetSerializable levelCover
-n WireRoomStatusNotify
-	vu32 entry_len
-	u8 entry[8384, .entry_len]
 n WireRoomCloseNotify
 n WireStatusAttach
 u8 MultiplayerPlacementErrorCode
@@ -104,6 +105,7 @@ d WireMessage
 		WireStatusAttach statusAttach
 		WireRoomStatusNotify roomStatusNotify
 		WireRoomCloseNotify roomCloseNotify
+		WireRoomManagedJoinResp roomManagedJoinResp
 		WireRoomSpawn roomSpawn
 		WireRoomSpawnResp roomSpawnResp
 		WireRoomJoin roomJoin

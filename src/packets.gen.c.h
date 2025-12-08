@@ -3347,10 +3347,22 @@ static void _pkt_WireRoomSpawn_write(const struct WireRoomSpawn *restrict data, 
 static void _pkt_WireRoomJoin_read(struct WireRoomJoin *restrict data, struct PacketRead parent) {
 	struct PacketRead state = scope(parent, "WireRoomJoin");
 	_pkt_WireSessionAlloc_read(&data->base, state);
+	_pkt_b_read(&data->managed, state);
 }
 static void _pkt_WireRoomJoin_write(const struct WireRoomJoin *restrict data, struct PacketWrite parent) {
 	struct PacketWrite state = scope(parent, "WireRoomJoin");
 	_pkt_WireSessionAlloc_write(&data->base, state);
+	_pkt_b_write(&data->managed, state);
+}
+static void _pkt_WireRoomManagedJoinResp_read(struct WireRoomManagedJoinResp *restrict data, struct PacketRead parent) {
+	struct PacketRead state = scope(parent, "WireRoomManagedJoinResp");
+	_pkt_WireSessionAllocResp_read(&data->base, state);
+	_pkt_u32_read(&data->room, state);
+}
+static void _pkt_WireRoomManagedJoinResp_write(const struct WireRoomManagedJoinResp *restrict data, struct PacketWrite parent) {
+	struct PacketWrite state = scope(parent, "WireRoomManagedJoinResp");
+	_pkt_WireSessionAllocResp_write(&data->base, state);
+	_pkt_u32_write(&data->room, state);
 }
 static void _pkt_WireRoomSpawnResp_read(struct WireRoomSpawnResp *restrict data, struct PacketRead parent) {
 	struct PacketRead state = scope(parent, "WireRoomSpawnResp");
@@ -3408,8 +3420,8 @@ static void _pkt_WireRoomQueryResp_write(const struct WireRoomQueryResp *restric
 	for(uint32_t i = 0, count = check_overflow(state, *state.head, (uint32_t)(data->players_len), 254, "WireRoomQueryResp.players"); i < count; ++i)
 		_pkt_WireRoomQueryResp_PlayerInfo_write(&data->players[i], state);
 }
-void _pkt_WireStatusEntry_read(struct WireStatusEntry *restrict data, struct PacketRead parent) {
-	struct PacketRead state = scope(parent, "WireStatusEntry");
+void _pkt_WireRoomStatusNotify_read(struct WireRoomStatusNotify *restrict data, struct PacketRead parent) {
+	struct PacketRead state = scope(parent, "WireRoomStatusNotify");
 	_pkt_u32_read(&data->code, state);
 	_pkt_u8_read(&data->protocolVersion, state);
 	_pkt_u8_read(&data->playerCount, state);
@@ -3419,7 +3431,7 @@ void _pkt_WireStatusEntry_read(struct WireStatusEntry *restrict data, struct Pac
 	uint8_t bitfield0;
 	_pkt_u8_read(&bitfield0, state);
 	data->public = bitfield0 >> 0 & 1;
-	data->quickplay = bitfield0 >> 1 & 1;
+	data->managed = bitfield0 >> 1 & 1;
 	data->skipResults = bitfield0 >> 2 & 1;
 	data->perPlayerDifficulty = bitfield0 >> 3 & 1;
 	data->perPlayerModifiers = bitfield0 >> 4 & 1;
@@ -3428,8 +3440,8 @@ void _pkt_WireStatusEntry_read(struct WireStatusEntry *restrict data, struct Pac
 	_pkt_String_read(&data->levelID, state);
 	_pkt_ByteArrayNetSerializable_read(&data->levelCover, state);
 }
-void _pkt_WireStatusEntry_write(const struct WireStatusEntry *restrict data, struct PacketWrite parent) {
-	struct PacketWrite state = scope(parent, "WireStatusEntry");
+void _pkt_WireRoomStatusNotify_write(const struct WireRoomStatusNotify *restrict data, struct PacketWrite parent) {
+	struct PacketWrite state = scope(parent, "WireRoomStatusNotify");
 	_pkt_u32_write(&data->code, state);
 	_pkt_u8_write(&data->protocolVersion, state);
 	_pkt_u8_write(&data->playerCount, state);
@@ -3438,7 +3450,7 @@ void _pkt_WireStatusEntry_write(const struct WireStatusEntry *restrict data, str
 	_pkt_u16_write(&data->levelNPS, state);
 	uint8_t bitfield0 = 0;
 	bitfield0 |= (data->public & 1u) << 0;
-	bitfield0 |= (data->quickplay & 1u) << 1;
+	bitfield0 |= (data->managed & 1u) << 1;
 	bitfield0 |= (data->skipResults & 1u) << 2;
 	bitfield0 |= (data->perPlayerDifficulty & 1u) << 3;
 	bitfield0 |= (data->perPlayerModifiers & 1u) << 4;
@@ -3447,16 +3459,6 @@ void _pkt_WireStatusEntry_write(const struct WireStatusEntry *restrict data, str
 	_pkt_String_write(&data->levelName, state);
 	_pkt_String_write(&data->levelID, state);
 	_pkt_ByteArrayNetSerializable_write(&data->levelCover, state);
-}
-static void _pkt_WireRoomStatusNotify_read(struct WireRoomStatusNotify *restrict data, struct PacketRead parent) {
-	struct PacketRead state = scope(parent, "WireRoomStatusNotify");
-	_pkt_vu32_read(&data->entry_len, state);
-	_pkt_raw_read(data->entry, check_overflow(state, *state.head, (uint32_t)(data->entry_len), 8384, "WireRoomStatusNotify.entry"), state);
-}
-static void _pkt_WireRoomStatusNotify_write(const struct WireRoomStatusNotify *restrict data, struct PacketWrite parent) {
-	struct PacketWrite state = scope(parent, "WireRoomStatusNotify");
-	_pkt_vu32_write(&data->entry_len, state);
-	_pkt_raw_write(data->entry, check_overflow(state, *state.head, (uint32_t)(data->entry_len), 8384, "WireRoomStatusNotify.entry"), state);
 }
 static void _pkt_WireRoomCloseNotify_read(struct WireRoomCloseNotify *restrict data, struct PacketRead parent) {
 }
@@ -3517,6 +3519,7 @@ void _pkt_WireMessage_read(struct WireMessage *restrict data, struct PacketRead 
 		case WireMessageType_WireStatusAttach: _pkt_WireStatusAttach_read(&data->statusAttach, state); break;
 		case WireMessageType_WireRoomStatusNotify: _pkt_WireRoomStatusNotify_read(&data->roomStatusNotify, state); break;
 		case WireMessageType_WireRoomCloseNotify: _pkt_WireRoomCloseNotify_read(&data->roomCloseNotify, state); break;
+		case WireMessageType_WireRoomManagedJoinResp: _pkt_WireRoomManagedJoinResp_read(&data->roomManagedJoinResp, state); break;
 		case WireMessageType_WireRoomSpawn: _pkt_WireRoomSpawn_read(&data->roomSpawn, state); break;
 		case WireMessageType_WireRoomSpawnResp: _pkt_WireRoomSpawnResp_read(&data->roomSpawnResp, state); break;
 		case WireMessageType_WireRoomJoin: _pkt_WireRoomJoin_read(&data->roomJoin, state); break;
@@ -3537,6 +3540,7 @@ void _pkt_WireMessage_write(const struct WireMessage *restrict data, struct Pack
 		case WireMessageType_WireStatusAttach: _pkt_WireStatusAttach_write(&data->statusAttach, state); break;
 		case WireMessageType_WireRoomStatusNotify: _pkt_WireRoomStatusNotify_write(&data->roomStatusNotify, state); break;
 		case WireMessageType_WireRoomCloseNotify: _pkt_WireRoomCloseNotify_write(&data->roomCloseNotify, state); break;
+		case WireMessageType_WireRoomManagedJoinResp: _pkt_WireRoomManagedJoinResp_write(&data->roomManagedJoinResp, state); break;
 		case WireMessageType_WireRoomSpawn: _pkt_WireRoomSpawn_write(&data->roomSpawn, state); break;
 		case WireMessageType_WireRoomSpawnResp: _pkt_WireRoomSpawnResp_write(&data->roomSpawnResp, state); break;
 		case WireMessageType_WireRoomJoin: _pkt_WireRoomJoin_write(&data->roomJoin, state); break;

@@ -6,23 +6,13 @@
 #include <math.h>
 #include <stdatomic.h>
 
-#define READ_SYM(dest, sym) _read_sym(dest, sym, (uint32_t)(sym##_end - sym))
-static inline uint32_t _read_sym(char *restrict dest, const uint8_t *restrict sym, uint32_t length) {
-	memcpy(dest, sym, length);
-	return length;
-}
-
 static const uint64_t TEST_maintenanceStartTime = 0;
 static const uint64_t TEST_maintenanceEndTime = 0;
 static const char TEST_maintenanceMessage[] = "";
 
-__asm__(
-		".global head_html;"
-	"head_html:"
-		".incbin \"src/status/head.html\";"
-		".global head_html_end;"
-	"head_html_end:");
-extern const uint8_t head_html[], head_html_end[];
+static const char head_html[] = {
+	#embed "head.html"
+};
 
 struct PacketBuffer {
 	uint32_t data_len;
@@ -39,7 +29,7 @@ void status_internal_init(const bool quiet) {
 	atomic_store(&quietMode, quiet);
 	/*uint8_t data[0x200];
 	status_update_index(0, data, pkt_write_c((uint8_t*[]){data}, endof(data), PV_WIRE, WireStatusEntry, {
-		.code = StringToServerCode("TEST", 4),
+		.code = ServerCode_FromString("TEST", 4),
 		.protocolVersion = 8,
 		.public = true,
 		.perPlayerDifficulty = true,
@@ -54,17 +44,21 @@ void status_internal_cleanup() {
 	}
 }
 
-void status_update_index(const uint32_t sequence, const uint8_t entry[], const uint32_t entry_len) {
+void status_update_index(const uint32_t sequence, const struct WireRoomStatusNotify *const status) {
 	while(sequence - roomIndex_tail > lengthof(roomIndex)) {
 		free(*roomIndex_get(roomIndex_tail));
 		*roomIndex_get(roomIndex_tail++) = NULL;
 	}
-	free(*roomIndex_get(sequence));
-	struct PacketBuffer *const buffer = *roomIndex_get(sequence) = malloc(sizeof(*buffer) + entry_len);
+	uint8_t entry[0x4000];
+	const unsigned entry_len = (status == NULL) ? 0 : pkt_write(status, (uint8_t*[]){entry}, endof(entry), PV_WIRE);
+	struct PacketBuffer *const buffer = realloc(*roomIndex_get(sequence), sizeof(*buffer) + entry_len);
 	if(buffer == NULL) {
+		free(*roomIndex_get(sequence));
+		*roomIndex_get(sequence) = NULL;
 		uprintf("alloc error\n");
 		return;
 	}
+	*roomIndex_get(sequence) = buffer;
 	buffer->data_len = entry_len;
 	memcpy(buffer->data, entry, entry_len);
 }
@@ -117,7 +111,8 @@ static char *base64_encode(char *out, const struct ByteArrayNetSerializable *con
 
 static void status_web_index(struct HttpContext *const http) {
 	char page[65536];
-	uint32_t page_len = READ_SYM(page, head_html);
+	memcpy(page, head_html, sizeof(head_html));
+	uint32_t page_len = lengthof(head_html);
 	page_len += (uint32_t)sprintf(&page[page_len],
 		"<style>span#back {display:none}</style>"
 		"<table id=index style=width:100%%;table-layout:fixed>"
@@ -131,7 +126,7 @@ static void status_web_index(struct HttpContext *const http) {
 			"<tbody>");
 	for(uint32_t i = roomIndex_tail, end = roomIndex_tail + lengthof(roomIndex); i != end; ++i) {
 		const struct PacketBuffer *const packet = *roomIndex_get(i);
-		struct WireStatusEntry entry;
+		struct WireRoomStatusNotify entry;
 		if(packet == NULL || packet->data_len == 0 || pkt_read(&entry, (const uint8_t*[]){packet->data}, &packet->data[packet->data_len], PV_WIRE) != packet->data_len)
 			continue;
 		if(!entry.public) // TODO: make private rooms visible to matching IPs
@@ -145,7 +140,7 @@ static void status_web_index(struct HttpContext *const http) {
 			sprintf(noteRate_end, "%.2f", entry.levelNPS / 256.);
 		else
 			sprintf(noteRate_end, "too much");
-		ServerCodeToString(scode, entry.code);
+		ServerCode_toString(entry.code, &scode);
 		if(entry.levelName.isNull)
 			entry.levelName = entry.levelID;
 		struct LongString levelName;
@@ -166,6 +161,7 @@ static void status_web_index(struct HttpContext *const http) {
 			cover[0] = ' ';
 			*base64_encode(&cover[51], &entry.levelCover) = ')';
 		}
+		// TODO: differentiate private, public, and quickplay lobbies
 		page_len += (uint32_t)sprintf(&page[page_len], "%s%s%s%s%s%s%s%.*s%s%.*s%s%.*s%s%s%s%u%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s", "<tr>"
 			"<th><a href=\"", scode, "\"><code>", scode,
 			"<td><a href=\"", scode, "\"><div class=\"ln\"><span>", (int)levelName.length, levelName.data, "</span><br>"
@@ -180,7 +176,8 @@ static void status_web_index(struct HttpContext *const http) {
 
 static void status_web_room(struct HttpContext *const http, const ServerCode /*code*/) {
 	char page[65536];
-	uint32_t page_len = READ_SYM(page, head_html);
+	memcpy(page, head_html, sizeof(head_html));
+	uint32_t page_len = lengthof(head_html);
 	page_len += (uint32_t)sprintf(&page[page_len], "<div id=main>This page is still under construction</div>");
 	uprintf("TODO: room status page\n");
 	HttpContext_respond(http, 200, "text/html; charset=utf-8", page, page_len);
@@ -337,7 +334,7 @@ static void status_graph(struct HttpContext *http, struct HttpRequest req, struc
 			connectInfo.secret = state.secret = json_read_string(&iter);
 		} else if(String_is(key0, "private_game_code")) {
 			const struct String code = json_read_string(&iter);
-			connectInfo.code = StringToServerCode(code.data, code.length);
+			connectInfo.code = ServerCode_FromString(code.data, code.length);
 		} else if(String_is(key0, "extra_server_configuration")) {
 			uint32_t totalCountdownMs = 0;
 			JSON_ITER_OBJECT(&iter, key1) {
@@ -408,7 +405,7 @@ void status_graph_resp(struct DataView cookieView, const struct WireGraphConnect
 				"\"port\":", resp->endPoint.port, ","
 				"\"dns_name\":\"", resp->endPoint.address.length, resp->endPoint.address.data, "\","
 				"\"player_session_id\":\"pslot$", resp->roomSlot, ',', resp->playerSlot, "\","
-				"\"private_game_code\":\"", ServerCodeToString((char[8]){0}, resp->code), "\","
+				"\"private_game_code\":\"", ServerCode_toString(resp->code, &(char[8]){0}), "\","
 				"\"private_game_secret\":\"", state->secret.length, state->secret.data, "\","
 				"\"beatmap_level_selection_mask\":{"
 					"\"difficulties\":", state->selectionMask.difficulties, ","
@@ -510,5 +507,5 @@ void status_resp(struct HttpContext *http, const char path[], struct HttpRequest
 		HttpContext_respond(http, 404, "text/plain; charset=utf-8", NULL, 0);
 		return;
 	}
-	status_web_room(http, StringToServerCode(req, (uint32_t)(code_end - req)));
+	status_web_room(http, ServerCode_FromString(req, (uint32_t)(code_end - req)));
 }

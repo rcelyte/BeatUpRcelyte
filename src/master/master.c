@@ -27,7 +27,7 @@ struct NetSession *MasterContext_onResolve(struct MasterContext *ctx, struct Net
 	NetSession_init(&session->net, net, addr, &ctx->config, 0);
 	session->lastSentRequestId = 0;
 	session->handshake.step = HandshakeMessageType_ClientHelloRequest;
-	session->resend.set = COUNTER64_CLEAR;
+	session->resend.set = (struct Counter64){};
 	session->multipartList = NULL;
 	session->enet = NULL;
 	if(*packet != 0) {
@@ -166,7 +166,7 @@ uint32_t MasterSession_send(struct NetContext *const net, struct MasterSession *
 		.value = {
 			.multipartMessageId = MasterSession_prevRequestId(session),
 			.length = 384,
-			.totalLength = (uint32_t)(resp_end - &resp[1]), // TODO: `_Static_assert()` offset of serialized `NetPacketHeader.unconnectedMessage` to warn on potential ABI breaks
+			.totalLength = (uint32_t)(resp_end - &resp[1]), // TODO: `static_assert()` offset of serialized `NetPacketHeader.unconnectedMessage` to warn on potential ABI breaks
 		},
 	};
 	switch(type) {
@@ -230,7 +230,7 @@ static inline bool InitializeConnection(struct NetContext *net, struct MasterSes
 		struct SS addr = *NetSession_get_addr(&session->net);
 		NetSession_free(&session->net);
 		NetSession_init(&session->net, net, addr, config, 0); // security or something idk
-		session->resend.set = COUNTER64_CLEAR;
+		session->resend.set = (struct Counter64){};
 	}
 	session->epoch = req->base.requestId & 0xff000000;
 	session->net.clientRandom = req->random;
@@ -324,7 +324,7 @@ static void handle_ClientKeyExchangeRequest(struct NetContext *net, struct Maste
 }
 
 static void handle_BaseAuthenticate(struct NetContext *net, struct MasterSession *session, struct BaseMasterServerReliableResponse req, bool gamelift) {
-	_Static_assert((uint32_t)GameLiftMessageType_AuthenticateUserResponse == (uint32_t)UserMessageType_AuthenticateUserResponse, "ABI break");
+	static_assert((uint32_t)GameLiftMessageType_AuthenticateUserResponse == (uint32_t)UserMessageType_AuthenticateUserResponse, "ABI break");
 	master_send_ack(net, session, gamelift ? MessageType_GameLiftMessage : MessageType_UserMessage, req.requestId);
 	const struct AuthenticateUserResponse r_auth = {
 		.base = {

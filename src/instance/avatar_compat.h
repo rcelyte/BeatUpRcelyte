@@ -1,13 +1,13 @@
 static struct WriterString WriterString_FromString(const struct String from) {
 	struct WriterString out = {.length = from.length};
-	_Static_assert(sizeof(out.data) == sizeof(from.data));
+	static_assert(sizeof(out.data) == sizeof(from.data));
 	memcpy(out.data, from.data, out.length);
 	return out;
 }
 
 static struct String String_FromWriterString(const struct WriterString from) {
 	struct String out = {.length = from.length};
-	_Static_assert(sizeof(out.data) == sizeof(from.data));
+	static_assert(sizeof(out.data) == sizeof(from.data));
 	memcpy(out.data, from.data, out.length);
 	return out;
 }
