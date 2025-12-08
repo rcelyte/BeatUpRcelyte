@@ -42,15 +42,15 @@ static void status_onWireMessage(struct WireContext *wire, struct WireLink *link
 		ctx->master = NULL;
 		goto unlock;
 	}
-	const uint8_t *entry = NULL;
-	uint32_t entry_len = 0;
 	switch(message->type) {
 		case WireMessageType_WireGraphConnectResp: {
 			status_graph_resp(WireLink_getCookie(link, message->cookie), &message->graphConnectResp);
 			WireLink_freeCookie(link, message->cookie);
 		} break;
-		case WireMessageType_WireRoomStatusNotify: entry = message->roomStatusNotify.entry; entry_len = message->roomStatusNotify.entry_len; [[fallthrough]];
-		case WireMessageType_WireRoomCloseNotify: status_update_index(message->cookie, entry, entry_len); break;
+		case WireMessageType_WireRoomStatusNotify: [[fallthrough]];
+		case WireMessageType_WireRoomCloseNotify: {
+			status_update_index(message->cookie, (message->type == WireMessageType_WireRoomStatusNotify) ? &message->roomStatusNotify : NULL);
+		} break;
 		default: uprintf("Unhandled wire message [%s]\n", reflect(WireMessageType, message->type));
 	}
 	unlock: pthread_mutex_unlock(&ctx->mutex);

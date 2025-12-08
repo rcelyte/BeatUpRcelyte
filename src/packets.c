@@ -37,34 +37,35 @@ bool pkt_debug(const char *errorMessage, const uint8_t *head, const uint8_t *end
 	return true;
 }
 
-ServerCode StringToServerCode(const char *in, uint32_t len) {
+ServerCode ServerCode_FromString(const char from[const], const uint32_t from_len) {
 	static const uint8_t readTable[64] = {
 		1,11,9,12,1,13,14,15,16,2,17,18,19,20,21,1,22,23,24,25,26,27,28,29,30,31,32,
 		1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,3,4,5,6,7,8,9,10,1,1,1,1,1,1,
 	};
-	ServerCode out = 0;
-	if(len <= 5)
-		for(uint32_t i = 0, fac = 1; i < len; ++i, fac *= 32)
-			out += readTable[in[i] & 63] * fac;
-	return out;
+	if(from_len > 5)
+		return ~(ServerCode)0;
+	ServerCode result = 0;
+	for(uint32_t i = 0, fac = 1; i < from_len; ++i, fac *= 32)
+		result += readTable[from[i] & 63] * fac;
+	return result;
 }
 
-char *ServerCodeToString(char out[8], ServerCode in) {
-	char *s = out;
-	for(; in; in >>= 5)
-		*s++ = "0123456789ACEFGHJKLMNPQRSTUVWXYZ"[--in & 0x1f];
-	*s = 0;
-	return out;
+char *ServerCode_toString(ServerCode code, char (*const buffer)[8]) {
+	char *it = *buffer;
+	for(; code; code >>= 5)
+		*it++ = "0123456789ACEFGHJKLMNPQRSTUVWXYZ"[--code & 0x1f];
+	*it = 0;
+	return *buffer;
 }
 
 [[maybe_unused]] static void _pkt_ServerCode_read(ServerCode *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	struct String str;
 	_pkt_String_read(&str, pkt, end, ctx);
-	*data = StringToServerCode(str.data, str.length);
+	*data = ServerCode_FromString(str.data, str.length);
 }
 [[maybe_unused]] static void _pkt_ServerCode_write(const ServerCode *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	struct String str = {.length = 0, .isNull = false};
-	str.length = (uint32_t)strlen(ServerCodeToString(str.data, *data));
+	str.length = (uint32_t)strlen(ServerCode_toString(*data, (char (*)[8])&str.data));
 	_pkt_String_write(&str, pkt, end, ctx);
 }
 [[maybe_unused]] static void _pkt_RemoteProcedureCallFlags_read(struct RemoteProcedureCallFlags *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {

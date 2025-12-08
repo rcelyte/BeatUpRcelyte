@@ -2938,9 +2938,19 @@ static void _pkt_WireRoomSpawn_write(const struct WireRoomSpawn *restrict data, 
 }
 static void _pkt_WireRoomJoin_read(struct WireRoomJoin *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_WireSessionAlloc_read(&data->base, pkt, end, ctx);
+	_pkt_b_read(&data->managed, pkt, end, ctx);
 }
 static void _pkt_WireRoomJoin_write(const struct WireRoomJoin *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_WireSessionAlloc_write(&data->base, pkt, end, ctx);
+	_pkt_b_write(&data->managed, pkt, end, ctx);
+}
+static void _pkt_WireRoomManagedJoinResp_read(struct WireRoomManagedJoinResp *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_WireSessionAllocResp_read(&data->base, pkt, end, ctx);
+	_pkt_u32_read(&data->room, pkt, end, ctx);
+}
+static void _pkt_WireRoomManagedJoinResp_write(const struct WireRoomManagedJoinResp *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+	_pkt_WireSessionAllocResp_write(&data->base, pkt, end, ctx);
+	_pkt_u32_write(&data->room, pkt, end, ctx);
 }
 static void _pkt_WireRoomSpawnResp_read(struct WireRoomSpawnResp *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_WireSessionAllocResp_read(&data->base, pkt, end, ctx);
@@ -2988,7 +2998,7 @@ static void _pkt_WireRoomQueryResp_write(const struct WireRoomQueryResp *restric
 	for(uint32_t i = 0, count = check_overflow((uint32_t)(data->players_len), 254, "WireRoomQueryResp.players"); i < count; ++i)
 		_pkt_WireRoomQueryResp_PlayerInfo_write(&data->players[i], pkt, end, ctx);
 }
-void _pkt_WireStatusEntry_read(struct WireStatusEntry *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+void _pkt_WireRoomStatusNotify_read(struct WireRoomStatusNotify *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_read(&data->code, pkt, end, ctx);
 	_pkt_u8_read(&data->protocolVersion, pkt, end, ctx);
 	_pkt_u8_read(&data->playerCount, pkt, end, ctx);
@@ -2998,7 +3008,7 @@ void _pkt_WireStatusEntry_read(struct WireStatusEntry *restrict data, const uint
 	uint8_t bitfield0;
 	_pkt_u8_read(&bitfield0, pkt, end, ctx);
 	data->public = bitfield0 >> 0 & 1;
-	data->quickplay = bitfield0 >> 1 & 1;
+	data->managed = bitfield0 >> 1 & 1;
 	data->skipResults = bitfield0 >> 2 & 1;
 	data->perPlayerDifficulty = bitfield0 >> 3 & 1;
 	data->perPlayerModifiers = bitfield0 >> 4 & 1;
@@ -3007,7 +3017,7 @@ void _pkt_WireStatusEntry_read(struct WireStatusEntry *restrict data, const uint
 	_pkt_String_read(&data->levelID, pkt, end, ctx);
 	_pkt_ByteArrayNetSerializable_read(&data->levelCover, pkt, end, ctx);
 }
-void _pkt_WireStatusEntry_write(const struct WireStatusEntry *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+void _pkt_WireRoomStatusNotify_write(const struct WireRoomStatusNotify *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	_pkt_u32_write(&data->code, pkt, end, ctx);
 	_pkt_u8_write(&data->protocolVersion, pkt, end, ctx);
 	_pkt_u8_write(&data->playerCount, pkt, end, ctx);
@@ -3016,7 +3026,7 @@ void _pkt_WireStatusEntry_write(const struct WireStatusEntry *restrict data, uin
 	_pkt_u16_write(&data->levelNPS, pkt, end, ctx);
 	uint8_t bitfield0 = 0;
 	bitfield0 |= (data->public & 1u) << 0;
-	bitfield0 |= (data->quickplay & 1u) << 1;
+	bitfield0 |= (data->managed & 1u) << 1;
 	bitfield0 |= (data->skipResults & 1u) << 2;
 	bitfield0 |= (data->perPlayerDifficulty & 1u) << 3;
 	bitfield0 |= (data->perPlayerModifiers & 1u) << 4;
@@ -3025,14 +3035,6 @@ void _pkt_WireStatusEntry_write(const struct WireStatusEntry *restrict data, uin
 	_pkt_String_write(&data->levelName, pkt, end, ctx);
 	_pkt_String_write(&data->levelID, pkt, end, ctx);
 	_pkt_ByteArrayNetSerializable_write(&data->levelCover, pkt, end, ctx);
-}
-static void _pkt_WireRoomStatusNotify_read(struct WireRoomStatusNotify *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_vu32_read(&data->entry_len, pkt, end, ctx);
-	_pkt_raw_read(data->entry, pkt, end, ctx, check_overflow((uint32_t)(data->entry_len), 8384, "WireRoomStatusNotify.entry"));
-}
-static void _pkt_WireRoomStatusNotify_write(const struct WireRoomStatusNotify *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	_pkt_vu32_write(&data->entry_len, pkt, end, ctx);
-	_pkt_raw_write(data->entry, pkt, end, ctx, check_overflow((uint32_t)(data->entry_len), 8384, "WireRoomStatusNotify.entry"));
 }
 static void _pkt_WireRoomCloseNotify_read(struct WireRoomCloseNotify *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 }
@@ -3088,6 +3090,7 @@ void _pkt_WireMessage_read(struct WireMessage *restrict data, const uint8_t **pk
 		case WireMessageType_WireStatusAttach: _pkt_WireStatusAttach_read(&data->statusAttach, pkt, end, ctx); break;
 		case WireMessageType_WireRoomStatusNotify: _pkt_WireRoomStatusNotify_read(&data->roomStatusNotify, pkt, end, ctx); break;
 		case WireMessageType_WireRoomCloseNotify: _pkt_WireRoomCloseNotify_read(&data->roomCloseNotify, pkt, end, ctx); break;
+		case WireMessageType_WireRoomManagedJoinResp: _pkt_WireRoomManagedJoinResp_read(&data->roomManagedJoinResp, pkt, end, ctx); break;
 		case WireMessageType_WireRoomSpawn: _pkt_WireRoomSpawn_read(&data->roomSpawn, pkt, end, ctx); break;
 		case WireMessageType_WireRoomSpawnResp: _pkt_WireRoomSpawnResp_read(&data->roomSpawnResp, pkt, end, ctx); break;
 		case WireMessageType_WireRoomJoin: _pkt_WireRoomJoin_read(&data->roomJoin, pkt, end, ctx); break;
@@ -3107,6 +3110,7 @@ void _pkt_WireMessage_write(const struct WireMessage *restrict data, uint8_t **p
 		case WireMessageType_WireStatusAttach: _pkt_WireStatusAttach_write(&data->statusAttach, pkt, end, ctx); break;
 		case WireMessageType_WireRoomStatusNotify: _pkt_WireRoomStatusNotify_write(&data->roomStatusNotify, pkt, end, ctx); break;
 		case WireMessageType_WireRoomCloseNotify: _pkt_WireRoomCloseNotify_write(&data->roomCloseNotify, pkt, end, ctx); break;
+		case WireMessageType_WireRoomManagedJoinResp: _pkt_WireRoomManagedJoinResp_write(&data->roomManagedJoinResp, pkt, end, ctx); break;
 		case WireMessageType_WireRoomSpawn: _pkt_WireRoomSpawn_write(&data->roomSpawn, pkt, end, ctx); break;
 		case WireMessageType_WireRoomSpawnResp: _pkt_WireRoomSpawnResp_write(&data->roomSpawnResp, pkt, end, ctx); break;
 		case WireMessageType_WireRoomJoin: _pkt_WireRoomJoin_write(&data->roomJoin, pkt, end, ctx); break;
