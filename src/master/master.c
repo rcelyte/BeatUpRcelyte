@@ -471,7 +471,7 @@ bool MasterContext_handleMessage(struct MasterContext *ctx, struct NetContext *n
 				continue;
 			struct UserMessage message = {.type = (UserMessageType)UINT32_C(0xffffffff)};
 			pkt_read(&message, &sub, &sub[serial.length], session->net.version);
-			if(pkt_debug("BAD USER MESSAGE LENGTH", sub, data, serial.length, session->net.version))
+			if(pkt_debug("BAD USER MESSAGE LENGTH", data - serial.length, data, sub, session->net.version))
 				continue;
 			switch(message.type) {
 				case UserMessageType_AuthenticateUserRequest: handle_AuthenticateUserRequest(net, session, &message.authenticateUserRequest); break;
@@ -497,7 +497,7 @@ bool MasterContext_handleMessage(struct MasterContext *ctx, struct NetContext *n
 				continue;
 			struct GameLiftMessage message = {.type = (GameLiftMessageType)UINT32_C(0xffffffff)};
 			pkt_read(&message, &sub, &sub[serial.length], session->net.version);
-			if(pkt_debug("BAD GAMELIFT MESSAGE LENGTH", sub, data, serial.length, session->net.version))
+			if(pkt_debug("BAD GAMELIFT MESSAGE LENGTH", data - serial.length, data, sub, session->net.version))
 				continue;
 			switch(message.type) {
 				case GameLiftMessageType_AuthenticateGameLiftUserRequest: {
@@ -519,7 +519,7 @@ bool MasterContext_handleMessage(struct MasterContext *ctx, struct NetContext *n
 		if(header.type == MessageType_HandshakeMessage) {
 			struct HandshakeMessage message = {.type = (HandshakeMessageType)UINT32_C(0xffffffff)};
 			pkt_read(&message, &sub, &sub[serial.length], session->net.version);
-			if(pkt_debug("BAD HANDSHAKE MESSAGE LENGTH", sub, data, serial.length, session->net.version))
+			if(pkt_debug("BAD HANDSHAKE MESSAGE LENGTH", data - serial.length, data, sub, session->net.version))
 				continue;
 			switch(message.type) {
 				case HandshakeMessageType_ClientHelloRequest: handle_ClientHelloRequest(net, session, &ctx->config, &message.clientHelloRequest); break;

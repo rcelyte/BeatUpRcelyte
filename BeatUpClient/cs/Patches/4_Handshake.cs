@@ -1,15 +1,17 @@
 static partial class BeatUpClient {
 	static ServerConnectInfo connectInfo = ServerConnectInfo.Default;
 	static void RefreshModifiersHeader() {
-		BGLib.Polyglot.LocalizedTextMeshProUGUI? SuggestedModifiers = UnityEngine.Resources.FindObjectsOfTypeAll<GameServerPlayersTableView>()[0].transform.Find("ServerPlayersTableHeader/Labels/SuggestedModifiers")?.GetComponent<BGLib.Polyglot.LocalizedTextMeshProUGUI>();
+		BGLib.Polyglot.LocalizedTextMeshProUGUI? SuggestedModifiers = UnityEngine.Resources.FindObjectsOfTypeAll<GameServerPlayersTableView>()[0]
+			.transform.Find("ServerPlayersTableHeader/Labels/SuggestedModifiers")?.GetComponent<BGLib.Polyglot.LocalizedTextMeshProUGUI>();
 		if(SuggestedModifiers != null)
 			SuggestedModifiers.Key = connectInfo.perPlayerModifiers ? "BEATUP_SELECTED_MODIFIERS" : "SUGGESTED_MODIFIERS";
 	}
 
 	[Detour(typeof(GameLiftClientConnectionRequestHandler), nameof(GameLiftClientConnectionRequestHandler.GetConnectionMessage))]
-	static void GameLiftClientConnectionRequestHandler_GetConnectionMessage(GameLiftClientConnectionRequestHandler self, LiteNetLib.Utils.NetDataWriter writer, string userId, string userName, bool isConnectionOwner) {
+	static void GameLiftClientConnectionRequestHandler_GetConnectionMessage(GameLiftClientConnectionRequestHandler self,
+			LiteNetLib.Utils.NetDataWriter writer, string userId, string userName, bool isConnectionOwner, string compatibilityVersion) {
 		Log.Debug("GameLiftClientConnectionRequestHandler_GetConnectionMessage()");
-		Base(self, writer, userId, userName, isConnectionOwner);
+		Base(self, writer, userId, userName, isConnectionOwner, compatibilityVersion);
 		LiteNetLib.Utils.NetDataWriter sub = new LiteNetLib.Utils.NetDataWriter(false, (int)ServerConnectInfo.Size);
 		new ServerConnectInfo(LocalBlockSize, BeatUpClient_Config.Instance).Serialize(sub);
 		writer.PutVarUInt((uint)sub.Length);
@@ -34,16 +36,19 @@ static partial class BeatUpClient {
 		return (LiteNetLib.NetConnectAcceptPacket)Base(packet);
 	}
 
-	[Detour(typeof(ConnectedPlayerManager.ConnectedPlayer), nameof(ConnectedPlayerManager.ConnectedPlayer.CreateDirectlyConnectedPlayer))]
-	static ConnectedPlayerManager.ConnectedPlayer ConnectedPlayer_CreateDirectlyConnectedPlayer(ConnectedPlayerManager manager, byte connectionId, IConnection connection) {
-		ConnectedPlayerManager.ConnectedPlayer result = (ConnectedPlayerManager.ConnectedPlayer)Base(manager, connectionId, connection);
+	[Detour(typeof(BeatSaberConnectedPlayerFactory), nameof(BeatSaberConnectedPlayerFactory.CreateDirectlyConnectedPlayer))]
+	static BeatSaberConnectedPlayer BeatSaberConnectedPlayerFactory_CreateDirectlyConnectedPlayer(BeatSaberConnectedPlayerFactory self,
+			ConnectedPlayerManager<IBeatSaberConnectedPlayer, BeatSaberConnectedPlayer, BeatSaberPlayerIdentityPacketData> manager, byte connectionId, IConnection connection) {
+		BeatSaberConnectedPlayer result = (BeatSaberConnectedPlayer)Base(self, manager, connectionId, connection);
 		if(connectInfo.@base.protocolId != 0)
 			Net.HandleConnectInfo(connectInfo.@base, result);
 		return result;
 	}
 
-	[Detour(typeof(ConnectedPlayerManager), nameof(ConnectedPlayerManager.RemovePlayer))]
-	static void ConnectedPlayerManager_RemovePlayer(ConnectedPlayerManager self, ConnectedPlayerManager.ConnectedPlayer player, DisconnectedReason reason) {
+	[Detour(typeof(ConnectedPlayerManager<IBeatSaberConnectedPlayer, BeatSaberConnectedPlayer, BeatSaberPlayerIdentityPacketData>),
+		nameof(ConnectedPlayerManager<IBeatSaberConnectedPlayer, BeatSaberConnectedPlayer, BeatSaberPlayerIdentityPacketData>.RemovePlayer))]
+	static void ConnectedPlayerManager_RemovePlayer(ConnectedPlayerManager<IBeatSaberConnectedPlayer, BeatSaberConnectedPlayer, BeatSaberPlayerIdentityPacketData> self,
+			BeatSaberConnectedPlayer player, DisconnectedReason reason) {
 		Net.OnDisconnect(player);
 		Base(self, player, reason);
 	}

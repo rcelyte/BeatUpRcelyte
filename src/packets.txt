@@ -866,9 +866,12 @@ n MultiplayerAvatarsData
 		BitMask128 supportedTypes
 n PlayerIdentity
 	PlayerStateHash playerState
-	MultiplayerAvatarsData playerAvatars
+	if($gameVersion < GameVersion_1_42_0)
+		MultiplayerAvatarsData playerAvatars
 	ByteArrayNetSerializable random
 	ByteArrayNetSerializable publicEncryptionKey
+	if($gameVersion >= GameVersion_1_42_0)
+		MultiplayerAvatarsData playerAvatars
 n PlayerLatencyUpdate
 	f32 latency
 vi32 DisconnectedReason
@@ -909,8 +912,13 @@ n PingMessage
 	UTimestamp pingTime
 n PongMessage
 	UTimestamp pingTime
+n GameSpecificMessage
+	GameSpecificMessageType type
+	u8 GameSpecificMessageType(.type)
+		PlayerAvatarUpdate playerAvatarUpdate
+u8 InternalMessageType_Fixed
 d InternalMessage
-	InternalMessageType type
+	InternalMessageType_Fixed type
 	u8 InternalMessageType(.type)
 		SyncTime syncTime
 		PlayerConnected playerConnected
@@ -925,6 +933,7 @@ d InternalMessage
 		PlayerAvatarUpdate playerAvatarUpdate
 		PingMessage pingMessage
 		PongMessage pongMessage
+		GameSpecificMessage gameSpecificMessage
 d RoutingHeader
 	u8 remoteConnectionId
 	u8 connectionId:7
@@ -1171,6 +1180,8 @@ r ConnectMessage
 	b isConnectionOwner
 	if($direct)
 		String playerSessionId
+	if($gameVersion >= GameVersion_1_42_0)
+		String compatibilityVersion
 n ConnectRequest
 	u32 protocolId
 	u64 connectTime

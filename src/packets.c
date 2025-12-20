@@ -2,7 +2,7 @@
 #include "packets.h"
 #include "../common/packets.c"
 
-bool _pkt_serialize(PacketWriteFunc inner, const void *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+bool _pkt_serialize(PacketWriteFunc *const inner, const void *const restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
 	uint8_t *start = (*pkt)++;
 	struct SerializeHeader header = {
 		.length = (uint32_t)_pkt_try_write(inner, data, pkt, end, ctx),
@@ -19,21 +19,10 @@ bool _pkt_serialize(PacketWriteFunc inner, const void *restrict data, uint8_t **
 	return false;
 }
 
-bool pkt_debug(const char *errorMessage, const uint8_t *head, const uint8_t *end, size_t expect, struct PacketContext ctx) {
+bool pkt_debug(const char *const errorMessage, const uint8_t *const start, const uint8_t *const end, const uint8_t *head, const struct PacketContext ctx) {
 	if(head == end)
 		return false;
-	const uint8_t *start = end - expect;
-	uprintf("%s [netVersion=%hhu protocolVersion=%hhu beatUpVersion=%hhu gameVersion=%s windowSize=%u] (expected %zu, read %zu)\n    ", errorMessage,
-		ctx.netVersion, ctx.protocolVersion, ctx.beatUpVersion, reflect(GameVersion, ctx.gameVersion), ctx.windowSize, expect, head - start);
-	for(const uint8_t *it = start; it < end; ++it)
-		uprintf("%02hhx", *it);
-	if((uintptr_t)(head - start) < expect) {
-		uprintf("\n    ");
-		for(const uint8_t *it = start; it < head; ++it)
-			uprintf("  ");
-		uprintf("^ extra data starts here");
-	}
-	uprintf("\n");
+	pkt_dump(errorMessage, start, (struct PacketRead){.head = &head, .end = end, .context = ctx});
 	return true;
 }
 
@@ -57,33 +46,37 @@ char *ServerCodeToString(char out[8], ServerCode in) {
 	return out;
 }
 
-[[maybe_unused]] static void _pkt_ServerCode_read(ServerCode *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+[[maybe_unused]] static void _pkt_ServerCode_read(ServerCode *const restrict data, const struct PacketRead parent) {
+	const struct PacketRead state = scope(parent, "ServerCode");
 	struct String str;
-	_pkt_String_read(&str, pkt, end, ctx);
+	_pkt_String_read(&str, state);
 	*data = StringToServerCode(str.data, str.length);
 }
-[[maybe_unused]] static void _pkt_ServerCode_write(const ServerCode *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+[[maybe_unused]] static void _pkt_ServerCode_write(const ServerCode *const restrict data, const struct PacketWrite parent) {
+	const struct PacketWrite state = scope(parent, "ServerCode");
 	struct String str = {.length = 0, .isNull = false};
 	str.length = (uint32_t)strlen(ServerCodeToString(str.data, *data));
-	_pkt_String_write(&str, pkt, end, ctx);
+	_pkt_String_write(&str, state);
 }
-[[maybe_unused]] static void _pkt_RemoteProcedureCallFlags_read(struct RemoteProcedureCallFlags *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
+[[maybe_unused]] static void _pkt_RemoteProcedureCallFlags_read(struct RemoteProcedureCallFlags *const restrict data, const struct PacketRead parent) {
+	const struct PacketRead state = scope(parent, "RemoteProcedureCallFlags");
 	uint8_t bits = 0xff;
-	if(ctx.protocolVersion > 6)
-		_pkt_u8_read(&bits, pkt, end, ctx);
+	if(state.context.protocolVersion > 6)
+		_pkt_u8_read(&bits, state);
 	data->hasValue0 = (bits >> 0) & 1;
 	data->hasValue1 = (bits >> 1) & 1;
 	data->hasValue2 = (bits >> 2) & 1;
 	data->hasValue3 = (bits >> 3) & 1;
 }
-[[maybe_unused]] static void _pkt_RemoteProcedureCallFlags_write(const struct RemoteProcedureCallFlags *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx) {
-	if(ctx.protocolVersion > 6) {
+[[maybe_unused]] static void _pkt_RemoteProcedureCallFlags_write(const struct RemoteProcedureCallFlags *const restrict data, const struct PacketWrite parent) {
+	const struct PacketWrite state = scope(parent, "RemoteProcedureCallFlags");
+	if(state.context.protocolVersion > 6) {
 		uint8_t bits = 0;
 		bits |= (data->hasValue0 << 0);
 		bits |= (data->hasValue1 << 1);
 		bits |= (data->hasValue2 << 2);
 		bits |= (data->hasValue3 << 3);
-		_pkt_u8_write(&bits, pkt, end, ctx);
+		_pkt_u8_write(&bits, state);
 	}
 }
 MpCoreType MpCoreType_From(const struct String *type) {
@@ -97,6 +90,17 @@ MpCoreType MpCoreType_From(const struct String *type) {
 	if(String_is(*type, "MpexPlayerData")) return MpCoreType_MpexPlayerData;
 	uprintf("Unsupported MpCore custom packet: %.*s\n", type->length, type->data);
 	return (MpCoreType)0xffffffff;
+}
+static void _pkt_InternalMessageType_Fixed_read(InternalMessageType_Fixed *const restrict value, const struct PacketRead parent) {
+	const struct PacketRead state = scope(parent, "InternalMessageType");
+	uint8_t raw = 0;
+	_pkt_u8_read(&raw, state);
+	*value = raw + (state.context.gameVersion >= GameVersion_1_42_0 && raw >= InternalMessageType_PlayerAvatarUpdate);
+}
+static void _pkt_InternalMessageType_Fixed_write(const InternalMessageType_Fixed *const restrict value, const struct PacketWrite parent) {
+	const struct PacketWrite state = scope(parent, "InternalMessageType");
+	const uint8_t raw = *value - (state.context.gameVersion >= GameVersion_1_42_0 && *value > InternalMessageType_PlayerAvatarUpdate);
+	_pkt_u8_write(&raw, state);
 }
 
 #pragma GCC diagnostic ignored "-Wunused-parameter"

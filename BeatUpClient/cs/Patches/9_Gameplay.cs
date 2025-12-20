@@ -14,7 +14,7 @@ static partial class BeatUpClient {
 				setupData.colorScheme, setupData.gameplayCoreSceneSetupData.gameplayModifiers, setupData.gameplayCoreSceneSetupData.playerSpecificSettings,
 				setupData.gameplayCoreSceneSetupData.environmentsListModel, setupData.gameplayCoreSceneSetupData.practiceSettings,
 				Resolve<AudioClipAsyncLoader>(), Resolve<SettingsManager>(), Resolve<BeatmapDataLoader>(),
-				setupData.gameplayCoreSceneSetupData.useTestNoteCutSoundEffects);
+				setupData.gameplayAdditionalInformationSetupData.additionalInformation);
 			menuTransitionsHelper._gameScenesManager.ReplaceScenes(menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData, null,
 					.35f, null, (Zenject.DiContainer container) => {
 				MultiplayerController multiplayerController = container.Resolve<MultiplayerController>();

@@ -1,3 +1,4 @@
+#include "common/global.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -55,7 +56,7 @@ struct FieldToken {
 	int64_t enumValue;
 };
 
-struct Token {
+static struct Token {
 	enum TType type;
 	union {
 		struct EnumToken enum_;
@@ -63,7 +64,7 @@ struct Token {
 		struct IfToken if_;
 		struct FieldToken field;
 	};
-} static tokens[81920], *tokens_end = tokens;
+} tokens[81920], *tokens_end = tokens;
 
 static const char *filename = NULL;
 static noreturn void fail(const char *format, ...) {
@@ -353,11 +354,11 @@ static void scan_duplicates(struct Token *token, const int64_t refValue) {
 	}
 }
 
-struct {
+static struct {
 	uint32_t count;
 	char names[16384][64];
 	char types[16384][64];
-} static typedefs = {
+} typedefs = {
 	.count = 0,
 };
 static void resolve() {
@@ -432,7 +433,8 @@ static const char *SerialType(const char *type) {
 
 static const char *sig_rdwr(const char *name, bool wr) {
 	static char out[8192];
-	snprintf(out, sizeof(out), "void _pkt_%s_%s(%sstruct %s *restrict data, %suint8_t **pkt, const uint8_t *end, struct PacketContext ctx)", name, wr ? "write" : "read", wr ? "const " : "", name, wr ? "" : "const ");
+	snprintf(out, sizeof(out), "void _pkt_%s_%s(%sstruct %s *restrict data, struct %s parent)",
+		name, wr ? "write" : "read", wr ? "const " : "", name, wr ? "PacketWrite" : "PacketRead");
 	return out;
 }
 
@@ -506,20 +508,42 @@ static void gen_header(char **out) {
 		default:;
 	}
 	uint32_t indent = 0;
+	const struct Token *start[16] = {};
 	TOKEN_LOOP(token) {
 		case TType_Enum_start: if(*token->enum_.switchField) write_indent(out, indent++, "union {\n"); break;
 		case TType_Enum_end: if(*token->enum_.switchField) write_indent(out, --indent, "};\n"); break;
-		case TType_Struct_start: ++indent; write_fmt(out, "struct %s {\n%s", token->struct_.name, (token[1].type == TType_Struct_end) ? "\tuint8_t _empty;\n" : ""); break;
-		case TType_Struct_end: --indent; write_fmt(out, "};\n"); break;
-		case TType_Field:
-		if(!indent)
-			break;
-		if(token->field.maxCount != 1)
-			write_fmt_indent(out, indent, "%s %s[%hu];\n", StructType(token->field.type), token->field.name, token->field.maxCount);
-		else
-			write_fmt_indent(out, indent, "%s %s;\n", StructType(token->field.type), token->field.name);
+		case TType_Struct_start: {
+			assert(indent + 1 < lengthof(start));
+			start[++indent] = &token[1];
+			write_fmt(out, "struct %s {\n%s", token->struct_.name, (token[1].type == TType_Struct_end) ? "\tuint8_t _empty;\n" : "");
+		} break;
+		case TType_Struct_end: start[indent--] = NULL; write_fmt(out, "};\n"); break;
+		case TType_Field: {
+			if(!indent)
+				break;
+			const struct Token *match = start[indent];
+			if(match != NULL) {
+				for(; match < token; ++match)
+					if(match->type == TType_Field && memcmp(match->field.name, token->field.name, sizeof(match->field.name)) == 0)
+						break;
+				if(match != token && memcmp(&match->field, &token->field, sizeof(match->field)) == 0)
+					break;
+			}
+			if(token->field.maxCount != 1)
+				write_fmt_indent(out, indent, "%s %s[%hu];\n", StructType(token->field.type), token->field.name, token->field.maxCount);
+			else
+				write_fmt_indent(out, indent, "%s %s;\n", StructType(token->field.type), token->field.name);
+		}
 		default:;
 	}
+	for(unsigned write = false; write <= true; ++write)
+		write_fmt(out,
+			"struct %s {\n"
+			"\t%suint8_t **head;\n"
+			"\tconst uint8_t *end;\n"
+			"\tstruct PacketContext context;\n"
+			"\tunsigned traceDepth;\n"
+			"};\n", write ? "PacketWrite" : "PacketRead", write ? "" : "const ");
 	write_fmt(out,
 		"static const struct PacketContext PV_LEGACY_DEFAULT = {\n"
 		"\t.netVersion = 11,\n"
@@ -539,18 +563,18 @@ static void gen_header(char **out) {
 	}
 	write_str(out,
 		"#define reflect(type, value) _reflect_##type(value)\n"
-		"typedef void (*PacketWriteFunc)(const void *restrict, uint8_t**, const uint8_t*, struct PacketContext);\n"
-		"typedef void (*PacketReadFunc)(void *restrict, const uint8_t**, const uint8_t*, struct PacketContext);\n"
-		"size_t _pkt_try_read(PacketReadFunc inner, void *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);\n"
-		"size_t _pkt_try_write(PacketWriteFunc inner, const void *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);\n"
-		"#define pkt_write_c(pkt, end, ctx, type, ...) _pkt_try_write((PacketWriteFunc)_pkt_##type##_write, &(struct type)__VA_ARGS__, pkt, end, ctx)\n"
-		"#define _pkt_read_func(data) ((PacketReadFunc)_Generic(*(data)");
+		"typedef void PacketReadFunc(void *restrict, struct PacketRead state);\n"
+		"typedef void PacketWriteFunc(const void *restrict, struct PacketWrite state);\n"
+		"size_t _pkt_try_read(PacketReadFunc *inner, void *restrict data, const uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);\n"
+		"size_t _pkt_try_write(PacketWriteFunc *inner, const void *restrict data, uint8_t **pkt, const uint8_t *end, struct PacketContext ctx);\n"
+		"#define pkt_write_c(pkt, end, ctx, type, ...) _pkt_try_write((PacketWriteFunc*)_pkt_##type##_write, &(struct type)__VA_ARGS__, pkt, end, ctx)\n"
+		"#define _pkt_read_func(data) ((PacketReadFunc*)_Generic(*(data)");
 	for(struct Token *token = tokens; token < tokens_end; ++token)
 		if(token->type == TType_Struct_start && token->struct_.recv)
 			write_fmt(out, ", struct %s: _pkt_%s_read", token->struct_.name, token->struct_.name);
 	write_str(out,
 		"))\n"
-		"#define _pkt_write_func(data) ((PacketWriteFunc)_Generic(*(data)");
+		"#define _pkt_write_func(data) ((PacketWriteFunc*)_Generic(*(data)");
 	for(struct Token *token = tokens; token < tokens_end; ++token)
 		if(token->type == TType_Struct_start && token->struct_.send)
 			write_fmt(out, ", struct %s: _pkt_%s_write", token->struct_.name, token->struct_.name);
@@ -578,7 +602,7 @@ static const char *fill_expr(const char *expr, const char *data, const char *ctx
 	size_t data_len = strlen(data), ctx_len = strlen(ctx), pad = data_len > ctx_len ? data_len : ctx_len;
 	while(*expr == ' ')
 		++expr;
-	for(char prev = 0; *expr && out_end + pad - out < sizeof(out); prev = *expr++) {
+	for(char prev = 0; *expr && (size_t)(&out_end[pad] - out) < sizeof(out); prev = *expr++) {
 		if(*expr == '.' && !alpha(prev))
 			write_str(&out_end, data);
 		else if(*expr == '$')
@@ -592,8 +616,8 @@ static const char *fill_expr(const char *expr, const char *data, const char *ctx
 
 static const char *FieldToken_get_count(const struct FieldToken *field, const char *structName) {
 	static char out[8192];
-	if(*field->count)
-		snprintf(out, sizeof(out), "check_overflow((uint32_t)(%s), %u, \"%s.%s\")", fill_expr(field->count, "data->", "ctx."), field->maxCount, structName, field->name);
+	if(field->count[0] != '\0')
+		snprintf(out, sizeof(out), "check_overflow(state, *state.head, (uint32_t)(%s), %u, \"%s.%s\")", fill_expr(field->count, "data->", "state.context."), field->maxCount, structName, field->name);
 	else
 		snprintf(out, sizeof(out), "%u", field->maxCount);
 	return out;
@@ -601,24 +625,30 @@ static const char *FieldToken_get_count(const struct FieldToken *field, const ch
 
 static void gen_source_rdwr(char **out, struct Token *token, bool wr, bool static_) {
 	uint32_t scope = 0, indent = 1, bitName = ~0u, bitOffset = 0;
-	const char *rdwr = wr ? "write" : "read", *structName = token->struct_.name, *switchName = NULL, *bitType = NULL;
+	const char *const rdwr = wr ? "write" : "read", *const structName = token->struct_.name, *switchName = NULL, *bitType = NULL;
 	write_fmt(out, "%s%s {\n", static_ ? "static " : "", sig_rdwr(structName, wr));
+	for(struct Token *it = token; it < tokens_end && it->type != TType_Struct_end; ++it) {
+		if(it->type == TType_If_start || it->type == TType_Field) {
+			write_fmt(out, "\tstruct %s state = scope(parent, \"%s\");\n", wr ? "PacketWrite" : "PacketRead", structName);
+			break;
+		}
+	}
 	TOKEN_ITER(token) {
-		case TType_Enum_start: switchName = token->enum_.name; write_fmt_indent(out, indent++, "switch(%s) {\n", fill_expr(token->enum_.switchField, "data->", "ctx.")); break;
+		case TType_Enum_start: switchName = token->enum_.name; write_fmt_indent(out, indent++, "switch(%s) {\n", fill_expr(token->enum_.switchField, "data->", "state.context.")); break;
 		case TType_Enum_end: {
 			switchName = NULL;
-			write_fmt_indent(out, indent, "default: uprintf(\"Invalid value for enum `%s`\\n\"); longjmp(fail, 1);\n", token->enum_.name);
+			write_fmt_indent(out, indent, "default: uprintf(\"Invalid value for enum `%s`\\n\"); assert(trace != NULL); longjmp(trace->fail, 1);\n", token->enum_.name);
 			write_indent(out, --indent, "}\n");
 			break;
 		}
 		case TType_Struct_start: ++scope; break;
 		case TType_Struct_end: {
-			if(--scope)
+			if(--scope != 0)
 				break;
 			write_fmt(out, "}\n");
 			return;
 		}
-		case TType_If_start: write_fmt_indent(out, indent++, "if(%s) {\n", fill_expr(token->if_.condition, "data->", "ctx.")); break;
+		case TType_If_start: write_fmt_indent(out, indent++, "if(%s) {\n", fill_expr(token->if_.condition, "data->", "state.context.")); break;
 		case TType_If_end: write_indent(out, --indent, "}\n"); break;
 		case TType_Field: {
 			if(scope != 1)
@@ -628,12 +658,12 @@ static void gen_source_rdwr(char **out, struct Token *token, bool wr, bool stati
 					bitType = scan_bitfield_type(token);
 					write_fmt_indent(out, indent, "%s bitfield%u%s;\n", StructType(bitType), ++bitName, wr ? " = 0" : "");
 					if(!wr)
-						write_fmt_indent(out, indent, "_pkt_%s_read(&bitfield%u, pkt, end, ctx);\n", bitType, bitName);
+						write_fmt_indent(out, indent, "_pkt_%s_read(&bitfield%u, state);\n", bitType, bitName);
 				}
 				if(wr) {
 					write_fmt_indent(out, indent, "bitfield%u |= (data->%s & %lluu) << %u;\n", bitName, token->field.name, ~0llu >> (64 - token->field.bitWidth), bitOffset);
 					if(token[1].type != TType_Field || token[1].field.bitWidth == 0)
-						write_fmt_indent(out, indent, "_pkt_%s_write(&bitfield%u, pkt, end, ctx);\n", bitType, bitName);
+						write_fmt_indent(out, indent, "_pkt_%s_write(&bitfield%u, state);\n", bitType, bitName);
 				} else {
 					write_fmt_indent(out, indent, "data->%s = bitfield%u >> %u & %llu;\n", token->field.name, bitName, bitOffset, ~0llu >> (64 - token->field.bitWidth));
 				}
@@ -644,11 +674,11 @@ static void gen_source_rdwr(char **out, struct Token *token, bool wr, bool stati
 				if(switchName)
 					write_fmt_indent(out, indent, "case %s_%s: ", switchName, token->field.type);
 				if((strcmp(stype, "u8") == 0 || strcmp(stype, "i8") == 0) && token->field.maxCount != 1) {
-					write_fmt_indent(out, switchName ? 0 : indent, "_pkt_raw_%s(data->%s, pkt, end, ctx, %s);%s", rdwr, token->field.name, FieldToken_get_count(&token->field, structName), switchName ? "" : "\n");
+					write_fmt_indent(out, switchName ? 0 : indent, "_pkt_raw_%s(data->%s, %s, state);%s", rdwr, token->field.name, FieldToken_get_count(&token->field, structName), switchName ? "" : "\n");
 				} else {
 					if(token->field.maxCount != 1)
 						write_fmt_indent(out, switchName ? 0 : indent, "for(uint32_t i = 0, count = %s; i < count; ++i)%s", FieldToken_get_count(&token->field, structName), switchName ? " " : "\n\t");
-					write_fmt_indent(out, switchName ? 0 : indent, "_pkt_%s_%s(&data->%s%s, pkt, end, ctx);%s", stype, rdwr, token->field.name, token->field.maxCount == 1 ? "" : "[i]", switchName ? "" : "\n");
+					write_fmt_indent(out, switchName ? 0 : indent, "_pkt_%s_%s(&data->%s%s, state);%s", stype, rdwr, token->field.name, token->field.maxCount == 1 ? "" : "[i]", switchName ? "" : "\n");
 				}
 				if(switchName)
 					write_str(out, " break;\n");
@@ -696,14 +726,14 @@ int32_t main(int32_t argc, const char *argv[]) {
 
 	filename = argv[2];
 	FILE *outfile = fopen(argv[2], "wb");
-	bool res = (fwrite(output_h, 1, output_h_end - output_h, outfile) != output_h_end - output_h);
+	bool res = (fwrite(output_h, 1, output_h_end - output_h, outfile) != (size_t)(output_h_end - output_h));
 	fclose(outfile);
 	if(res)
 		fail("Failed to write\n");
 
 	filename = argv[3];
 	outfile = fopen(argv[3], "wb");
-	res = (fwrite(output_c, 1, output_c_end - output_c, outfile) != output_c_end - output_c);
+	res = (fwrite(output_c, 1, output_c_end - output_c, outfile) != (size_t)(output_c_end - output_c));
 	fclose(outfile);
 	if(res)
 		fail("Failed to write\n");

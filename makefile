@@ -71,7 +71,7 @@ src/packets.gen.h: src/packets.txt common/packets.txt src/wire.txt .obj/gen.$(HO
 .obj/gen.$(HOST): gen.c
 	@echo "[cc $(notdir $@)]"
 	@mkdir -p "$(@D)"
-	$(NATIVE_CC) -std=c23 -no-pie "$<" -o "$@"
+	$(NATIVE_CC) -Og -g -std=c23 -no-pie "$<" -o "$@" -Wall -Wextra -Werror -pedantic-errors
 
 bsipa BeatUpClient/BeatUpClient.dll:
 	$(MAKE) -C BeatUpClient BeatUpClient.dll

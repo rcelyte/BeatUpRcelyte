@@ -29,11 +29,14 @@ static partial class BeatUpClient {
 			__instance.SetStartGameEnabled(CannotStartGameReason.DoNotOwnSong);
 	}
 
-	[Patch(PatchType.Prefix, typeof(ConnectedPlayerManager), "AddPlayer")]
-	static void ConnectedPlayerManager_AddPlayer(ConnectedPlayerManager __instance, IConnectedPlayer? player) {
+	[Detour(typeof(ConnectedPlayerManager<IBeatSaberConnectedPlayer, BeatSaberConnectedPlayer, BeatSaberPlayerIdentityPacketData>),
+		nameof(ConnectedPlayerManager<IBeatSaberConnectedPlayer, BeatSaberConnectedPlayer, BeatSaberPlayerIdentityPacketData>.AddPlayer))]
+	static void ConnectedPlayerManager_AddPlayer(
+			ConnectedPlayerManager<IBeatSaberConnectedPlayer, BeatSaberConnectedPlayer, BeatSaberPlayerIdentityPacketData> self, BeatSaberConnectedPlayer player) {
 		playerData.Reset(PlayerIndex(player));
-		if(__instance.connectedPlayerCount > 5 && !haveMpCore) // Certified Beat Games™ moment
-			__instance.Disconnect((DisconnectedReason)101);
+		if(self.connectedPlayerCount > 5 && !haveMpCore) // Certified Beat Games™ moment
+			self.Disconnect((DisconnectedReason)101);
+			Base(self, player);
 	}
 
 	[Patch(PatchType.Postfix, typeof(DisconnectedReasonMethods), nameof(DisconnectedReasonMethods.LocalizedKey))]

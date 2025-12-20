@@ -78,20 +78,20 @@ static partial class BeatUpClient {
 				tree[tree[0]] == ~0LU;
 		}
 
-		readonly ConnectedPlayerManager connectedPlayerManager;
+		readonly BeatSaberConnectedPlayerManager connectedPlayerManager;
 		readonly LiteNetLib.Utils.NetDataWriter writer;
 		public readonly ShareMeta meta;
 		readonly int requestLength;
 		System.Action<ushort>? onProgress = delegate {};
 		System.Threading.Tasks.Task<byte[]?>? bufferTask = null;
 		System.Threading.CancellationTokenSource bufferCTS = new System.Threading.CancellationTokenSource();
-		System.Collections.Generic.Dictionary<ConnectedPlayerManager.ConnectedPlayer, uint> sources = new System.Collections.Generic.Dictionary<ConnectedPlayerManager.ConnectedPlayer, uint>();
-		public Downloader(ShareInfo info, ConnectedPlayerManager.ConnectedPlayer firstPlayer) {
+		System.Collections.Generic.Dictionary<BeatSaberConnectedPlayer, uint> sources = new System.Collections.Generic.Dictionary<BeatSaberConnectedPlayer, uint>();
+		public Downloader(ShareInfo info, BeatSaberConnectedPlayer firstPlayer) {
 			if(info.meta.byteLength == 0)
 				throw new System.ArgumentException("`meta.byteLength` cannot be zero");
 			if(info.meta.byteLength >= 1U << 31)
 				throw new System.ArgumentException("`meta.byteLength` must be representable within a 32 bit signed integer");
-			connectedPlayerManager = Resolve<BeatSaberMultiplayerSessionManager>()?.connectedPlayerManager ?? throw new System.InvalidOperationException("Failed to resolve `ConnectedPlayerManager`");
+			connectedPlayerManager = Resolve<BeatSaberMultiplayerSessionManager>()?.connectedPlayerManager ?? throw new System.InvalidOperationException("Failed to resolve `BeatSaberConnectedPlayerManager`");
 			writer = new LiteNetLib.Utils.NetDataWriter(false, ConnectedPlayerManager.kMaxUnreliableMessageLength);
 			connectedPlayerManager.Write(writer, new DataFragmentRequest(~0U).Wrap());
 			(meta, requestLength) = (info.meta, writer.Length);
@@ -106,7 +106,7 @@ static partial class BeatUpClient {
 			uint cycle = 0, idle = 0;
 			bool pendingProgress = false;
 			void HandleData(DataFragment packet, IConnectedPlayer player) {
-				if(player is ConnectedPlayerManager.ConnectedPlayer connectedPlayer && sources.TryGetValue(connectedPlayer, out uint blockStart)) {
+				if(player is BeatSaberConnectedPlayer connectedPlayer && sources.TryGetValue(connectedPlayer, out uint blockStart)) {
 					ulong block = packet.offset - blockStart;
 					if(block >= blockCount)
 						return;
@@ -135,10 +135,10 @@ static partial class BeatUpClient {
 						Log.Error("Download failed: Timeout");
 						return null;
 					}
-					foreach((ConnectedPlayerManager.ConnectedPlayer source, uint blockStart) in sources.Select(pair => (pair.Key, pair.Value))) {
+					foreach((BeatSaberConnectedPlayer source, uint blockStart) in sources.Select(pair => (pair.Key, pair.Value))) {
 						uint count = 7 / (uint)sources.Count + 1;
 						writer.Reset();
-						writer.Put(((ConnectedPlayerManager.ConnectedPlayer)connectedPlayerManager.localPlayer).connectionId);
+						writer.Put(((BeatSaberConnectedPlayer)connectedPlayerManager.localPlayer).connectionId);
 						writer.Put(source.remoteConnectionId);
 						int headerEnd = writer.Length;
 						for(uint i = 0; i < 4; ++i) {
@@ -177,13 +177,13 @@ static partial class BeatUpClient {
 			}
 			return buffer;
 		}
-		public void Add(ConnectedPlayerManager.ConnectedPlayer player, uint blockStart) =>
+		public void Add(BeatSaberConnectedPlayer player, uint blockStart) =>
 			sources[player] = blockStart;
-		public int Remove(ConnectedPlayerManager.ConnectedPlayer player) {
+		public int Remove(BeatSaberConnectedPlayer player) {
 			sources.Remove(player);
 			return sources.Count;
 		}
-		public int Remove(ConnectedPlayerManager.ConnectedPlayer player, uint blockStart) {
+		public int Remove(BeatSaberConnectedPlayer player, uint blockStart) {
 			if(sources.TryGetValue(player, out uint playerBlockStart) && playerBlockStart == blockStart)
 				return Remove(player);
 			return sources.Count;

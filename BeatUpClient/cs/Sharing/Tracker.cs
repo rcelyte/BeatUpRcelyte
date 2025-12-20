@@ -6,7 +6,7 @@ static partial class BeatUpClient {
 
 		public class DownloadPreview : BeatmapLevel {
 			public System.Collections.Generic.List<Downloader> variants;
-			public DownloadPreview(ShareInfo info, ConnectedPlayerManager.ConnectedPlayer connectedPlayer) :
+			public DownloadPreview(ShareInfo info, BeatSaberConnectedPlayer connectedPlayer) :
 					base(-1, false, info.id.name, string.Empty, string.Empty, string.Empty, new string[0], new string[0], 0, -6f, 0, 0, 0, 0, PlayerSensitivityFlag.Safe, new StaticPreviewMediaData(defaultPackCover, null), new()) {
 				this.variants = new System.Collections.Generic.List<Downloader>() {new Downloader(info, connectedPlayer)};
 			}
@@ -25,11 +25,11 @@ static partial class BeatUpClient {
 			});
 		}
 		static void OnDisconnect(IConnectedPlayer player) {
-			if(player is ConnectedPlayerManager.ConnectedPlayer connectedPlayer)
+			if(player is BeatSaberConnectedPlayer connectedPlayer)
 				FilterLevels(dl => dl.Remove(connectedPlayer) == 0);
 		}
 		static bool ProcessShareInfo(ShareInfo info, IConnectedPlayer player) {
-			ConnectedPlayerManager.ConnectedPlayer? connectedPlayer = player as ConnectedPlayerManager.ConnectedPlayer;
+			BeatSaberConnectedPlayer? connectedPlayer = player as BeatSaberConnectedPlayer;
 			if(connectedPlayer == null || info.blockSize != LocalBlockSize)
 				return false;
 			if(info.id.usage == ShareableType.None) {

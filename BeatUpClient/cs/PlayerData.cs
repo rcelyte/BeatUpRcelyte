@@ -49,7 +49,7 @@ static partial class BeatUpClient {
 	internal static byte PlayerIndex(IConnectedPlayer? player) { // A unique persistent index
 		if(player?.isMe == true)
 			return 0;
-		if(player is ConnectedPlayerManager.ConnectedPlayer connectedPlayer)
+		if(player is BeatSaberConnectedPlayer connectedPlayer)
 			return connectedPlayer.remoteConnectionId;
 		return 127;
 	}

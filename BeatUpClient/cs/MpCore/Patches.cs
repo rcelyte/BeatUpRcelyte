@@ -5,7 +5,8 @@ static partial class BeatUpClient_MpCore {
 	[Patch(PatchType.Prefix, typeof(MultiplayerCore.Objects.MpEntitlementChecker), nameof(MultiplayerCore.Objects.MpEntitlementChecker.HandleGetIsEntitledToLevel))]
 	public static bool MpEntitlementChecker_HandleGetIsEntitledToLevel(MultiplayerCore.Objects.MpEntitlementChecker __instance, string levelId, IMenuRpcManager ____rpcManager) {
 		Log.Debug($"MpEntitlementChecker_HandleGetIsEntitledToLevel(levelId=\"{levelId}\")");
-		HandleGetIsEntitledToLevel(__instance.GetEntitlementStatus(levelId), levelId, ____rpcManager);
+		// TODO: revert once we have an updated MultiplayerCore release to build against
+		HandleGetIsEntitledToLevel(/*__instance.GetEntitlementStatus(levelId)*/(System.Threading.Tasks.Task<EntitlementsStatus>)typeof(MultiplayerCore.Objects.MpEntitlementChecker).GetMethod("GetEntitlementStatus").Invoke(__instance, new object[] {levelId}), levelId, ____rpcManager);
 		return false;
 	}
 

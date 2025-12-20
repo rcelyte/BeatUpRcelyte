@@ -20,7 +20,7 @@ BeatUpClient enables custom servers to be added in-game from the multiplayer men
 
 
 ### BeatTogether Mod \[[PC](https://github.com/BeatTogether/BeatTogether#installation)\]
-To access a custom server through the BeatTogether mod on PC, add its status URL to your BeatTogether config (located at `UserData\BeatTogether.json` in the game folder). As an example, here's what the file would look like with rcelyte's `master.battletrains.org` instance added:
+To access a custom server through the BeatTogether mod on PC, add its status URL to your BeatTogether config located at `UserData\BeatTogether.json` in the game folder. As an example, here's what the file would look like with server `master.battletrains.org` added:
 ```json
 {
   "SelectedServer": "BeatUpServer",

@@ -3,7 +3,7 @@ static partial class BeatUpClient {
 	static void MainSystemInit_InstallBindings(MainSystemInit self, Zenject.DiContainer container, bool isRunningFromTests) {
 		Base(self, container, isRunningFromTests);
 
-		BeatSaberMultiplayerSessionManager? multiplayerSessionManager = Injected<BeatSaberMultiplayerSessionManager>.Resolve<IMultiplayerSessionManager>(container);
+		BeatSaberMultiplayerSessionManager? multiplayerSessionManager = Injected<BeatSaberMultiplayerSessionManager>.Resolve(container);
 		IMenuRpcManager menuRpcManager = Injected<IMenuRpcManager>.Resolve(container)!;
 		Injected<AudioClipAsyncLoader>.Resolve(container);
 		Injected<BeatmapDataLoader>.Resolve(container);

@@ -1675,7 +1675,7 @@ static void process_message(struct InstanceContext *ctx, struct Room *const *con
 				case MultiplayerSessionMessageType_GameplayRpc: uprintf("Error [length=%"PRIu32" gameplayRpc=%s]\n", serial.length, reflect(GameplayRpcType, message.multiplayerSession.gameplayRpc.type)); break;
 				default: uprintf("Error [length=%"PRIu32" type=%s]\n", serial.length, reflect(MultiplayerSessionMessageType, message.multiplayerSession.type));
 			}
-			// pkt_debug(">", sub, *data, serial.length, session->net.version);
+			// pkt_debug(">", *data - serial.length, *data, sub, session->net.version);
 			continue;
 		}
 		bool validateLength = true;
@@ -1715,7 +1715,7 @@ static void process_message(struct InstanceContext *ctx, struct Room *const *con
 			default: uprintf("BAD INTERNAL MESSAGE TYPE\n");
 		}
 		if(validateLength)
-			pkt_debug("BAD INTERNAL MESSAGE LENGTH", sub, *data, serial.length, session->net.version);
+			pkt_debug("BAD INTERNAL MESSAGE LENGTH", *data - serial.length, *data, sub, session->net.version);
 	}
 }
 
@@ -1759,7 +1759,7 @@ static bool handle_ConnectMessage(const struct ConnectMessage *message, struct R
 			room->configuration.perPlayerDifficulty = info.perPlayerDifficulty;
 			room->configuration.perPlayerModifiers = info.perPlayerModifiers;
 		}
-		pkt_debug("BAD MOD HEADER LENGTH", sub, *data, mod.length, session->net.version);
+		pkt_debug("BAD MOD HEADER LENGTH", *data - mod.length, *data, sub, session->net.version);
 	}
 	*info_out = (struct ServerConnectInfo){
 		.base = {
@@ -2039,7 +2039,7 @@ static inline void handle_packet(struct InstanceContext *ctx, struct Room **room
 					while(pkt_len != 0) {
 						const uint8_t *pkt_it = pkt;
 						process_message(ctx, room, session, &pkt_it, &pkt[pkt_len], true, channelId);
-						pkt_debug("BAD CHANNELED PACKET LENGTH", pkt_it, &pkt[pkt_len], pkt_len, session->net.version);
+						pkt_debug("BAD CHANNELED PACKET LENGTH", pkt, &pkt[pkt_len], pkt_it, session->net.version);
 						channelId = DeliveryMethod_ReliableOrdered;
 						pkt_len = handle_Channeled_next(&session->net, &session->channels, &pkt);
 					}
@@ -2091,8 +2091,8 @@ static inline void handle_packet(struct InstanceContext *ctx, struct Room **room
 			case PacketProperty_MtuCheck: handle_MtuCheck(&ctx->net, &session->net, &header.mtuCheck); break;
 			default: uprintf("Unhandled property [%s]\n", reflect(PacketProperty, header.property));
 		}
+		pkt_debug("BAD PACKET LENGTH", data, &data[length], sub, session->net.version);
 		data += length;
-		pkt_debug("BAD PACKET LENGTH", sub, data, length, session->net.version);
 	} while(handle_Merged(&data, end, &header, &length, session->net.version));
 }
 
@@ -2159,7 +2159,7 @@ static void *instance_handler(struct InstanceContext *ctx) {
 				case EENetPacketType_Unreliable: process_message(ctx, room, session.instance, &event.data, data_end, false, 0); break;
 				default: uprintf("Unexpected ENet packet type: %u\n", event.type); break;
 			}
-			pkt_debug("BAD ENET PACKET LENGTH", event.data, data_end, event.data_len, session.instance->net.version);
+			pkt_debug("BAD ENET PACKET LENGTH", data_end - event.data_len, data_end, event.data, session.instance->net.version);
 			eenet_handle_next(session.instance->enet, &event);
 		}
 	}
@@ -2457,6 +2457,7 @@ static void instance_room_spawn(struct InstanceContext *ctx, struct WireLink *li
 // we don't currently support routed message translation, so rooms must reject clients with incompatible ABIs
 static unsigned ProtocolABI(const GameVersion version) {
 	return
+		(version >= GameVersion_1_42_0) ? 4 :
 		(version >= GameVersion_1_40_0) ? 3 :
 		(version >= GameVersion_1_37_1) ? 2 :
 		(version >= GameVersion_1_34_2) ? 1 :

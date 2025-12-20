@@ -21,7 +21,7 @@ static partial class BeatUpClient {
 		const ushort blockSize = LocalBlockSize;
 
 		public static IConnectedPlayer? GetPlayer(string userId) {
-			ConnectedPlayerManager? connectedPlayerManager = Resolve<BeatSaberMultiplayerSessionManager>()?.connectedPlayerManager;
+			BeatSaberConnectedPlayerManager? connectedPlayerManager = Resolve<BeatSaberMultiplayerSessionManager>()?.connectedPlayerManager;
 			for(int i = 0; i < (connectedPlayerManager?.connectedPlayerCount ?? 0); ++i) {
 				IConnectedPlayer player = connectedPlayerManager!.GetConnectedPlayer(i);
 				if(player.userId == userId)
@@ -35,9 +35,9 @@ static partial class BeatUpClient {
 		public static void SendToPlayer<T>(T message, IConnectedPlayer player) where T : LiteNetLib.Utils.INetSerializable =>
 			Resolve<BeatSaberMultiplayerSessionManager>()?.SendToPlayer(message, player); // TODO: guard `!`
 		public static void SendUnreliableToPlayer<T>(T message, IConnectedPlayer player) where T : LiteNetLib.Utils.INetSerializable {
-			ConnectedPlayerManager? connectedPlayerManager = Resolve<BeatSaberMultiplayerSessionManager>()?.connectedPlayerManager;
-			if(connectedPlayerManager?.isConnected == true && player is ConnectedPlayerManager.ConnectedPlayer connectedPlayer)
-				IConnection_SendUnreliable(connectedPlayer.connection, connectedPlayerManager.WriteOne(((ConnectedPlayerManager.ConnectedPlayer)connectedPlayerManager.localPlayer).connectionId, connectedPlayer.remoteConnectionId, message));
+			BeatSaberConnectedPlayerManager? connectedPlayerManager = Resolve<BeatSaberMultiplayerSessionManager>()?.connectedPlayerManager;
+			if(connectedPlayerManager?.isConnected == true && player is BeatSaberConnectedPlayer connectedPlayer)
+				IConnection_SendUnreliable(connectedPlayer.connection, connectedPlayerManager.WriteOne(((BeatSaberConnectedPlayer)connectedPlayerManager.localPlayer).connectionId, connectedPlayer.remoteConnectionId, message));
 			else if(message is IPoolablePacket poolable)
 				poolable.Release();
 		}
@@ -78,7 +78,7 @@ static partial class BeatUpClient {
 					case MessageType.DataFragment: onDataFragment?.Invoke(new DataFragment(reader, end), player); break;
 					case MessageType.LoadProgress: playerData.UpdateLoadProgress(new LoadProgress(reader), player); break;
 					case MessageType.ServerConnectInfo: {
-						if((player as ConnectedPlayerManager.ConnectedPlayer)?.remoteConnectionId != 0)
+						if((player as BeatSaberConnectedPlayer)?.remoteConnectionId != 0)
 							break;
 						Log.Debug("Late ServerConnectInfo received");
 						connectInfo = new ServerConnectInfo(reader);
