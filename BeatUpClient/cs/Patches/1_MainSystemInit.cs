@@ -31,8 +31,8 @@ static partial class BeatUpClient {
 		Injected<BGNet.Core.GameLift.GameLiftPlayerSessionProvider>.Resolve<BGNet.Core.GameLift.IGameLiftPlayerSessionProvider>(container);
 	}
 
-	[Detour(typeof(BeatmapCharacteristicInstaller), nameof(BeatmapCharacteristicInstaller.InstallBindings))]
-	static void BeatmapCharacteristicInstaller_InstallBindings(BeatmapCharacteristicInstaller self) {
+	[Detour(typeof(CustomLevelsSettingsAsyncInstaller), nameof(CustomLevelsSettingsAsyncInstaller.InstallBindings))]
+	static void CustomLevelsSettingsAsyncInstaller_InstallBindings(CustomLevelsSettingsAsyncInstaller self) {
 		Base(self);
 		Injected<BeatmapCharacteristicCollection>.Resolve(self.Container);
 		Injected<CustomLevelLoader>.Resolve(self.Container);
