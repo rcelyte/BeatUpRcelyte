@@ -2352,7 +2352,8 @@ static struct WireSessionAllocResp room_resolve_session(struct InstanceContext *
 		session = &room->players[id];
 		room->playerSort = tmp;
 	}
-	NetSession_init(&session->net, &ctx->net, (struct SS){.ss.ss_family = AF_UNSPEC}, &ctx->base.config);
+	static_assert(CONNECT_TIMEOUT_MS >= IDLE_TIMEOUT_MS);
+	NetSession_init(&session->net, &ctx->net, (struct SS){.ss.ss_family = AF_UNSPEC}, &ctx->base.config, CONNECT_TIMEOUT_MS - IDLE_TIMEOUT_MS);
 	session->net.version = req->clientVersion;
 	if(!req->clientVersion.direct)
 		session->net.clientRandom = req->random;

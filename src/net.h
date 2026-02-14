@@ -99,7 +99,7 @@ void net_stop(struct NetContext *ctx);
 void net_cleanup(struct NetContext *ctx);
 void net_lock(struct NetContext *ctx);
 void net_unlock(struct NetContext *ctx);
-void NetSession_init(struct NetSession *session, struct NetContext *ctx, struct SS addr, const mbedtls_ssl_config *config); // TODO: report errors
+void NetSession_init(struct NetSession *session, struct NetContext *ctx, struct SS addr, const mbedtls_ssl_config *config, uint32_t keepAlive_ms); // TODO: report errors
 void NetSession_initFrom(struct NetSession *session, const struct NetSession *from);
 void NetSession_free(struct NetSession *session);
 uint32_t net_recv(struct NetContext *ctx, uint8_t out[static 1536], struct NetSession **session, void **userdata_out);

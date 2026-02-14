@@ -4,10 +4,8 @@
 #include "../packets.h"
 #endif
 
-#define LOAD_TIMEOUT_MS 15000
-#define KICK_TIMEOUT_MS 3000
-
-#define NET_MAX_WINDOW_SIZE 256
+static constexpr uint32_t LOAD_TIMEOUT_MS = 15000, KICK_TIMEOUT_MS = 3000;
+static constexpr unsigned NET_MAX_WINDOW_SIZE = 256;
 
 #define bitsize(e) (sizeof(e) * 8)
 #define indexof(a, e) ((uintptr_t)((e) - (a)))

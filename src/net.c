@@ -332,12 +332,12 @@ static void net_set_mtu(struct NetSession *const session, uint8_t idx) {
 	session->maxFragmentSize = session->maxChanneledSize - (uint16_t)pkt_write_c(&buf_end, endof(buf), session->version, FragmentedHeader, {0});
 }
 
-void NetSession_init(struct NetSession *const session, struct NetContext *ctx, struct SS addr, const mbedtls_ssl_config *config) {
+void NetSession_init(struct NetSession *const session, struct NetContext *ctx, struct SS addr, const mbedtls_ssl_config *config, const uint32_t keepAlive_ms) {
 	*session = (struct NetSession){
 		.version = PV_LEGACY_DEFAULT,
 		.cookie = net_cookie(&ctx->ctr_drbg),
 		.addr = addr,
-		.lastKeepAlive = net_time(),
+		.lastKeepAlive = net_time() + keepAlive_ms,
 		.alive = true,
 		.mergeData_end = session->mergeData,
 		.encryptionState = EncryptionState_init(config, ctx->sockfd),

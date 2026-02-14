@@ -24,7 +24,7 @@ struct NetSession *MasterContext_onResolve(struct MasterContext *ctx, struct Net
 		uprintf("alloc error\n");
 		return NULL;
 	}
-	NetSession_init(&session->net, net, addr, &ctx->config);
+	NetSession_init(&session->net, net, addr, &ctx->config, 0);
 	session->lastSentRequestId = 0;
 	session->handshake.step = HandshakeMessageType_ClientHelloRequest;
 	session->resend.set = COUNTER64_CLEAR;
@@ -229,7 +229,7 @@ static inline bool InitializeConnection(struct NetContext *net, struct MasterSes
 			return session->handshake.step == HandshakeMessageType_ClientHelloWithCookieRequest;
 		struct SS addr = *NetSession_get_addr(&session->net);
 		NetSession_free(&session->net);
-		NetSession_init(&session->net, net, addr, config); // security or something idk
+		NetSession_init(&session->net, net, addr, config, 0); // security or something idk
 		session->resend.set = COUNTER64_CLEAR;
 	}
 	session->epoch = req->base.requestId & 0xff000000;
