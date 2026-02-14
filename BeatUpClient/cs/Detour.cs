@@ -1,4 +1,5 @@
 using static System.Linq.Enumerable;
+using static BeatUpClient;
 
 static partial class BeatUpClient {
 	[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
@@ -47,10 +48,10 @@ static partial class BeatUpClient {
 			}
 			if(original == null)
 				throw new System.ArgumentException($"Missing original method for `{self}`");
-			MonoMod.RuntimeDetour.IDetour hook = new MonoMod.RuntimeDetour.Detour(original, self, new MonoMod.RuntimeDetour.DetourConfig {ManualApply = true});
+			MonoMod.RuntimeDetour.Hook hook = new MonoMod.RuntimeDetour.Hook(original, self, false);
 			onUnpatch += hook.Dispose;
-			System.Reflection.MethodBase trampoline = hook.GenerateTrampoline();
-			MonoMod.RuntimeDetour.IDetour ilhook = new MonoMod.RuntimeDetour.ILHook(self, il => {
+			System.Reflection.MethodBase trampoline = ((MonoMod.RuntimeDetour.IDetour)hook).NextTrampoline.TrampolineMethod;
+			MonoMod.RuntimeDetour.ILHook ilhook = new MonoMod.RuntimeDetour.ILHook(self, il => {
 				bool fix = false;
 				Mono.Cecil.Cil.Code fixOp = ((original as System.Reflection.MethodInfo)?.ReturnType != typeof(void)) ? Mono.Cecil.Cil.Code.Unbox_Any : Mono.Cecil.Cil.Code.Pop;
 				foreach(Mono.Cecil.Cil.Instruction ins in il.Body.Instructions) {
@@ -63,7 +64,7 @@ static partial class BeatUpClient {
 						fix = false;
 					}
 				}
-			}, new MonoMod.RuntimeDetour.ILHookConfig {ManualApply = true});
+			}, false);
 			onUnpatch += ilhook.Dispose;
 			return () => {
 				ilhook.Apply();
@@ -75,5 +76,13 @@ static partial class BeatUpClient {
 			onUnpatch?.Invoke();
 			onUnpatch = null;
 		}
+	}
+}
+
+static class BeatUpClient_RuntimeDetour {
+	[Detour(typeof(MonoMod.RuntimeDetour.Hook), nameof(MonoMod.RuntimeDetour.Hook.CheckSupported))]
+	static void Hook_CheckSupported(MonoMod.RuntimeDetour.Hook self) {
+		if(self.Source.DeclaringType is not {IsGenericType: true, IsGenericTypeDefinition: false})
+			Base(self);
 	}
 }

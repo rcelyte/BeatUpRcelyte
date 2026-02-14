@@ -155,7 +155,11 @@ var refs = new (string? path, string name, string[]? overrides)[] {
 	("IPA/Libs", "0Harmony.dll", null),
 	("IPA/Libs", "Hive.Versioning.dll", null),
 	("IPA/Libs", "Mono.Cecil.dll", null),
-	("IPA/Libs", "MonoMod.RuntimeDetour.dll", null),
+	("IPA/Libs", "MonoMod.RuntimeDetour.dll", new[] {
+		"MonoMod.RuntimeDetour.Hook::CheckSupported",
+		"MonoMod.RuntimeDetour.IDetour",
+		"MonoMod.RuntimeDetour.IDetourTrampoline",
+	}),
 	("IPA/Libs", "MonoMod.Utils.dll", null),
 	("IPA/Libs", "Newtonsoft.Json.dll", null),
 	(null, "SongCore.dll", null),
@@ -185,6 +189,8 @@ var refs = new (string? path, string name, string[]? overrides)[] {
 		"SwitchSettingsController::_toggle",
 	}),
 	(managed, "Networking.dll", new[] {
+		"BaseNetworkPlayerModel::ConnectedPlayerManagerChanged",
+		"BaseNetworkPlayerModel::DestroyConnectedPlayerManager",
 		"NetworkConfigSO::_customLocation",
 		"NetworkConfigSO::_discoveryPort",
 		"NetworkConfigSO::_forceGameLift",

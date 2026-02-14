@@ -33,10 +33,9 @@ static partial class BeatUpClient {
 		nameof(ConnectedPlayerManager<IBeatSaberConnectedPlayer, BeatSaberConnectedPlayer, BeatSaberPlayerIdentityPacketData>.AddPlayer))]
 	static void ConnectedPlayerManager_AddPlayer(
 			ConnectedPlayerManager<IBeatSaberConnectedPlayer, BeatSaberConnectedPlayer, BeatSaberPlayerIdentityPacketData> self, BeatSaberConnectedPlayer player) {
-		playerData.Reset(PlayerIndex(player));
 		if(self.connectedPlayerCount > 5 && !haveMpCore) // Certified Beat Games™ moment
 			self.Disconnect((DisconnectedReason)101);
-			Base(self, player);
+		Base(self, player);
 	}
 
 	[Patch(PatchType.Postfix, typeof(DisconnectedReasonMethods), nameof(DisconnectedReasonMethods.LocalizedKey))]

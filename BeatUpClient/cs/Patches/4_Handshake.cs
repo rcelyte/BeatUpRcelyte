@@ -44,12 +44,4 @@ static partial class BeatUpClient {
 			Net.HandleConnectInfo(connectInfo.@base, result);
 		return result;
 	}
-
-	[Detour(typeof(ConnectedPlayerManager<IBeatSaberConnectedPlayer, BeatSaberConnectedPlayer, BeatSaberPlayerIdentityPacketData>),
-		nameof(ConnectedPlayerManager<IBeatSaberConnectedPlayer, BeatSaberConnectedPlayer, BeatSaberPlayerIdentityPacketData>.RemovePlayer))]
-	static void ConnectedPlayerManager_RemovePlayer(ConnectedPlayerManager<IBeatSaberConnectedPlayer, BeatSaberConnectedPlayer, BeatSaberPlayerIdentityPacketData> self,
-			BeatSaberConnectedPlayer player, DisconnectedReason reason) {
-		Net.OnDisconnect(player);
-		Base(self, player, reason);
-	}
 }

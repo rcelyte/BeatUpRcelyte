@@ -112,6 +112,10 @@ static partial class BeatUpClient {
 		}
 
 		try {
+			Log.Debug($"Applying RuntimeDetour fixup");
+			int earlyPatchCount = 0;
+			GatherMethods(typeof(BeatUpClient_RuntimeDetour), ref earlyPatchCount)();
+
 			Log.Debug("Gathering patches");
 			int patchCount = 0;
 			System.Action applyPatches = new (System.Type type, bool enable)[] {

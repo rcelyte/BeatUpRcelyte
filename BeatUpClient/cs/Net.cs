@@ -58,6 +58,9 @@ static partial class BeatUpClient {
 			beatUpPlayers[player] = packet.blockSize;
 			Log.Debug($"ConnectInfo from {player}");
 		}
+		public static void OnConnect(IConnectedPlayer player) {
+			playerData.Reset(PlayerIndex(player));
+		}
 		public static void OnDisconnect(IConnectedPlayer player) {
 			onDisconnect?.Invoke(player);
 			beatUpPlayers.Remove(player);
@@ -124,6 +127,24 @@ static partial class BeatUpClient {
 			multiplayerSessionManager._packetSerializer._messsageHandlers[beatUpMessageType] = HandleBeatUpPacket;
 			if(!haveMpCore)
 				multiplayerSessionManager._packetSerializer._messsageHandlers[mpCoreMessageType] = HandleMpPacket;
+		}
+	}
+
+	[Detour(typeof(BaseNetworkPlayerModel), nameof(BaseNetworkPlayerModel.ConnectedPlayerManagerChanged))]
+	static void BaseNetworkPlayerModel_ConnectedPlayerManagerChanged(BaseNetworkPlayerModel self) {
+		Base(self);
+		if(self.connectedPlayerManager is BeatSaberConnectedPlayerManager connectedPlayerManager) {
+			self.connectedPlayerManager.playerConnectedEvent += Net.OnConnect;
+			self.connectedPlayerManager.playerDisconnectedEvent += Net.OnDisconnect;
+		}
+	}
+
+	[Detour(typeof(BaseNetworkPlayerModel), nameof(BaseNetworkPlayerModel.DestroyConnectedPlayerManager))]
+	static void BaseNetworkPlayerModel_DestroyConnectedPlayerManager(BaseNetworkPlayerModel self) {
+		Base(self);
+		if(self.connectedPlayerManager is BeatSaberConnectedPlayerManager connectedPlayerManager) {
+			self.connectedPlayerManager.playerConnectedEvent -= Net.OnConnect;
+			self.connectedPlayerManager.playerDisconnectedEvent -= Net.OnDisconnect;
 		}
 	}
 
