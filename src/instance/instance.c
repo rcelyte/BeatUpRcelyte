@@ -658,7 +658,7 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 		room->lobby.isDownloaded = COUNTERP_CLEAR;
 		room->lobby.isReady = COUNTERP_CLEAR;
 		room->lobby.reason = CannotStartGameReason_NoSongSelected;
-		room->lobby.requester = (playerid_t)~0u;
+		room->lobby.requester = ~(playerid_t)0;
 		if(room->configuration.base.songSelectionMode == SongSelectionMode_Random) {
 			mapPool_update(room);
 			state = ServerState_Lobby_Entitlement;
@@ -670,7 +670,7 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 	}
 	switch(state) {
 		case ServerState_Lobby_Entitlement: {
-			playerid_t select = ~UINT32_C(0);
+			playerid_t select = ~(playerid_t)0;
 			switch(room->configuration.base.songSelectionMode) {
 				case SongSelectionMode_Vote: {
 					uint32_t max = 0;
@@ -701,8 +701,12 @@ static void room_set_state(struct InstanceContext *ctx, struct Room *room, Serve
 				case SongSelectionMode_RandomPlayerPicks: select = room->global.roundRobin; break;
 			}
 			room->lobby.requester = select;
-			if(select > (playerid_t)room->configuration.base.maxPlayerCount || room->players[select].recommendedBeatmap.characteristic.length == 0) {
-				uprintf("    no selection from user \"%.*s\"\n", room->players[select].userName.length, room->players[select].userName.data);
+			const bool noPlayer = select > (playerid_t)room->configuration.base.maxPlayerCount;
+			if(noPlayer || room->players[select].recommendedBeatmap.characteristic.length == 0) {
+				if(noPlayer)
+					uprintf("    no selection from any user\n");
+				else
+					uprintf("    no selection from user \"%.*s\"\n", room->players[select].userName.length, room->players[select].userName.data);
 				room->lobby.isEntitled = room->connected;
 				room->global.selectedBeatmap = CLEAR_BEATMAP;
 				room->global.selectedModifiers = CLEAR_MODIFIERS;
@@ -2294,7 +2298,7 @@ static struct Room **room_open(struct InstanceContext *ctx, uint32_t roomID, str
 		};
 	}
 	// Allocate extra slot for fake player in `SongSelectionMode_Random`
-	struct Room *room = malloc(sizeof(struct Room) + ((uint32_t)configuration.base.maxPlayerCount + 1) * sizeof(*room->players));
+	struct Room *const room = calloc(1, sizeof(*room) + ((uint32_t)configuration.base.maxPlayerCount + 1) * sizeof(*room->players));
 	if(room == NULL) {
 		uprintf("alloc error\n");
 		return NULL;
