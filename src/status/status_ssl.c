@@ -1,12 +1,13 @@
 #include "status.h"
 #include "../net.h"
 #include "internal.h"
-#include <mbedtls/ssl.h>
+#include <assert.h>
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/entropy.h>
 #include <mbedtls/error.h>
-#include <unistd.h>
+#include <mbedtls/ssl.h>
 #include <string.h>
+#include <unistd.h>
 
 struct StatusContext {
 	NetSocket listenfd;
@@ -21,6 +22,7 @@ struct StatusContext {
 	pthread_mutex_t mutex;
 	struct WireContext wire;
 	struct WireLink *master;
+	_Atomic(uint32_t) clientCount;
 	bool quiet;
 };
 static struct StatusContext ctx = {
@@ -56,13 +58,13 @@ static void status_onWireMessage(struct WireContext *wire, struct WireLink *link
 	unlock: pthread_mutex_unlock(&ctx->mutex);
 }
 
-static void handle_client(const NetSocket fd, mbedtls_ssl_config *const config) {
+static void handle_client(const NetSocket fd, const mbedtls_ssl_config *const config) {
 	struct HttpContext http;
 	if(HttpContext_init(&http, fd, config, ctx.quiet))
 		goto fail0;
 	const struct HttpRequest req = HttpContext_recieve(&http, (uint8_t[65536]){0}, 65536);
 	if(req.header_len)
-		status_resp(&http, ctx.path, req, ctx.master);
+		status_resp(&http, ctx.path, req, ctx.master, &ctx.mutex);
 	// TODO: wait for `status_graph_resp()` to finish asynchronously
 	HttpContext_cleanup(&http);
 	fail0:
@@ -71,6 +73,7 @@ static void handle_client(const NetSocket fd, mbedtls_ssl_config *const config) 
 	#else
 	close(fd);
 	#endif
+	atomic_fetch_sub(&ctx.clientCount, 1);
 }
 
 static void *handle_client_http(void *fd) {
@@ -126,8 +129,26 @@ static void *status_handler(struct StatusContext *ctx) {
 	struct SS addr;
 	for(NetSocket clientfd; (clientfd = status_accept(ctx, &addr)) != NetSocket_Invalid;) {
 		// TODO: shared poll thread (current system is NOT threadsafe); non-blocking I/O
-		if(pthread_create((pthread_t[]){NET_THREAD_INVALID}, &attr, ctx->handleClient, (void*)(uintptr_t)clientfd))
+		pthread_t thread = NET_THREAD_INVALID;
+		if(pthread_create(&thread, &attr, ctx->handleClient, (void*)(uintptr_t)clientfd) != 0) {
+			#ifdef WINDOWS
+			closesocket(clientfd);
+			#else
+			close(clientfd);
+			#endif
 			uprintf("pthread_create() failed\n");
+		} else {
+			atomic_fetch_add(&ctx->clientCount, 1);
+			pthread_detach(thread);
+		}
+	}
+	const uint32_t clientCount = atomic_load(&ctx->clientCount);
+	if(clientCount != 0) { // TODO: properly terminate and wait for all handler threads
+		uprintf("WARNING: %"PRIu32" HTTP%s clients at exit\n", clientCount, (ctx->handleClient == handle_client_http) ? "" : "S");
+		pthread_mutex_unlock(&ctx->mutex);
+		usleep(1500000);
+		assert(atomic_load(&ctx->clientCount) == 0);
+		pthread_mutex_lock(&ctx->mutex);
 	}
 	WireLink_free(ctx->master);
 	ctx->master = NULL;
@@ -179,6 +200,7 @@ bool status_ssl_init(const char *path, uint16_t port, mbedtls_x509_crt certs[2],
 			uprintf("mbedtls_ssl_conf_own_cert() failed: %s\n", mbedtls_high_level_strerr(res));
 			goto fail0;
 		}*/
+		mbedtls_ssl_conf_max_tls_version(&ctx.conf, MBEDTLS_SSL_VERSION_TLS1_2); // https://github.com/Mbed-TLS/mbedtls/issues/9223
 		ctx.certs = certs;
 		ctx.keys = keys;
 		ctx.domain = domain;

@@ -265,7 +265,7 @@ static float ClampFloat(const float value, const float min, const float max) {
 	return (value <= min) ? min : (value >= max) ? max : value;
 }
 
-static void status_graph(struct HttpContext *http, struct HttpRequest req, struct WireLink *master) {
+static void status_graph(struct HttpContext *const http, const struct HttpRequest req, struct WireLink *const master, pthread_mutex_t *const master_mutex) {
 	struct GraphConnectCookie state = {
 		.cookieType = StatusCookieType_GraphConnect,
 		.http = http,
@@ -373,20 +373,22 @@ static void status_graph(struct HttpContext *http, struct HttpRequest req, struc
 		});
 		return;
 	}
+	pthread_mutex_lock(master_mutex);
 	const WireCookie cookie = WireLink_makeCookie(master, &state, sizeof(state));
 	const bool failed = WireLink_send(master, &(struct WireMessage){
 		.type = WireMessageType_WireGraphConnect,
 		.cookie = cookie,
 		.graphConnect = connectInfo,
 	});
-	if(failed) {
+	if(failed)
 		WireLink_freeCookie(master, cookie);
+	pthread_mutex_unlock(master_mutex);
+	if(failed)
 		status_graph_resp((struct DataView){&state, sizeof(state)}, NULL);
-	}
 }
 
-void status_graph_resp(struct DataView cookieView, const struct WireGraphConnectResp *resp) {
-	const struct GraphConnectCookie *state = (struct GraphConnectCookie*)cookieView.data;
+void status_graph_resp(const struct DataView cookieView, const struct WireGraphConnectResp *resp) {
+	const struct GraphConnectCookie *state = (const struct GraphConnectCookie*)cookieView.data;
 	if(cookieView.length != sizeof(*state) || state->cookieType != StatusCookieType_GraphConnect) {
 		uprintf("Graph Connect Error: Malformed wire cookie\n");
 		return;
@@ -433,7 +435,7 @@ void status_graph_resp(struct DataView cookieView, const struct WireGraphConnect
 		HttpContext_respond(state->http, 200, "application/json; charset=utf-8", msg, (size_t)(msg_end - msg));
 }
 
-void status_resp(struct HttpContext *http, const char path[], struct HttpRequest httpRequest, struct WireLink *master) {
+void status_resp(struct HttpContext *const http, const char path[], const struct HttpRequest httpRequest, struct WireLink *const master, pthread_mutex_t *const master_mutex) {
 	const char *req = httpRequest.header, *const req_end = &httpRequest.header[httpRequest.header_len];
 	bool post = false;
 	if(startsWith(req, req_end, "GET /")) {
@@ -465,7 +467,7 @@ void status_resp(struct HttpContext *http, const char path[], struct HttpRequest
 		req += (req < req_end && *req == '/'); // some clients appear to be sending "GET //mp_override.json" requests
 		if(post) {
 			if(userAgent == UserAgent_Game && startsWith(req, req_end, "beat_saber_get_multiplayer_instance"))
-				status_graph(http, httpRequest, master);
+				status_graph(http, httpRequest, master, master_mutex);
 			else
 				HttpContext_respond(http, 404, "text/plain; charset=utf-8", NULL, 0);
 			return;

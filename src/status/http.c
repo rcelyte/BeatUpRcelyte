@@ -50,7 +50,7 @@ static int ssl_recv_internal(void *fd, uint8_t *data, const size_t data_len) {
 	return ssl_error(MBEDTLS_ERR_SSL_WANT_READ);
 }
 
-bool HttpContext_init(struct HttpContext *const self, const NetSocket fd, mbedtls_ssl_config *const sslConfig, const bool quiet) {
+bool HttpContext_init(struct HttpContext *const self, const NetSocket fd, const mbedtls_ssl_config *const sslConfig, const bool quiet) {
 	*self = (struct HttpContext){
 		.encrypt = (sslConfig != NULL),
 		.quiet = quiet,
@@ -60,7 +60,6 @@ bool HttpContext_init(struct HttpContext *const self, const NetSocket fd, mbedtl
 		return false;
 	}
 	mbedtls_ssl_init(&self->ssl);
-	mbedtls_ssl_conf_max_tls_version(sslConfig, MBEDTLS_SSL_VERSION_TLS1_2); // https://github.com/Mbed-TLS/mbedtls/issues/9223
 	int res = mbedtls_ssl_setup(&self->ssl, sslConfig);
 	if(res) {
 		uprintf("mbedtls_ssl_setup() failed: %s\n", mbedtls_high_level_strerr(res));

@@ -2,6 +2,7 @@
 #include "../wire.h"
 #include "../packets.h"
 #include "http.h"
+#include <pthread.h>
 #include <stdint.h>
 
 typedef uint8_t StatusCookieType;
@@ -19,7 +20,7 @@ struct GraphConnectCookie {
 };
 
 NetSocket status_bind_tcp(uint16_t port, uint32_t backlog);
-void status_resp(struct HttpContext *http, const char path[], struct HttpRequest httpRequest, struct WireLink *master);
+void status_resp(struct HttpContext *http, const char path[], struct HttpRequest httpRequest, struct WireLink *master, pthread_mutex_t *master_mutex);
 void status_update_index(uint32_t sequence, const uint8_t entry[], uint32_t entry_len);
 void status_graph_resp(struct DataView cookieView, const struct WireGraphConnectResp *resp);
 

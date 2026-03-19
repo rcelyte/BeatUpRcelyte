@@ -19,7 +19,7 @@ struct HttpRequest {
 	uint8_t *body;
 };
 
-bool HttpContext_init(struct HttpContext *self, NetSocket fd, mbedtls_ssl_config *sslConfig, bool quiet);
+bool HttpContext_init(struct HttpContext *self, NetSocket fd, const mbedtls_ssl_config *sslConfig, bool quiet);
 void HttpContext_cleanup(struct HttpContext *self);
 struct HttpRequest HttpContext_recieve(struct HttpContext *self, uint8_t buffer[], size_t buffer_len);
 void HttpContext_respond(struct HttpContext *self, uint16_t code, const char mime[], const void *data, size_t length);
