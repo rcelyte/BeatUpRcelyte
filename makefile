@@ -13,7 +13,8 @@ LIBS := libmbedtls.a libmbedx509.a libmbedcrypto.a
 OBJS := $(FILES:%=$(OBJDIR)/%.o) $(LIBS:%=$(OBJDIR)/%)
 DEPS := $(FILES:%=$(OBJDIR)/%.d)
 
-CFLAGS := -std=gnu23 -ffunction-sections -fdata-sections -isystem thirdparty/mbedtls/include -isystem thirdparty/enet/Source/Native -DMP_EXTENDED_ROUTING
+CFLAGS_MBED := -DMBEDTLS_THREADING_C -DMBEDTLS_THREADING_PTHREAD
+CFLAGS := -std=gnu23 -ffunction-sections -fdata-sections -isystem thirdparty/mbedtls/include -isystem thirdparty/enet/Source/Native -DMP_EXTENDED_ROUTING $(CFLAGS_MBED)
 LDFLAGS := -O3 -Wl,--gc-sections,--fatal-warnings -fno-pie -pthread
 
 sinclude makefile.user
@@ -42,7 +43,7 @@ $(OBJDIR)/libmbed%.a: thirdparty/mbedtls/.git
 	mkdir -p "$@.build/framework/scripts/"
 	touch "$@.build/framework/scripts/generate_ssl_debug_helpers.py"
 	cp -r thirdparty/mbedtls/3rdparty thirdparty/mbedtls/include thirdparty/mbedtls/scripts thirdparty/mbedtls/library "$@.build/"
-	$(MAKE) -C "$@.build/library" CC=$(CC) AR=$(AR) PYTHON=true PERL=true $(notdir $@)
+	$(MAKE) -C "$@.build/library" CC=$(CC) AR=$(AR) PYTHON=true PERL=true CFLAGS='$(CFLAGS_MBED)' $(notdir $@)
 	mv "$@.build/library/$(notdir $@)" "$@"
 	rm -r "$@.build/"
 

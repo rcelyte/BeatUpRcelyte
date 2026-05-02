@@ -4,14 +4,18 @@
 #include <stdlib.h>
 #include <string.h>
 #ifdef WINDOWS
-#include <winsock2.h>
+	#include <winsock2.h>
 #else
-#include <sys/socket.h>
-#include <errno.h>
+	#include <sys/socket.h>
+	#include <errno.h>
+#endif
+
+#ifndef MBEDTLS_THREADING_C
+	#error "Missing multithread support"
 #endif
 
 #ifndef MBEDTLS_ERR_NET_CONN_RESET
-#define MBEDTLS_ERR_NET_CONN_RESET -0x0050
+	#define MBEDTLS_ERR_NET_CONN_RESET -0x0050
 #endif
 
 static inline int ssl_error(int intr) {
@@ -71,8 +75,11 @@ bool HttpContext_init(struct HttpContext *const self, const NetSocket fd, const 
 		if(res == 0)
 			return false;
 	} while(res == MBEDTLS_ERR_SSL_WANT_READ || res == MBEDTLS_ERR_SSL_WANT_WRITE);
-	if(!self->quiet || res != MBEDTLS_ERR_SSL_CONN_EOF)
-		uprintf("mbedtls_ssl_handshake() failed: %s\n", mbedtls_high_level_strerr(res));
+	if(!self->quiet || res != MBEDTLS_ERR_SSL_CONN_EOF) {
+		char message[0xc00];
+		mbedtls_strerror(res, message, lengthof(message));
+		uprintf("mbedtls_ssl_handshake() failed: %s\n", message);
+	}
 	fail0: mbedtls_ssl_free(&self->ssl);
 	return true;
 }
