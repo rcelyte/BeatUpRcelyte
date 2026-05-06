@@ -62,6 +62,7 @@ u8 GameVersion
 	1_42_2
 	1_42_100
 	1_42_3
+	1_43_0
 n PacketContext
 	u8 netVersion
 	u8 protocolVersion
