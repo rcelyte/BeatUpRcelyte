@@ -6,7 +6,8 @@
 #include <mbedtls/x509_crt.h>
 #include <mbedtls/ssl_cookie.h>
 
-static constexpr uint32_t CONNECT_TIMEOUT_MS = 30000, IDLE_TIMEOUT_MS = 10000;
+static constexpr uint32_t CONNECT_TIMEOUT_MS = 30000;
+static constexpr uint32_t IDLE_TIMEOUT_MS = 10000;
 
 struct MasterSession;
 struct MasterContext {
