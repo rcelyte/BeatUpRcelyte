@@ -45,8 +45,8 @@ static partial class BeatUpClient {
 			this.hideHints = hideHints;
 		}
 		public void Clear() =>
-			Update(null, null!, default, null!);
-		public void Update(BeatmapLevel? beatmapLevel, BeatmapCharacteristicSO characteristic, BeatmapDifficulty difficulty, System.Action<BeatmapCharacteristicSO, BeatmapDifficulty> onChange) {
+			Update(null, default, default, null!);
+		public void Update(BeatmapLevel? beatmapLevel, BeatmapCharacteristic characteristic, BeatmapDifficulty difficulty, System.Action<BeatmapCharacteristic, BeatmapDifficulty> onChange) {
 			characteristicSelector.transform.parent.gameObject.SetActive(false);
 			difficultySelector.transform.parent.gameObject.SetActive(false);
 
@@ -59,7 +59,7 @@ static partial class BeatUpClient {
 			if(hideHints)
 				foreach(HMUI.HoverHint hint in characteristicSelector.GetComponentsInChildren<HMUI.HoverHint>())
 					hint.enabled = false;
-			characteristicSelector.didSelectBeatmapCharacteristicEvent += (BeatmapCharacteristicSegmentedControlController controller, BeatmapCharacteristicSO newCharacteristic) => {
+			characteristicSelector.didSelectBeatmapCharacteristicEvent += (BeatmapCharacteristicSegmentedControlController controller, BeatmapCharacteristic newCharacteristic) => {
 				BeatmapDifficulty closestDifficulty = beatmapLevel.GetDifficulties(newCharacteristic).First();
 				foreach(BeatmapDifficulty diff in beatmapLevel.GetDifficulties(newCharacteristic)) {
 					if(diff > difficulty)

@@ -10,9 +10,9 @@ static partial class BeatUpClient {
 
 	internal abstract class PreviewBeatmapLevel : BeatUpPacket {
 		public struct PreviewDifficultyBeatmapSet {
-			public BeatmapCharacteristicSO characteristic;
+			public string characteristic;
 			public BeatmapDifficulty[] difficulties;
-			public PreviewDifficultyBeatmapSet(BeatmapCharacteristicSO characteristic, BeatmapDifficulty[] difficulties) =>
+			public PreviewDifficultyBeatmapSet(string characteristic, BeatmapDifficulty[] difficulties) =>
 				(this.characteristic, this.difficulties) = (characteristic, difficulties);
 		};
 		bool mpCore;
@@ -83,7 +83,7 @@ static partial class BeatUpClient {
 			writer.Put((string?)null);
 			writer.Put((byte)UpperBound((uint)(previewDifficultyBeatmapSets?.Count ?? 0), 8));
 			foreach(PreviewDifficultyBeatmapSet previewDifficultyBeatmapSet in previewDifficultyBeatmapSets ?? new PreviewDifficultyBeatmapSet[0]) {
-				writer.Put((string)previewDifficultyBeatmapSet.characteristic.serializedName);
+				writer.Put((string)previewDifficultyBeatmapSet.characteristic);
 				writer.Put((byte)UpperBound((uint)previewDifficultyBeatmapSet.difficulties.Length, 5));
 				foreach(BeatmapDifficulty difficulty in previewDifficultyBeatmapSet.difficulties)
 					writer.PutVarUInt((uint)difficulty);
@@ -110,7 +110,7 @@ static partial class BeatUpClient {
 			uint count = UpperBound(reader.GetByte(), 8);
 			previewDifficultyBeatmapSets = (count < 1) ? null : CreateArray(count, i => {
 				// TODO: need a good solution for handling `lawless`, `lightshow`, etc when SongCore isn't available
-				BeatmapCharacteristicSO? characteristic = SerializedCharacteristic(reader.GetString());
+				string characteristic = reader.GetString();
 				BeatmapDifficulty[] difficulties = CreateArray(UpperBound(reader.GetByte(), 5), i => (BeatmapDifficulty)reader.GetVarUInt());
 				return new PreviewDifficultyBeatmapSet(characteristic, difficulties);
 			});
@@ -132,9 +132,9 @@ static partial class BeatUpClient {
 				(from.levelID, from.songName, from.songSubName, from.songAuthorName, string.Empty, from.beatsPerMinute, from.songTimeOffset, 0, 0, from.previewStartTime, from.previewDuration, from.songDuration);
 			previewDifficultyBeatmapSets = from.beatmapBasicData.Keys
 				.GroupBy(
-					((BeatmapCharacteristicSO characteristic, BeatmapDifficulty difficulty) pair) => pair.characteristic,
-					(characteristic, pairs) => new PreviewDifficultyBeatmapSet(characteristic, pairs
-						.Select(((BeatmapCharacteristicSO characteristic, BeatmapDifficulty difficulty) pair) => pair.difficulty)
+					((BeatmapCharacteristic characteristic, BeatmapDifficulty difficulty) pair) => pair.characteristic,
+					(characteristic, pairs) => new PreviewDifficultyBeatmapSet(BeatmapCharacteristicExtensions.SerializedName(characteristic), pairs
+						.Select(((BeatmapCharacteristic characteristic, BeatmapDifficulty difficulty) pair) => pair.difficulty)
 						.ToArray()))
 				.ToArray();
 			if(!mpCore) {

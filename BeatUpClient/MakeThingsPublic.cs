@@ -19,6 +19,7 @@ var refs = new (string? path, string name, string[]? overrides)[] {
 		"MultiplayerSessionManager`5::_packetSerializer",
 		"NetworkPacketSerializer`2::_messsageHandlers",
 		"NetworkPacketSerializer`2::_typeRegistry",
+		"XPlatformAccessTokenData::kMinimalTokenLength",
 	}),
 	(managed, "BeatSaber.Multiplayer.Core.dll", new[] {
 		"BGNet.Core.GameLift.GameLiftPlayerSessionProvider::_graphAPIClient",
@@ -80,9 +81,6 @@ var refs = new (string? path, string name, string[]? overrides)[] {
 		"BeatmapDifficultySegmentedControlController::_difficultySegmentedControl",
 		"BeatmapDifficultySegmentedControlController::didSelectDifficultyEvent",
 		"ColorsOverrideSettingsPanelController::_editColorSchemeButton",
-		"CustomLevelLoader::_defaultAllDirectionsEnvironmentInfo",
-		"CustomLevelLoader::_defaultEnvironmentInfo",
-		"CustomLevelLoader::_environmentSceneInfoCollection",
 		"CustomPreviewBeatmapLevel::_coverImage",
 		"DropdownSettingsController::_dropdown",
 		"DropdownSettingsController::_idx",
@@ -92,8 +90,8 @@ var refs = new (string? path, string name, string[]? overrides)[] {
 		"GameServerPlayerTableCell::_localPlayerBackgroundImage",
 		"GameSongController::_beatmapCallbacksController",
 		"JoiningLobbyViewController::_loadingControl",
-		"LevelScenesTransitionSetupDataSO::get_gameplayAdditionalInformationSetupData",
-		"LevelScenesTransitionSetupDataSO::get_gameplayCoreSceneSetupData",
+		"LevelScenesTransitionSetupData::get_gameplayAdditionalInformationSetupData",
+		"LevelScenesTransitionSetupData::get_gameplayCoreSceneSetupData",
 		"MainFlowCoordinator::_simpleDialogPromptViewController",
 		"MainFlowCoordinator::HandleMainMenuViewControllerDidFinish",
 		"MainFlowCoordinator::HandleMultiplayerModeSelectionFlowCoordinatorDidFinish",
@@ -121,6 +119,7 @@ var refs = new (string? path, string name, string[]? overrides)[] {
 		"MultiplayerModeSelectionViewController::_maintenanceMessageText",
 		"StandardLevelDetailView::_beatmapCharacteristicSegmentedControlController",
 		"StandardLevelDetailView::_beatmapDifficultySegmentedControlController",
+		"SwitchSettingsController::_toggle",
 	}),
 	(managed, "mscorlib.dll", new[] {
 		"System.Runtime.CompilerServices.Unsafe",
@@ -150,6 +149,7 @@ var refs = new (string? path, string name, string[]? overrides)[] {
 	}),
 	(managed, "Zenject.dll", new[] {
 		"Zenject.Context::InstallInstallers",
+		"Zenject.InstallerBase::get_Container",
 		"Zenject.MonoInstallerBase::get_Container",
 	}),
 	("IPA/Libs", "0Harmony.dll", null),
@@ -165,10 +165,12 @@ var refs = new (string? path, string name, string[]? overrides)[] {
 	(null, "SongCore.dll", null),
 	(managed, "AdditionalContentModel.Interfaces.dll", null),
 	(managed, "BeatmapCore.dll", null),
+	(managed, "BeatSaber.Destinations.dll", null),
 	(managed, "BeatSaber.GameSettings.dll", null),
 	(managed, "BeatSaber.Settings.dll", null),
 	(managed, "BeatSaber.Init.dll", null),
 	(managed, "BGLib.AppFlow.dll", new[] {
+		"BGLib.AppFlow.Initialization.AsyncInstaller::get_Container",
 		"SceneInfo::_sceneName",
 	}),
 	(managed, "BGLib.DotnetExtension.dll", null),
@@ -177,16 +179,15 @@ var refs = new (string? path, string name, string[]? overrides)[] {
 	(managed, "Colors.dll", null),
 	(managed, "GameInit.dll", new[] {
 		"BeatSaberInit::TransitionToNextSceneAsync",
-		"MainSettingsAsyncLoader::_mainSettingsHandler",
 		"MainSettingsAsyncLoader::_networkConfig",
+		"MainSettingsAsyncLoader::RegisterInstallers",
+		
 	}),
 	(managed, "GameplayCore.dll", null),
 	(managed, "Ignorance.dll", null),
-	(managed, "Interactable.dll", null),
 	(managed, "IPA.Loader.dll", null),
 	(managed, "Menu.CommonLib.dll", new[] {
 		"IncDecSettingsController::_stepValuePicker",
-		"SwitchSettingsController::_toggle",
 	}),
 	(managed, "Networking.dll", new[] {
 		"BaseNetworkPlayerModel::ConnectedPlayerManagerChanged",

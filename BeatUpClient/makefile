@@ -1,5 +1,5 @@
 #!/bin/make
-VERSION ::= 0.18.1
+VERSION ::= 0.19.0
 
 .SILENT:
 
@@ -69,7 +69,7 @@ thirdparty/SongCore.dll:
 		\"\$$schema\": \"https://raw.githubusercontent.com/bsmg/BSIPA-MetadataFileSchema/master/Schema.json\",\n\
 		\"author\": \"rcelyte\",\n\
 		\"description\": \"Tweaks and enhancements for enabling modded multiplayer\",\n\
-		\"gameVersion\": \"1.42.0_12297\",\n\
+		\"gameVersion\": \"1.44.2\",\n\
 		\"dependsOn\": {\"BSIPA\": \"^4.3.0\"},\n\
 		\"conflictsWith\": {\"BeatTogether\": \"*\"},\n\
 		\"loadBefore\": [\"MultiplayerCore\"],\n\

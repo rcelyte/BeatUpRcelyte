@@ -2309,6 +2309,9 @@ static void _pkt_PlayerIdentity_read(struct PlayerIdentity *restrict data, struc
 	if(state.context.gameVersion >= GameVersion_1_42_0) {
 		_pkt_MultiplayerAvatarsData_read(&data->playerAvatars, state);
 	}
+	if(state.context.gameVersion >= GameVersion_1_44_2) {
+		_pkt_u8_read(&data->activeHand, state);
+	}
 }
 static void _pkt_PlayerIdentity_write(const struct PlayerIdentity *restrict data, struct PacketWrite parent) {
 	struct PacketWrite state = scope(parent, "PlayerIdentity");
@@ -2320,6 +2323,9 @@ static void _pkt_PlayerIdentity_write(const struct PlayerIdentity *restrict data
 	_pkt_ByteArrayNetSerializable_write(&data->publicEncryptionKey, state);
 	if(state.context.gameVersion >= GameVersion_1_42_0) {
 		_pkt_MultiplayerAvatarsData_write(&data->playerAvatars, state);
+	}
+	if(state.context.gameVersion >= GameVersion_1_44_2) {
+		_pkt_u8_write(&data->activeHand, state);
 	}
 }
 static void _pkt_PlayerLatencyUpdate_read(struct PlayerLatencyUpdate *restrict data, struct PacketRead parent) {

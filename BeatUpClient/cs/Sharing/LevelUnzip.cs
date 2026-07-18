@@ -3,7 +3,7 @@ using static System.Linq.Enumerable;
 static partial class BeatUpClient {
 	internal struct SharedBeatmapLevelData : IBeatmapLevelData, IAssetSongAudioClipProvider {
 		public struct DifficultyKey {
-			public BeatmapCharacteristicSO characteristic;
+			public BeatmapCharacteristic characteristic;
 			public BeatmapDifficulty difficulty;
 		};
 		public struct DifficultyData {
@@ -39,11 +39,11 @@ static partial class BeatUpClient {
 		}
 		public string? GetAudioDataString() => audioData;
 		public string? GetBeatmapString(in BeatmapKey key) {
-			difficulties.TryGetValue(new DifficultyKey {characteristic = key.beatmapCharacteristic, difficulty = key.difficulty}, out var difficulty);
+			difficulties.TryGetValue(new DifficultyKey {characteristic = key.characteristic, difficulty = key.difficulty}, out var difficulty);
 			return difficulty.beatmap;
 		}
 		public string? GetLightshowString(in BeatmapKey key) {
-			difficulties.TryGetValue(new DifficultyKey {characteristic = key.beatmapCharacteristic, difficulty = key.difficulty}, out var difficulty);
+			difficulties.TryGetValue(new DifficultyKey {characteristic = key.characteristic, difficulty = key.difficulty}, out var difficulty);
 			return difficulty.lightshow;
 		}
 		string IBeatmapLevelData.name => songName;
@@ -54,7 +54,7 @@ static partial class BeatUpClient {
 		System.Threading.Tasks.Task<string?> IBeatmapLevelData.GetLightshowStringAsync(in BeatmapKey key) =>
 			System.Threading.Tasks.Task.FromResult(GetLightshowString(key));
 		bool IBeatmapLevelData.ContainsBeatmapData(in BeatmapKey key) =>
-			difficulties.ContainsKey(new DifficultyKey {characteristic = key.beatmapCharacteristic, difficulty = key.difficulty});
+			difficulties.ContainsKey(new DifficultyKey {characteristic = key.characteristic, difficulty = key.difficulty});
 		UnityEngine.AudioClip IAssetSongAudioClipProvider.songAudioClip => songAudio;
 	}
 	static async System.Threading.Tasks.Task<UnityEngine.AudioClip> DecodeAudio(System.IO.Compression.ZipArchiveEntry song, UnityEngine.AudioType type) {
@@ -83,8 +83,7 @@ static partial class BeatUpClient {
 		StandardLevelInfoSaveData info = StandardLevelInfoSaveData.DeserializeFromJSONString(infoText);
 		return SharedBeatmapLevelData.From(archive, infoData, info.songName, info.songFilename, string.Empty, info.difficultyBeatmapSets
 			.SelectMany((StandardLevelInfoSaveData.DifficultyBeatmapSet set) => {
-				BeatmapCharacteristicSO? characteristic = Resolve<BeatmapCharacteristicCollection>()!
-					.GetBeatmapCharacteristicBySerializedName(set.beatmapCharacteristicName);
+				BeatmapCharacteristicExtensions.BeatmapCharacteristicFromSerializedName(set.beatmapCharacteristicName, out BeatmapCharacteristic characteristic);
 				return set.difficultyBeatmaps.Select((StandardLevelInfoSaveData.DifficultyBeatmap beatmap) =>
 					beatmap.difficulty.BeatmapDifficultyFromSerializedName(out BeatmapDifficulty parsedDifficulty) ?
 						System.Collections.Generic.KeyValuePair.Create(new SharedBeatmapLevelData.DifficultyKey {
@@ -103,8 +102,7 @@ static partial class BeatUpClient {
 			UnityEngine.JsonUtility.FromJson<BeatmapLevelSaveDataVersion4.BeatmapLevelSaveData>(infoText);
 		return SharedBeatmapLevelData.From(archive, infoData, info.song.title, info.audio.songFilename, info.audio.audioDataFilename, info.difficultyBeatmaps
 			.Select((BeatmapLevelSaveDataVersion4.BeatmapLevelSaveData.DifficultyBeatmap beatmap) => {
-				BeatmapCharacteristicSO? characteristic = Resolve<BeatmapCharacteristicCollection>()!
-					.GetBeatmapCharacteristicBySerializedName(beatmap.characteristic);
+				BeatmapCharacteristicExtensions.BeatmapCharacteristicFromSerializedName(beatmap.characteristic, out BeatmapCharacteristic characteristic);
 				return beatmap.difficulty.BeatmapDifficultyFromSerializedName(out BeatmapDifficulty parsedDifficulty) ?
 					System.Collections.Generic.KeyValuePair.Create(new SharedBeatmapLevelData.DifficultyKey {
 						characteristic = characteristic,

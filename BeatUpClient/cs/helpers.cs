@@ -25,8 +25,4 @@ static partial class BeatUpClient {
 			func();
 		return res;
 	}
-
-	internal static BeatmapCharacteristicSO SerializedCharacteristic(string? name) =>
-		Resolve<BeatmapCharacteristicCollection>()!.GetBeatmapCharacteristicBySerializedName(name) ??
-		Resolve<BeatmapCharacteristicCollection>()!.GetBeatmapCharacteristicBySerializedName("Standard");
 }

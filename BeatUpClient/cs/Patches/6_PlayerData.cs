@@ -15,11 +15,12 @@ static partial class BeatUpClient {
 	static void BeatmapLevelsModel_GetLevelPreviewForLevelId(ref IPreviewBeatmapLevel? __result, string levelId) =>
 		__result ??= (IPreviewBeatmapLevel?)playerData.ResolvePreview(levelId) ?? new ErrorBeatmapLevel(levelId);*/
 
-	// Failsafe that should've been in the base game; Fixes the player list deleting itself when SongCore isn't installed and a lawless diff is suggested
+	// TODO: needed?
 	[Detour(typeof(BeatmapIdentifierNetSerializableHelper), nameof(BeatmapIdentifierNetSerializableHelper.ToBeatmapKey))]
-	static BeatmapKey BeatmapIdentifierNetSerializableHelper_ToBeatmapKey(BeatmapKeyNetSerializable beatmapKeySerializable, BeatmapCharacteristicCollection beatmapCharacteristicCollection) {
-		BeatmapKey result = (BeatmapKey)Base(beatmapKeySerializable, beatmapCharacteristicCollection);
-		result.beatmapCharacteristic ??= beatmapCharacteristicCollection.GetBeatmapCharacteristicBySerializedName("Standard");
+	static BeatmapKey BeatmapIdentifierNetSerializableHelper_ToBeatmapKey(BeatmapKeyNetSerializable beatmapKeySerializable) {
+		BeatmapKey result = (BeatmapKey)Base(beatmapKeySerializable);
+		if(result.levelId == null && !string.IsNullOrEmpty(beatmapKeySerializable?.levelID))
+			result = new BeatmapKey(beatmapKeySerializable!.levelID, BeatmapCharacteristic.Standard, beatmapKeySerializable.difficulty);
 		return result;
 	}
 
@@ -84,10 +85,10 @@ static partial class BeatUpClient {
 			}
 		}
 		string levelId = beatmapKey.levelId;
-		void OnSelect(BeatmapCharacteristicSO newCharacteristic, BeatmapDifficulty newDifficulty) {
+		void OnSelect(BeatmapCharacteristic newCharacteristic, BeatmapDifficulty newDifficulty) {
 			self.SetLocalPlayerBeatmapLevel(new(levelId, newCharacteristic, newDifficulty));
 		}
-		lobbyDifficultyPanel?.Update(beatmapLevel, beatmapKey.beatmapCharacteristic, beatmapKey.difficulty, OnSelect);
+		lobbyDifficultyPanel?.Update(beatmapLevel, beatmapKey.characteristic, beatmapKey.difficulty, OnSelect);
 		Base(self, PassRef(ref beatmapKey));
 	}
 

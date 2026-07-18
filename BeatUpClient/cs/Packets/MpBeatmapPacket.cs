@@ -32,7 +32,7 @@ static partial class BeatUpClient {
 				.SelectMany(i => System.Linq.Enumerable.Repeat((BeatmapDifficulty)reader.GetByte(), reader.GetByte()))
 				.ToLookup(diff => diff, diff => reader.GetString() ?? string.Empty);
 			previewDifficultyBeatmapSets = new[] {
-				new PreviewDifficultyBeatmapSet(SerializedCharacteristic(characteristic), requirements.Select(diff => diff.Key).ToArray()),
+				new PreviewDifficultyBeatmapSet(characteristic, requirements.Select(diff => diff.Key).ToArray()),
 			}; // Fill in data for difficulty selector
 			for(uint i = reader.GetByte() * 3u; i > 0; --i)
 				reader.GetString();
@@ -46,8 +46,8 @@ static partial class BeatUpClient {
 		}
 		// TODO: switching between `MpBeatmapPacket`s and `RecommendPreview`s is a lossy conversion
 		public MpBeatmapPacket(RecommendPreview preview, BeatmapLevel info, BeatmapKey key) : base(info, true) {
-			(characteristic, difficulty) = (key.beatmapCharacteristic.SerializedName(), key.difficulty);
-			requirements = info.GetDifficulties(key.beatmapCharacteristic)
+			(characteristic, difficulty) = (BeatmapCharacteristicExtensions.SerializedName(key.characteristic), key.difficulty);
+			requirements = info.GetDifficulties(key.characteristic)
 				.SelectMany(diff => preview.requirements.Select(req => (diff, req)))
 				.ToLookup(pair => pair.diff, pair => pair.req);
 		}

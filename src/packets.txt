@@ -864,6 +864,10 @@ n MultiplayerAvatarsData
 		i32 count
 		OpaqueAvatarData avatars[6, .count]
 		BitMask128 supportedTypes
+u8 MultiplayerActiveHand
+	None
+	Left
+	Right
 n PlayerIdentity
 	PlayerStateHash playerState
 	if($gameVersion < GameVersion_1_42_0)
@@ -872,6 +876,8 @@ n PlayerIdentity
 	ByteArrayNetSerializable publicEncryptionKey
 	if($gameVersion >= GameVersion_1_42_0)
 		MultiplayerAvatarsData playerAvatars
+	if($gameVersion >= GameVersion_1_44_2)
+		MultiplayerActiveHand activeHand
 n PlayerLatencyUpdate
 	f32 latency
 vi32 DisconnectedReason

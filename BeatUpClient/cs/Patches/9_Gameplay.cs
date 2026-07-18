@@ -4,25 +4,24 @@ static partial class BeatUpClient {
 		MultiplayerPlayersManager multiplayerPlayersManager = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerPlayersManager>()[0];
 		if(!(connectInfo.perPlayerDifficulty && multiplayerPlayersManager.localPlayerStartSeekSongController is MultiplayerLocalActivePlayerFacade))
 			return;
-		MenuTransitionsHelper menuTransitionsHelper = UnityEngine.Resources.FindObjectsOfTypeAll<MenuTransitionsHelper>()[0];
-		BeatmapLevel beatmapLevel = menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.beatmapLevel;
+		MultiplayerLevelScenesTransitionSetupData setupData = Resolve<MultiplayerLevelScenesTransitionSetupData>()!;
+		BeatmapLevel beatmapLevel = setupData.beatmapLevel;
 		MultiplayerConnectedPlayerSongTimeSyncController audioTimeSyncController = UnityEngine.Resources.FindObjectsOfTypeAll<MultiplayerConnectedPlayerSongTimeSyncController>()[0];
 		BeatmapKey selectedKey = __instance._localPlayerInGameMenuInitData.beatmapKey;
 		UnityEngine.RectTransform switchButton = UI.CreateButtonFrom(__instance._resumeButton.gameObject, __instance._resumeButton.transform.parent, "SwitchDifficulty", () => {
-			MultiplayerLevelScenesTransitionSetupDataSO setupData = menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData;
 			setupData.Init(setupData.gameMode, in selectedKey, beatmapLevel, setupData.beatmapLevelData,
 				setupData.colorScheme, setupData.gameplayCoreSceneSetupData.gameplayModifiers, setupData.gameplayCoreSceneSetupData.playerSpecificSettings,
 				setupData.gameplayCoreSceneSetupData.environmentsListModel, setupData.gameplayCoreSceneSetupData.practiceSettings,
 				Resolve<AudioClipAsyncLoader>(), Resolve<SettingsManager>(), Resolve<BeatmapDataLoader>(),
 				setupData.gameplayAdditionalInformationSetupData.additionalInformation);
-			menuTransitionsHelper._gameScenesManager.ReplaceScenes(menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData, null,
+			Resolve<GameScenesManager>()!.ReplaceScenes(setupData, null,
 					.35f, null, (Zenject.DiContainer container) => {
 				MultiplayerController multiplayerController = container.Resolve<MultiplayerController>();
 				multiplayerController._songStartSyncController.syncStartSuccessEvent -= OnSongStart;
 				multiplayerController._songStartSyncController.syncStartSuccessEvent += OnSongStart;
 				void OnSongStart(long introAnimationStartSyncTime) {
 					multiplayerController._songStartSyncController.syncStartSuccessEvent -= OnSongStart;
-					multiplayerController._playersManager.activeLocalPlayerFacade._gameSongController._beatmapCallbacksController._startFilterTime = multiplayerController.GetCurrentSongTime(multiplayerController.GetSongStartSyncTime(introAnimationStartSyncTime)) * menuTransitionsHelper._multiplayerLevelScenesTransitionSetupData.gameplayCoreSceneSetupData.gameplayModifiers.songSpeedMul + 1;
+					multiplayerController._playersManager.activeLocalPlayerFacade._gameSongController._beatmapCallbacksController._startFilterTime = multiplayerController.GetCurrentSongTime(multiplayerController.GetSongStartSyncTime(introAnimationStartSyncTime)) * setupData.gameplayCoreSceneSetupData.gameplayModifiers.songSpeedMul + 1;
 				}
 			});
 		});
@@ -32,15 +31,14 @@ static partial class BeatUpClient {
 		__instance._levelBar.transform.localPosition = new UnityEngine.Vector3(0, 13.25f, 0);
 		panel.beatmapCharacteristic.localPosition = new UnityEngine.Vector3(-1, -1.5f, 0);
 		panel.beatmapDifficulty.localPosition = new UnityEngine.Vector3(-1, -8.25f, 0);
-		void OnSelect(BeatmapCharacteristicSO newCharacteristic, BeatmapDifficulty newDifficulty) {
+		void OnSelect(BeatmapCharacteristic newCharacteristic, BeatmapDifficulty newDifficulty) {
 			selectedKey = new(selectedKey.levelId, newCharacteristic, newDifficulty);
-			bool original = (newDifficulty == selectedKey.difficulty &&
-				newCharacteristic.SerializedName() == selectedKey.beatmapCharacteristic.SerializedName());
+			bool original = (newDifficulty == selectedKey.difficulty && newCharacteristic == selectedKey.characteristic);
 			__instance._resumeButton.gameObject.SetActive(original);
 			switchButton.gameObject.SetActive(!original);
-			panel.Update(beatmapLevel, selectedKey.beatmapCharacteristic, selectedKey.difficulty, OnSelect);
+			panel.Update(beatmapLevel, selectedKey.characteristic, selectedKey.difficulty, OnSelect);
 		}
-		panel.Update(beatmapLevel, selectedKey.beatmapCharacteristic, selectedKey.difficulty, OnSelect);
+		panel.Update(beatmapLevel, selectedKey.characteristic, selectedKey.difficulty, OnSelect);
 	}
 
 	[Detour(typeof(MultiplayerConnectedPlayerInstaller), nameof(MultiplayerConnectedPlayerInstaller.InstallBindings))]

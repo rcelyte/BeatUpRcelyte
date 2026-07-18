@@ -70,6 +70,7 @@ enum {
 	GameVersion_1_43_0,
 	GameVersion_1_44_0,
 	GameVersion_1_44_1,
+	GameVersion_1_44_2,
 	GameVersion_COUNT,
 };
 [[maybe_unused]] static const char *_reflect_GameVersion(GameVersion value) {
@@ -140,6 +141,7 @@ enum {
 		case GameVersion_1_43_0: return "1_43_0";
 		case GameVersion_1_44_0: return "1_44_0";
 		case GameVersion_1_44_1: return "1_44_1";
+		case GameVersion_1_44_2: return "1_44_2";
 		default: return "???";
 	}
 }
@@ -838,6 +840,21 @@ enum {
 		case MpCoreType_MpcCapabilitiesPacket: return "MpcCapabilitiesPacket";
 		case MpCoreType_MpPlayerData: return "MpPlayerData";
 		case MpCoreType_MpexPlayerData: return "MpexPlayerData";
+		default: return "???";
+	}
+}
+typedef uint8_t MultiplayerActiveHand;
+enum {
+	MultiplayerActiveHand_None,
+	MultiplayerActiveHand_Left,
+	MultiplayerActiveHand_Right,
+	MultiplayerActiveHand_COUNT,
+};
+[[maybe_unused]] static const char *_reflect_MultiplayerActiveHand(MultiplayerActiveHand value) {
+	switch(value) {
+		case MultiplayerActiveHand_None: return "None";
+		case MultiplayerActiveHand_Left: return "Left";
+		case MultiplayerActiveHand_Right: return "Right";
 		default: return "???";
 	}
 }
@@ -2143,6 +2160,7 @@ struct PlayerIdentity {
 	struct MultiplayerAvatarsData playerAvatars;
 	struct ByteArrayNetSerializable random;
 	struct ByteArrayNetSerializable publicEncryptionKey;
+	MultiplayerActiveHand activeHand;
 };
 struct PlayerLatencyUpdate {
 	float latency;
