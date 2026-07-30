@@ -28,6 +28,7 @@ struct EnumToken {
 	char type[64];
 	char name[64];
 	char switchField[64];
+	bool reflectNames;
 };
 
 struct StructToken {
@@ -138,10 +139,10 @@ static char read_char(const char **it) {
 	return ch;
 }
 
-static void read_name(const char **it, char *out, size_t out_len) {
+static void read_name(const char **const it, char *out, size_t out_len, const bool printOnly) {
 	if(!alpha(**it) && !numeric(**it))
 		fail_at(*it, "expected name");
-	while((**it >= '0' && **it <= '9') || alpha(**it)) {
+	while((**it >= '0' && **it <= '9') || alpha(**it) || (printOnly && **it == '.')) {
 		*out++ = *(*it)++;
 		if(!(--out_len))
 			fail_at(*it, "string too long");
@@ -184,7 +185,7 @@ static_assert(offsetof(struct Token, enum_.name) == offsetof(struct Token, field
 				.enumValue = 0,
 			},
 		};
-		read_name(&it, token.field.type, sizeof(token.field.type));
+		read_name(&it, token.field.type, sizeof(token.field.type), false);
 		if(!insideSwitch && strcmp(token.field.type, "if") == 0) {
 			token.type = TType_If_start;
 			skip_char(&it, '(');
@@ -197,7 +198,7 @@ static_assert(offsetof(struct Token, enum_.name) == offsetof(struct Token, field
 			continue;
 		}
 		skip_char(&it, ' ');
-		read_name(&it, token.field.name, sizeof(token.field.name));
+		read_name(&it, token.field.name, sizeof(token.field.name), false);
 		if(insideSwitch) {
 			if(skip_char_maybe(&it, ' ')) {
 				token.field.enumFlags = EnumFlags_HasValue;
@@ -205,6 +206,7 @@ static_assert(offsetof(struct Token, enum_.name) == offsetof(struct Token, field
 			}
 		} else if(skip_char_maybe(&it, '(')) {
 			token.type = TType_Enum_start;
+			token.enum_.reflectNames = false;
 			read_scope(&it, token.enum_.switchField, sizeof(token.enum_.switchField), '(', ')');
 			skip_char(&it, '\n');
 			*tokens_end++ = token;
@@ -233,7 +235,7 @@ static_assert(offsetof(struct Token, enum_.name) == offsetof(struct Token, field
 	token.struct_.sendIntern = token.struct_.send = (*it == ('s' - clientMode) || *it == 'd');
 	token.struct_.recvIntern = token.struct_.recv = (*it == ('r' + clientMode) || *it == 'd');
 	++it, skip_char(&it, ' ');
-	read_name(&it, token.struct_.name, sizeof(token.struct_.name));
+	read_name(&it, token.struct_.name, sizeof(token.struct_.name), false);
 	skip_char(&it, '\n');
 	*tokens_end++ = token;
 	it = parse_struct_fields(it, 1, false);
@@ -247,11 +249,12 @@ static_assert(offsetof(struct Token, enum_.name) == offsetof(struct Token, field
 		.type = TType_Enum_start,
 		.enum_ = {
 			.switchField = {0},
+			.reflectNames = true,
 		},
 	};
-	read_name(&it, token.enum_.type, sizeof(token.enum_.type));
+	read_name(&it, token.enum_.type, sizeof(token.enum_.type), false);
 	skip_char(&it, ' ');
-	read_name(&it, token.enum_.name, sizeof(token.enum_.name));
+	read_name(&it, token.enum_.name, sizeof(token.enum_.name), false);
 	skip_char(&it, '\n');
 	*tokens_end++ = token;
 	while(skip_indent_maybe(&it, 1)) {
@@ -265,7 +268,10 @@ static_assert(offsetof(struct Token, enum_.name) == offsetof(struct Token, field
 				.enumValue = 0,
 			},
 		};
-		read_name(&it, fieldToken.field.type, sizeof(fieldToken.field.type));
+		read_name(&it, fieldToken.field.name, sizeof(fieldToken.field.name), true);
+		static_assert(lengthof(fieldToken.field.type) == lengthof(fieldToken.field.name));
+		for(unsigned i = 0; i < lengthof(fieldToken.field.type); ++i)
+			fieldToken.field.type[i] = (fieldToken.field.name[i] == '.') ? '_' : fieldToken.field.name[i];
 		fieldToken.field.enumFlags = skip_char_maybe(&it, ' ') ? EnumFlags_HasValue : 0;
 		if(fieldToken.field.enumFlags & EnumFlags_HasValue)
 			fieldToken.field.enumValue = read_number(&it);
@@ -478,6 +484,7 @@ static void gen_header_enum(char **out, struct Token *token) {
 static void gen_header_reflect(char **out, struct Token *token) {
 	uint32_t scope = 0;
 	const char *enumName = token->enum_.name;
+	const bool reflectNames = token->enum_.reflectNames;
 	write_fmt(out, "[[maybe_unused]] static const char *_reflect_%s(%s value) {\n\tswitch(value) {\n", enumName, enumName);
 	TOKEN_ITER(token) {
 		case TType_Enum_start: ++scope; break;
@@ -489,7 +496,7 @@ static void gen_header_reflect(char **out, struct Token *token) {
 		}
 		case TType_Field: {
 			if(scope == 1 && (token->field.enumFlags & EnumFlags_IsDuplicate) == 0)
-				write_fmt_indent(out, 2, "case %s_%s: return \"%s\";\n", enumName, token->field.type, token->field.type);
+				write_fmt_indent(out, 2, "case %s_%s: return \"%s\";\n", enumName, token->field.type, reflectNames ? token->field.name : token->field.type);
 			break;
 		}
 		default:;

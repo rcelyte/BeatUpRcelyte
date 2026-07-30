@@ -155,12 +155,18 @@ static void status_web_index(struct HttpContext *const http) {
 			memcpy(&levelName.data[levelName.length], "<i>...</i>", 10);
 			levelName.length += 10;
 		}
-		static const char *const protocolNames[] = {
-			[6] = "1.19.0",
-			[7] = "1.19.1",
-			[8] = "1.20.0 ⬌ 1.31.1",
-			[9] = "1.32.0 ⬌ 1.44.2", // TODO: protocol ABI ranges
-		};
+		const char *protocolName = "???";
+		char latestProtocol[32] = "1.32.0 \u2b0c ";
+		switch(entry.protocolVersion) {
+			case 6: protocolName = "1.19.0"; break;
+			case 7: protocolName = "1.19.1"; break;
+			case 8: protocolName = "1.20.0 \u2b0c 1.31.1"; break;
+			case 9: { // TODO: protocol ABI ranges
+				strncat(latestProtocol, _reflect_GameVersion(GameVersion_COUNT - 1), lengthof(latestProtocol) - strlen(latestProtocol) - 1);
+				protocolName = latestProtocol;
+			} break;
+			default:;
+		}
 		char cover[(sizeof(entry.levelCover.data) * 4 + 3) / 3 + 53] = "\0style=background-image:url(data:image/jpeg;base64,";
 		if(entry.levelCover.length > 4 && memcmp(entry.levelCover.data, (const uint8_t[4]){0xff,0xd8,0xff,0xe0}, 4) == 0) {
 			cover[0] = ' ';
@@ -171,7 +177,7 @@ static void status_web_index(struct HttpContext *const http) {
 			"<td><a href=\"", scode, "\"><div class=\"ln\"><span>", (int)levelName.length, levelName.data, "</span><br>"
 				"<div>▏", (int)levelName.length, levelName.data, "▕▏", (int)levelName.length, levelName.data, "▕" // TODO: resolve level name for ID
 			"<th><a href=\"", scode, "\">", entry.playerCount, " / ", playerCapacity,
-			"<th><a href=\"", scode, "\">", (entry.protocolVersion < lengthof(protocolNames) && protocolNames[entry.protocolVersion] != NULL) ? protocolNames[entry.protocolVersion] : "???",
+			"<th><a href=\"", scode, "\">", protocolName,
 			"<th><a href=\"", scode, "\">", noteRate,
 			"<th", cover, "><a href=\"", scode, "\"><div>&nbsp;");
 	}
@@ -227,9 +233,9 @@ static UserAgent ProbeHeaders(const char *buf, const char *const end) {
 #define PUT(...) (msg_end += (uint32_t)snprintf(msg_end, (msg_end >= endof(msg)) ? 0 : (uint32_t)(endof(msg) - msg_end), __VA_ARGS__))
 static void status_status(struct HttpContext *http, bool isGame) {
 	char msg[65536], *msg_end = msg;
-	PUT("%s%s%s%u%c", "{"
+	PUT("%s%s%s%s%s%u%c", "{"
 		"\"minimum_app_version\":\"1.19.0", isGame ? "b2147483647" : STATUS_APPVER_POSTFIX, "\","
-		"\"maximumAppVersion\":\"1.44.2\","
+		"\"maximumAppVersion\":\"", _reflect_GameVersion(GameVersion_COUNT - 1), "\","
 		"\"status\":", TEST_maintenanceStartTime != 0, ',');
 	if(TEST_maintenanceStartTime) {
 		PUT("%s%"PRIu64"%s%"PRIu64"%s%"PRIu64"%s%s%s",
@@ -282,11 +288,9 @@ static void status_graph(struct HttpContext *const http, const struct HttpReques
 			const struct String version = json_read_string(&iter);
 			if(version.length < 2 || version.data[0] != '1' || version.data[1] != '.')
 				continue;
-			const char *end = memchr(version.data, '_', version.length);
-			struct String semver = {.length = (end != NULL) ? end - version.data : version.length};
-			for(unsigned i = 0; i < semver.length; ++i)
-				semver.data[i] = (version.data[i] != '.') ? version.data[i] : '_';
-			for(connectInfo.gameVersion = GameVersion_COUNT - 1; strncmp(semver.data, _reflect_GameVersion(connectInfo.gameVersion), semver.length) != 0;) {
+			const char *semver_end = memchr(version.data, '_', version.length);
+			const unsigned semver_len = (semver_end != NULL) ? semver_end - version.data : version.length;
+			for(connectInfo.gameVersion = GameVersion_COUNT - 1; strncmp(version.data, _reflect_GameVersion(connectInfo.gameVersion), semver_len) != 0;) {
 				static_assert(GameVersion_Unknown == 0);
 				if(--connectInfo.gameVersion == GameVersion_Unknown) {
 					uprintf("Unexpected game version: %.*s\n", version.length, version.data);
