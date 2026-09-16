@@ -7,10 +7,12 @@ static partial class BeatUpClient {
 			BeatSaberMultiplayerSessionManager? multiplayerSessionManager = Injected<BeatSaberMultiplayerSessionManager>.Resolve(container);
 			IMenuRpcManager menuRpcManager = Injected<IMenuRpcManager>.Resolve(container)!;
 			Injected<AudioClipAsyncLoader>.Resolve(container);
+			Injected<BeatmapCharacteristicCollection>.Resolve(container);
 			Injected<BeatmapDataLoader>.Resolve(container);
 			Injected<BeatmapLevelsModel>.Resolve(container);
 			Injected<BGNet.Core.GameLift.GameLiftPlayerSessionProvider>.Resolve<BGNet.Core.GameLift.IGameLiftPlayerSessionProvider>(container);
 			Injected<CustomNetworkConfig>.Resolve<INetworkConfig>(container);
+			Injected<EnvironmentsListModel>.Resolve(container);
 			Injected<IMultiplayerStatusModel>.Resolve(container);
 			Injected<IQuickPlaySetupModel>.Resolve(container);
 			Injected<MultiplayerLevelScenesTransitionSetupData>.Resolve(container);
@@ -39,6 +41,6 @@ static partial class BeatUpClient {
 			int.TryParse(hostname.Split(':')[1], out port);
 			hostname = hostname.Split(':')[0];
 		}
-		container.Rebind<INetworkConfig>().FromInstance(new CustomNetworkConfig(networkConfigSO, hostname, port, true)).AsSingle();
+		container.Rebind<INetworkConfig>().FromInstance(new CustomNetworkConfig(networkConfigSO, hostname, port)).AsSingle();
 	}
 }

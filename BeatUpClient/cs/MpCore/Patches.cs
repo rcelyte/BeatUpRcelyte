@@ -46,7 +46,7 @@ static partial class BeatUpClient_MpCore {
 		CustomNetworkConfig? customNetworkConfig = Resolve<CustomNetworkConfig>();
 		if(customNetworkConfig == null)
 			return false;
-		return customNetworkConfig.graphUrl != officialConfig?.graphUrl;
+		return customNetworkConfig.graphApiBaseUrl != officialConfig?.graphApiBaseUrl;
 	}
 
 	[Detour(typeof(MultiplayerCore.UI.MpPerPlayerUI), nameof(MultiplayerCore.UI.MpPerPlayerUI.Initialize))]

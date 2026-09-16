@@ -77,6 +77,7 @@ var refs = new (string? path, string name, string[]? overrides)[] {
 	(managed, "Main.dll", new[] {
 		"BeatmapCallbacksController::_startFilterTime",
 		"BeatmapCharacteristicSegmentedControlController::_segmentedControl",
+		"BeatmapCharacteristicSegmentedControlController::_beatmapCharacteristicCollection",
 		"BeatmapCharacteristicSegmentedControlController::didSelectBeatmapCharacteristicEvent",
 		"BeatmapDifficultySegmentedControlController::_difficultySegmentedControl",
 		"BeatmapDifficultySegmentedControlController::didSelectDifficultyEvent",

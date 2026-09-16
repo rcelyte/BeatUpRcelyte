@@ -38,6 +38,8 @@ static partial class BeatUpClient {
 			beatmapCharacteristic.sizeDelta = new UnityEngine.Vector2(width, beatmapCharacteristic.sizeDelta.y);
 			beatmapDifficulty.sizeDelta = new UnityEngine.Vector2(width, beatmapDifficulty.sizeDelta.y);
 			characteristicSelector = beatmapCharacteristic.GetComponentInChildren<BeatmapCharacteristicSegmentedControlController>();
+			if(characteristicSelector._beatmapCharacteristicCollection == null) // Zenject resolve fails in gameplay scene
+				characteristicSelector._beatmapCharacteristicCollection = Resolve<BeatmapCharacteristicCollection>();
 			difficultySelector = beatmapDifficulty.GetComponentInChildren<BeatmapDifficultySegmentedControlController>();
 			characteristicSelector._segmentedControl._container = new Zenject.DiContainer();
 			characteristicSelector._segmentedControl._container.Bind<HMUI.HoverHintController>().FromInstance(UnityEngine.Resources.FindObjectsOfTypeAll<HMUI.HoverHintController>()[0]).AsSingle();

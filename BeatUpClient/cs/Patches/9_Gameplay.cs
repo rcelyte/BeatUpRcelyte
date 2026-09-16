@@ -11,7 +11,7 @@ static partial class BeatUpClient {
 		UnityEngine.RectTransform switchButton = UI.CreateButtonFrom(__instance._resumeButton.gameObject, __instance._resumeButton.transform.parent, "SwitchDifficulty", () => {
 			setupData.Init(setupData.gameMode, in selectedKey, beatmapLevel, setupData.beatmapLevelData,
 				setupData.colorScheme, setupData.gameplayCoreSceneSetupData.gameplayModifiers, setupData.gameplayCoreSceneSetupData.playerSpecificSettings,
-				setupData.gameplayCoreSceneSetupData.environmentsListModel, setupData.gameplayCoreSceneSetupData.practiceSettings,
+				setupData.gameplayCoreSceneSetupData.environmentsListModel ?? Resolve<EnvironmentsListModel>(), setupData.gameplayCoreSceneSetupData.practiceSettings,
 				Resolve<AudioClipAsyncLoader>(), Resolve<SettingsManager>(), Resolve<BeatmapDataLoader>(),
 				setupData.gameplayAdditionalInformationSetupData.additionalInformation);
 			Resolve<GameScenesManager>()!.ReplaceScenes(setupData, null,
@@ -32,8 +32,8 @@ static partial class BeatUpClient {
 		panel.beatmapCharacteristic.localPosition = new UnityEngine.Vector3(-1, -1.5f, 0);
 		panel.beatmapDifficulty.localPosition = new UnityEngine.Vector3(-1, -8.25f, 0);
 		void OnSelect(BeatmapCharacteristic newCharacteristic, BeatmapDifficulty newDifficulty) {
-			selectedKey = new(selectedKey.levelId, newCharacteristic, newDifficulty);
 			bool original = (newDifficulty == selectedKey.difficulty && newCharacteristic == selectedKey.characteristic);
+			selectedKey = new(selectedKey.levelId, newCharacteristic, newDifficulty);
 			__instance._resumeButton.gameObject.SetActive(original);
 			switchButton.gameObject.SetActive(!original);
 			panel.Update(beatmapLevel, selectedKey.characteristic, selectedKey.difficulty, OnSelect);
