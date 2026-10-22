@@ -47,7 +47,7 @@ static partial class BeatUpClient {
 		// TODO: switching between `MpBeatmapPacket`s and `RecommendPreview`s is a lossy conversion
 		public MpBeatmapPacket(RecommendPreview preview, BeatmapLevel info, BeatmapKey key) : base(info, true) {
 			(characteristic, difficulty) = (BeatmapCharacteristicExtensions.SerializedName(key.characteristic), key.difficulty);
-			requirements = info.GetDifficulties(key.characteristic)
+			requirements = info.GetDifficulties(GameplayType.BeatSaber, key.characteristic)
 				.SelectMany(diff => preview.requirements.Select(req => (diff, req)))
 				.ToLookup(pair => pair.diff, pair => pair.req);
 		}

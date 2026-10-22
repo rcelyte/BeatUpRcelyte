@@ -70,6 +70,7 @@ u8 GameVersion
 	1.45.0
 	1.45.1
 	1.45.2
+	1.45.3
 n PacketContext
 	u8 netVersion
 	u8 protocolVersion

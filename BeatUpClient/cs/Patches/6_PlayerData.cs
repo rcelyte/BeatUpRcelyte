@@ -20,7 +20,7 @@ static partial class BeatUpClient {
 	static BeatmapKey BeatmapIdentifierNetSerializableHelper_ToBeatmapKey(BeatmapKeyNetSerializable beatmapKeySerializable) {
 		BeatmapKey result = (BeatmapKey)Base(beatmapKeySerializable);
 		if(result.levelId == null && !string.IsNullOrEmpty(beatmapKeySerializable?.levelID))
-			result = new BeatmapKey(beatmapKeySerializable!.levelID, BeatmapCharacteristic.Standard, beatmapKeySerializable.difficulty);
+			result = new BeatmapKey(beatmapKeySerializable!.levelID, GameplayType.BeatSaber, BeatmapCharacteristic.Standard, beatmapKeySerializable.difficulty);
 		return result;
 	}
 
@@ -86,7 +86,7 @@ static partial class BeatUpClient {
 		}
 		string levelId = beatmapKey.levelId;
 		void OnSelect(BeatmapCharacteristic newCharacteristic, BeatmapDifficulty newDifficulty) {
-			self.SetLocalPlayerBeatmapLevel(new(levelId, newCharacteristic, newDifficulty));
+			self.SetLocalPlayerBeatmapLevel(new(levelId, GameplayType.BeatSaber, newCharacteristic, newDifficulty));
 		}
 		lobbyDifficultyPanel?.Update(beatmapLevel, beatmapKey.characteristic, beatmapKey.difficulty, OnSelect);
 		Base(self, PassRef(ref beatmapKey));

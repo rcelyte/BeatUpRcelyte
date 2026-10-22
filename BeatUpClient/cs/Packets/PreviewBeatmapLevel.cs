@@ -130,11 +130,12 @@ static partial class BeatUpClient {
 			Log.Debug($"PreviewBeatmapLevel(from={from}, mpCore={mpCore}) pre");
 			(levelID, songName, songSubName, songAuthorName, levelAuthorName, beatsPerMinute, songTimeOffset, shuffle, shufflePeriod, previewStartTime, previewDuration, songDuration) =
 				(from.levelID, from.songName, from.songSubName, from.songAuthorName, string.Empty, from.beatsPerMinute, from.songTimeOffset, 0, 0, from.previewStartTime, from.previewDuration, from.songDuration);
-			previewDifficultyBeatmapSets = from.beatmapBasicData.Keys
+			previewDifficultyBeatmapSets = from.gameplayTypeBeatmapBasicData.Keys
+				.Where(((GameplayType type, BeatmapCharacteristic characteristic, BeatmapDifficulty difficulty) pair) => pair.type == GameplayType.BeatSaber)
 				.GroupBy(
-					((BeatmapCharacteristic characteristic, BeatmapDifficulty difficulty) pair) => pair.characteristic,
+					((GameplayType type, BeatmapCharacteristic characteristic, BeatmapDifficulty difficulty) pair) => pair.characteristic,
 					(characteristic, pairs) => new PreviewDifficultyBeatmapSet(BeatmapCharacteristicExtensions.SerializedName(characteristic), pairs
-						.Select(((BeatmapCharacteristic characteristic, BeatmapDifficulty difficulty) pair) => pair.difficulty)
+						.Select(((GameplayType type, BeatmapCharacteristic characteristic, BeatmapDifficulty difficulty) pair) => pair.difficulty)
 						.ToArray()))
 				.ToArray();
 			if(!mpCore) {

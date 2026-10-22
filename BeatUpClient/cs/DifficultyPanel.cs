@@ -56,14 +56,14 @@ static partial class BeatUpClient {
 			difficultySelector.didSelectDifficultyEvent = delegate {};
 			if(beatmapLevel == null)
 				return;
-			difficultySelector.SetData(beatmapLevel.GetDifficulties(characteristic).DefaultIfEmpty(difficulty), difficulty, BeatmapDifficultyMask.All);
-			characteristicSelector.SetData(beatmapLevel.GetCharacteristics(), characteristic, new());
+			difficultySelector.SetData(beatmapLevel.GetDifficulties(GameplayType.BeatSaber, characteristic).DefaultIfEmpty(difficulty), difficulty, BeatmapDifficultyMask.All);
+			characteristicSelector.SetData(beatmapLevel.GetCharacteristics(GameplayType.BeatSaber), characteristic, new());
 			if(hideHints)
 				foreach(HMUI.HoverHint hint in characteristicSelector.GetComponentsInChildren<HMUI.HoverHint>())
 					hint.enabled = false;
 			characteristicSelector.didSelectBeatmapCharacteristicEvent += (BeatmapCharacteristicSegmentedControlController controller, BeatmapCharacteristic newCharacteristic) => {
-				BeatmapDifficulty closestDifficulty = beatmapLevel.GetDifficulties(newCharacteristic).First();
-				foreach(BeatmapDifficulty diff in beatmapLevel.GetDifficulties(newCharacteristic)) {
+				BeatmapDifficulty closestDifficulty = beatmapLevel.GetDifficulties(GameplayType.BeatSaber, newCharacteristic).First();
+				foreach(BeatmapDifficulty diff in beatmapLevel.GetDifficulties(GameplayType.BeatSaber, newCharacteristic)) {
 					if(diff > difficulty)
 						break;
 					closestDifficulty = diff;

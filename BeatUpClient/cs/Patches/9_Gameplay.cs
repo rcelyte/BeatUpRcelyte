@@ -33,7 +33,7 @@ static partial class BeatUpClient {
 		panel.beatmapDifficulty.localPosition = new UnityEngine.Vector3(-1, -8.25f, 0);
 		void OnSelect(BeatmapCharacteristic newCharacteristic, BeatmapDifficulty newDifficulty) {
 			bool original = (newDifficulty == selectedKey.difficulty && newCharacteristic == selectedKey.characteristic);
-			selectedKey = new(selectedKey.levelId, newCharacteristic, newDifficulty);
+			selectedKey = new(selectedKey.levelId, GameplayType.BeatSaber, newCharacteristic, newDifficulty);
 			__instance._resumeButton.gameObject.SetActive(original);
 			switchButton.gameObject.SetActive(!original);
 			panel.Update(beatmapLevel, selectedKey.characteristic, selectedKey.difficulty, OnSelect);
