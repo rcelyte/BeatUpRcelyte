@@ -14,8 +14,7 @@ static partial class BeatUpClient {
 				setupData.gameplayCoreSceneSetupData.environmentsListModel ?? Resolve<EnvironmentsListModel>(), setupData.gameplayCoreSceneSetupData.practiceSettings,
 				Resolve<AudioClipAsyncLoader>(), Resolve<SettingsManager>(), Resolve<BeatmapDataLoader>(),
 				setupData.gameplayAdditionalInformationSetupData.additionalInformation);
-			Resolve<GameScenesManager>()!.ReplaceScenes(setupData, null,
-					.35f, null, (Zenject.DiContainer container) => {
+			Resolve<GameScenesManager>()!.ReplaceScenes(setupData, true, null, .35f, null, (Zenject.DiContainer container) => {
 				MultiplayerController multiplayerController = container.Resolve<MultiplayerController>();
 				multiplayerController._songStartSyncController.syncStartSuccessEvent -= OnSongStart;
 				multiplayerController._songStartSyncController.syncStartSuccessEvent += OnSongStart;

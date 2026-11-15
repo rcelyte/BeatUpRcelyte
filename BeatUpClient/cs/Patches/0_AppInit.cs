@@ -8,9 +8,9 @@ static partial class BeatUpClient {
 
 	static ScenesTransitionSetupData? restartTransitionData = null;
 	[Detour(typeof(GameScenesManager), nameof(GameScenesManager.ReplaceScenes))]
-	static void GameScenesManager_ReplaceScenes(GameScenesManager self, ScenesTransitionSetupData scenesTransitionSetupData, System.Collections.IEnumerator[] beforeNewScenesActivateRoutines, float minDuration, System.Action afterMinDurationCallback, System.Action<Zenject.DiContainer> finishCallback) {
+	static void GameScenesManager_ReplaceScenes(GameScenesManager self, ScenesTransitionSetupData scenesTransitionSetupData, bool shouldReclaimMemory, System.Collections.IEnumerator[] beforeNewScenesActivateRoutines, float minDuration, System.Action afterMinDurationCallback, System.Action<Zenject.DiContainer> finishCallback) {
 		if(haveSiraUtil || initialSceneRegistered) {
-			Base(self, scenesTransitionSetupData, beforeNewScenesActivateRoutines, minDuration, afterMinDurationCallback, finishCallback);
+			Base(self, scenesTransitionSetupData, shouldReclaimMemory, beforeNewScenesActivateRoutines, minDuration, afterMinDurationCallback, finishCallback);
 		} else { // Fallback if SiraUtil isn't installed
 			restartTransitionData ??= new ScenesTransitionSetupData("GameInit");
 			self.ClearAndOpenScenes(restartTransitionData, finishCallback: container =>
