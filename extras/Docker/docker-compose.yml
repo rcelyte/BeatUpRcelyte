@@ -1,0 +1,15 @@
+version: "3"
+
+services:
+  beatup:
+    image: beatupserver:latest
+    container_name: beatup
+    entrypoint: /bin/beatupserver --daemon -4
+    restart: always
+    volumes:
+      - ./beatupserver.json:/beatupserver.json
+    ports:
+        - "2328:2328/udp"
+        - "5000:5000/udp"
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
